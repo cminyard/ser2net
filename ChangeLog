@@ -1,3 +1,7 @@
+2005-02-12  Corey Minyard <minyard@acm.org>
+
+	* configure.in: Move to version 2.2.
+
 2005-02-11  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Add a missing break statement after case 7
