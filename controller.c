@@ -153,15 +153,14 @@ controller_output(struct controller_info *cntlr,
 	/* Already outputting data, just add more onto it. */
 	int  new_size = cntlr->outbuf_count + count;
 
-	if (new_size < cntlr->outbufsize) {
+	if (new_size <= cntlr->outbufsize) {
 	    /* It will fit into the current buffer, just move things
 	       around and append it. */
 	    int i;
 
 	    if (cntlr->outbuf_pos > 0) {
 		for (i=0; i<cntlr->outbuf_count; i++) {
-		    cntlr->outbuf[i] = cntlr->outbuf[cntlr->outbuf_pos];
-		    (cntlr->outbuf_pos)++;
+		    cntlr->outbuf[i] = cntlr->outbuf[cntlr->outbuf_pos + i];
 		}
 	    }
 	    memcpy(&(cntlr->outbuf[cntlr->outbuf_count]), data, count);
@@ -187,20 +186,21 @@ controller_output(struct controller_info *cntlr,
 	    memcpy(newbuf+cntlr->outbuf_count, data, count);
 	    free(cntlr->outbuf);
 	    cntlr->outbuf = newbuf;
-	    cntlr->outbuf_pos = 0;
 	}
+	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count += count;
     } else {
 	/* We are starting a new buffer, just get it. */
 	char *newbuf;
+	int  new_size = ((count / 1024) * 1024) + 1024;
 
-	newbuf = malloc(1024);
+	newbuf = malloc(new_size);
 	if (newbuf == NULL) {
 	    /* Out of memory, just ignore thre request */
 	    return;
 	}
 	
-	cntlr->outbufsize = 1024;
+	cntlr->outbufsize = new_size;
 
 	memcpy(newbuf, data, count);
 	cntlr->outbuf = newbuf;
@@ -248,7 +248,7 @@ static char *help_str =
 "       the device configuration in the ser2net.conf file.  Valid options\n\r"
 "       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200, EVEN, ODD\n\r"
 "       NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, LOCAL (ignore\n\r"
-"       model control).\n\r"
+"       modem control).\n\r"
 "       Note that these will not change until the port is disconnected\n\r"
 "       and connected again.\n\r"
 "setportcontrol <tcp port> <controls>\n\r"
@@ -259,6 +259,7 @@ static char *help_str =
 "       Valid states are:\n\r"
 "         off - The TCP port is shut down\n\r"
 "         raw - The TCP port is up and all I/O is transferred\n\r"
+"         rawlp - The TCP port is up and the input is transferred to dev\n\r"
 "         telnet - The TCP port is up and the telnet negotiation protocol\n\r"
 "                  runs on the port.\n\r";
 
@@ -581,13 +582,13 @@ handle_accept_port_read(int fd, void *data)
     socklen_t         len;
     char              *err = NULL;
 
-    cntlr = malloc(sizeof(*cntlr));
-    if (cntlr == NULL) {
-	err = "Could not allocate controller port\n\r";
-    }
-
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\n\r";
+    } else {
+	cntlr = malloc(sizeof(*cntlr));
+	if (cntlr == NULL) {
+	    err = "Could not allocate controller port\n\r";
+	}
     }
 
     if (err != NULL) {
@@ -623,7 +624,7 @@ handle_accept_port_read(int fd, void *data)
 	    char *err = "Access denied\n\r";
 	    write(cntlr->tcpfd, err, strlen(err));
 	    close(cntlr->tcpfd);
-	    return;
+	    goto errout;
 	}
     }
 #endif /* HAVE_TCPD_H */
@@ -637,6 +638,7 @@ handle_accept_port_read(int fd, void *data)
     cntlr->inbuf_count = 0;
     cntlr->telnet_cmd_pos = 0;
     cntlr->outbuf = NULL;
+    cntlr->monitor_port_id = NULL;
 
     set_fd_handlers(cntlr->tcpfd,
 		    cntlr,

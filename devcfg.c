@@ -113,10 +113,16 @@ devconfig(char *instr, struct termios *termctl)
             termctl->c_iflag |= (IXON | IXOFF | IXANY);
             termctl->c_cc[VSTART] = 17;
             termctl->c_cc[VSTOP] = 19;      
+        } else if (strcmp(pos, "-XONXOFF") == 0) {
+            termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
         } else if (strcmp(pos, "RTSCTS") == 0) {
             termctl->c_cflag |= CRTSCTS;  
+        } else if (strcmp(pos, "-RTSCTS") == 0) {
+            termctl->c_cflag &= ~CRTSCTS;
         } else if (strcmp(pos, "LOCAL") == 0) {
             termctl->c_cflag |= CLOCAL;  
+        } else if (strcmp(pos, "-LOCAL") == 0) {
+            termctl->c_cflag &= ~CLOCAL;
 	} else {
 	    rv = -1;
 	    goto out;

@@ -57,8 +57,10 @@ char *state_str[] = { "unconnected", "waiting input", "waiting output" };
 
 #define PORT_DISABLED		0 /* The port is not open. */
 #define PORT_RAW		1 /* Port will not do telnet negotiation. */
-#define PORT_TELNET		2 /* Port will do telnet negotiation. */
-char *enabled_str[] = { "off", "raw", "telnet" };
+#define PORT_RAWLP		2 /* Port will not do telnet negotiation and
+                                     termios setting, open for output only. */
+#define PORT_TELNET		3 /* Port will do telnet negotiation. */
+char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
 
 #define PORT_BUFSIZE	1024
 
@@ -71,6 +73,10 @@ typedef struct port_info
 					   the port is enabled and
 					   will not do any telnet
 					   negotiations.  If
+					   PORT_RAWLP, the port is enabled
+					   only for output without any
+					   termios setting - it allows
+					   to redirect /dev/lpX devices If
 					   PORT_TELNET, the port is
 					   enabled and it will do
 					   telnet negotiations. */
@@ -528,6 +534,7 @@ handle_accept_port_read(int fd, void *data)
     port_info_t *port = (port_info_t *) data;
     socklen_t len;
     char *err = NULL;
+    int options;
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
 	err = "Port already in use\n\r";
@@ -577,9 +584,15 @@ handle_accept_port_read(int fd, void *data)
     }
 #endif /* HAVE_TCPD_H */
 
-    port->devfd = open(port->devname, O_RDWR | O_NONBLOCK | O_NOCTTY);
-			 /* Oct 05 2001 druzus: NOCTTY - don't make 
-			    device control tty for our process */
+    /* Oct 05 2001 druzus: NOCTTY - don't make 
+       device control tty for our process */
+    options = O_NONBLOCK | O_NOCTTY;
+    if (port->enabled == PORT_RAWLP) {
+	options |= O_WRONLY;
+    } else {
+	options |= O_RDWR;
+    }
+    port->devfd = open(port->devname, options);
     if (port->devfd == -1) {
 	close(port->tcpfd);
 	syslog(LOG_ERR, "Could not open device %s for port %d: %m",
@@ -588,7 +601,8 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
-    if (tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1) {
+    if (port->enabled != PORT_RAWLP &&
+              tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1) {
 	close(port->tcpfd);
 	close(port->devfd);
 	syslog(LOG_ERR, "Could not set up device %s for port %d: %m",
@@ -599,10 +613,11 @@ handle_accept_port_read(int fd, void *data)
 
     set_fd_handlers(port->devfd,
 		    port,
-		    handle_dev_fd_read,
+		    port->enabled == PORT_RAWLP ? NULL : handle_dev_fd_read,
 		    handle_dev_fd_write,
 		    handle_dev_fd_except);
-    set_fd_read_handler(port->devfd, FD_HANDLER_ENABLED);
+    set_fd_read_handler(port->devfd, port->enabled == PORT_RAWLP ? 
+				     FD_HANDLER_DISABLED : FD_HANDLER_ENABLED);
     set_fd_except_handler(port->devfd, FD_HANDLER_ENABLED);
     port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
@@ -705,6 +720,8 @@ portconfig(char *portnum,
 
     if (strcmp(state, "raw") == 0) {
 	new_port->enabled = PORT_RAW;
+    } else if (strcmp(state, "rawlp") == 0) {
+	new_port->enabled = PORT_RAWLP;
     } else if (strcmp(state, "telnet") == 0) {
 	new_port->enabled = PORT_TELNET;
     } else if (strcmp(state, "off") == 0) {
@@ -834,8 +851,13 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     str = "  device config: ";
     controller_output(cntlr, str, strlen(str));
-    show_devcfg(cntlr, &(port->termctl));
-    controller_output(cntlr, "\n\r", 2);
+    if (port->enabled == PORT_RAWLP) {
+	str = "none\n\r";
+	controller_output(cntlr, str, strlen(str));
+    } else {
+	show_devcfg(cntlr, &(port->termctl));
+	controller_output(cntlr, "\n\r", 2);
+    }
 
     str = "  device controls: ";
     controller_output(cntlr, str, strlen(str));
@@ -1012,6 +1034,8 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 	    int newenable;
 	    if (strcmp(enable, "raw") == 0) {
 		newenable = PORT_RAW;
+	    } else if (strcmp(enable, "rawlp") == 0) {
+		newenable = PORT_RAWLP;
 	    } else if (strcmp(enable, "telnet") == 0) {
 		newenable = PORT_TELNET;
 	    } else {

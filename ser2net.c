@@ -134,11 +134,13 @@ main(int argc, char *argv[])
 	    syslog(LOG_ERR, "Error forking first fork");
 	    exit(1);
 	} else {
+	    /* setsid() is necessary if we really want to demonize */
+	    setsid();
 	    /* Second fork to really deamonize me. */
 	    if ((pid = fork()) > 0) {
 		exit(0);
 	    } else if (pid < 0) {
-		syslog(LOG_ERR, "Error forking first fork");
+		syslog(LOG_ERR, "Error forking second fork");
 		exit(1);
 	    }
 	}
