@@ -43,6 +43,7 @@ devinit(struct termios *termctl)
     termctl->c_cflag &= ~(PARENB);
     termctl->c_cflag &= ~(CLOCAL);
     termctl->c_cflag |= CREAD;
+    termctl->c_cflag &= ~(CRTSCTS);
     termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
     termctl->c_iflag |= IGNBRK;
 }
@@ -112,6 +113,8 @@ devconfig(char *instr, struct termios *termctl)
             termctl->c_iflag |= (IXON | IXOFF | IXANY);
             termctl->c_cc[VSTART] = 17;
             termctl->c_cc[VSTOP] = 19;      
+        } else if (strcmp(pos, "RTSCTS") == 0) {
+            termctl->c_cflag |= CRTSCTS;  
         } else if (strcmp(pos, "LOCAL") == 0) {
             termctl->c_cflag |= CLOCAL;  
 	} else {
@@ -139,6 +142,7 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     int     xon = termctl->c_iflag & IXON;
     int     xoff = termctl->c_iflag & IXOFF;
     int     xany = termctl->c_iflag & IXANY;
+    int     flow_rtscts = termctl->c_cflag & CRTSCTS;
     int     clocal = termctl->c_cflag & CLOCAL;
     char    *str;
 
@@ -160,6 +164,10 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
       controller_output(cntlr, "XONXOFF ", 8);
     }      
     
+    if (flow_rtscts) {
+      controller_output(cntlr, "RTSCTS ", 7);
+    }
+
     if (clocal) {
       controller_output(cntlr, "LOCAL ", 6);
     }

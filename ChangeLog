@@ -4,6 +4,8 @@
 	* controller.c, dataxfer.c, devcfg.c, ser2net.init, ser2net.spec:
 	Added an init, and cleaned up a bunch of type warnings.
 
+	* devcfg.c, ser2net.8, ser2net.conf: Added support for RTS/CTS.
+
 2001-08-11  Corey Minyard <minyard@acm.org>
 
 	* devcfg.h, devcfg.c, controller.c, dataxfer.c, dataxfer.h, ser2net.8:

@@ -95,9 +95,11 @@ set the number of stop bits.
 .I 7DATABITS, 8DATABITS
 set the number of data bits.
 .I XONXOFF
-Turns on XON/XOFF support.
+turns on XON/XOFF support.
+.I RTSCTS
+turns on hardware flow control.
 .I LOCAL
-Ignores the modem control lines (DCD, DTR, etc.)
+ignores the modem control lines (DCD, DTR, etc.)
 .TP
 .B setportcontrol <tcp port> <controls>
 Modify dynamic port controls.  These do not stay between connections.
@@ -164,9 +166,11 @@ set the number of stop bits.
 .I 7DATABITS, 8DATABITS
 set the number of data bits.
 .I XONXOFF
-Turns on XON/XOFF support.
+turns on XON/XOFF support.
+.I RTSCTS
+turns on hardware flow control.
 .I LOCAL
-Ignores the modem control lines (DCD, DTR, etc.)
+ignores the modem control lines (DCD, DTR, etc.)
 
 .PP
 Blank lines and lines starting with `#' are ignored.
