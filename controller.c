@@ -102,6 +102,7 @@ shutdown_controller(controller_info_t *cntlr)
 
     if (cntlr->monitor_port_id != NULL) {
 	data_monitor_stop(cntlr, cntlr->monitor_port_id);
+	cntlr->monitor_port_id = NULL;
     }
 
     clear_fd_handlers(cntlr->tcpfd);

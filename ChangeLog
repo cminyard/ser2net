@@ -1,7 +1,11 @@
-2001-06-04  Corey Minyard <minyard@acm.org>
+2001-06-15  Corey Minyard <minyard@acm.org>
+	
+	* controller.c - Made sure the monitor port was set to null
+	when the port exited.
 
-	* Initial creation.
-
+	* ser2net.c, ser2net.1 - Added a "-d" option to send debug
+	output to the console and modified "-n" to just not detach.
+	
 2001-06-05  Corey Minyard <minyard@acm.org>
 
 	* ser2net.c, controller.c - added a way to query the version from
@@ -13,3 +17,8 @@
 
 	* controller.c, dataxfer.c, dataxfer.h - added a way to disconnect
 	a port from the control port.
+
+2001-06-04  Corey Minyard <minyard@acm.org>
+
+	* Initial creation.
+

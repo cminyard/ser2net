@@ -22,7 +22,8 @@
 
 /* TODO
  *
- * add the ability to disconnect a port from the control port.
+ * Add getty support and UUCP locking
+ * Add some type of security
  */
 
 #include <stdio.h>
@@ -40,12 +41,14 @@
 static char *config_file = "/etc/ser2net.conf";
 static int config_port = -1;
 static int detach = 1;
+static int debug = 0;
 
 static char *help_string =
 "%s: Valid parameters are:\n"
 "  -c <config file> - use a config file besides /etc/ser2net.conf\n"
 "  -p <controller port> - Start a controller session on the given TCP port\n"
 "  -n - Don't detach from the controlling terminal\n"
+"  -d - Don't detach and send debug I/O to standard output\n"
 "  -v - print the program's version and exit\n";
 
 void
@@ -69,6 +72,11 @@ main(int argc, char *argv[])
 	switch (argv[i][1]) {
 	case 'n':
 	    detach = 0;
+	    break;
+
+	case 'd':
+	    detach = 0;
+	    debug = 1;
 	    break;
 
 	case 'c':
@@ -140,7 +148,7 @@ main(int argc, char *argv[])
 	close(0);
 	close(1);
 	close(2);
-    } else {
+    } else if (debug) {
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
     }
 
