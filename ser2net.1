@@ -1,0 +1,140 @@
+.TH ser2net 1 06/02/01  "Serial to network proxy"
+
+.SH NAME
+ser2net \- Serial to network proxy
+
+.SH SYNOPSIS
+.B ser2net
+[\-c configfile] [\-p controlport] [\-n]
+
+.SH DESCRIPTION
+The
+.BR ser2net
+daemon allows telnet and tcp sessions to be established with a unit's
+serial ports.
+.PP
+The program comes up normally as a daemon, opens the TCP ports
+specified in the configuration file, and waits for connections.  Once
+a connection occurs, the program attempts to set up the connection and
+open the serial port.  If another user is already using the connection
+or serial port, the connection is refused with an error message.
+
+.SH OPTIONS
+.TP
+.I "\-c config\-file"
+Set the configuration file to one other than the default of
+.BR "/etc/ser2net.conf"
+.TP
+.I \-n
+Stops  the  daemon  from  forking  and  detaching  from the controlling
+terminal. This is most useful for debugging purposes.
+.TP
+.I \-p port
+Enables the control port and sets the IP port to listen to for the
+control port.
+
+.SH CONTROL PORT
+The control port provides a simple interface for controlling the ports and 
+viewing their status. To accomplish this, it has the following commands:
+.TP
+.B showport [<TCP port>]
+Show information about a port. If no port is given, all ports are displayed.
+.TP
+.B help
+Display a short list and summary of commands.
+.TP
+.B exit
+Disconnect from the control port.
+.TP
+.B setporttimeout <tcp port> <timeout>
+Set the amount of time in seconds before the port connection will be
+shut down if no activity has been seen on the port.
+.TP
+.B setportconfig <tcp port> <config>
+Set the port configuration as in the device configuration in the
+.BR /etc/ser2net.conf
+file.  If conflicting options are specified, the last option will
+be the one used.  Note that these will not change until the port
+is disconnected and connected again.  Options
+.I 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200
+set the various baud rates.
+.I EVEN, ODD, NONE
+set the parity.
+.I 1STOPBIT, 2STOPBITS
+set the number of stop bits.
+.I 7DATABITS, 8DATABITS
+set the number of data bits.
+.TP
+.B setportenable <tcp port> <enable state>
+Sets the port operation state.  Valid states are:
+.I off
+to shut the TCP port down,
+.I raw
+to enable the TCP port transfer all I/O as-is, and
+.I telnet
+to enable the TCP port is up run the telnet negotiation protocol on the port.
+
+.SH CONFIGURATION
+Configuration is accomplished through the file
+.BR /etc/ser2net.conf .
+A file with another name or path may be specified using the
+.I \-c
+option.  This  file consists of one or more entries with the following
+format:
+.IP
+<IP port>:<state>:<timeout>:<device>:<options>
+.PP
+.SS FIELDS
+.TP
+.I "IP port"
+Name  or number of the TCP/IP port to accept connections from for this
+device.
+.TP
+.I state
+Either 
+.BR raw
+or
+.BR telnet
+or
+.BR off.
+.I off
+disables the port from accepting connections.  It can be turned
+on later from the control port.
+.I raw
+enables the port and transfers all data as-is between the port and
+the long.
+.I telnet
+enables the port and runs the telnet protocol on the port to set up
+telnet parameters.  This is most useful for using telnet.
+.TP
+.I device
+The  name  of  the  device  to connect to. This must be in the form of
+.BR /dev/<device> .
+.TP
+.I "device configuration options"
+Sets operational parameters for the serial port.  Options
+.I 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200
+set the various baud rates.
+.I EVEN, ODD, NONE
+set the parity.
+.I 1STOPBIT, 2STOPBITS
+set the number of stop bits.
+.I 7DATABITS, 8DATABITS
+set the number of data bits.
+
+.PP
+Blank lines and lines starting with `#' are ignored.
+
+.SH FILES
+/etc/ser2net.conf
+
+.SH "SEE ALSO"
+telnet(1)
+
+.SH "KNOWN PROBLEMS"
+The program does not do UUCP file locking and it won't play nice with
+getty.
+
+.SH AUTHOR
+.PP
+Corey Minyard <minyard@acm.org>

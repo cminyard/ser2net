@@ -1,0 +1,8 @@
+This program follows the standard GNU installation procedure.  To install,
+do:
+
+	./configure
+	make
+	make install
+
+That's pretty simple.  Thanks, FSF, for the cool automake stuff.

@@ -1,0 +1,38 @@
+devcfg.o: devcfg.c /usr/include/termios.h /usr/include/features.h \
+ /usr/include/sys/cdefs.h /usr/include/gnu/stubs.h \
+ /usr/include/bits/termios.h /usr/include/sys/ttydefaults.h \
+ /usr/include/sys/types.h /usr/include/bits/types.h \
+ /usr/lib/gcc-lib/powerpc-suse-linux/2.95.2/include/stddef.h \
+ /usr/include/bits/pthreadtypes.h /usr/include/bits/sched.h \
+ /usr/include/time.h /usr/include/endian.h /usr/include/bits/endian.h \
+ /usr/include/sys/select.h /usr/include/bits/select.h \
+ /usr/include/bits/sigset.h /usr/include/sys/sysmacros.h \
+ /usr/include/stdlib.h /usr/include/alloca.h /usr/include/string.h \
+ /usr/include/bits/string.h /usr/include/bits/string2.h devcfg.h \
+ controller.h
+devcfg.c :
+/usr/include/termios.h :
+/usr/include/features.h :
+/usr/include/sys/cdefs.h :
+/usr/include/gnu/stubs.h :
+/usr/include/bits/termios.h :
+/usr/include/sys/ttydefaults.h :
+/usr/include/sys/types.h :
+/usr/include/bits/types.h :
+/usr/lib/gcc-lib/powerpc-suse-linux/2.95.2/include/stddef.h :
+/usr/include/bits/pthreadtypes.h :
+/usr/include/bits/sched.h :
+/usr/include/time.h :
+/usr/include/endian.h :
+/usr/include/bits/endian.h :
+/usr/include/sys/select.h :
+/usr/include/bits/select.h :
+/usr/include/bits/sigset.h :
+/usr/include/sys/sysmacros.h :
+/usr/include/stdlib.h :
+/usr/include/alloca.h :
+/usr/include/string.h :
+/usr/include/bits/string.h :
+/usr/include/bits/string2.h :
+devcfg.h :
+controller.h :
