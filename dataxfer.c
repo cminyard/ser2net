@@ -22,6 +22,7 @@
 
 #include <termios.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -198,6 +199,16 @@ typedef struct port_info
 				     configuration that should be
 				     loaded when the current session
 				     is done. */
+
+    /* Is 2217 mode enabled? */
+    int is_2217;
+
+    /* Holds whether break is on or not. */
+    int break_set;
+
+    /* Masks for RFC 2217 */
+    unsigned char linestate_mask;
+    unsigned char modemstate_mask;
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -345,6 +356,8 @@ init_port_data(port_info_t *port)
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
     port->telnet_cmd_pos = 0;
+    port->is_2217 = 0;
+    port->break_set = 0;
 }
 
 void
@@ -662,16 +675,6 @@ handle_tcp_fd_write(int fd, void *data)
 	write_count = write(port->tcpfd,
 			    &(port->out_telnet_cmd[0]),
 			    port->out_telnet_cmd_size);
-{
-    int i;
-    printf("Sent:");
-    for (i=0; i<write_count; i++) {
-	if ((i % 16) == 0)
-	    printf("\n ");
-	printf(" %2.2x", port->out_telnet_cmd[i]);
-    }
-    printf("\n");
-}
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
@@ -876,6 +879,18 @@ handle_accept_port_read(int fd, void *data)
 	       port->portname);
 	return;
     }
+
+    /* Turn of BREAK. */
+    if (ioctl(port->devfd, TIOCCBRK) == -1) {
+	close(port->tcpfd);
+	close(port->devfd);
+	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
+	       port->devname,
+	       port->portname);
+	return;
+    }
+    port->is_2217 = 0;
+    port->break_set = 0;
 
     sel_set_fd_handlers(ser2net_sel,
 			port->devfd,
@@ -1764,6 +1779,7 @@ telnet_init(port_info_t *port)
 }
 
 static void com_port_handler(port_info_t *port, unsigned char *option, int len);
+static void com_port_will(port_info_t *port);
 
 struct telnet_cmd {
     unsigned char option;
@@ -1774,6 +1790,7 @@ struct telnet_cmd {
     unsigned int rem_will : 1;
     unsigned int rem_do : 1;
     void (*option_handler)(port_info_t *port, unsigned char *option, int len);
+    void (*will_handler)(port_info_t *port);
 } telnet_cmds[] = 
 {
     /*                        I will,  I do,  sent will, sent do */
@@ -1781,7 +1798,7 @@ struct telnet_cmd {
     { TN_OPT_ECHO,		   0,     1,          1,       1, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
     { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
-      com_port_handler },
+      com_port_handler, com_port_will },
 };
 
 #define TELNET_CMDS_SIZE (sizeof(telnet_cmds) / sizeof(struct telnet_cmd))
@@ -1983,23 +2000,31 @@ get_rate_from_baud_rate(int baud_rate, int *val)
 }
 
 static void
+com_port_will(port_info_t *port)
+{
+    unsigned char data[3];
+
+    /* The remote end turned on RFC2217 handling. */
+    port->is_2217 = 1;
+    port->linestate_mask = 0;
+    port->modemstate_mask = 255;
+
+#if 0 /* FIXME - add the current modem state (and modem state scanning) */
+    /* send a modemstate notify */
+    data[0] = TN_IAC;
+    data[1] = 7; /* Notify modemstate */
+    data[2] = 0;
+    telnet_cmd_send(port, data, 3);
+#endif
+}
+
+static void
 com_port_handler(port_info_t *port, unsigned char *option, int len)
 {
     char outopt[16];
     struct termios termio;
     int val;
     
-{
-    int i;
-    printf("Got com port option:");
-    for (i=0; i<len; i++) {
-	if ((i % 16) == 0)
-	    printf("\n ");
-	printf(" %2.2x", option[i]);
-    }
-    printf("\n");
-}
-
     if (len < 2) 
 	return;
 
@@ -2121,6 +2146,150 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[1] = 4;
 	outopt[2] = val;
 	send_option(port, outopt, 3);
+	break;
+
+    case 5: /* SET-CONTROL */
+	if (len < 3)
+	    return;
+
+	val = 0;
+
+	switch (option[2]) {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	    /* Outbound/both flow control */
+	    if (tcgetattr(port->devfd, &termio) != -1) {
+		if (option[2] != 0) {
+		    val = option[2];
+		    termio.c_iflag &= ~(IXON | IXOFF);
+		    termio.c_cflag &= ~CRTSCTS;
+		    switch (val) {
+		    case 1: break; /* NONE */
+		    case 2: termio.c_iflag |= IXON | IXOFF; break;
+		    case 3: termio.c_cflag |= CRTSCTS; break;
+		    }
+		    tcsetattr(port->devfd, TCSADRAIN, &termio);
+		}
+		if (termio.c_cflag & CRTSCTS)
+		    val = 3;
+		else if (termio.c_iflag & IXON)
+		    val = 2;
+		else
+		    val = 1;
+	    }
+	    break;
+
+	case 13:
+	case 14:
+	case 15:
+	case 16:
+	case 17:
+	case 18:
+	case 19:
+	    /* Inbound flow-control */
+	    if (tcgetattr(port->devfd, &termio) != -1) {
+		if (option[2] == 15) {
+		    /* We can only set XON/XOFF independently */
+		    termio.c_iflag |= IXOFF;
+		    tcsetattr(port->devfd, TCSADRAIN, &termio);
+		}
+		if (termio.c_cflag & CRTSCTS)
+		    val = 16;
+		else if (termio.c_iflag & IXOFF)
+		    val = 15;
+		else
+		    val = 14;
+	    }
+	    break;
+
+	/* Handle BREAK stuff. */
+	case 6:
+	    if (ioctl(port->devfd, TIOCCBRK) != -1)
+		port->break_set = 0;
+	    goto read_break_val;
+
+	case 5:
+	    if (ioctl(port->devfd, TIOCSBRK) != -1)
+		port->break_set = 1;
+	    goto read_break_val;
+	    
+	case 4:
+	read_break_val:
+	    if (port->break_set)
+		val = 5;
+	    else
+		val = 6;
+	    break;
+
+	/* DTR handling */
+	case 8:
+	    val = TIOCM_DTR;
+	    ioctl(port->devfd, TIOCMBIS, &val);
+	    goto read_dtr_val;
+
+	case 9:
+	    val = TIOCM_DTR;
+	    ioctl(port->devfd, TIOCMBIC, &val);
+	    goto read_dtr_val;
+	    
+	case 7:
+	read_dtr_val:
+	    if (ioctl(port->devfd, TIOCMGET, &val) == -1)
+		val = 7;
+	    else if (val & TIOCM_DTR)
+		val = 8;
+	    else
+		val = 9;
+
+	/* RTS handling */
+	case 11:
+	    val = TIOCM_RTS;
+	    ioctl(port->devfd, TIOCMBIS, &val);
+	    goto read_rts_val;
+
+	case 12:
+	    val = TIOCM_RTS;
+	    ioctl(port->devfd, TIOCMBIC, &val);
+	    goto read_rts_val;
+	    
+	case 10:
+	read_rts_val:
+	    if (ioctl(port->devfd, TIOCMGET, &val) == -1)
+		val = 10;
+	    else if (val & TIOCM_RTS)
+		val = 11;
+	    else
+		val = 12;
+	}
+
+	outopt[0] = 44;
+	outopt[1] = 5;
+	outopt[2] = val;
+	send_option(port, outopt, 3);
+	break;
+
+    case 6: /* NOTIFY-LINESTATE */
+    case 7: /* NOTIFY-MODEMSTATE */
+    case 8: /* FLOWCONTROL-SUSPEND */
+    case 9: /* FLOWCONTROL-RESUME */
+    case 10: /* SET-LINESTATE-MASK */
+    case 11: /* SET-MODEMSTATE-MASK */
+	break;
+
+    case 12: /* PURGE_DATA */
+	if (len < 3)
+	    return;
+
+	switch (option[2]) {
+	case 1: val = TCIFLUSH; goto purge_found;
+	case 2: val = TCOFLUSH; goto purge_found;
+	case 3: val = TCIOFLUSH; goto purge_found;
+	}
+	break;
+    purge_found:
+	tcflush(port->devfd, val);
 	break;
     }
 }

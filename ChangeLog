@@ -1,4 +1,8 @@
 
+2003-10-13  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Added a lot of the com port control handling.
+
 2003-10-12  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Added real telnet option processing infrastructure,
