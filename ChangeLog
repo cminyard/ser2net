@@ -1,11 +1,15 @@
 
-2003-12-10  Corey Minyard <minyard@acm.org>
+2003-12-19  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Handle receive IACs from the terminal to the TCP
 	port, duplicating them so they will come through right.
 
 	* telnet.c: Reset the telnet protocol state after two IACs are
 	received.
+
+	* readconfig.c, readconfig.h, ser2net.c, ser2net.8: Added a way to
+	specify individual config lines on the command line so that no
+	config file is necessary.
 
 2003-12-04  Corey Minyard <minyard@acm.org>
 

@@ -5,7 +5,7 @@ ser2net \- Serial to network proxy
 
 .SH SYNOPSIS
 .B ser2net
-[\-c configfile] [\-p controlport] [\-n]
+[\-c configfile] [\-C configline] [\-p controlport] [\-n] [\-d] [\-b] [\-v]
 
 .SH DESCRIPTION
 The
@@ -24,6 +24,13 @@ or serial port, the connection is refused with an error message.
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
 .BR "/etc/ser2net.conf"
+.TP
+.I "\-C config-line"
+Handle a single configuration line.  This may be
+specified multiple times for multiple lines.  This is just like a
+line in the config file.  This disables the default config file,
+you must specify a -c after the last -C to have it read a config
+file, too.
 .TP
 .I \-n
 Stops  the  daemon  from  forking  and  detaching  from the controlling
@@ -141,6 +148,8 @@ Configuration is accomplished through the file
 .BR /etc/ser2net.conf .
 A file with another name or path may be specified using the
 .I \-c
+option, or individual config lines may be specified with the
+.I \-C
 option.  This  file consists of one or more entries with the following
 format:
 .IP

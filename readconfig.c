@@ -35,6 +35,14 @@
 
 static int config_num = 0;
 
+static int banner_continued = 0;
+static char *working_banner_name = NULL;
+static char working_banner[MAX_BANNER_SIZE+1];
+static int working_banner_len = 0;
+static int banner_truncated = 0;
+
+static int lineno = 0;
+
 struct banner_s
 {
     char *name;
@@ -45,65 +53,33 @@ struct banner_s
 /* All the banners in the system. */
 struct banner_s *banners = NULL;
 
-/* Parse the incoming banner, it may be on multiple lines. */
 static void
-handle_banner(char *name, char **strtok_data, FILE *instream, int *lineno)
+handle_new_banner(void)
 {
-    char banner[MAX_BANNER_SIZE+1];
-    int len = 0;
-    char *line = strtok_r(NULL, "\n", strtok_data);
-    int line_len = strlen(line);
-    char inbuf[MAX_LINE_SIZE];
-    int truncated = 0;
     struct banner_s *new_banner;
 
-    if (line_len >= MAX_BANNER_SIZE) {
-	truncated = 1;
-	line_len = MAX_BANNER_SIZE;
-	memcpy(banner, line, MAX_BANNER_SIZE);
-	len = MAX_BANNER_SIZE;
-    } else {
-	memcpy(banner, line, line_len);
-	len = line_len;
-    }
-    while ((line_len > 0) && (line[line_len-1] == '\\')) {
-	len--; /* Remove the '\' from the previous line. */
-	(*lineno)++;
-	if (fgets(inbuf, MAX_LINE_SIZE, instream) == NULL) {
-	    syslog(LOG_ERR, "end of file in banner on %d", *lineno);
-	    return;
-	}
-	line = strtok_r(inbuf, "\n", strtok_data);
-	line_len = strlen(line);
-	if (line_len+len >= MAX_BANNER_SIZE) {
-	    truncated = 1;
-	    memcpy(banner+len, line, MAX_BANNER_SIZE - len);
-	} else {
-	    memcpy(banner+len, line, line_len);
-	    len += line_len;
-	}
-    }
-    banner[len] = '\0';
-
-    if (truncated)
+    working_banner[working_banner_len] = '\0';
+    
+    if (banner_truncated)
 	syslog(LOG_ERR, "banner ending on line %d was truncated, max length"
-	       " is %d characters", *lineno, MAX_BANNER_SIZE);
+	       " is %d characters", lineno, MAX_BANNER_SIZE);
+
+    if (!working_banner_name) {
+	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
+	goto out;
+    }
 
     new_banner = malloc(sizeof(*new_banner));
     if (!new_banner) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
-	return;
+	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
+	free(working_banner_name);
+	goto out;
     }
 
-    new_banner->name = strdup(name);
-    if (!new_banner->name) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
-	free(new_banner);
-	return;
-    }
-    new_banner->str = strdup(banner);
+    new_banner->name = working_banner_name;
+    new_banner->str = strdup(working_banner);
     if (!new_banner->str) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
+	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
 	free(new_banner->name);
 	free(new_banner);
 	return;
@@ -111,6 +87,60 @@ handle_banner(char *name, char **strtok_data, FILE *instream, int *lineno)
 
     new_banner->next = banners;
     banners = new_banner;
+
+ out:
+    working_banner_name = NULL;
+    working_banner_len = 0;
+    banner_truncated = 0;
+    banner_continued = 0;
+}
+
+/* Parse the incoming banner, it may be on multiple lines. */
+static void
+handle_banner(char *name, char *line)
+{
+    int line_len = strlen(line);
+    int real_line_len = line_len;
+
+    /* handle a NULL return later. */
+    working_banner_name = strdup(name);
+
+    if (line_len >= MAX_BANNER_SIZE) {
+	banner_truncated = 1;
+	line_len = MAX_BANNER_SIZE;
+    }
+    memcpy(working_banner, line, line_len);
+    working_banner_len = line_len;
+
+    if ((real_line_len > 0) && (line[real_line_len-1] == '\\')) {
+	/* remove the '\' */
+	working_banner_len--;
+	banner_continued = 1;
+    } else {
+	handle_new_banner();
+    }
+
+}
+
+static void
+handle_continued_banner(char *line)
+{
+    int line_len = strlen(line);
+    int real_line_len = line_len;
+
+    if ((line_len + working_banner_len) > MAX_BANNER_SIZE) {
+	banner_truncated = 1;
+	line_len = MAX_BANNER_SIZE - working_banner_len;
+    }
+    memcpy(working_banner+working_banner_len, line, line_len);
+    working_banner_len += line_len;
+
+    if ((real_line_len == 0) || (line[real_line_len-1] != '\\')) {
+	handle_new_banner();
+    } else {
+	/* remove the '\' */
+	working_banner_len--;
+    }
 }
 
 char *
@@ -131,12 +161,93 @@ free_banners(void)
 {
     struct banner_s *banner;
 
+    if (working_banner_name)
+	free(working_banner_name);
+    working_banner_name = NULL;
+    working_banner_len = 0;
+    banner_truncated = 0;
+    banner_continued = 0;
+
     while (banners) {
 	banner = banners;
 	banners = banners->next;
 	free(banner->name);
 	free(banner->str);
 	free(banner);
+    }
+}
+
+void
+handle_config_line(char *inbuf)
+{
+    int len = strlen(inbuf);
+    char *portnum, *state, *timeout, *devname, *devcfg;
+    char *strtok_data;
+    char *errstr;
+
+    lineno++;
+    if (inbuf[len-1] != '\n') {
+	syslog(LOG_ERR, "line %d is too long in config file", lineno);
+	return;
+    }
+
+    if (banner_continued) {
+	char *str = strtok_r(inbuf, "\n", &strtok_data);
+	handle_continued_banner(str);
+	return;
+    }
+
+    if (inbuf[0] == '#') {
+	/* Ignore comments. */
+	return;
+    }
+
+    inbuf[len-1] = '\0';
+    portnum = strtok_r(inbuf, ":", &strtok_data);
+    if (portnum == NULL) {
+	/* An empty line is ok. */
+	return;
+    }
+
+    if (strcmp(portnum, "BANNER") == 0) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No banner name given on line %d", lineno);
+	    return;
+	}
+	handle_banner(name, str);
+	return;
+    }
+
+    state = strtok_r(NULL, ":", &strtok_data);
+    if (state == NULL) {
+	syslog(LOG_ERR, "No state given on line %d", lineno);
+	return;
+    }
+
+    timeout = strtok_r(NULL, ":", &strtok_data);
+    if (timeout == NULL) {
+	syslog(LOG_ERR, "No timeout given on line %d", lineno);
+	return;
+    }
+
+    devname = strtok_r(NULL, ":", &strtok_data);
+    if (devname == NULL) {
+	syslog(LOG_ERR, "No device name given on line %d", lineno);
+	return;
+    }
+
+    devcfg = strtok_r(NULL, ":", &strtok_data);
+    if (devcfg == NULL) {
+	/* An empty device config is ok. */
+	devcfg = "";
+    }
+
+    errstr = portconfig(portnum, state, timeout, devname, devcfg,
+			config_num);
+    if (errstr != NULL) {
+	syslog(LOG_ERR, "Error on line %d, %s", lineno, errstr);
     }
 }
 
@@ -147,8 +258,9 @@ readconfig(char *filename)
 {
     FILE *instream;
     char inbuf[MAX_LINE_SIZE];
-    int  lineno = 0;
     int  rv = 0;
+
+    lineno = 0;
 
     instream = fopen(filename, "r");
     if (instream == NULL) {
@@ -160,69 +272,8 @@ readconfig(char *filename)
 
     config_num++;
 
-    while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
-	int len = strlen(inbuf);
-	char *portnum, *state, *timeout, *devname, *devcfg;
-	char *strtok_data;
-	char *errstr;
-
-	lineno++;
-	if (inbuf[len-1] != '\n') {
-	    syslog(LOG_ERR, "line %d is too long in config file", lineno);
-	    continue;
-	}
-
-	if (inbuf[0] == '#') {
-	    /* Ignore comments. */
-	    continue;
-	}
-
-	inbuf[len-1] = '\0';
-	portnum = strtok_r(inbuf, ":", &strtok_data);
-	if (portnum == NULL) {
-	    /* An empty line is ok. */
-	    continue;
-	}
-	if (strcmp(portnum, "BANNER") == 0) {
-	    char *name = strtok_r(NULL, ":", &strtok_data);
-	    if (name == NULL) {
-		syslog(LOG_ERR, "No banner name given on line %d", lineno);
-		continue;
-	    }
-	    handle_banner(name, &strtok_data, instream, &lineno);
-	    continue;
-	}
-
-	state = strtok_r(NULL, ":", &strtok_data);
-	if (state == NULL) {
-	    syslog(LOG_ERR, "No state given on line %d", lineno);
-	    continue;
-	}
-
-	timeout = strtok_r(NULL, ":", &strtok_data);
-	if (timeout == NULL) {
-	    syslog(LOG_ERR, "No timeout given on line %d", lineno);
-	    continue;
-	}
-
-	devname = strtok_r(NULL, ":", &strtok_data);
-	if (devname == NULL) {
-	    syslog(LOG_ERR, "No device name given on line %d", lineno);
-	    continue;
-	}
-
-	devcfg = strtok_r(NULL, ":", &strtok_data);
-	if (devcfg == NULL) {
-	    /* An empty device config is ok. */
-	    devcfg = "";
-	}
-
-	errstr = portconfig(portnum, state, timeout, devname, devcfg,
-			    config_num);
-	if (errstr != NULL) {
-	    syslog(LOG_ERR, "Error on line %d, %s", lineno, errstr);
-	}
-    }
+    while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL)
+	handle_config_line(inbuf);
 
     /* Delete anything that wasn't in the new config file. */
     clear_old_port_config(config_num);

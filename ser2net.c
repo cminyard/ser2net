@@ -53,6 +53,11 @@ selector_t *ser2net_sel;
 static char *help_string =
 "%s: Valid parameters are:\n"
 "  -c <config file> - use a config file besides /etc/ser2net.conf\n"
+"  -C <config line> - Handle a single configuration line.  This may be\n"
+"     specified multiple times for multiple lines.  This is just like a\n"
+"     line in the config file.  This disables the default config file,\n"
+"     you must specify a -c after the last -C to have it read a config\n"
+"     file, too."
 "  -p <controller port> - Start a controller session on the given TCP port\n"
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
@@ -65,8 +70,10 @@ static char *help_string =
 void
 reread_config(void)
 {
-    syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
-    readconfig(config_file);
+    if (config_file) {
+	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
+	readconfig(config_file);
+    }
 }
 
 void
@@ -100,6 +107,17 @@ main(int argc, char *argv[])
 
 	case 'b':
 	    cisco_ios_baud_rates = 1;
+	    break;
+
+	case 'C':
+	    /* Get a config line. */
+	    i++;
+	    if (i == argc) {
+		fprintf(stderr, "No config line specified with -C\n");
+		arg_error(argv[0]);
+	    }
+	    handle_config_line(argv[i]);
+	    config_file = NULL;
 	    break;
 
 	case 'c':
@@ -153,8 +171,10 @@ main(int argc, char *argv[])
 	}
     }
 
-    if (readconfig(config_file) == -1) {
-	return 1;
+    if (config_file) {
+	if (readconfig(config_file) == -1) {
+	    return 1;
+	}
     }
 
     if (detach) {
