@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "devcfg.h"
+#include "utils.h"
 
 /* Initialize a serial port control structure for the first time.
    This should only be called when the port is created.  It sets the
@@ -52,21 +53,20 @@ devinit(struct termios *termctl)
    in instr.  These strings are described in the man page for this
    program. */
 int
-devconfig(char *instr, struct termios *termctl, int *allow_2217)
+devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
 {
     char *str;
     char *pos;
     char *strtok_data;
     int  rv = 0;
 
-    str = malloc(strlen(instr) + 1);
+    str = strdup(instr);
     if (str == NULL) {
 	return -1;
     }
 
-    strcpy(str, instr);
-
     *allow_2217 = 0;
+    *banner = NULL;
     pos = strtok_r(str, " \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
@@ -126,6 +126,8 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217)
             termctl->c_cflag &= ~CLOCAL;
         } else if (strcmp(pos, "remctl") == 0) {
 	    *allow_2217 = 1;
+	} else if ((*banner = find_banner(pos))) {
+	    /* It's a banner to display at startup, it's already set. */
 	} else {
 	    rv = -1;
 	    goto out;

@@ -141,6 +141,11 @@ format:
 .IP
 <TCP port>:<state>:<timeout>:<device>:<options>
 .PP
+or
+.IP
+BANNER:<banner name>:<banner text>
+.PP
+
 .SS FIELDS
 .TP
 .I "TCP port"
@@ -196,6 +201,17 @@ ignores (- checks) the modem control lines (DCD, DTR, etc.)
 .I remctl
 allows remote control of the serial port parameters via RFC 2217.  See
 the README for more info.
+.I <banner name>
+displays the given banner when a user connects to the port.
+
+.TP
+.I "banner name"
+A name for the banner; this may be used in the options of a port.
+.TP
+.I "banner text"
+The text to display as the banner.  This may contain normal "C" escape
+strings, and it may also contain, \\d for the device name and \\p for
+the TCP port number of the given connection.
 
 .PP
 Blank lines and lines starting with `#' are ignored.

@@ -36,6 +36,7 @@
 #include <syslog.h>
 #include <string.h>
 #include <signal.h>
+#include <ctype.h>
 
 #include "dataxfer.h"
 #include "selector.h"
@@ -187,6 +188,9 @@ typedef struct port_info
 				     configuration that should be
 				     loaded when the current session
 				     is done. */
+
+    /* Banner to display at startup, or NULL if none. */
+    char *banner;
 
     /* Data for the telnet processing */
     telnet_data_t tn_data;
@@ -735,6 +739,121 @@ is_device_already_inuse(port_info_t *check_port)
     return 0;
 }
 
+static void
+add_port_tcp_char(port_info_t *port, char c)
+{
+    int pos = port->dev_to_tcp_buf_start + port->dev_to_tcp_buf_count;
+    if (pos >= PORT_BUFSIZE)
+	return;
+    port->dev_to_tcp_buf[pos] = c;
+    port->dev_to_tcp_buf_count++;
+}
+
+static int
+from_hex_digit(char c)
+{
+    if ((c >= '0') && (c <= '9'))
+	return c - '0';
+    if ((c >= 'A') && (c <= 'F'))
+	return c = 'A' + 10;
+    if ((c >= 'a') && (c <= 'f'))
+	return c = 'a' + 10;
+    return 0;
+}
+
+static void
+display_banner(port_info_t *port)
+{
+    char val;
+    char *s;
+    char *t;
+
+    if (!port->banner)
+	return;
+
+    s = port->banner;
+    while (*s) {
+	if (*s == '\\') {
+	    s++;
+	    if (!*s)
+		return;
+	    switch (*s) {
+	    /* Standard "C" characters. */
+	    case 'a': add_port_tcp_char(port, 7); break;
+	    case 'b': add_port_tcp_char(port, 8); break;
+	    case 'f': add_port_tcp_char(port, 12); break;
+	    case 'n': add_port_tcp_char(port, 10); break;
+	    case 'r': add_port_tcp_char(port, 13); break;
+	    case 't': add_port_tcp_char(port, 9); break;
+	    case 'v': add_port_tcp_char(port, 11); break;
+	    case '\\': add_port_tcp_char(port, '\\'); break;
+	    case '?': add_port_tcp_char(port, '?'); break;
+	    case '\'': add_port_tcp_char(port, '\''); break;
+	    case '"': add_port_tcp_char(port, '"'); break;
+
+	    case 'd':
+		/* ser2net device name. */
+		for (t=port->devname; *t; t++)
+		    add_port_tcp_char(port, *t);
+		break;
+
+	    case 'p':
+		/* ser2net TCP port. */
+		for (t=port->portname; *t; t++)
+		    add_port_tcp_char(port, *t);
+		break;
+
+	    case '0': case '1': case '2': case '3': case '4': case '5':
+	    case '6': case '7':
+		/* Octal digit */
+		val = (*s) - '0';
+		s++;
+		if (!*s) {
+		    add_port_tcp_char(port, val);
+		    return;
+		}
+		if (!isdigit(*s)) {
+		    continue;
+		}
+		val = (val * 8) + (*s) - '0';
+		s++;
+		if (!*s) {
+		    add_port_tcp_char(port, val);
+		    return;
+		}
+		if (!isdigit(*s)) {
+		    continue;
+		}
+		val = (val * 8) + (*s) - '0';
+		break;
+
+	    case 'x':
+		/* Hex digit */
+		s++;
+		if (!*s)
+		    return;
+		if (!isxdigit(*s))
+		    continue;
+		val = from_hex_digit(*s);
+		s++;
+		if (!*s) {
+		    add_port_tcp_char(port, val);
+		    return;
+		}
+		if (!isdigit(*s))
+		    continue;
+		val = (val * 16) + from_hex_digit(*s);
+		break;
+
+	    default:
+		add_port_tcp_char(port, *s);
+	    }
+	} else
+	    add_port_tcp_char(port, *s);
+	s++;
+    }
+}
+
 /* A connection request has come in on a port. */
 static void
 handle_accept_port_read(int fd, void *data)
@@ -893,6 +1012,8 @@ handle_accept_port_read(int fd, void *data)
 	sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				SEL_FD_HANDLER_ENABLED);
     }
+
+    display_banner(port);
 
     gettimeofday(&then, NULL);
     then.tv_sec += 1;
@@ -1181,7 +1302,8 @@ portconfig(char *portnum,
 
     devinit(&(new_port->termctl));
 
-    if (devconfig(devcfg, &(new_port->termctl), &new_port->allow_2217)
+    if (devconfig(devcfg, &(new_port->termctl), &new_port->allow_2217,
+		  &new_port->banner)
 	== -1)
     {
 	rv = "device configuration invalid";
@@ -1607,7 +1729,9 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
 	controller_output(cntlr, portspec, strlen(portspec));
 	controller_output(cntlr, "\n\r", 2);
     } else {
-	if (devconfig(devcfg, &(port->termctl), &port->allow_2217) == -1) {
+	if (devconfig(devcfg, &(port->termctl), &port->allow_2217,
+		      &port->banner) == -1)
+	{
 	    char *err = "Invalid device config\n\r";
 	    controller_output(cntlr, err, strlen(err));
 	}
@@ -1869,7 +1993,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		/* We have a valid baud rate. */
 		cfsetispeed(&termio, val);
 		cfsetospeed(&termio, val);
-		tcsetattr(port->devfd, TCSADRAIN, &termio);
+		tcsetattr(port->devfd, TCSANOW, &termio);
 	    }
 	    tcgetattr(port->devfd, &termio);
 	    val = cfgetispeed(&termio);
@@ -1896,7 +2020,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		case 7: termio.c_cflag |= CS7; break;
 		case 8: termio.c_cflag |= CS8; break;
 		}
-		tcsetattr(port->devfd, TCSADRAIN, &termio);
+		tcsetattr(port->devfd, TCSANOW, &termio);
 	    }
 	    switch (termio.c_cflag & CSIZE) {
 	    case CS5: val = 5; break;
@@ -1926,7 +2050,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		case 2: termio.c_cflag |= PARENB | PARODD; break; /* ODD */
 		case 3: termio.c_cflag |= PARENB; break; /* EVEN */
 		}
-		tcsetattr(port->devfd, TCSADRAIN, &termio);
+		tcsetattr(port->devfd, TCSANOW, &termio);
 	    }
 	    if (termio.c_cflag & PARENB) {
 		if (termio.c_cflag & PARODD)
@@ -1956,7 +2080,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		case 1: break; /* 1 stop bit */
 		case 3: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
 		}
-		tcsetattr(port->devfd, TCSADRAIN, &termio);
+		tcsetattr(port->devfd, TCSANOW, &termio);
 	    }
 	    if (termio.c_cflag & CSTOPB)
 		val = 3; /* 2 stop bits. */
@@ -1991,7 +2115,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		    case 2: termio.c_iflag |= IXON | IXOFF; break;
 		    case 3: termio.c_cflag |= CRTSCTS; break;
 		    }
-		    tcsetattr(port->devfd, TCSADRAIN, &termio);
+		    tcsetattr(port->devfd, TCSANOW, &termio);
 		}
 		if (termio.c_cflag & CRTSCTS)
 		    val = 3;
@@ -2014,7 +2138,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		if (option[2] == 15) {
 		    /* We can only set XON/XOFF independently */
 		    termio.c_iflag |= IXOFF;
-		    tcsetattr(port->devfd, TCSADRAIN, &termio);
+		    tcsetattr(port->devfd, TCSANOW, &termio);
 		}
 		if (termio.c_cflag & CRTSCTS)
 		    val = 16;

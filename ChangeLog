@@ -2,6 +2,11 @@
 2003-10-14  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Moved to version 2.0.
+
+	* datafer.c, devcfg.c, devcfg.h, readconfig.c, utils.h: Added
+	banner support.
+	
+	* ser2net.h, ser2net.conf: Added documentation for banner support.
 	
 	* dataxfer.c, telnet.c, telnet.h: Created a more generic telnet
 	command handler and split it off from dataxfer.c

@@ -31,7 +31,114 @@
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
 
+#define MAX_BANNER_SIZE 256
+
 static int config_num = 0;
+
+struct banner_s
+{
+    char *name;
+    char *str;
+    struct banner_s *next;
+};
+
+/* All the banners in the system. */
+struct banner_s *banners = NULL;
+
+/* Parse the incoming banner, it may be on multiple lines. */
+static void
+handle_banner(char *name, char **strtok_data, FILE *instream, int *lineno)
+{
+    char banner[MAX_BANNER_SIZE+1];
+    int len = 0;
+    char *line = strtok_r(NULL, "\n", strtok_data);
+    int line_len = strlen(line);
+    char inbuf[MAX_LINE_SIZE];
+    int truncated = 0;
+    struct banner_s *new_banner;
+
+    if (line_len >= MAX_BANNER_SIZE) {
+	truncated = 1;
+	line_len = MAX_BANNER_SIZE;
+	memcpy(banner, line, MAX_BANNER_SIZE);
+	len = MAX_BANNER_SIZE;
+    } else {
+	memcpy(banner, line, line_len);
+	len = line_len;
+    }
+    while ((line_len > 0) && (line[line_len-1] == '\\')) {
+	len--; /* Remove the '\' from the previous line. */
+	(*lineno)++;
+	if (fgets(inbuf, MAX_LINE_SIZE, instream) == NULL) {
+	    syslog(LOG_ERR, "end of file in banner on %d", *lineno);
+	    return;
+	}
+	line = strtok_r(inbuf, "\n", strtok_data);
+	line_len = strlen(line);
+	if (line_len+len >= MAX_BANNER_SIZE) {
+	    truncated = 1;
+	    memcpy(banner+len, line, MAX_BANNER_SIZE - len);
+	} else {
+	    memcpy(banner+len, line, line_len);
+	    len += line_len;
+	}
+    }
+    banner[len] = '\0';
+
+    if (truncated)
+	syslog(LOG_ERR, "banner ending on line %d was truncated, max length"
+	       " is %d characters", *lineno, MAX_BANNER_SIZE);
+
+    new_banner = malloc(sizeof(*new_banner));
+    if (!new_banner) {
+	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
+	return;
+    }
+
+    new_banner->name = strdup(name);
+    if (!new_banner->name) {
+	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
+	free(new_banner);
+	return;
+    }
+    new_banner->str = strdup(banner);
+    if (!new_banner->str) {
+	syslog(LOG_ERR, "Out of memory handling banner on %d", *lineno);
+	free(new_banner->name);
+	free(new_banner);
+	return;
+    }
+
+    new_banner->next = banners;
+    banners = new_banner;
+}
+
+char *
+find_banner(char *name)
+{
+    struct banner_s *banner = banners;
+
+    while (banner) {
+	if (strcmp(name, banner->name) == 0)
+	    return banner->str;
+	banner = banner->next;
+    }
+    return NULL;
+}
+
+static void
+free_banners(void)
+{
+    struct banner_s *banner;
+
+    while (banners) {
+	banner = banners;
+	banners = banners->next;
+	free(banner->name);
+	free(banner->str);
+	free(banner);
+    }
+}
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
@@ -48,6 +155,8 @@ readconfig(char *filename)
 	syslog(LOG_ERR, "Unable to open config file '%s': %m", filename);
 	return -1;
     }
+
+    free_banners();
 
     config_num++;
 
@@ -72,6 +181,15 @@ readconfig(char *filename)
 	portnum = strtok_r(inbuf, ":", &strtok_data);
 	if (portnum == NULL) {
 	    /* An empty line is ok. */
+	    continue;
+	}
+	if (strcmp(portnum, "BANNER") == 0) {
+	    char *name = strtok_r(NULL, ":", &strtok_data);
+	    if (name == NULL) {
+		syslog(LOG_ERR, "No banner name given on line %d", lineno);
+		continue;
+	    }
+	    handle_banner(name, &strtok_data, instream, &lineno);
 	    continue;
 	}
 
