@@ -1071,6 +1071,7 @@ portconfig(char *portnum,
 	    } else {
 		/* Mark it to be replaced later. */
 		if (curr->new_config != NULL) {
+		    curr->enabled = PORT_DISABLED;
 		    free(curr->new_config);
 		}
 		curr->config_num = config_num;
