@@ -58,4 +58,16 @@ void setportenable(struct controller_info *cntlr,
 		   char *portspec,
 		   char *enable);
 
+/* Start data monitoring on the given port, type may be either "tcp" or
+   "term" and only one direction may be monitored.  This return NULL if
+   the monitor fails.  The monitor output will go to the controller
+   via the controller_write() call. */
+void *data_monitor_start(struct controller_info *cntlr,
+			 char *type,
+			 char *portspec);
+
+/* Stop monitoring the given id. */
+void data_monitor_stop(struct controller_info *cntlr,
+		       void   *monitor_id);
+
 #endif /* DATAXFER */

@@ -1,3 +1,12 @@
 2001-06-04  Corey Minyard <minyard@acm.org>
 
 	* Initial creation.
+
+2001-06-05  Corey Minyard <minyard@acm.org>
+
+	* ser2net.c, controller.c - added a way to query the version from
+	the command line and from the controller port.
+
+	* controller.c, controller.h, dataxfer.c, dataxfer.h - added
+	monitoring of data flowing into a port.  It's somewhat primitive
+	yet, but still useful

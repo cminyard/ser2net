@@ -114,13 +114,16 @@ typedef struct port_info
     int            tcp_to_dev_buf_count;	/* The number of bytes
                                                    in the buffer to
                                                    send. */
+    struct controller_info *tcp_monitor; /* If non-null, send any input
+					    received from the TCP port
+					    to this controller port. */
+
 
     char           telnet_cmd[3];	/* Incoming telnet commands. */
     int            telnet_cmd_pos;      /* Current position in the
 					   telnet_cmd buffer.  If zero,
 					   no telnet command is in
 					   progress. */
-
     /* Information use when transferring information from the terminal
        device to the TCP port. */
     int            dev_to_tcp_state;		/* State of transferring
@@ -135,6 +138,9 @@ typedef struct port_info
     int            dev_to_tcp_buf_count;	/* The number of bytes
                                                    in the buffer to
                                                    send. */
+    struct controller_info *dev_monitor; /* If non-null, send any input
+					    received from the device
+					    to this controller port. */
 
     struct port_info *next;		/* Used to keep a linked list
 					   of these. */
@@ -188,14 +194,14 @@ shutdown_port(port_info_t *port)
 }
 
 void
-delete_dev_to_tcp_char(port_info_t *port, int pos)
+delete_tcp_to_dev_char(port_info_t *port, int pos)
 {
     int j;
 
-    for (j=pos; j<port->dev_to_tcp_buf_count; j++) {
-	port->dev_to_tcp_buf[j] = port->dev_to_tcp_buf[j+1];
+    for (j=pos; j<port->tcp_to_dev_buf_count; j++) {
+	port->tcp_to_dev_buf[j] = port->tcp_to_dev_buf[j+1];
     }
-    port->dev_to_tcp_buf_count--;
+    port->tcp_to_dev_buf_count--;
 }
 
 static void
@@ -225,32 +231,14 @@ handle_dev_fd_read(int fd, void *data)
 	return;
     }
 
-    if (port->enabled == PORT_TELNET) {
-	int i;
-
-	/* If it's a telnet port, get the commands out of the stream. */
-	for (i=0; i<port->dev_to_tcp_buf_count; i++) {
-	    if (port->telnet_cmd_pos != 0) {
-		port->telnet_cmd[port->telnet_cmd_pos]
-		    = port->dev_to_tcp_buf[i];
-		delete_dev_to_tcp_char(port, i);
-		port->telnet_cmd_pos++;
-		if (port->telnet_cmd_pos == 3) {
-		    handle_telnet_cmd(port);
-		    port->telnet_cmd_pos = 0;
-		}
-	    } else if (port->dev_to_tcp_buf[i] == 0xff) {
-		port->telnet_cmd[port->telnet_cmd_pos]
-		    = port->dev_to_tcp_buf[i];
-		delete_dev_to_tcp_char(port, i);
-		port->telnet_cmd_pos++;
-	    }
-	}
-    }
-
     write_count = write(port->tcpfd,
 			port->dev_to_tcp_buf,
 			port->dev_to_tcp_buf_count);
+    if (port->dev_monitor != NULL) {
+	controller_write(port->dev_monitor,
+			 port->dev_to_tcp_buf,
+			 port->dev_to_tcp_buf_count);
+    }
     if (write_count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry by returning. */
@@ -348,6 +336,29 @@ handle_tcp_fd_read(int fd, void *data)
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = read(fd, port->tcp_to_dev_buf, PORT_BUFSIZE);
 
+    if (port->enabled == PORT_TELNET) {
+	int i;
+
+	/* If it's a telnet port, get the commands out of the stream. */
+	for (i=0; i<port->tcp_to_dev_buf_count; i++) {
+	    if (port->telnet_cmd_pos != 0) {
+		port->telnet_cmd[port->telnet_cmd_pos]
+		    = port->tcp_to_dev_buf[i];
+		delete_tcp_to_dev_char(port, i);
+		port->telnet_cmd_pos++;
+		if (port->telnet_cmd_pos == 3) {
+		    handle_telnet_cmd(port);
+		    port->telnet_cmd_pos = 0;
+		}
+	    } else if (port->tcp_to_dev_buf[i] == 0xff) {
+		port->telnet_cmd[port->telnet_cmd_pos]
+		    = port->tcp_to_dev_buf[i];
+		delete_tcp_to_dev_char(port, i);
+		port->telnet_cmd_pos++;
+	    }
+	}
+    }
+
     if (port->tcp_to_dev_buf_count < 0) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for port %d: %m", port->tcpport);
@@ -362,6 +373,11 @@ handle_tcp_fd_read(int fd, void *data)
     write_count = write(port->devfd,
 			port->tcp_to_dev_buf,
 			port->tcp_to_dev_buf_count);
+    if (port->tcp_monitor != NULL) {
+	controller_write(port->tcp_monitor,
+			 port->tcp_to_dev_buf,
+			 port->tcp_to_dev_buf_count);
+    }
     if (write_count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry by returning. */
@@ -928,3 +944,54 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     }
 }
 
+/* Start data monitoring on the given port, type may be either "tcp" or
+   "term" and only one direction may be monitored.  This return NULL if
+   the monitor fails.  The monitor output will go to "fd". */
+void *
+data_monitor_start(struct controller_info *cntlr,
+		   char                   *type,
+		   char                   *portspec)
+{
+    port_info_t *port;
+
+    port = find_port_by_num(portspec);
+    if (port == NULL) {
+	char *err = "Invalid port number: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, portspec, strlen(portspec));
+	controller_output(cntlr, "\n\r", 2);
+	return NULL;
+    }
+
+    if ((port->tcp_monitor != NULL) || (port->dev_monitor != NULL)) {
+	char *err = "Port is already being monitored";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, "\n\r", 2);
+	return NULL;
+    }
+
+    if (strcmp(type, "tcp") == 0) {
+	port->tcp_monitor = cntlr;
+	return port;
+    } else if (strcmp(type, "term") == 0) {
+	port->dev_monitor = cntlr;
+	return port;
+    } else {
+	char *err = "invalid monitor type: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, type, strlen(type));
+	controller_output(cntlr, "\n\r", 2);
+	return NULL;
+    }
+}
+
+/* Stop monitoring the given id. */
+void
+data_monitor_stop(struct controller_info *cntlr,
+		  void                   *monitor_id)
+{
+    port_info_t *port = (port_info_t *) monitor_id;
+
+    port->tcp_monitor = NULL;
+    port->dev_monitor = NULL;
+}

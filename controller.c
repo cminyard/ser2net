@@ -73,6 +73,11 @@ typedef struct controller_info {
 					   (starting at outbuf_pos)
 					   left to transmit. */
 
+    void *monitor_port_id;		/* When port monitoring, this is
+					   the id given when the monitoring
+					   is started.  It is used to stop
+					   monitoring. */
+
     struct controller_info *next;	/* Used to keep these items in
 					   a linked list. */
 } controller_info_t;
@@ -94,6 +99,10 @@ shutdown_controller(controller_info_t *cntlr)
 {
     controller_info_t *prev;
     controller_info_t *curr;
+
+    if (cntlr->monitor_port_id != NULL) {
+	data_monitor_stop(cntlr, cntlr->monitor_port_id);
+    }
 
     clear_fd_handlers(cntlr->tcpfd);
     close(cntlr->tcpfd);
@@ -188,10 +197,16 @@ controller_output(struct controller_info *cntlr,
 	cntlr->outbuf = newbuf;
 	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count = count;
-printf("g\n");
 	set_fd_read_handler(cntlr->tcpfd, FD_HANDLER_DISABLED);
 	set_fd_write_handler(cntlr->tcpfd, FD_HANDLER_ENABLED);
     }
+}
+
+/* Write some data directly to the controllers output port. */
+void
+controller_write(struct controller_info *cntlr, char *data, int count)
+{
+    write(cntlr->tcpfd, data, count);
 }
 
 /* Called when a telnet command is received complete. */
@@ -204,6 +219,16 @@ process_telnet_command(controller_info_t *cntlr)
 static char *help_str =
 "exit - leave the program.\n\r"
 "help - display this help.\n\r"
+"version - display the version of this program.\n\r"
+"monitor <type> <tcp port> - display all the input for a given port on\n\r"
+"       the calling control port.  Only one direction may be monitored\n\r"
+"       at a time.  The type field may be 'tcp' or 'term' and specifies\n\r"
+"       whether to monitor data from the TCP port or from the serial port\n\r"
+"       Note that data monitoring is best effort, if the controller port\n\r"
+"       cannot keep up the data will be silently dropped.  A controller\n\r"
+"       may only monitor one thing and a port may only be monitored by\n\r"
+"       one controller.\n\r"
+"monitor stop - stop the current monitor.\n\r"
 "showport [<tcp port>] - Show information about a port. If no port is\n\r"
 "       given, all ports are displayed.\n\r"
 "setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\n\r"
@@ -239,9 +264,43 @@ process_input_line(controller_info_t *cntlr)
 	return; /* We don't want a prompt any more. */
     } else if (strcmp(tok, "help") == 0) {
 	controller_output(cntlr, help_str, strlen(help_str));
+    } else if (strcmp(tok, "version") == 0) {
+	str = "ser2net version ";
+	controller_output(cntlr, str, strlen(str));
+	str = VERSION;
+	controller_output(cntlr, str, strlen(str));
+	controller_output(cntlr, "\n\r", 2);
     } else if (strcmp(tok, "showport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	showports(cntlr, tok);
+    } else if (strcmp(tok, "monitor") == 0) {
+	tok = strtok_r(NULL, " \t", &strtok_data);
+	if (tok == NULL) {
+	    char *err = "No monitor type given\n\r";
+	    controller_output(cntlr, err, strlen(err));
+	    goto out;
+	}
+	if (strcmp(tok, "stop") == 0) {
+	    if (cntlr->monitor_port_id != NULL) {
+		data_monitor_stop(cntlr, cntlr->monitor_port_id);
+		cntlr->monitor_port_id = NULL;
+	    }
+	} else {
+	    if (cntlr->monitor_port_id != NULL) {
+		char *err = "Already monitoring a port\n\r";
+		controller_output(cntlr, err, strlen(err));
+		goto out;
+	    }
+		
+	    str = strtok_r(NULL, " \t", &strtok_data);
+	    if (str == NULL) {
+		char *err = "No tcp port given\n\r";
+		controller_output(cntlr, err, strlen(err));
+		goto out;
+	    }
+	    cntlr->monitor_port_id = data_monitor_start(cntlr, tok, str);
+	}
+	
     } else if (strcmp(tok, "setporttimeout") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -470,7 +529,6 @@ handle_accept_port_read(int fd, void *data)
     socklen_t         len;
     char              *err = NULL;
 
-printf("a\n");
     cntlr = malloc(sizeof(*cntlr));
     if (cntlr == NULL) {
 	err = "Could not allocate controller port\n\r";
@@ -493,7 +551,6 @@ printf("a\n");
 	return;
     }
 
-printf("b\n");
     /* From here on, errors must go to errout. */
 
     len = sizeof(cntlr->remote);
@@ -503,7 +560,6 @@ printf("b\n");
 	goto errout;
     }
 
-printf("c\n");
     if (fcntl(cntlr->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(cntlr->tcpfd);
 	syslog(LOG_ERR, "Could not fcntl the tcp port: %m");
@@ -523,7 +579,6 @@ printf("c\n");
     cntlr->next = controllers;
     controllers = cntlr;
 
-printf("d\n");
     /* Send the telnet negotiation string.  We do this by
        putting the data in the dev to tcp buffer and turning
        the tcp write selector on. */
@@ -532,12 +587,10 @@ printf("d\n");
     controller_output(cntlr, prompt, strlen(prompt));
 
     num_controller_ports++;
-printf("e\n");
 
     return;
 
 errout:
-printf("f\n");
     free(cntlr);
     return;
 }

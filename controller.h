@@ -29,4 +29,7 @@ struct controller_info;
    to write, the count field is the number of bytes to write. */
 void controller_output(struct controller_info *cntlr, char *data, int count);
 
+/* Write some data directly to the controllers output port. */
+void controller_write(struct controller_info *cntlr, char *data, int count);
+
 #endif /* CONTROLLER */

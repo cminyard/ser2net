@@ -20,6 +20,11 @@
 /* This is the entry point for the ser2net program.  It reads
    parameters, initializes everything, then starts the select loop. */
 
+/* TODO
+ *
+ * add the ability to disconnect a port from the control port.
+ */
+
 #include <stdio.h>
 #include <signal.h>
 #include <syslog.h>
@@ -40,7 +45,8 @@ static char *help_string =
 "%s: Valid parameters are:\n"
 "  -c <config file> - use a config file besides /etc/ser2net.conf\n"
 "  -p <controller port> - Start a controller session on the given TCP port\n"
-"  -n - Don't detach from the controlling terminal\n";
+"  -n - Don't detach from the controlling terminal\n"
+"  -v - print the program's version and exit\n";
 
 void
 arg_error(char *name)
@@ -88,6 +94,10 @@ main(int argc, char *argv[])
 		arg_error(argv[0]);
 	    }
 	    break;
+
+	case 'v':
+	    printf("%s version %s\n", argv[0], VERSION);
+	    exit(0);
 
 	default:
 	    fprintf(stderr, "Invalid option: '%s'\n", argv[i]);
