@@ -191,6 +191,9 @@ typedef struct port_info
     /* Data for the telnet processing */
     telnet_data_t tn_data;
 
+    /* Allow RFC 2217 mode */
+    int allow_2217;
+
     /* Is RFC 2217 mode enabled? */
     int is_2217;
 
@@ -217,7 +220,7 @@ static unsigned char telnet_init_seq[] = {
 
 /* Our telnet command table. */
 static void com_port_handler(void *cb_data, unsigned char *option, int len);
-static void com_port_will(void *cb_data);
+static int com_port_will(void *cb_data);
 
 static struct telnet_cmd telnet_cmds[] = 
 {
@@ -1178,7 +1181,9 @@ portconfig(char *portnum,
 
     devinit(&(new_port->termctl));
 
-    if (devconfig(devcfg, &(new_port->termctl)) == -1) {
+    if (devconfig(devcfg, &(new_port->termctl), &new_port->allow_2217)
+	== -1)
+    {
 	rv = "device configuration invalid";
 	goto errout;
     }
@@ -1602,7 +1607,7 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
 	controller_output(cntlr, portspec, strlen(portspec));
 	controller_output(cntlr, "\n\r", 2);
     } else {
-	if (devconfig(devcfg, &(port->termctl)) == -1) {
+	if (devconfig(devcfg, &(port->termctl), &port->allow_2217) == -1) {
 	    char *err = "Invalid device config\n\r";
 	    controller_output(cntlr, err, strlen(err));
 	}
@@ -1798,12 +1803,15 @@ get_rate_from_baud_rate(int baud_rate, int *val)
     }
 }
 
-static void
+static int
 com_port_will(void *cb_data)
 {
     port_info_t *port = cb_data;
     unsigned char data[3];
     int val;
+
+    if (! port->allow_2217)
+	return 0;
 
     /* The remote end turned on RFC2217 handling. */
     port->is_2217 = 1;
@@ -1828,6 +1836,7 @@ com_port_will(void *cb_data)
 	port->last_modemstate = data[2];
     }
     telnet_send_option(&port->tn_data, data, 3);
+    return 1;
 }
 
 static void
@@ -1855,7 +1864,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
 	val = 0;
 	if (tcgetattr(port->devfd, &termio) != -1) {
-	    val = ntohl(*((uint32_t *) option+2));
+	    val = ntohl(*((uint32_t *) (option+2)));
 	    if ((val != 0) && (get_baud_rate(val, &val))) {
 		/* We have a valid baud rate. */
 		cfsetispeed(&termio, val);

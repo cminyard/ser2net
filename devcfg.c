@@ -52,7 +52,7 @@ devinit(struct termios *termctl)
    in instr.  These strings are described in the man page for this
    program. */
 int
-devconfig(char *instr, struct termios *termctl)
+devconfig(char *instr, struct termios *termctl, int *allow_2217)
 {
     char *str;
     char *pos;
@@ -66,6 +66,7 @@ devconfig(char *instr, struct termios *termctl)
 
     strcpy(str, instr);
 
+    *allow_2217 = 0;
     pos = strtok_r(str, " \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
@@ -123,6 +124,8 @@ devconfig(char *instr, struct termios *termctl)
             termctl->c_cflag |= CLOCAL;  
         } else if (strcmp(pos, "-LOCAL") == 0) {
             termctl->c_cflag &= ~CLOCAL;
+        } else if (strcmp(pos, "remctl") == 0) {
+	    *allow_2217 = 1;
 	} else {
 	    rv = -1;
 	    goto out;

@@ -51,6 +51,7 @@ handle_telnet_cmd(telnet_data_t *td)
     int size = td->telnet_cmd_pos;
     unsigned char *cmd_str = td->telnet_cmd;
     struct telnet_cmd *cmd;
+    int rv;
 
     if (size < 2)
 	return;
@@ -68,14 +69,19 @@ handle_telnet_cmd(telnet_data_t *td)
 	if (!cmd || !cmd->sent_do) {
 	    if ((!cmd) || (!cmd->i_will))
 		send_i(td, TN_DONT, option);
-	    else
-		send_i(td, TN_DO, option);
+	    else {
+		rv = 1;
+		if (cmd->will_handler)
+		    rv = cmd->will_handler(td->cb_data);
+		if (rv)
+		    send_i(td, TN_DO, option);
+		else
+		    send_i(td, TN_DONT, option);
+	    }
 	} else if (cmd)
 	    cmd->sent_do = 0;
 	if (cmd) {
 	    cmd->rem_will = 1;
-	    if (cmd->will_handler)
-		cmd->will_handler(td->cb_data);
 	}
     } else if (cmd_str[1] == 252) { /* WONT */
 	unsigned char option = cmd_str[2];

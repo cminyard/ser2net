@@ -193,6 +193,9 @@ turns on (- off) XON/XOFF support.
 turns on (- off) hardware flow control.
 .I [-]LOCAL
 ignores (- checks) the modem control lines (DCD, DTR, etc.)
+.I remctl
+allows remote control of the serial port parameters via RFC 2217.  See
+the README for more info.
 
 .PP
 Blank lines and lines starting with `#' are ignored.
@@ -220,8 +223,7 @@ Almost all error output goes to syslog, not standard output.
 telnet(1), hosts_access(5)
 
 .SH "KNOWN PROBLEMS"
-The program does not do UUCP file locking and it won't play nice with
-getty.
+None.
 
 .SH AUTHOR
 .PP

@@ -1,1 +1,10 @@
-No news is good news :-).
+
+
+Oct 14, 2003:
+
+  ser2net now supports RFC 2217, the ability to control the serial
+  port with telnet options.  So, for instance, you can connect to a
+  ser2net session with a client that has this option and control
+  the baud rate, stopbits, parity, etc.  The only client I know of
+  that supports this is c-kermit, available at
+  http://www.columbia.edu/kermit

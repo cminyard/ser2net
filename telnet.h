@@ -32,8 +32,10 @@ struct telnet_cmd
     void (*option_handler)(void *cb_data, unsigned char *option, int len);
 
     /* If this is non-null, this will be called if a will command is
-       sent by the remote end. */
-    void (*will_handler)(void *cb_data);
+       sent by the remote end.  If this returns 1, the option will be
+       allowed (a DO is returned).  If it return 0, a DONT is
+       returned. */
+    int (*will_handler)(void *cb_data);
 };
 
 #define MAX_TELNET_CMD_SIZE 31
