@@ -42,6 +42,9 @@ static char *config_file = "/etc/ser2net.conf";
 static char *config_port = NULL;
 static int detach = 1;
 static int debug = 0;
+#ifdef USE_UUCP_LOCKING
+int uucp_locking_enabled = 1;
+#endif
 
 static char *help_string =
 "%s: Valid parameters are:\n"
@@ -49,6 +52,9 @@ static char *help_string =
 "  -p <controller port> - Start a controller session on the given TCP port\n"
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
+#ifdef USE_UUCP_LOCKING
+"  -u - Disable UUCP locking\n"
+#endif
 "  -v - print the program's version and exit\n";
 
 void
@@ -98,6 +104,12 @@ main(int argc, char *argv[])
 	    }
 	    config_port = argv[i];
 	    break;
+
+#ifdef USE_UUCP_LOCKING
+	case 'u':
+	    uucp_locking_enabled = 0;
+	    break;
+#endif
 
 	case 'v':
 	    printf("%s version %s\n", argv[0], VERSION);

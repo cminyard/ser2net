@@ -20,6 +20,8 @@
 #ifndef UTILS
 #define UTILS
 
+#include <netinet/in.h>
+
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);

@@ -20,7 +20,6 @@
 /* This file holds basic utilities used by the ser2net program. */
 
 #include <string.h>
-#include <netinet/in.h>
 #include <netdb.h>
 
 #include "utils.h"

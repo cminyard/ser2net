@@ -22,6 +22,10 @@
 
 #include "controller.h"
 
+#ifdef USE_UUCP_LOCKING
+extern int uucp_locking_enabled;
+#endif
+
 /* Create a port given the criteria. */
 char * portconfig(char *portnum,
 		  char *state,

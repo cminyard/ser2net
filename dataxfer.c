@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -32,6 +33,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <syslog.h>
+#include <string.h>
 
 #include "dataxfer.h"
 #include "selector.h"
@@ -44,7 +46,13 @@
 static char *progname = "ser2net";
 #endif /* HAVE_TCPD_H */
 
-/* FIXME - Add UUCP style device locking. */
+#ifdef USE_UUCP_LOCKING
+static char *uucp_lck_dir = "/var/lock";
+#ifndef HAVE_TCPD_H
+static char *progname = "ser2net";
+#endif
+#endif /* USE_UUCP_LOCKING */
+
 
 /* States for the tcp_to_dev_state and dev_to_tcp_state. */
 #define PORT_UNCONNECTED		0 /* The TCP port is not connected
@@ -176,6 +184,117 @@ static unsigned char telnet_init[] = {
     0xff, 0xfd, 0x00   /* command DO BINARY TRANSMISSION */
 };
 
+#ifdef USE_UUCP_LOCKING
+static int
+uucp_fname_lock_size(char *devname)
+{
+    char *ptr;
+
+    (ptr = strrchr(devname, '/'));
+    if (ptr == NULL) {
+	ptr = devname;
+    } else {
+	ptr = ptr + 1;
+    }
+
+    return 7 + strlen(uucp_lck_dir) + strlen(ptr);
+}
+
+static void
+uucp_fname_lock(char *buf, char *devname)
+{
+    char *ptr;
+
+    (ptr = strrchr(devname, '/'));
+    if (ptr == NULL) {
+	ptr = devname;
+    } else {
+	ptr = ptr + 1;
+    }
+    sprintf(buf, "%s/LCK..%s", uucp_lck_dir, ptr);
+}
+
+static void
+uucp_rm_lock(char *devname)
+{
+    char *lck_file;
+
+    if (!uucp_locking_enabled) return;
+
+    lck_file = malloc(uucp_fname_lock_size(devname));
+    if (lck_file == NULL) {
+	return;
+    }
+    uucp_fname_lock(lck_file, devname);
+    unlink(lck_file);
+    free(lck_file);
+}
+
+/* return 0=OK, -1=error, 1=locked by other proces */
+static int
+uucp_mk_lock(char *devname)
+{
+    struct stat stt;
+    int pid=-1;
+
+    if (!uucp_locking_enabled) return 0;
+
+    if( stat(uucp_lck_dir, &stt) == 0 ) { /* is lock file directory present? */
+	char *lck_file, buf[64];
+	int fd;
+
+	lck_file = malloc(uucp_fname_lock_size(devname));
+	if (lck_file == NULL) {
+	    return -1;
+	}
+	uucp_fname_lock(lck_file, devname);
+
+	pid = 0;
+	if( (fd = open(lck_file, O_RDONLY)) >= 0 ) {
+	    int n;
+
+    	    n = read(fd, buf, sizeof(buf));
+	    close(fd);
+	    if( n == 4 ) 		/* Kermit-style lockfile. */
+		pid = *(int *)buf;
+	    else if( n > 0 ) {		/* Ascii lockfile. */
+		buf[n] = 0;
+		sscanf(buf, "%d", &pid);
+	    }
+
+	    if( pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH ) {
+		/* death lockfile - remove it */
+		unlink(lck_file);
+		sleep(1);
+		pid = 0;
+	    } else
+		pid = 1;
+
+	}
+
+	if( pid == 0 ) {
+	    int mask;
+
+	    mask = umask(022);
+	    fd = open(lck_file, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	    umask(mask);
+	    if( fd >= 0 ) {
+		snprintf( buf, sizeof(buf), "%10ld\t%s\n",
+					     (long)getpid(), progname );
+		write( fd, buf, strlen(buf) );
+		close(fd);
+	    } else {
+		pid = 1;
+	    }
+	}
+
+	free(lck_file);
+    }
+
+    return pid;
+}
+#endif /* USE_UUCP_LOCKING */
+
 static void
 init_port_data(port_info_t *port)
 {
@@ -211,6 +330,9 @@ shutdown_port(port_info_t *port)
     clear_fd_handlers(port->tcpfd);
     close(port->tcpfd);
     close(port->devfd);
+#ifdef USE_UUCP_LOCKING
+    uucp_rm_lock(port->devname);
+#endif /* USE_UUCP_LOCKING */
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
@@ -609,6 +731,30 @@ handle_accept_port_read(int fd, void *data)
 	}
     }
 #endif /* HAVE_TCPD_H */
+
+#ifdef USE_UUCP_LOCKING
+    {
+	int rv;
+
+	rv = uucp_mk_lock(port->devname);
+	if (rv > 0 ) {
+	    char *err;
+	    char buf[64];
+
+	    err = "Port already in use by another process\n\r";
+	    write(port->tcpfd, err, strlen(err));
+	    close(port->tcpfd);
+	    return;
+	} else if (rv < 0) {
+	    char *err;
+
+	    err = "Error creating port lock file\n\r";
+	    write(port->tcpfd, err, strlen(err));
+	    close(port->tcpfd);
+	    return;
+	}
+    }
+#endif /* USE_UUCP_LOCKING */
 
     /* Oct 05 2001 druzus: NOCTTY - don't make 
        device control tty for our process */
