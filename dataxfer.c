@@ -468,11 +468,13 @@ handle_dev_fd_read(int fd, void *data)
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else if (errno == EPIPE) {
 	    shutdown_port(port, "EPIPE");
+	    return;
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		   port->portname);
 	    shutdown_port(port, "tcp write error");
+	    return;
 	}
     } else {
 	port->tcp_bytes_sent += write_count;
@@ -517,6 +519,7 @@ handle_dev_fd_write(int fd, void *data)
 	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
 		   port->portname);
 	    shutdown_port(port, "dev write error");
+	    return;
 	}
     } else {
 	port->dev_bytes_sent += write_count;
@@ -613,6 +616,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
 		   port->portname);
 	    shutdown_port(port, "dev write error");
+	    return;
 	}
     } else {
 	port->dev_bytes_sent += write_count;
@@ -656,11 +660,13 @@ handle_tcp_fd_write(int fd, void *data)
 		/* This again was due to O_NONBLOCK, just ignore it. */
 	    } else if (errno == EPIPE) {
 		shutdown_port(port, "EPIPE");
+		return;
 	    } else {
 		/* Some other bad error. */
 		syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		       port->portname);
 		shutdown_port(port, "tcp write error");
+		return;
 	    }
 	} else {
 	    int i, j;
@@ -689,11 +695,13 @@ handle_tcp_fd_write(int fd, void *data)
 	    /* This again was due to O_NONBLOCK, just ignore it. */
 	} else if (errno == EPIPE) {
 	    shutdown_port(port, "EPIPE");
+	    return;
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		   port->portname);
 	    shutdown_port(port, "tcp write error");
+	    return;
 	}
     } else {
 	port->tcp_bytes_sent += write_count;
@@ -945,6 +953,9 @@ setup_tcp_port(port_info_t *port)
 	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
+#ifdef USE_UUCP_LOCKING
+	uucp_rm_lock(port->devname);
+#endif /* USE_UUCP_LOCKING */
 	return -1;
     }
 
@@ -955,6 +966,9 @@ setup_tcp_port(port_info_t *port)
 	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
+#ifdef USE_UUCP_LOCKING
+	uucp_rm_lock(port->devname);
+#endif /* USE_UUCP_LOCKING */
 	return -1;
     }
 
@@ -965,6 +979,9 @@ setup_tcp_port(port_info_t *port)
 	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
 	       port->devname,
 	       port->portname);
+#ifdef USE_UUCP_LOCKING
+	uucp_rm_lock(port->devname);
+#endif /* USE_UUCP_LOCKING */
 	return -1;
     }
     port->is_2217 = 0;

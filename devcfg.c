@@ -43,6 +43,7 @@ devinit(struct termios *termctl)
     termctl->c_cflag |= CS8;
     termctl->c_cflag &= ~(PARENB);
     termctl->c_cflag &= ~(CLOCAL);
+    termctl->c_cflag &= ~(HUPCL);
     termctl->c_cflag |= CREAD;
     termctl->c_cflag &= ~(CRTSCTS);
     termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
@@ -124,6 +125,10 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
             termctl->c_cflag |= CLOCAL;  
         } else if (strcmp(pos, "-LOCAL") == 0) {
             termctl->c_cflag &= ~CLOCAL;
+        } else if (strcmp(pos, "HANGUP_WHEN_DONE") == 0) {
+            termctl->c_cflag |= HUPCL;  
+        } else if (strcmp(pos, "-HANGUP_WHEN_DONE") == 0) {
+            termctl->c_cflag &= ~HUPCL;
         } else if (strcmp(pos, "remctl") == 0) {
 	    *allow_2217 = 1;
 	} else if ((*banner = find_banner(pos))) {
@@ -155,6 +160,7 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     int     xany = termctl->c_iflag & IXANY;
     int     flow_rtscts = termctl->c_cflag & CRTSCTS;
     int     clocal = termctl->c_cflag & CLOCAL;
+    int     hangup_when_done = termctl->c_cflag & HUPCL;
     char    *str;
 
     switch (speed) {
@@ -181,6 +187,10 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
 
     if (clocal) {
       controller_output(cntlr, "LOCAL ", 6);
+    }
+
+    if (hangup_when_done) {
+      controller_output(cntlr, "HANGUP_WHEN_DONE ", 17);
     }
 
     if (stopbits) {
