@@ -46,6 +46,8 @@ static int debug = 0;
 int uucp_locking_enabled = 1;
 #endif
 
+selector_t *ser2net_sel;
+
 static char *help_string =
 "%s: Valid parameters are:\n"
 "  -c <config file> - use a config file besides /etc/ser2net.conf\n"
@@ -75,6 +77,7 @@ int
 main(int argc, char *argv[])
 {
     int i;
+    int err;
 
     for (i=1; i<argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
@@ -128,8 +131,12 @@ main(int argc, char *argv[])
 	}
     }
 
-    selector_init();
-    dataxfer_init();
+    if (err = alloc_selector(&ser2net_sel)) {
+	fprintf(stderr,
+		"Could not initialize ser2net selector: '%s'\n",
+		strerror(err));
+    }
+    setup_sighup();
     if (config_port != NULL) {
 	if (controller_init(config_port) == -1) {
 	    fprintf(stderr, "Invalid control port specified with -p\n");
@@ -177,7 +184,7 @@ main(int argc, char *argv[])
 
     set_sighup_handler(reread_config);
 
-    select_loop();
+    select_loop(ser2net_sel);
 
     return 0;
 }

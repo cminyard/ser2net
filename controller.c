@@ -33,6 +33,9 @@
 #include "selector.h"
 #include "dataxfer.h"
 
+
+extern selector_t *ser2net_sel;
+
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
 #include <tcpd.h>
@@ -113,7 +116,7 @@ shutdown_controller(controller_info_t *cntlr)
 	cntlr->monitor_port_id = NULL;
     }
 
-    clear_fd_handlers(cntlr->tcpfd);
+    clear_fd_handlers(ser2net_sel, cntlr->tcpfd);
     close(cntlr->tcpfd);
     if (cntlr->outbuf != NULL) {
 	free(cntlr->outbuf);
@@ -206,8 +209,8 @@ controller_output(struct controller_info *cntlr,
 	cntlr->outbuf = newbuf;
 	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count = count;
-	set_fd_read_handler(cntlr->tcpfd, FD_HANDLER_DISABLED);
-	set_fd_write_handler(cntlr->tcpfd, FD_HANDLER_ENABLED);
+	set_fd_read_handler(ser2net_sel, cntlr->tcpfd, FD_HANDLER_DISABLED);
+	set_fd_write_handler(ser2net_sel, cntlr->tcpfd, FD_HANDLER_ENABLED);
     }
 }
 
@@ -563,8 +566,8 @@ handle_tcp_fd_write(int fd, void *data)
 	    /* We are done writing, turn the reader back on. */
 	    free(cntlr->outbuf);
 	    cntlr->outbuf = NULL;
-	    set_fd_read_handler(cntlr->tcpfd, FD_HANDLER_ENABLED);
-	    set_fd_write_handler(cntlr->tcpfd, FD_HANDLER_DISABLED);
+	    set_fd_read_handler(ser2net_sel, cntlr->tcpfd, FD_HANDLER_ENABLED);
+	    set_fd_write_handler(ser2net_sel, cntlr->tcpfd, FD_HANDLER_DISABLED);
 	}
     }
 }
@@ -645,7 +648,8 @@ handle_accept_port_read(int fd, void *data)
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
 
-    set_fd_handlers(cntlr->tcpfd,
+    set_fd_handlers(ser2net_sel,
+		    cntlr->tcpfd,
 		    cntlr,
 		    handle_tcp_fd_read,
 		    handle_tcp_fd_write,
@@ -715,10 +719,11 @@ controller_init(char *controller_port)
 	exit(1);
     }
 
-    set_fd_handlers(acceptfd,
+    set_fd_handlers(ser2net_sel,
+		    acceptfd,
 		    NULL,
 		    handle_accept_port_read,
 		    NULL,
 		    NULL);
-    set_fd_read_handler(acceptfd, FD_HANDLER_ENABLED);
+    set_fd_read_handler(ser2net_sel, acceptfd, FD_HANDLER_ENABLED);
 }

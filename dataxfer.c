@@ -40,6 +40,8 @@
 #include "devcfg.h"
 #include "utils.h"
 
+extern selector_t *ser2net_sel;
+
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
 #include <tcpd.h>
@@ -92,10 +94,10 @@ typedef struct port_info
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
 					   we shut the port down. */
-    struct timeval last_io_time;	/* Time that the last I/O
-					   operation occurred, used to
-					   check if we need to shut
-					   the port down. */
+
+    sel_timer_t *timer;			/* Used to timeout when the no
+					   I/O has been seen for a
+					   certain period of time. */
 
 
     /* Information about the TCP port. */
@@ -324,7 +326,6 @@ init_port_data(port_info_t *port)
     port->devfd = 0;
     memset(&(port->remote), 0, sizeof(port->remote));
     memset(&(port->termctl), 0, sizeof(port->termctl));
-    memset(&(port->last_io_time), 0, sizeof(port->last_io_time));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
@@ -354,6 +355,19 @@ handle_telnet_cmd(port_info_t *port)
 {
     if (port->telnet_cmd[1] == 243) { /* A BREAK command. */
 	tcsendbreak(port->devfd, 0);
+    }
+}
+
+static void
+reset_timer(port_info_t *port)
+{
+    if (port->timeout) {
+	struct timeval then;
+
+	stop_timer(port->timer);
+	gettimeofday(&then, NULL);
+	then.tv_sec += port->timeout;
+	start_timer(port->timer, &then);
     }
 }
 
@@ -396,8 +410,8 @@ handle_dev_fd_read(int fd, void *data)
 	if (errno == EAGAIN) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    set_fd_read_handler(port->devfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(port->tcpfd, FD_HANDLER_ENABLED);
+	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
+	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else if (errno == EPIPE) {
 	    shutdown_port(port);
@@ -414,13 +428,13 @@ handle_dev_fd_read(int fd, void *data)
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
 	    port->dev_to_tcp_buf_start += write_count;
-	    set_fd_read_handler(port->devfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(port->tcpfd, FD_HANDLER_ENABLED);
+	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
+	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	}
     }
 
-    gettimeofday(&(port->last_io_time), NULL);
+    reset_timer(port);
 }
 
 /* The serial port has room to write some data.  This is only activated
@@ -457,13 +471,13 @@ handle_dev_fd_write(int fd, void *data)
 	    port->tcp_to_dev_buf_start += write_count;
 	} else {
 	    /* We are done writing, turn the reader back on. */
-	    set_fd_read_handler(port->tcpfd, FD_HANDLER_ENABLED);
-	    set_fd_write_handler(port->devfd, FD_HANDLER_DISABLED);
+	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_INPUT;
 	}
     }
 
-    gettimeofday(&(port->last_io_time), NULL);
+    reset_timer(port);
 }
 
 /* Handle an exception from the serial port. */
@@ -567,8 +581,8 @@ handle_tcp_fd_read(int fd, void *data)
 	if (errno == EAGAIN) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    set_fd_read_handler(port->tcpfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(port->devfd, FD_HANDLER_ENABLED);
+	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
+	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else {
 	    /* Some other bad error. */
@@ -583,13 +597,13 @@ handle_tcp_fd_read(int fd, void *data)
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
 	    port->tcp_to_dev_buf_start += write_count;
-	    set_fd_read_handler(port->tcpfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(port->devfd, FD_HANDLER_ENABLED);
+	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
+	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	}
     }
 
-    gettimeofday(&(port->last_io_time), NULL);
+    reset_timer(port);
 }
 
 /* The TCP port has room to write some data.  This is only activated
@@ -628,13 +642,13 @@ handle_tcp_fd_write(int fd, void *data)
 	    port->dev_to_tcp_buf_start += write_count;
 	} else {
 	    /* We are done writing, turn the reader back on. */
-	    set_fd_read_handler(port->devfd, FD_HANDLER_ENABLED);
-	    set_fd_write_handler(port->tcpfd, FD_HANDLER_DISABLED);
+	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
+	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_INPUT;
 	}
     }
 
-    gettimeofday(&(port->last_io_time), NULL);
+    reset_timer(port);
 }
 
 /* Handle an exception from the TCP port. */
@@ -775,23 +789,27 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
-    set_fd_handlers(port->devfd,
+    set_fd_handlers(ser2net_sel,
+		    port->devfd,
 		    port,
 		    port->enabled == PORT_RAWLP ? NULL : handle_dev_fd_read,
 		    handle_dev_fd_write,
 		    handle_dev_fd_except);
-    set_fd_read_handler(port->devfd, port->enabled == PORT_RAWLP ? 
-				     FD_HANDLER_DISABLED : FD_HANDLER_ENABLED);
-    set_fd_except_handler(port->devfd, FD_HANDLER_ENABLED);
+    set_fd_read_handler(ser2net_sel,
+			port->devfd,
+			((port->enabled == PORT_RAWLP)
+			 ? FD_HANDLER_DISABLED : FD_HANDLER_ENABLED));
+    set_fd_except_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
     port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
-    set_fd_handlers(port->tcpfd,
+    set_fd_handlers(ser2net_sel,
+		    port->tcpfd,
 		    port,
 		    handle_tcp_fd_read,
 		    handle_tcp_fd_write,
 		    handle_tcp_fd_except);
-    set_fd_read_handler(port->tcpfd, FD_HANDLER_ENABLED);
-    set_fd_except_handler(port->tcpfd, FD_HANDLER_ENABLED);
+    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+    set_fd_except_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
     port->tcp_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
@@ -801,11 +819,11 @@ handle_accept_port_read(int fd, void *data)
 	memcpy(port->dev_to_tcp_buf, telnet_init, sizeof(telnet_init));
 	port->dev_to_tcp_buf_start = 0;
 	port->dev_to_tcp_buf_count = sizeof(telnet_init);
-	set_fd_read_handler(port->devfd, FD_HANDLER_DISABLED);
-	set_fd_write_handler(port->tcpfd, FD_HANDLER_ENABLED);
+	set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
+	set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
     }
 
-    gettimeofday(&(port->last_io_time), NULL);
+    reset_timer(port);
 }
 
 /* Start monitoring for connections on a specific port. */
@@ -845,12 +863,13 @@ startup_port(port_info_t *port)
 	return "Unable to listen to TCP port";
     }
 
-    set_fd_handlers(port->acceptfd,
+    set_fd_handlers(ser2net_sel,
+		    port->acceptfd,
 		    port,
 		    handle_accept_port_read,
 		    NULL,
 		    NULL);
-    set_fd_read_handler(port->acceptfd, FD_HANDLER_ENABLED);
+    set_fd_read_handler(ser2net_sel, port->acceptfd, FD_HANDLER_ENABLED);
 
     return NULL;
 }
@@ -866,8 +885,10 @@ change_port_state(port_info_t *port, int state)
 
     if (state == PORT_DISABLED) {
 	if (port->acceptfd != -1) {
-	    set_fd_read_handler(port->acceptfd, FD_HANDLER_DISABLED);
-	    clear_fd_handlers(port->acceptfd);
+	    set_fd_read_handler(ser2net_sel,
+				port->acceptfd,
+				FD_HANDLER_DISABLED);
+	    clear_fd_handlers(ser2net_sel, port->acceptfd);
 	    close(port->acceptfd);
 	    port->acceptfd = -1;
 	}
@@ -883,6 +904,7 @@ change_port_state(port_info_t *port, int state)
 static void
 free_port(port_info_t *port)
 {
+    free_timer(port->timer);
     change_port_state(port, PORT_DISABLED);
     if (port->portname != NULL) {
 	free(port->portname);
@@ -899,8 +921,9 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port)
 {
-    clear_fd_handlers(port->devfd);
-    clear_fd_handlers(port->tcpfd);
+    stop_timer(port->timer);
+    clear_fd_handlers(ser2net_sel, port->devfd);
+    clear_fd_handlers(ser2net_sel, port->tcpfd);
     close(port->tcpfd);
     close(port->devfd);
 #ifdef USE_UUCP_LOCKING
@@ -954,7 +977,8 @@ shutdown_port(port_info_t *port)
 	if (curr != NULL) {
 	    port = curr->new_config;
 	    port->acceptfd = curr->acceptfd;
-	    set_fd_handlers(port->acceptfd,
+	    set_fd_handlers(ser2net_sel,
+			    port->acceptfd,
 			    port,
 			    handle_accept_port_read,
 			    NULL,
@@ -973,6 +997,16 @@ shutdown_port(port_info_t *port)
     }
 }
 
+void
+got_timeout(selector_t  *sel,
+	    sel_timer_t *timer,
+	    void        *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    shutdown_port(port);
+}
+
 /* Create a port based on a set of parameters passed in. */
 char *
 portconfig(char *portnum,
@@ -988,6 +1022,11 @@ portconfig(char *portnum,
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
 	return "Could not allocate a port data structure";
+    }
+
+    if (alloc_timer(ser2net_sel, got_timeout, new_port, &new_port->timer)) {
+	free(new_port);
+	return "Could not allocate timer data";
     }
 
     /* Error from here on out must goto errout. */
@@ -1054,7 +1093,8 @@ portconfig(char *portnum,
 		new_port->acceptfd = curr->acceptfd;
 		curr->enabled = PORT_DISABLED;
 		curr->acceptfd = -1;
-		set_fd_handlers(new_port->acceptfd,
+		set_fd_handlers(ser2net_sel,
+				new_port->acceptfd,
 				new_port,
 				handle_accept_port_read,
 				NULL,
@@ -1145,47 +1185,6 @@ clear_old_port_config(int curr_config)
 	    curr = curr->next;
 	}
     }
-}
-
-/* This is called periodically, it is used to scan for ports that are
-   inactive too long and need to be shut down. */
-static void
-dataxfer_timeout_handler(void)
-{
-    port_info_t    *port;
-    struct timeval curr_time;
-    int            time_diff;
-
-    gettimeofday(&curr_time, NULL);
-    port = ports;
-    while (port != NULL) {
-	if ((port->enabled != PORT_DISABLED)
-	    && (port->tcp_to_dev_state != PORT_UNCONNECTED)
-	    && (port->timeout != 0))
-	{
-	    /* Calculate how long the port has been inactive. */
-	    time_diff = curr_time.tv_sec - port->last_io_time.tv_sec;
-	    if (curr_time.tv_usec < port->last_io_time.tv_usec) {
-		/* We only count whole seconds, so subtract off a
-                   second if we haven't made it all the way there. */
-		time_diff--;
-	    }
-
-	    if (time_diff > port->timeout) {
-		shutdown_port(port);
-	    }
-	}
-
-	port = port->next;
-    }
-}
-
-/* Initialize the code in this file. */
-void
-dataxfer_init(void)
-{
-    /* Check the ports periodically. */
-    add_timeout_handler(dataxfer_timeout_handler);
 }
 
 /* Print information about a port to the control port given in cntlr. */
@@ -1468,6 +1467,9 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
 	    controller_output(cntlr, "\n\r", 2);
 	} else {
 	    port->timeout = timeout_num;
+	    if (port->tcpfd != -1) {
+		reset_timer(port);
+	    }
 	}
     }
 }

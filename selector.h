@@ -19,6 +19,18 @@
 
 #ifndef SELECTOR
 #define SELECTOR
+#include <sys/time.h> /* For timeval */
+
+/* The main data structure used by the selector. */
+struct selector_s;
+typedef struct selector_s selector_t;
+
+/* You have to create a selector before you can use it. */
+int alloc_selector(selector_t **new_selector);
+
+/* Used to destroy a selector. */
+int free_selector(selector_t *new_selector);
+
 
 /* A function to call when select sees something on a file
    descriptor. */
@@ -26,7 +38,8 @@ typedef void (*t_fd_handler)(int fd, void *data);
 
 /* Set the handlers for a file descriptor.  The "data" parameter is
    not used, it is just passed to the exception handlers. */
-void set_fd_handlers(int          fd,
+void set_fd_handlers(selector_t   *sel,
+		     int          fd,
 		     void         *data,
 		     t_fd_handler read_handler,
 		     t_fd_handler write_handler,
@@ -34,30 +47,41 @@ void set_fd_handlers(int          fd,
 
 /* Remove the handlers for a file descriptor.  This will also disable
    the handling of all I/O for the fd. */
-void clear_fd_handlers(int fd);
+void clear_fd_handlers(selector_t *sel,
+		       int        fd);
 
 /* Turn on and off handling for I/O from a file descriptor. */
 #define FD_HANDLER_ENABLED	0
 #define FD_HANDLER_DISABLED	1
-void set_fd_read_handler(int fd, int state);
-void set_fd_write_handler(int fd, int state);
-void set_fd_except_handler(int fd, int state);
+void set_fd_read_handler(selector_t *sel, int fd, int state);
+void set_fd_write_handler(selector_t *sel, int fd, int state);
+void set_fd_except_handler(selector_t *sel, int fd, int state);
 
-/* Called periodically.  No guarantee is made on the time (other than
-   it is around a second), so get the time yourself and check what you
-   need. */
-typedef void (*t_timeout_handler)(void);
-void add_timeout_handler(t_timeout_handler handler);
-void remove_timeout_handler(t_timeout_handler handler);
+struct sel_timer_s;
+typedef struct sel_timer_s sel_timer_t;
+
+typedef void (*timeout_handler_t)(selector_t  *sel,
+				  sel_timer_t *timer,
+				  void        *data);
+
+int alloc_timer(selector_t        *sel,
+		timeout_handler_t handler,
+		void              *user_data,
+		sel_timer_t       **new_timer);
+
+int free_timer(sel_timer_t *timer);
+
+int start_timer(sel_timer_t    *timer,
+		struct timeval *timeout);
+
+int stop_timer(sel_timer_t *timer);
 
 /* Set a handler to handle when SIGHUP is sent to the process. */
 typedef void (*t_sighup_handler)(void);
 void set_sighup_handler(t_sighup_handler handler);
+void setup_sighup(void);
 
 /* This is the main loop for the program. */
-void select_loop(void);
-
-/* Initialize the select code. */
-void selector_init(void);
+void select_loop(selector_t *sel);
 
 #endif /* SELECTOR */
