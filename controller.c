@@ -594,7 +594,7 @@ handle_accept_port_read(int fd, void *data)
 	/* We have a problem so refuse this one. */
 	struct sockaddr_in dummy_sockaddr;
 	socklen_t len = sizeof(dummy_sockaddr);
-	int new_fd = accept(fd, &dummy_sockaddr, &len);
+	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
 	if (new_fd != -1) {
 	    write(new_fd, err, strlen(err));
@@ -606,7 +606,7 @@ handle_accept_port_read(int fd, void *data)
     /* From here on, errors must go to errout. */
 
     len = sizeof(cntlr->remote);
-    cntlr->tcpfd = accept(fd, &(cntlr->remote), &len);
+    cntlr->tcpfd = accept(fd, (struct sockaddr *) &(cntlr->remote), &len);
     if (cntlr->tcpfd == -1) {
 	syslog(LOG_ERR, "Could not accept on controller port: %m");
 	goto errout;
@@ -697,7 +697,7 @@ controller_init(int controller_port)
     sock.sin_family = AF_INET;
     sock.sin_port = htons(port);
     sock.sin_addr.s_addr = INADDR_ANY;
-    if (bind(acceptfd, &sock, sizeof(sock)) == -1) {
+    if (bind(acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
 	close(acceptfd);
 	syslog(LOG_ERR, "Unable to bind TCP port: %m");
 	exit(1);

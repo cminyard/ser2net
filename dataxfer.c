@@ -538,7 +538,7 @@ handle_accept_port_read(int fd, void *data)
     if (err != NULL) {
 	struct sockaddr_in dummy_sockaddr;
 	socklen_t len = sizeof(dummy_sockaddr);
-	int new_fd = accept(fd, &dummy_sockaddr, &len);
+	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
 	if (new_fd != -1) {
 	    write(new_fd, err, strlen(err));
@@ -549,7 +549,7 @@ handle_accept_port_read(int fd, void *data)
 
     len = sizeof(port->remote);
 
-    port->tcpfd = accept(fd, &(port->remote), &len);
+    port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
     if (port->tcpfd == -1) {
 	syslog(LOG_ERR, "Could not accept on port %d: %m", port->tcpport);
 	return;
@@ -577,7 +577,9 @@ handle_accept_port_read(int fd, void *data)
     }
 #endif /* HAVE_TCPD_H */
 
-    port->devfd = open(port->devname, O_RDWR | O_NONBLOCK);
+    port->devfd = open(port->devname, O_RDWR | O_NONBLOCK | O_NOCTTY);
+			 /* Oct 05 2001 druzus: NOCTTY - don't make 
+			    device control tty for our process */
     if (port->devfd == -1) {
 	close(port->tcpfd);
 	syslog(LOG_ERR, "Could not open device %s for port %d: %m",
@@ -656,7 +658,7 @@ startup_port(port_info_t *port)
     sock.sin_family = AF_INET;
     sock.sin_port = htons(port->tcpport);
     sock.sin_addr.s_addr = INADDR_ANY;
-    if (bind(port->acceptfd, &sock, sizeof(sock)) == -1) {
+    if (bind(port->acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
 	close(port->acceptfd);
 	return "Unable to bind TCP port";
     }

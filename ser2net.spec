@@ -1,17 +1,17 @@
-Name: ser2net
-Version: 1.5
-Release: 1
-License: GPL
-Summary: Serial to network proxy
-Group: System Environment/Daemons
-Packager: Ivan F. Martinez <ivanfm@ecodigit.com.br>
-Source: http://prdownloads.sourceforge.net/ser2net/ser2net-%{version}.tar.gz
-URL: http://sourceforge.net/projects/ser2net/
-BuildRoot: /var/tmp/%{name}-%{version}-root
-AutoReqProv: no
+Name:		ser2net
+Version:	1.5
+Release:	2
+License:	GPL
+Summary:	Serial to network proxy
+Group:		System Environment/Daemons
+Packager:	Ivan F. Martinez <ivanfm@ecodigit.com.br>
+Source0:	http://prdownloads.sourceforge.net/ser2net/ser2net-%{version}.tar.gz
+URL:		http://sourceforge.net/projects/ser2net/
+BuildRoot:	/var/tmp/%{name}-%{version}-root
+AutoReqProv:	no
+
 %description
-Make serial ports available to network via TCP/IP
-connection
+Make serial ports available to network via TCP/IP connection.
 
 %prep
 
@@ -23,19 +23,24 @@ make
 
 %install
 rm -rf $RPM_BUILD_ROOT
-mkdir -p $RPM_BUILD_ROOT/etc
-cp ser2net.conf $RPM_BUILD_ROOT/etc
+install -d $RPM_BUILD_ROOT/etc/rc.d/init.d
+install $RPM_SOURCE_DIR/ser2net.conf $RPM_BUILD_ROOT/etc
+install $RPM_SOURCE_DIR/ser2net.init $RPM_BUILD_ROOT/etc/rc.d/init.d/ser2net
 make DESTDIR=$RPM_BUILD_ROOT install
 
 %files
-%defattr(-,root,root)                                                                                         
+%defattr(0644,root,root)
+%attr(0755,root,root) /etc/rc.d/init.d/ser2net
 %config(noreplace) /etc/ser2net.conf
 %doc README NEWS ChangeLog COPYING INSTALL AUTHORS
-/usr/sbin/*
+%attr(0755,root,root) /usr/sbin/*
 /usr/share/man/man8/*
 
 
 %changelog
+* Fri Oct 10 2001 Corey Minyard <minyard@acm.org>
+- Applied patches from Przemyslaw Czerpak (druzus@polbox.com), which added init
+  and cleaned up a few other problems.
 * Tue Jul  3 2001 Corey Minyard <minyard@acm.org>
 - Fixed everything to install in the right place.
 - Updated to 1.4
