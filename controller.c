@@ -33,6 +33,14 @@
 #include "selector.h"
 #include "dataxfer.h"
 
+/** BASED ON sshd.c FROM openssh.com */
+#ifdef HAVE_TCPD_H
+#include <tcpd.h>
+int allow_severity = LOG_INFO;
+int deny_severity = LOG_WARNING;
+static char *progname = "ser2net-control";
+#endif /* HAVE_TCPD_H */
+
 /* This file holds the code that runs the control port. */
 
 static int port;	/* The TCP port for the control port. */
@@ -568,6 +576,22 @@ handle_accept_port_read(int fd, void *data)
 	syslog(LOG_ERR, "Could not accept on controller port: %m");
 	goto errout;
     }
+
+#ifdef HAVE_TCPD_H
+    {
+	struct request_info req;
+	
+	request_init(&req, RQ_DAEMON, progname, RQ_FILE, cntlr->tcpfd, NULL);
+	fromhost(&req);
+
+	if (!hosts_access(&req)) {
+	    char *err = "Access denied\n\r";
+	    write(cntlr->tcpfd, err, strlen(err));
+	    close(cntlr->tcpfd);
+	    return;
+	}
+    }
+#endif /* HAVE_TCPD_H */
 
     if (fcntl(cntlr->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(cntlr->tcpfd);

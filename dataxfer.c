@@ -39,13 +39,10 @@
 #include "utils.h"
 
 /** BASED ON sshd.c FROM openssh.com */
-#ifdef LIBWRAP
+#ifdef HAVE_TCPD_H
 #include <tcpd.h>
-int allow_severity = LOG_INFO;
-int deny_severity = LOG_WARNING;
-char * __progname = "ser2net";
-#endif /* LIBWRAP */
-
+static char *progname = "ser2net";
+#endif /* HAVE_TCPD_H */
 
 /* FIXME - Add UUCP style device locking. */
 
@@ -217,7 +214,6 @@ static void
 handle_telnet_cmd(port_info_t *port)
 {
     if (port->telnet_cmd[1] == 243) { /* A BREAK command. */
-	printf("Sending break\n");
 	tcsendbreak(port->devfd, 0);
     }
 }
@@ -564,20 +560,21 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
-#ifdef LIBWRAP
-        {
-                struct request_info req;
+#ifdef HAVE_TCPD_H
+    {
+	struct request_info req;
+	
+	request_init(&req, RQ_DAEMON, progname, RQ_FILE, port->tcpfd, NULL);
+	fromhost(&req);
 
-                request_init(&req, RQ_DAEMON, __progname, RQ_FILE, port->tcpfd, NULL);
-                fromhost(&req);
-
-                if (!hosts_access(&req)) {
-                        refuse(&req);
-                        close(port->tcpfd);
-                        return;
-                }
-        }
-#endif /* LIBWRAP */
+	if (!hosts_access(&req)) {
+	    char *err = "Access denied\n\r";
+	    write(port->tcpfd, err, strlen(err));
+	    close(port->tcpfd);
+	    return;
+	}
+    }
+#endif /* HAVE_TCPD_H */
 
     port->devfd = open(port->devname, O_RDWR | O_NONBLOCK);
     if (port->devfd == -1) {
