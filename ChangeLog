@@ -1,4 +1,9 @@
 
+2002-07-24  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Fixed a bug with handling config errors, when
+	an error occurs in the wrong place it will segv.
+
 2002-04-04  Corey Minyard <minyard@acm.org>
 
 	* util.c: added the final return value to scan_tcp_port.

@@ -865,10 +865,12 @@ change_port_state(port_info_t *port, int state)
     }
 
     if (state == PORT_DISABLED) {
-	set_fd_read_handler(port->acceptfd, FD_HANDLER_DISABLED);
-	clear_fd_handlers(port->acceptfd);
-	close(port->acceptfd);
-	port->acceptfd = -1;
+	if (port->acceptfd != -1) {
+	    set_fd_read_handler(port->acceptfd, FD_HANDLER_DISABLED);
+	    clear_fd_handlers(port->acceptfd);
+	    close(port->acceptfd);
+	    port->acceptfd = -1;
+	}
     } else if (port->enabled == PORT_DISABLED) {
 	rv = startup_port(port);
     }
