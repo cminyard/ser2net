@@ -41,6 +41,7 @@
 #include "selector.h"
 #include "devcfg.h"
 #include "utils.h"
+#include "telnet.h"
 
 extern selector_t *ser2net_sel;
 
@@ -57,10 +58,6 @@ static char *progname = "ser2net";
 #endif
 #endif /* USE_UUCP_LOCKING */
 
-
-#define MAX_TELNET_CMD_SIZE 31
-
-#define MAX_TELNET_CMD_XMIT_BUF 256
 
 /* States for the tcp_to_dev_state and dev_to_tcp_state. */
 #define PORT_UNCONNECTED		0 /* The TCP port is not connected
@@ -100,6 +97,10 @@ typedef struct port_info
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
 					   we shut the port down. */
+
+    int            timeout_left;	/* The amount of time left (in
+					   seconds) before the timeout
+					   goes off. */
 
     sel_timer_t *timer;			/* Used to timeout when the no
 					   I/O has been seen for a
@@ -156,19 +157,6 @@ typedef struct port_info
 					    to this controller port. */
 
 
-  /* Incoming telnet commands.  This is "+1" because the last byte
-     always holds the previous byte received, so that the end of the
-     options can be correctly detected. */
-    unsigned char  telnet_cmd[MAX_TELNET_CMD_SIZE+1];
-    int            telnet_cmd_pos;      /* Current position in the
-					   telnet_cmd buffer.  If zero,
-					   no telnet command is in
-					   progress. */
-
-    /* Outgoing telnet commands. */
-    unsigned char out_telnet_cmd[MAX_TELNET_CMD_XMIT_BUF];
-    int           out_telnet_cmd_size;
-
     /* Information use when transferring information from the terminal
        device to the TCP port. */
     int            dev_to_tcp_state;		/* State of transferring
@@ -200,7 +188,10 @@ typedef struct port_info
 				     loaded when the current session
 				     is done. */
 
-    /* Is 2217 mode enabled? */
+    /* Data for the telnet processing */
+    telnet_data_t tn_data;
+
+    /* Is RFC 2217 mode enabled? */
     int is_2217;
 
     /* Holds whether break is on or not. */
@@ -209,13 +200,36 @@ typedef struct port_info
     /* Masks for RFC 2217 */
     unsigned char linestate_mask;
     unsigned char modemstate_mask;
+    unsigned char last_modemstate;
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
 
-static void telnet_init(port_info_t *port);
-static void handle_telnet_cmd(port_info_t *port);
 static void shutdown_port(port_info_t *port, char *reason);
+
+/* The init sequence we use. */
+static unsigned char telnet_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
+    TN_IAC, TN_WILL, TN_OPT_ECHO,
+    TN_IAC, TN_DONT, TN_OPT_ECHO,
+    TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
+};
+
+/* Our telnet command table. */
+static void com_port_handler(void *cb_data, unsigned char *option, int len);
+static void com_port_will(void *cb_data);
+
+static struct telnet_cmd telnet_cmds[] = 
+{
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
+    { TN_OPT_ECHO,		   0,     1,          1,       1, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
+    { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
+      com_port_handler, com_port_will },
+    { 255 }
+};
+
 
 #ifdef USE_UUCP_LOCKING
 static int
@@ -355,7 +369,6 @@ init_port_data(port_info_t *port)
     port->dev_to_tcp_buf_count = 0;
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
-    port->telnet_cmd_pos = 0;
     port->is_2217 = 0;
     port->break_set = 0;
 }
@@ -374,14 +387,7 @@ delete_tcp_to_dev_char(port_info_t *port, int pos)
 static void
 reset_timer(port_info_t *port)
 {
-    if (port->timeout) {
-	struct timeval then;
-
-	sel_stop_timer(port->timer);
-	gettimeofday(&then, NULL);
-	then.tv_sec += port->timeout;
-	sel_start_timer(port->timer, &then);
-    }
+    port->timeout_left = port->timeout;
 }
 
 /* Data is ready to read on the serial port. */
@@ -534,85 +540,17 @@ handle_tcp_fd_read(int fd, void *data)
     port->tcp_bytes_received += port->tcp_to_dev_buf_count;
 
     if (port->enabled == PORT_TELNET) {
-	int i;
-
-	/* If it's a telnet port, get the commands out of the stream. */
-	for (i=0; i<port->tcp_to_dev_buf_count;) {
-	    if (port->telnet_cmd_pos != 0) {
-		unsigned char tn_byte;
-
-		tn_byte = port->tcp_to_dev_buf[i];
-
-		if ((port->telnet_cmd_pos == 1) && (tn_byte == 255)) {
-		    /* Two IACs in a row causes one IAC to be sent, so
-		       just let this one go through. */
-		    i++;
-		    continue;
-		}
-
-		delete_tcp_to_dev_char(port, i);
-
-		if (port->telnet_cmd_pos == 1) {
-		    /* These are two byte commands, so we have
-		       everything we need to handle the command. */
-		    port->telnet_cmd[port->telnet_cmd_pos] = tn_byte;
-		    port->telnet_cmd_pos++;
-		    if (tn_byte < 250) {
-			handle_telnet_cmd(port);
-			port->telnet_cmd_pos = 0;
-		    }
-		} else if (port->telnet_cmd_pos == 2) {
-		    port->telnet_cmd[port->telnet_cmd_pos] = tn_byte;
-		    port->telnet_cmd_pos++;
-		    if (port->telnet_cmd[1] != 250) {
-			/* It's a will/won't/do/don't */
-			handle_telnet_cmd(port);
-			port->telnet_cmd_pos = 0;
-		    }
-		} else {
-		    /* It's in a suboption, look for the end and IACs. */
-		    if (port->telnet_cmd[port->telnet_cmd_pos-1] == 255) {
-			if (tn_byte == 240) {
-			    /* Remove the IAC 240 from the end. */
-			    port->telnet_cmd_pos--;
-			    handle_telnet_cmd(port);
-			    port->telnet_cmd_pos = 0;
-			} else if (tn_byte == 255) {
-			    /* Don't do anything, a double 255 means
-			       we leave on 255 in. */
-			} else {
-			    /* If we have an IAC and an invalid
-			       character, delete them both */
-			    port->telnet_cmd_pos--;
-			}
-		    } else {
-			if (port->telnet_cmd_pos > MAX_TELNET_CMD_SIZE)
-			    /* Always store the last character
-			       received in the final postition (the
-			       array is one bigger than the max size)
-			       so we can detect the end of the
-			       suboption. */
-			    port->telnet_cmd_pos = MAX_TELNET_CMD_SIZE;
-
-			port->telnet_cmd[port->telnet_cmd_pos] = tn_byte;
-			port->telnet_cmd_pos++;
-		    }
-		}
-	    } else if (port->tcp_to_dev_buf[i] == 255) {
-		port->telnet_cmd[port->telnet_cmd_pos] = 255;
-		delete_tcp_to_dev_char(port, i);
-		port->telnet_cmd_pos++;
-	    } else {
-		i++;
-	    }
-
-	    if (port->tcp_to_dev_buf_count == 0) {
-		/* We are out of characters but they were all
-                   processed.  We don't want to continue with 0,
-                   because that will mess up the other processing and
-                   it's not necessary. */
-		return;
-	    }
+	port->tcp_to_dev_buf_count = process_telnet_data
+	    (port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, &port->tn_data);
+	if (port->tn_data.error) {
+	    shutdown_port(port, "telnet output error");
+	    return;
+	}
+	if (port->tcp_to_dev_buf_count == 0) {
+	    /* We are out of characters; they were all processed.  We
+	       don't want to continue with 0, because that will mess
+	       up the other processing and it's not necessary. */
+	    return;
 	}
     }
 
@@ -669,12 +607,13 @@ static void
 handle_tcp_fd_write(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
+    telnet_data_t *td = &port->tn_data;
     int write_count;
 
-    if (port->out_telnet_cmd_size > 0) {
+    if (td->out_telnet_cmd_size > 0) {
 	write_count = write(port->tcpfd,
-			    &(port->out_telnet_cmd[0]),
-			    port->out_telnet_cmd_size);
+			    &(td->out_telnet_cmd[0]),
+			    td->out_telnet_cmd_size);
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
@@ -695,10 +634,10 @@ handle_tcp_fd_write(int fd, void *data)
 	    int i, j;
 
 	    /* Copy the remaining data. */
-	    for (j=0, i=write_count; i<port->out_telnet_cmd_size; i++, j++)
-		port->out_telnet_cmd[j] = port->out_telnet_cmd[i];
-	    port->out_telnet_cmd_size -= write_count;
-	    if (port->out_telnet_cmd_size != 0)
+	    for (j=0, i=write_count; i<td->out_telnet_cmd_size; i++, j++)
+		td->out_telnet_cmd[j] = td->out_telnet_cmd[i];
+	    td->out_telnet_cmd_size -= write_count;
+	    if (td->out_telnet_cmd_size != 0)
 		/* If we have more telnet command data to send, don't
 		   send any real data. */
 		return;
@@ -753,6 +692,26 @@ handle_tcp_fd_except(int fd, void *data)
     shutdown_port(port, "tcp fd exception");
 }
 
+static void
+telnet_cmd_handler(void *cb_data, unsigned char cmd)
+{
+    port_info_t *port = cb_data;
+
+    if (cmd == TN_BREAK)
+	tcsendbreak(port->devfd, 0);
+}
+
+/* Called when the telnet code has output ready. */
+static void
+telnet_output_ready(void *cb_data)
+{
+    port_info_t *port = cb_data;
+    sel_set_fd_read_handler(ser2net_sel, port->devfd,
+			    SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+			     SEL_FD_HANDLER_ENABLED);
+}
+
 /* Checks to see if some other port has the same device in use. */
 static int
 is_device_already_inuse(port_info_t *check_port)
@@ -781,6 +740,7 @@ handle_accept_port_read(int fd, void *data)
     socklen_t len;
     char *err = NULL;
     int options;
+    struct timeval then;
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
 	err = "Port already in use\n\r";
@@ -922,14 +882,18 @@ handle_accept_port_read(int fd, void *data)
     port->tcp_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
-	/* Send the telnet negotiation string.  We do this by
-	   putting the data in the dev to tcp buffer and turning
-	   the tcp write selector on. */
-	telnet_init(port);
+	telnet_init(&port->tn_data, port, telnet_output_ready,
+		    telnet_cmd_handler,
+		    telnet_cmds,
+		    telnet_init_seq, sizeof(telnet_init_seq));
     } else {
 	sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				SEL_FD_HANDLER_ENABLED);
     }
+
+    gettimeofday(&then, NULL);
+    then.tv_sec += 1;
+    sel_start_timer(port->timer, &then);
 
     reset_timer(port);
 }
@@ -1051,7 +1015,6 @@ shutdown_port(port_info_t *port, char *reason)
     port->dev_to_tcp_buf_count = 0;
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
-    port->telnet_cmd_pos = 0;
 
     /* If the port has been disabled, then delete it.  Check this before
        the new config so the port will be deleted properly and not
@@ -1115,8 +1078,43 @@ got_timeout(selector_t  *sel,
 	    void        *data)
 {
     port_info_t *port = (port_info_t *) data;
+    struct timeval then;
+    unsigned char modemstate;
+    int val;
 
-    shutdown_port(port, "timeout");
+    if (port->timeout) {
+	port->timeout_left--;
+	if (port->timeout_left < 0) {
+	    shutdown_port(port, "timeout");
+	    return;
+	}
+    }
+
+    if (port->is_2217 && (ioctl(port->devfd, TIOCMGET, &val) != -1)) {
+	modemstate = 0;
+	if (val & TIOCM_CD)
+	    modemstate |= 0x80;
+	if (val & TIOCM_RI)
+	    modemstate |= 0x40;
+	if (val & TIOCM_DSR)
+	    modemstate |= 0x20;
+	if (val & TIOCM_CTS)
+	    modemstate |= 0x10;
+
+	modemstate &= port->modemstate_mask;
+	if (modemstate != port->last_modemstate) {
+	    unsigned char data[3];
+	    data[0] = TN_OPT_COM_PORT;
+	    data[1] = 7; /* Notify modemstate */
+	    data[2] = modemstate;
+	    port->last_modemstate = modemstate;
+	    telnet_send_option(&port->tn_data, data, 3);
+	}
+    }
+    
+    gettimeofday(&then, NULL);
+    then.tv_sec += 1;
+    sel_start_timer(port->timer, &then);
 }
 
 /* Create a port based on a set of parameters passed in. */
@@ -1748,205 +1746,6 @@ disconnect_port(struct controller_info *cntlr,
     shutdown_port(port, "disconnect");
 }
 
-#define TN_WILL	251
-#define TN_WONT	252
-#define TN_DO	253
-#define TN_DONT	254
-#define TN_IAC  255
-
-#define TN_OPT_BINARY_TRANSMISSION	0
-#define TN_OPT_ECHO			1
-#define TN_OPT_SUPPRESS_GO_AHEAD	3
-#define TN_OPT_COM_PORT			44
-
-/* The init sequence we use. */
-static unsigned char telnet_init_seq[] = {
-    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
-    TN_IAC, TN_WILL, TN_OPT_ECHO,
-    TN_IAC, TN_DONT, TN_OPT_ECHO,
-    TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
-};
-
-static void
-telnet_init(port_info_t *port)
-{
-    memcpy(port->out_telnet_cmd, telnet_init_seq, sizeof(telnet_init_seq));
-    port->out_telnet_cmd_size = sizeof(telnet_init_seq);
-    sel_set_fd_read_handler(ser2net_sel, port->devfd,
-			    SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-			     SEL_FD_HANDLER_ENABLED);
-}
-
-static void com_port_handler(port_info_t *port, unsigned char *option, int len);
-static void com_port_will(port_info_t *port);
-
-struct telnet_cmd {
-    unsigned char option;
-    unsigned int i_will : 1;
-    unsigned int i_do : 1;
-    unsigned int sent_will : 1;
-    unsigned int sent_do : 1;
-    unsigned int rem_will : 1;
-    unsigned int rem_do : 1;
-    void (*option_handler)(port_info_t *port, unsigned char *option, int len);
-    void (*will_handler)(port_info_t *port);
-} telnet_cmds[] = 
-{
-    /*                        I will,  I do,  sent will, sent do */
-    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
-    { TN_OPT_ECHO,		   0,     1,          1,       1, },
-    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
-    { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
-      com_port_handler, com_port_will },
-};
-
-#define TELNET_CMDS_SIZE (sizeof(telnet_cmds) / sizeof(struct telnet_cmd))
-
-static struct telnet_cmd *
-find_cmd(unsigned char option)
-{
-    int i;
-
-    for (i=0; i<TELNET_CMDS_SIZE; i++) {
-	if (telnet_cmds[i].option == option)
-	    return &telnet_cmds[i];
-    }
-    return NULL;
-}
-
-static void telnet_cmd_send(port_info_t *port, unsigned char *cmd, int len)
-{
-    int pos = port->out_telnet_cmd_size;
-    int left = MAX_TELNET_CMD_XMIT_BUF - pos;
-
-    if (len > left) {
-	/* Out of data, abort the connection.  This really shouldn't
-	   happen.*/
-	shutdown_port(port, "telnet out of write data");
-	return;
-    }
-
-    memcpy(port->out_telnet_cmd+pos, cmd, len);
-    port->out_telnet_cmd_size += len;
-    sel_set_fd_read_handler(ser2net_sel, port->devfd,
-			    SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-			     SEL_FD_HANDLER_ENABLED);
-}
-
-static void send_i(port_info_t *port, unsigned char type, unsigned char option)
-{
-    unsigned char i[3];
-    i[0] = TN_IAC;
-    i[1] = type;
-    i[2] = option;
-    telnet_cmd_send(port, i, 3);
-}
-
-static void
-handle_telnet_cmd(port_info_t *port)
-{
-    int size = port->telnet_cmd_pos;
-    unsigned char *cmd_str = port->telnet_cmd;
-    struct telnet_cmd *cmd;
-
-    if (size < 2)
-	return;
-
-    if (cmd_str[1] == 243) { /* A BREAK command. */
-	tcsendbreak(port->devfd, 0);
-    } else if (cmd_str[1] == 250) { /* Option */
-	cmd = find_cmd(cmd_str[2]);
-	if (!cmd)
-	    return;
-	cmd->option_handler(port, cmd_str+2, size-2);
-    } else if (cmd_str[1] == 251) { /* WILL */
-	unsigned char option = cmd_str[2];
-	cmd = find_cmd(option);
-	if (!cmd || !cmd->sent_do) {
-	    if ((!cmd) || (!cmd->i_will))
-		send_i(port, TN_DONT, option);
-	    else
-		send_i(port, TN_DO, option);
-	} else if (cmd)
-	    cmd->sent_do = 0;
-	if (cmd)
-	    cmd->rem_will = 1;
-    } else if (cmd_str[1] == 252) { /* WONT */
-	unsigned char option = cmd_str[2];
-	cmd = find_cmd(option);
-	if (!cmd || !cmd->sent_do)
-	    send_i(port, TN_DONT, option);
-	else if (cmd)
-	    cmd->sent_do = 0;
-	if (cmd)
-	    cmd->rem_will = 0;
-    } else if (cmd_str[1] == 253) { /* DO */
-	unsigned char option = cmd_str[2];
-	cmd = find_cmd(option);
-	if (!cmd || !cmd->sent_will) {
-	    if ((!cmd) || (! cmd->i_do))
-		send_i(port, TN_WONT, option);
-	    else
-		send_i(port, TN_WILL, option);
-	} else if (cmd)
-	    cmd->sent_will = 0;
-	if (cmd)
-	    cmd->rem_do = 1;
-    } else if (cmd_str[1] == 254) { /* DONT */
-	unsigned char option = cmd_str[2];
-	cmd = find_cmd(option);
-	if (!cmd || !cmd->sent_will)
-	    send_i(port, TN_WONT, option);
-	else if (cmd)
-	    cmd->sent_will = 0;
-	if (cmd)
-	    cmd->rem_do = 0;
-    }
-}
-
-static void
-send_option(port_info_t *port, unsigned char *option, int len)
-{
-    int pos = port->out_telnet_cmd_size;
-    int left = MAX_TELNET_CMD_XMIT_BUF - pos;
-    int real_len;
-    int i;
-
-    /* Make sure to account for any duplicate 255s. */
-    for (real_len=0, i=0; i<len; i++, real_len++) {
-	if (option[i] == 255)
-	    real_len++;
-    }
-
-    real_len += 4; /* Add the initial and end markers. */
-
-    if (real_len > left) {
-	/* Out of data, abort the connection.  This really shouldn't
-	   happen.*/
-	shutdown_port(port, "telnet out of write data");
-	return;
-    }
-
-    i = 0;
-    port->out_telnet_cmd[pos++] = 255;
-    port->out_telnet_cmd[pos++] = 250;
-    for (i=0; i<len; i++, pos++) {
-	port->out_telnet_cmd[pos] = option[i];
-	if (option[i] == 255)
-	    port->out_telnet_cmd[++pos] = option[i];
-    }
-    port->out_telnet_cmd[pos++] = 255;
-    port->out_telnet_cmd[pos++] = 240;
-    port->out_telnet_cmd_size = pos;
-
-    sel_set_fd_read_handler(ser2net_sel, port->devfd,
-			    SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-			     SEL_FD_HANDLER_ENABLED);
-}
-
 static struct baud_rates_s {
     int real_rate;
     int val;
@@ -2000,27 +1799,41 @@ get_rate_from_baud_rate(int baud_rate, int *val)
 }
 
 static void
-com_port_will(port_info_t *port)
+com_port_will(void *cb_data)
 {
+    port_info_t *port = cb_data;
     unsigned char data[3];
+    int val;
 
     /* The remote end turned on RFC2217 handling. */
     port->is_2217 = 1;
     port->linestate_mask = 0;
     port->modemstate_mask = 255;
+    port->last_modemstate = 0;
 
-#if 0 /* FIXME - add the current modem state (and modem state scanning) */
+    
     /* send a modemstate notify */
-    data[0] = TN_IAC;
+    data[0] = TN_OPT_COM_PORT;
     data[1] = 7; /* Notify modemstate */
     data[2] = 0;
-    telnet_cmd_send(port, data, 3);
-#endif
+    if (ioctl(port->devfd, TIOCMGET, &val) != -1) {
+	if (val & TIOCM_CD)
+	    data[2] |= 0x80;
+	if (val & TIOCM_RI)
+	    data[2] |= 0x40;
+	if (val & TIOCM_DSR)
+	    data[2] |= 0x20;
+	if (val & TIOCM_CTS)
+	    data[2] |= 0x10;
+	port->last_modemstate = data[2];
+    }
+    telnet_send_option(&port->tn_data, data, 3);
 }
 
 static void
-com_port_handler(port_info_t *port, unsigned char *option, int len)
+com_port_handler(void *cb_data, unsigned char *option, int len)
 {
+    port_info_t *port = cb_data;
     char outopt[16];
     struct termios termio;
     int val;
@@ -2030,11 +1843,10 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 
     switch (option[1]) {
     case 0: /* SIGNATURE? */
-	/* We don't have one. */
 	outopt[0] = 44;
 	outopt[1] = 0;
 	strcpy(outopt+2, "ser2net");
-	send_option(port, outopt, 9);
+	telnet_send_option(&port->tn_data, outopt, 9);
 	break;
 
     case 1: /* SET-BAUDRATE */
@@ -2057,7 +1869,7 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 1;
 	*((uint32_t *) (outopt+2)) = htonl(val);
-	send_option(port, outopt, 6);
+	telnet_send_option(&port->tn_data, outopt, 6);
 	break;
 
     case 2: /* SET-DATASIZE */
@@ -2087,7 +1899,7 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 2;
 	outopt[2] = val;
-	send_option(port, outopt, 3);
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 3: /* SET-PARITY */
@@ -2118,7 +1930,7 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 3;
 	outopt[2] = val;
-	send_option(port, outopt, 3);
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 4: /* SET-STOPSIZE */
@@ -2145,7 +1957,7 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 4;
 	outopt[2] = val;
-	send_option(port, outopt, 3);
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 5: /* SET-CONTROL */
@@ -2267,15 +2079,27 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 5;
 	outopt[2] = val;
-	send_option(port, outopt, 3);
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
-    case 6: /* NOTIFY-LINESTATE */
-    case 7: /* NOTIFY-MODEMSTATE */
     case 8: /* FLOWCONTROL-SUSPEND */
+	tcflow(port->devfd, TCIOFF);
+	break;
+
     case 9: /* FLOWCONTROL-RESUME */
+	tcflow(port->devfd, TCION);
+	break;
+
     case 10: /* SET-LINESTATE-MASK */
+	if (len < 3)
+	    return;
+	port->linestate_mask = option[2];
+	break;
+
     case 11: /* SET-MODEMSTATE-MASK */
+	if (len < 3)
+	    return;
+	port->modemstate_mask = option[2];
 	break;
 
     case 12: /* PURGE_DATA */
@@ -2290,6 +2114,11 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	break;
     purge_found:
 	tcflush(port->devfd, val);
+	break;
+
+    case 6: /* NOTIFY-LINESTATE */
+    case 7: /* NOTIFY-MODEMSTATE */
+    default:
 	break;
     }
 }

@@ -1,4 +1,15 @@
 
+2003-10-14  Corey Minyard <minyard@acm.org>
+
+	* configure.in: Moved to version 2.0.
+	
+	* dataxfer.c, telnet.c, telnet.h: Created a more generic telnet
+	command handler and split it off from dataxfer.c
+
+	* controller.c: Moved to the new telnet command handler.
+
+	* dataxfer.c: Added watching the CD, RI, etc. lines.
+	
 2003-10-13  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Added a lot of the com port control handling.

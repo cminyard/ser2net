@@ -33,6 +33,7 @@
 #include "selector.h"
 #include "dataxfer.h"
 #include "utils.h"
+#include "telnet.h"
 
 
 extern selector_t *ser2net_sel;
@@ -66,10 +67,6 @@ typedef struct controller_info {
     struct sockaddr_in remote;		/* The socket address of who
 					   is connected to this port. */
 
-    unsigned char telnet_cmd[3];	/* An incoming telnet command. */
-    int  telnet_cmd_pos;		/* The current position in the
-					   telnet command buffer. */
-
     unsigned char inbuf[INBUF_SIZE+1];	/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
 					   in the inbuf. */
@@ -91,16 +88,28 @@ typedef struct controller_info {
 
     struct controller_info *next;	/* Used to keep these items in
 					   a linked list. */
+
+    /* Data used by the telnet processing. */
+    telnet_data_t tn_data;
 } controller_info_t;
 
 /* List of current control connections. */
 controller_info_t *controllers = NULL;
 
 /* Used to initialize the telnet session. */
-static char telnet_init[] = {
-    0xff, 0xfb, 0x03,  /* command WILL SUPPRESS GO AHEAD */
-    0xff, 0xfb, 0x01,  /* command WILL ECHO */
-    0xff, 0xfe, 0x01   /* command DON'T ECHO */
+static char telnet_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
+    TN_IAC, TN_WILL, TN_OPT_ECHO,
+    TN_IAC, TN_DONT, TN_OPT_ECHO,
+};
+
+static struct telnet_cmd telnet_cmds[] = 
+{
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
+    { TN_OPT_ECHO,		   0,     1,          1,       1, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
+    { 255 }
 };
 
 /* Shut down a control connection and remove it from the list of
@@ -223,9 +232,20 @@ controller_write(struct controller_info *cntlr, char *data, int count)
     write(cntlr->tcpfd, data, count);
 }
 
-/* Called when a telnet command is received complete. */
+static void
+telnet_output_ready(void *cb_data)
+{
+    struct controller_info *cntlr = cb_data;
+
+    sel_set_fd_read_handler(ser2net_sel, cntlr->tcpfd,
+			    SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_write_handler(ser2net_sel, cntlr->tcpfd,
+			     SEL_FD_HANDLER_ENABLED);
+}
+
+/* Called when a telnet command is received. */
 void
-process_telnet_command(controller_info_t *cntlr)
+telnet_cmd_handler(void *cb_data, unsigned char cmd)
 {
     /* These are ignored for now. */
 }
@@ -283,6 +303,9 @@ process_input_line(controller_info_t *cntlr)
     if (tok == NULL) {
 	/* Empty line, just ignore it. */
     } else if (strcmp(tok, "exit") == 0) {
+	shutdown_controller(cntlr);
+	return; /* We don't want a prompt any more. */
+    } else if (strcmp(tok, "quit") == 0) {
 	shutdown_controller(cntlr);
 	return; /* We don't want a prompt any more. */
     } else if (strcmp(tok, "help") == 0) {
@@ -461,42 +484,16 @@ handle_tcp_fd_read(int fd, void *data)
 	return;
     }
     read_start = cntlr->inbuf_count;
+    read_count = process_telnet_data
+	(cntlr->inbuf+read_start, read_count, &cntlr->tn_data);
+    if (cntlr->tn_data.error) {
+	shutdown_controller(cntlr);
+	return;
+    }
     cntlr->inbuf_count += read_count;
-
+    
     for (i=read_start; i<cntlr->inbuf_count; i++) {
-	if (cntlr->telnet_cmd_pos != 0) {
-	    if ((cntlr->telnet_cmd_pos == 1)
-		&& (cntlr->inbuf[i] == 255))
-	    {
-		/* Two IACs in a row causes one IAC to be sent, so
-		   just let this one go through. */
-		continue;
-	    }
-
-	    /* In the middle of a telnet command. */
-	    cntlr->telnet_cmd[cntlr->telnet_cmd_pos] = cntlr->inbuf[i];
-	    cntlr->telnet_cmd_pos++;
-
-	    i = remove_chars(cntlr, i, 1);
-
-	    if ((cntlr->telnet_cmd_pos == 2)
-		&& (cntlr->telnet_cmd[1] <= 250))
-	    {
-		/* These are two byte commands, so we have
-		   everything we need to handle the command. */
-		process_telnet_command(cntlr);
-		cntlr->telnet_cmd_pos = 0;
-	    } else if (cntlr->telnet_cmd_pos == 3) {
-		/* We are done with the telnet command. */
-		process_telnet_command(cntlr);
-		cntlr->telnet_cmd_pos = 0;
-	    }
-	} else if (cntlr->inbuf[i] == 0xff) {
-	    /* Got a telnet command start. */
-	    cntlr->telnet_cmd[cntlr->telnet_cmd_pos] = cntlr->inbuf[i];
-	    cntlr->telnet_cmd_pos = 1;
-	    i = remove_chars(cntlr, i, 1);
-	} else if (cntlr->inbuf[i] == 0x0) {
+	if (cntlr->inbuf[i] == 0x0) {
 	    /* Ignore nulls. */
 	    i = remove_chars(cntlr, i, 1);
 	} else if (cntlr->inbuf[i] == '\n') {
@@ -544,7 +541,41 @@ static void
 handle_tcp_fd_write(int fd, void *data)
 {
     controller_info_t *cntlr = (controller_info_t *) data;
+    telnet_data_t *td = &cntlr->tn_data;
     int write_count;
+
+    if (td->out_telnet_cmd_size > 0) {
+	write_count = write(cntlr->tcpfd,
+			    &(td->out_telnet_cmd[0]),
+			    td->out_telnet_cmd_size);
+	if (write_count == -1) {
+	    if (errno == EINTR) {
+		/* EINTR means we were interrupted, just retry by returning. */
+		return;
+	    }
+
+	    if (errno == EAGAIN) {
+		/* This again was due to O_NONBLOCK, just ignore it. */
+	    } else if (errno == EPIPE) {
+		shutdown_controller(cntlr);
+	    } else {
+		/* Some other bad error. */
+		syslog(LOG_ERR, "The tcp write for controller had error: %m");
+		shutdown_controller(cntlr);
+	    }
+	} else {
+	    int i, j;
+
+	    /* Copy the remaining data. */
+	    for (j=0, i=write_count; i<td->out_telnet_cmd_size; i++, j++)
+		td->out_telnet_cmd[j] = td->out_telnet_cmd[i];
+	    td->out_telnet_cmd_size -= write_count;
+	    if (td->out_telnet_cmd_size != 0)
+		/* If we have more telnet command data to send, don't
+		   send any real data. */
+		return;
+	}
+    }
 
     write_count = write(cntlr->tcpfd,
 			&(cntlr->outbuf[cntlr->outbuf_pos]),
@@ -637,7 +668,6 @@ handle_accept_port_read(int fd, void *data)
     }
 
     cntlr->inbuf_count = 0;
-    cntlr->telnet_cmd_pos = 0;
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
 
@@ -655,7 +685,10 @@ handle_accept_port_read(int fd, void *data)
        putting the data in the dev to tcp buffer and turning
        the tcp write selector on. */
 
-    controller_output(cntlr, telnet_init, sizeof(telnet_init));
+    telnet_init(&cntlr->tn_data, cntlr, telnet_output_ready,
+		telnet_cmd_handler,
+		telnet_cmds,
+		telnet_init_seq, sizeof(telnet_init_seq));
     controller_output(cntlr, prompt, strlen(prompt));
 
     num_controller_ports++;
