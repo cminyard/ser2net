@@ -38,6 +38,15 @@
 #include "devcfg.h"
 #include "utils.h"
 
+/** BASED ON sshd.c FROM openssh.com */
+#ifdef LIBWRAP
+#include <tcpd.h>
+int allow_severity = LOG_INFO;
+int deny_severity = LOG_WARNING;
+char * __progname = "ser2net";
+#endif /* LIBWRAP */
+
+
 /* FIXME - Add UUCP style device locking. */
 
 /* States for the tcp_to_dev_state and dev_to_tcp_state. */
@@ -554,6 +563,21 @@ handle_accept_port_read(int fd, void *data)
 	syslog(LOG_ERR, "Could not fcntl the tcp port %d: %m", port->tcpport);
 	return;
     }
+
+#ifdef LIBWRAP
+        {
+                struct request_info req;
+
+                request_init(&req, RQ_DAEMON, __progname, RQ_FILE, port->tcpfd, NULL);
+                fromhost(&req);
+
+                if (!hosts_access(&req)) {
+                        refuse(&req);
+                        close(port->tcpfd);
+                        return;
+                }
+        }
+#endif /* LIBWRAP */
 
     port->devfd = open(port->devname, O_RDWR | O_NONBLOCK);
     if (port->devfd == -1) {

@@ -5,6 +5,8 @@
 
 	* configure.in - Updated to version 1.3
 
+	* ser2net.spec - Added this file for RPM building.
+
 2001-06-15  Corey Minyard <minyard@acm.org>
 	
 	* controller.c - Made sure the monitor port was set to null
