@@ -1,6 +1,11 @@
+2005-02-11  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Add a missing break statement after case 7
+	in the com_port_handler() function.
+
 2004-11-29  Corey Minyard <minyard@acm.org>
 
-	* dataxfer: Remove UUCP lock if the setup of the device fails.
+	* dataxfer.c: Remove UUCP lock if the setup of the device fails.
 
 2004-05-08  Marc Haber
 

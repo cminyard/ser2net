@@ -2298,6 +2298,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		val = 8;
 	    else
 		val = 9;
+	    break;
 
 	/* RTS handling */
 	case 11:
@@ -2318,6 +2319,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		val = 11;
 	    else
 		val = 12;
+	    break;
 	}
 
 	outopt[0] = 44;
