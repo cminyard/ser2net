@@ -995,3 +995,21 @@ data_monitor_stop(struct controller_info *cntlr,
     port->tcp_monitor = NULL;
     port->dev_monitor = NULL;
 }
+
+void
+disconnect_port(struct controller_info *cntlr,
+		char *portspec)
+{
+    port_info_t *port;
+
+    port = find_port_by_num(portspec);
+    if (port == NULL) {
+	char *err = "Invalid port number: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, portspec, strlen(portspec));
+	controller_output(cntlr, "\n\r", 2);
+	return;
+    }
+
+    shutdown_port(port);
+}

@@ -10,3 +10,6 @@
 	* controller.c, controller.h, dataxfer.c, dataxfer.h - added
 	monitoring of data flowing into a port.  It's somewhat primitive
 	yet, but still useful
+
+	* controller.c, dataxfer.c, dataxfer.h - added a way to disconnect
+	a port from the control port.

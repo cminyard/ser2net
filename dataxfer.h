@@ -70,4 +70,8 @@ void *data_monitor_start(struct controller_info *cntlr,
 void data_monitor_stop(struct controller_info *cntlr,
 		       void   *monitor_id);
 
+/* Shut down the port, if it is connected. */
+void disconnect_port(struct controller_info *cntlr,
+		     char *portspec);
+
 #endif /* DATAXFER */

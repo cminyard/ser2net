@@ -229,6 +229,7 @@ static char *help_str =
 "       may only monitor one thing and a port may only be monitored by\n\r"
 "       one controller.\n\r"
 "monitor stop - stop the current monitor.\n\r"
+"disconnect <tcp port> - disconnect the tcp connection on the port\n\r"
 "showport [<tcp port>] - Show information about a port. If no port is\n\r"
 "       given, all ports are displayed.\n\r"
 "setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\n\r"
@@ -300,7 +301,14 @@ process_input_line(controller_info_t *cntlr)
 	    }
 	    cntlr->monitor_port_id = data_monitor_start(cntlr, tok, str);
 	}
-	
+    } else if (strcmp(tok, "disconnect") == 0) {
+	tok = strtok_r(NULL, " \t", &strtok_data);
+	if (tok == NULL) {
+	    char *err = "No port given\n\r";
+	    controller_output(cntlr, err, strlen(err));
+	    goto out;
+	}
+	disconnect_port(cntlr, tok);
     } else if (strcmp(tok, "setporttimeout") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
