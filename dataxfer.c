@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <syslog.h>
 #include <string.h>
+#include <signal.h>
 
 #include "dataxfer.h"
 #include "selector.h"
@@ -364,10 +365,10 @@ reset_timer(port_info_t *port)
     if (port->timeout) {
 	struct timeval then;
 
-	stop_timer(port->timer);
+	sel_stop_timer(port->timer);
 	gettimeofday(&then, NULL);
 	then.tv_sec += port->timeout;
-	start_timer(port->timer, &then);
+	sel_start_timer(port->timer, &then);
     }
 }
 
@@ -410,8 +411,10 @@ handle_dev_fd_read(int fd, void *data)
 	if (errno == EAGAIN) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				    SEL_FD_HANDLER_DISABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else if (errno == EPIPE) {
 	    shutdown_port(port);
@@ -428,8 +431,10 @@ handle_dev_fd_read(int fd, void *data)
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
 	    port->dev_to_tcp_buf_start += write_count;
-	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				    SEL_FD_HANDLER_DISABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	}
     }
@@ -471,8 +476,10 @@ handle_dev_fd_write(int fd, void *data)
 	    port->tcp_to_dev_buf_start += write_count;
 	} else {
 	    /* We are done writing, turn the reader back on. */
-	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
-	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
+				    SEL_FD_HANDLER_ENABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				     SEL_FD_HANDLER_DISABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_INPUT;
 	}
     }
@@ -581,8 +588,10 @@ handle_tcp_fd_read(int fd, void *data)
 	if (errno == EAGAIN) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
+				    SEL_FD_HANDLER_DISABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				     SEL_FD_HANDLER_ENABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else {
 	    /* Some other bad error. */
@@ -597,8 +606,10 @@ handle_tcp_fd_read(int fd, void *data)
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
 	    port->tcp_to_dev_buf_start += write_count;
-	    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
-	    set_fd_write_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
+				    SEL_FD_HANDLER_DISABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				     SEL_FD_HANDLER_ENABLED);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	}
     }
@@ -642,8 +653,10 @@ handle_tcp_fd_write(int fd, void *data)
 	    port->dev_to_tcp_buf_start += write_count;
 	} else {
 	    /* We are done writing, turn the reader back on. */
-	    set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
-	    set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_DISABLED);
+	    sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				    SEL_FD_HANDLER_ENABLED);
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_DISABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_INPUT;
 	}
     }
@@ -745,7 +758,6 @@ handle_accept_port_read(int fd, void *data)
 	rv = uucp_mk_lock(port->devname);
 	if (rv > 0 ) {
 	    char *err;
-	    char buf[64];
 
 	    err = "Port already in use by another process\n\r";
 	    write(port->tcpfd, err, strlen(err));
@@ -789,27 +801,33 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
-    set_fd_handlers(ser2net_sel,
-		    port->devfd,
-		    port,
-		    port->enabled == PORT_RAWLP ? NULL : handle_dev_fd_read,
-		    handle_dev_fd_write,
-		    handle_dev_fd_except);
-    set_fd_read_handler(ser2net_sel,
+    sel_set_fd_handlers(ser2net_sel,
 			port->devfd,
-			((port->enabled == PORT_RAWLP)
-			 ? FD_HANDLER_DISABLED : FD_HANDLER_ENABLED));
-    set_fd_except_handler(ser2net_sel, port->devfd, FD_HANDLER_ENABLED);
+			port,
+			port->enabled == PORT_RAWLP
+			? NULL
+			: handle_dev_fd_read,
+			handle_dev_fd_write,
+			handle_dev_fd_except);
+    sel_set_fd_read_handler(ser2net_sel,
+			    port->devfd,
+			    ((port->enabled == PORT_RAWLP)
+			     ? SEL_FD_HANDLER_DISABLED
+			     : SEL_FD_HANDLER_ENABLED));
+    sel_set_fd_except_handler(ser2net_sel, port->devfd,
+			      SEL_FD_HANDLER_ENABLED);
     port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
-    set_fd_handlers(ser2net_sel,
-		    port->tcpfd,
-		    port,
-		    handle_tcp_fd_read,
-		    handle_tcp_fd_write,
-		    handle_tcp_fd_except);
-    set_fd_read_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
-    set_fd_except_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+    sel_set_fd_handlers(ser2net_sel,
+			port->tcpfd,
+			port,
+			handle_tcp_fd_read,
+			handle_tcp_fd_write,
+			handle_tcp_fd_except);
+    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
+			    SEL_FD_HANDLER_ENABLED);
+    sel_set_fd_except_handler(ser2net_sel, port->tcpfd,
+			      SEL_FD_HANDLER_ENABLED);
     port->tcp_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
@@ -819,8 +837,10 @@ handle_accept_port_read(int fd, void *data)
 	memcpy(port->dev_to_tcp_buf, telnet_init, sizeof(telnet_init));
 	port->dev_to_tcp_buf_start = 0;
 	port->dev_to_tcp_buf_count = sizeof(telnet_init);
-	set_fd_read_handler(ser2net_sel, port->devfd, FD_HANDLER_DISABLED);
-	set_fd_write_handler(ser2net_sel, port->tcpfd, FD_HANDLER_ENABLED);
+	sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				SEL_FD_HANDLER_DISABLED);
+	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				 SEL_FD_HANDLER_ENABLED);
     }
 
     reset_timer(port);
@@ -863,13 +883,14 @@ startup_port(port_info_t *port)
 	return "Unable to listen to TCP port";
     }
 
-    set_fd_handlers(ser2net_sel,
-		    port->acceptfd,
-		    port,
-		    handle_accept_port_read,
-		    NULL,
-		    NULL);
-    set_fd_read_handler(ser2net_sel, port->acceptfd, FD_HANDLER_ENABLED);
+    sel_set_fd_handlers(ser2net_sel,
+			port->acceptfd,
+			port,
+			handle_accept_port_read,
+			NULL,
+			NULL);
+    sel_set_fd_read_handler(ser2net_sel, port->acceptfd,
+			    SEL_FD_HANDLER_ENABLED);
 
     return NULL;
 }
@@ -880,15 +901,15 @@ change_port_state(port_info_t *port, int state)
     char *rv = NULL;
 
     if (port->enabled == state) {
-	return;
+	return rv;
     }
 
     if (state == PORT_DISABLED) {
 	if (port->acceptfd != -1) {
-	    set_fd_read_handler(ser2net_sel,
-				port->acceptfd,
-				FD_HANDLER_DISABLED);
-	    clear_fd_handlers(ser2net_sel, port->acceptfd);
+	    sel_set_fd_read_handler(ser2net_sel,
+				    port->acceptfd,
+				    SEL_FD_HANDLER_DISABLED);
+	    sel_clear_fd_handlers(ser2net_sel, port->acceptfd);
 	    close(port->acceptfd);
 	    port->acceptfd = -1;
 	}
@@ -904,7 +925,7 @@ change_port_state(port_info_t *port, int state)
 static void
 free_port(port_info_t *port)
 {
-    free_timer(port->timer);
+    sel_free_timer(port->timer);
     change_port_state(port, PORT_DISABLED);
     if (port->portname != NULL) {
 	free(port->portname);
@@ -921,9 +942,9 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port)
 {
-    stop_timer(port->timer);
-    clear_fd_handlers(ser2net_sel, port->devfd);
-    clear_fd_handlers(ser2net_sel, port->tcpfd);
+    sel_stop_timer(port->timer);
+    sel_clear_fd_handlers(ser2net_sel, port->devfd);
+    sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
     close(port->tcpfd);
     close(port->devfd);
 #ifdef USE_UUCP_LOCKING
@@ -977,12 +998,12 @@ shutdown_port(port_info_t *port)
 	if (curr != NULL) {
 	    port = curr->new_config;
 	    port->acceptfd = curr->acceptfd;
-	    set_fd_handlers(ser2net_sel,
-			    port->acceptfd,
-			    port,
-			    handle_accept_port_read,
-			    NULL,
-			    NULL);
+	    sel_set_fd_handlers(ser2net_sel,
+				port->acceptfd,
+				port,
+				handle_accept_port_read,
+				NULL,
+				NULL);
 	    curr->acceptfd = -1;
 	    port->next = curr->next;
 	    if (prev == NULL) {
@@ -1024,7 +1045,10 @@ portconfig(char *portnum,
 	return "Could not allocate a port data structure";
     }
 
-    if (alloc_timer(ser2net_sel, got_timeout, new_port, &new_port->timer)) {
+    if (sel_alloc_timer(ser2net_sel,
+			got_timeout, new_port,
+			&new_port->timer))
+    {
 	free(new_port);
 	return "Could not allocate timer data";
     }
@@ -1093,12 +1117,12 @@ portconfig(char *portnum,
 		new_port->acceptfd = curr->acceptfd;
 		curr->enabled = PORT_DISABLED;
 		curr->acceptfd = -1;
-		set_fd_handlers(ser2net_sel,
-				new_port->acceptfd,
-				new_port,
-				handle_accept_port_read,
-				NULL,
-				NULL);
+		sel_set_fd_handlers(ser2net_sel,
+				    new_port->acceptfd,
+				    new_port,
+				    handle_accept_port_read,
+				    NULL,
+				    NULL);
 
 		/* Just replace with the new data. */
 		if (prev == NULL) {
@@ -1155,7 +1179,7 @@ errout:
     return rv;
 }
 
-int
+void
 clear_old_port_config(int curr_config)
 {
     port_info_t *curr, *prev;

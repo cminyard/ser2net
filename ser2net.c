@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <signal.h>
+#include <string.h>
 #include <syslog.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -131,10 +132,12 @@ main(int argc, char *argv[])
 	}
     }
 
-    if (err = alloc_selector(&ser2net_sel)) {
+    err = sel_alloc_selector(&ser2net_sel);
+    if (err) {
 	fprintf(stderr,
 		"Could not initialize ser2net selector: '%s'\n",
 		strerror(err));
+	return -1;
     }
     setup_sighup();
     if (config_port != NULL) {
@@ -184,7 +187,7 @@ main(int argc, char *argv[])
 
     set_sighup_handler(reread_config);
 
-    select_loop(ser2net_sel);
+    sel_select_loop(ser2net_sel);
 
     return 0;
 }

@@ -209,7 +209,7 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
 int
 setdevcontrol(char *instr, int fd)
 {
-    int rv;
+    int rv = 0;
     char *str;
     char *pos;
     int status;

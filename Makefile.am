@@ -1,4 +1,5 @@
 sbin_PROGRAMS = ser2net
+AM_CFLAGS=-Wall
 ser2net_SOURCES = controller.c dataxfer.c devcfg.c readconfig.c selector.c \
 	ser2net.c utils.c
 noinst_HEADERS = controller.h dataxfer.h devcfg.h readconfig.h selector.h \
