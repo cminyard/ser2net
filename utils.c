@@ -100,4 +100,6 @@ scan_tcp_port(char *str, struct sockaddr_in *addr)
 	addr->sin_port = htons(port_num);
     }
     addr->sin_family = AF_INET;
+
+    return 0;
 }

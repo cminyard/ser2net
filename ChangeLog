@@ -1,4 +1,8 @@
 
+2002-04-04  Corey Minyard <minyard@acm.org>
+
+	* util.c: added the final return value to scan_tcp_port.
+
 2002-02-20  Corey Minyard <minyard@acm.org>
 
 	* controller.c, dataxfer.c, dataxfer.h, ser2net.8:
