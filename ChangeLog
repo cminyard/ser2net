@@ -1,4 +1,12 @@
 
+2002-09-23  Corey Minyard <minyard@acm.org>
+
+	* selector.c: Fixed a bug in the timer heaps.
+
+2002-09-09  Corey Minyard <minyard@acm.org>
+
+	* all: Reworked the selector code to make timers more general.
+
 2002-07-24  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fixed a bug with handling config errors, when

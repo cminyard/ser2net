@@ -392,6 +392,7 @@ add_to_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
 
     elem->left = NULL;
     elem->right = NULL;
+    elem->up = NULL;
 
     if (*top == NULL) {
 	*top = elem;

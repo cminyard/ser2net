@@ -1,5 +1,5 @@
 AC_INIT(ser2net.c)
-AM_INIT_AUTOMAKE(ser2net, 1.6)
+AM_INIT_AUTOMAKE(ser2net, 1.7)
 AM_PROG_LIBTOOL
 AC_ARG_WITH(uucp-locking,
  [  --with-uucp-locking     Enable UUCP-style locking],
