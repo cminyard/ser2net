@@ -6,6 +6,8 @@
 	Added support for specifying the IP address with the port to
 	bind to specific interfaces.
 
+	* dataxfer.c: Added counting the input and output bytes.
+
 2002-02-19  Przemyslaw Czerpak (druzus@polbox.com)
 
 	* controller.c, dataxfer.c, devcfg.c, ser2net.c, ser2net.conf,

@@ -103,6 +103,10 @@ typedef struct port_info
                                            port used for I/O. */
     struct sockaddr_in remote;		/* The socket address of who
 					   is connected to this port. */
+    unsigned int tcp_bytes_received;    /* Number of bytes read from the
+					   TCP port. */
+    unsigned int tcp_bytes_sent;        /* Number of bytes written to the
+					   TCP port. */
 
     /* Information about the terminal device. */
     char           *devname;		/* The full path to the device */
@@ -111,6 +115,10 @@ typedef struct port_info
                                            TCP port is open. */
     struct termios termctl;		/* The termios information to
 					   set for the device. */
+    unsigned int dev_bytes_received;    /* Number of bytes read from the
+					   device. */
+    unsigned int dev_bytes_sent;        /* Number of bytes written to the
+					   device. */
 
 
     /* Information use when transferring information from the TCP port
@@ -186,9 +194,13 @@ init_port_data(port_info_t *port)
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
+    port->tcp_bytes_received;
+    port->tcp_bytes_sent;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     port->dev_to_tcp_buf_start = 0;
     port->dev_to_tcp_buf_count = 0;
+    port->dev_bytes_received;
+    port->dev_bytes_sent;
     port->telnet_cmd_pos = 0;
 }
 
@@ -202,9 +214,13 @@ shutdown_port(port_info_t *port)
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
+    port->tcp_bytes_received;
+    port->tcp_bytes_sent;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     port->dev_to_tcp_buf_start = 0;
     port->dev_to_tcp_buf_count = 0;
+    port->dev_bytes_received;
+    port->dev_bytes_sent;
     port->telnet_cmd_pos = 0;
 }
 
@@ -248,6 +264,7 @@ handle_dev_fd_read(int fd, void *data)
 	return;
     }
 
+    port->dev_bytes_received += port->dev_to_tcp_buf_count;
     write_count = write(port->tcpfd,
 			port->dev_to_tcp_buf,
 			port->dev_to_tcp_buf_count);
@@ -277,6 +294,7 @@ handle_dev_fd_read(int fd, void *data)
 	    shutdown_port(port);
 	}
     } else {
+	port->tcp_bytes_sent += write_count;
 	port->dev_to_tcp_buf_count -= write_count;
 	if (port->dev_to_tcp_buf_count != 0) {
 	    /* We didn't write all the data, shut off the reader and
@@ -318,6 +336,7 @@ handle_dev_fd_write(int fd, void *data)
 	    shutdown_port(port);
 	}
     } else {
+	port->dev_bytes_sent += write_count;
 	port->tcp_to_dev_buf_count -= write_count;
 	if (port->tcp_to_dev_buf_count != 0) {
 	    /* We didn't write all the data, continue writing. */
@@ -353,6 +372,19 @@ handle_tcp_fd_read(int fd, void *data)
 
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = read(fd, port->tcp_to_dev_buf, PORT_BUFSIZE);
+
+    if (port->tcp_to_dev_buf_count < 0) {
+	/* Got an error on the read, shut down the port. */
+	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
+	shutdown_port(port);
+	return;
+    } else if (port->tcp_to_dev_buf_count == 0) {
+	/* The other end closed the port, shut it down. */
+	shutdown_port(port);
+	return;
+    }
+
+    port->tcp_bytes_received += port->tcp_to_dev_buf_count;
 
     if (port->enabled == PORT_TELNET) {
 	int i;
@@ -404,17 +436,6 @@ handle_tcp_fd_read(int fd, void *data)
 	}
     }
 
-    if (port->tcp_to_dev_buf_count < 0) {
-	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
-	shutdown_port(port);
-	return;
-    } else if (port->tcp_to_dev_buf_count == 0) {
-	/* The other end closed the port, shut it down. */
-	shutdown_port(port);
-	return;
-    }
-
     write_count = write(port->devfd,
 			port->tcp_to_dev_buf,
 			port->tcp_to_dev_buf_count);
@@ -442,6 +463,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    shutdown_port(port);
 	}
     } else {
+	port->dev_bytes_sent += write_count;
 	port->tcp_to_dev_buf_count -= write_count;
 	if (port->tcp_to_dev_buf_count != 0) {
 	    /* We didn't write all the data, shut off the reader and
@@ -485,6 +507,7 @@ handle_tcp_fd_write(int fd, void *data)
 	    shutdown_port(port);
 	}
     } else {
+	port->dev_bytes_sent += write_count;
 	port->dev_to_tcp_buf_count -= write_count;
 	if (port->dev_to_tcp_buf_count != 0) {
 	    /* We didn't write all the data, continue writing. */
@@ -884,6 +907,30 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_output(cntlr, str, strlen(str));
     str = state_str[port->dev_to_tcp_state];
     controller_output(cntlr, str, strlen(str));
+    controller_output(cntlr, "\n\r", 2);
+
+    str = "  bytes read from TCP: ";
+    controller_output(cntlr, str, strlen(str));
+    sprintf(buffer, "%d", port->tcp_bytes_received);
+    controller_output(cntlr, buffer, strlen(buffer));
+    controller_output(cntlr, "\n\r", 2);
+
+    str = "  bytes written to TCP: ";
+    controller_output(cntlr, str, strlen(str));
+    sprintf(buffer, "%d", port->tcp_bytes_sent);
+    controller_output(cntlr, buffer, strlen(buffer));
+    controller_output(cntlr, "\n\r", 2);
+
+    str = "  bytes read from device: ";
+    controller_output(cntlr, str, strlen(str));
+    sprintf(buffer, "%d", port->dev_bytes_received);
+    controller_output(cntlr, buffer, strlen(buffer));
+    controller_output(cntlr, "\n\r", 2);
+
+    str = "  bytes written to device: ";
+    controller_output(cntlr, str, strlen(str));
+    sprintf(buffer, "%d", port->dev_bytes_sent);
+    controller_output(cntlr, buffer, strlen(buffer));
     controller_output(cntlr, "\n\r", 2);
 }
 
