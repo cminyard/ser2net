@@ -1970,6 +1970,18 @@ get_baud_rate(int rate, int *val)
     return 0;
 }
 
+void
+get_rate_from_baud_rate(int baud_rate, int *val)
+{
+    int i;
+    for (i=0; i<BAUD_RATES_LEN; i++) {
+	if (baud_rate == baud_rates[i].val) {
+	    *val = baud_rates[i].real_rate;
+	    return;
+	}
+    }
+}
+
 static void
 com_port_handler(port_info_t *port, unsigned char *option, int len)
 {
@@ -1999,6 +2011,7 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	strcpy(outopt+2, "ser2net");
 	send_option(port, outopt, 9);
 	break;
+
     case 1: /* SET-BAUDRATE */
 	if (len < 6)
 	    return;
@@ -2015,10 +2028,99 @@ com_port_handler(port_info_t *port, unsigned char *option, int len)
 	    tcgetattr(port->devfd, &termio);
 	    val = cfgetispeed(&termio);
 	}
- printf("val = %d\n", val);
+	get_rate_from_baud_rate(val, &val);
 	outopt[0] = 44;
 	outopt[1] = 1;
 	*((uint32_t *) (outopt+2)) = htonl(val);
 	send_option(port, outopt, 6);
+	break;
+
+    case 2: /* SET-DATASIZE */
+	if (len < 3)
+	    return;
+
+	val = 0;
+	if (tcgetattr(port->devfd, &termio) != -1) {
+	    if ((option[2] >= 5) && (option[2] <= 8)) {
+		val = option[2];
+		termio.c_cflag &= ~CSIZE;
+		switch (val) {
+		case 5: termio.c_cflag |= CS5; break;
+		case 6: termio.c_cflag |= CS6; break;
+		case 7: termio.c_cflag |= CS7; break;
+		case 8: termio.c_cflag |= CS8; break;
+		}
+		tcsetattr(port->devfd, TCSADRAIN, &termio);
+	    }
+	    switch (termio.c_cflag & CSIZE) {
+	    case CS5: val = 5; break;
+	    case CS6: val = 6; break;
+	    case CS7: val = 7; break;
+	    case CS8: val = 8; break;
+	    }
+	}
+	outopt[0] = 44;
+	outopt[1] = 2;
+	outopt[2] = val;
+	send_option(port, outopt, 3);
+	break;
+
+    case 3: /* SET-PARITY */
+	if (len < 3)
+	    return;
+
+	val = 0;
+	if (tcgetattr(port->devfd, &termio) != -1) {
+	    /* We don't support MARK or SPACE parity. */
+	    if ((option[2] >= 1) && (option[2] <= 3)) {
+		val = option[2];
+		termio.c_cflag &= ~(PARENB | PARODD);
+		switch (val) {
+		case 1: break; /* NONE */
+		case 2: termio.c_cflag |= PARENB | PARODD; break; /* ODD */
+		case 3: termio.c_cflag |= PARENB; break; /* EVEN */
+		}
+		tcsetattr(port->devfd, TCSADRAIN, &termio);
+	    }
+	    if (termio.c_cflag & PARENB) {
+		if (termio.c_cflag & PARODD)
+		    val = 2; /* ODD */
+		else
+		    val = 3; /* EVEN */
+	    } else
+		val = 1; /* NONE */
+	}
+	outopt[0] = 44;
+	outopt[1] = 3;
+	outopt[2] = val;
+	send_option(port, outopt, 3);
+	break;
+
+    case 4: /* SET-STOPSIZE */
+	if (len < 3)
+	    return;
+
+	val = 0;
+	if (tcgetattr(port->devfd, &termio) != -1) {
+	    /* We don't support 1.5 stop bits. */
+	    if ((option[2] == 1) || (option[2] == 3)) {
+		val = option[2];
+		termio.c_cflag &= ~CSTOPB;
+		switch (val) {
+		case 1: break; /* 1 stop bit */
+		case 3: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
+		}
+		tcsetattr(port->devfd, TCSADRAIN, &termio);
+	    }
+	    if (termio.c_cflag & CSTOPB)
+		val = 3; /* 2 stop bits. */
+	    else
+		val = 1; /* 1 stop bit. */
+	}
+	outopt[0] = 44;
+	outopt[1] = 4;
+	outopt[2] = val;
+	send_option(port, outopt, 3);
+	break;
     }
 }
