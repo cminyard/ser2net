@@ -946,6 +946,9 @@ shutdown_port(port_info_t *port)
     sel_clear_fd_handlers(ser2net_sel, port->devfd);
     sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
     close(port->tcpfd);
+    /* To avoid blocking on close if we have written bytes and are in
+       flow-control, we flush the output queue. */
+    tcflush(port->devfd, TCOFLUSH);
     close(port->devfd);
 #ifdef USE_UUCP_LOCKING
     uucp_rm_lock(port->devname);

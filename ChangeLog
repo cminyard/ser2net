@@ -1,4 +1,11 @@
 
+2003-02-14  Corey Minyard <minyard@acm.org>
+
+	* Move to version 1.8.
+
+	* dataxfer.c: Do a tcflush(fd, TCOFLUSH) before closing the
+	serial device, this avoids blocking on close.
+
 2002-11-29  Corey Minyard <minyard@acm.org>
 
 	* selector.c: More timer heap bugs.
