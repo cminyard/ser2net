@@ -1,5 +1,5 @@
 Name:		ser2net
-Version:	2.0
+Version:	2.1
 Release:	1
 License:	GPL
 Summary:	Serial to network proxy
@@ -38,6 +38,8 @@ make DESTDIR=$RPM_BUILD_ROOT install
 
 
 %changelog
+* Tue Dec  5 2003 Corey Minyard <minyard@acm.org>
+- Moved to version 2.1.
 * Tue Oct 14 2003 Corey Minyard <minyard@acm.org>
 - Moved to version 2.0.
 * Tue Apr 22 2003 Corey Minyard <minyard@acm.org>
