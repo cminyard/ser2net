@@ -41,6 +41,7 @@ devinit(struct termios *termctl)
     termctl->c_cflag &= ~(PARENB);
     termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
     termctl->c_cflag &= ~(CLOCAL);
+    termctl->c_cflag |= CREAD;
 }
 
 /* Configure a serial port control structure based upon input strings

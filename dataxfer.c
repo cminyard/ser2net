@@ -157,7 +157,8 @@ port_info_t *ports = NULL; /* Linked list of ports. */
 static unsigned char telnet_init[] = {
     0xff, 0xfb, 0x03,  /* command WILL SUPPRESS GO AHEAD */
     0xff, 0xfb, 0x01,  /* command WILL ECHO */
-    0xff, 0xfe, 0x01   /* command DON'T ECHO */
+    0xff, 0xfe, 0x01,  /* command DON'T ECHO */
+    0xff, 0xfd, 0x00   /* command DO BINARY TRANSMISSION */
 };
 
 static void

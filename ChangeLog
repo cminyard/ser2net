@@ -1,4 +1,12 @@
 
+2001-07-26  Corey Minyard <minyard@acm.org>
+
+	* devcfg.c - Added CREAD to the cflags so the serial port will
+	work, patch from Andreas Pfaller.
+
+	* dataxfer.c - Added binary transmission to the list of telnet
+	opeions, again from Andreas Pfaller.
+
 2001-07-23  Corey Minyard <minyard@acm.org>
 
 	* devcfg.c, ser2net.8, ser2net.conf  - Added a patch from Martin
