@@ -48,6 +48,7 @@
 #include <syslog.h>
 #include <signal.h>
 #include <string.h>
+#include <stdio.h>
 
 /* The control structure for each file descriptor. */
 typedef struct fd_control_s
@@ -236,9 +237,8 @@ diff_timeval(struct timeval *dest,
     }
 }
 
-#define MASSIVE_DEBUG
+#undef MASSIVE_DEBUG
 #ifdef MASSIVE_DEBUG
-#include <stdio.h>
 FILE **debug_out = &stderr;
 static void
 print_tree_item(sel_timer_t *pos, int indent)
