@@ -6,6 +6,12 @@
 	wrong, but it is consistent with other products already in the
 	field.
 
+	* dataxfer.c, ser2net.c, telnet.h: Added support for setting the
+	use of Cisco IOS baud rates instead of RFC 2217 ones, by command
+	option.
+
+	* selector.c, ser2net.c: Cleaned up some compile warnings.
+	
 2003-10-14  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Moved to version 2.0.

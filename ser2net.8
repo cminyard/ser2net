@@ -36,6 +36,11 @@ most useful for debugging purposes.
 .I \-u
 If UUCP locking is enabled, this will disable the use of UUCP locks.
 .TP
+.I \-b
+Cisco IOS uses a different mechanism for specifying the baud rates
+than the mechanism described in RFC2217.  This option sets the IOS
+version of setting the baud rates.  The default is RFC2217's.
+.TP
 .I \-v
 Prints the version of the program and exits.
 .TP

@@ -1878,26 +1878,30 @@ disconnect_port(struct controller_info *cntlr,
 static struct baud_rates_s {
     int real_rate;
     int val;
+    int cisco_ios_val;
 } baud_rates[] =
 {
-    { 50, B50 },
-    { 75, B75 },
-    { 110, B110 },
-    { 134, B134 },
-    { 150, B150 },
-    { 200, B200 },
-    { 300, B300 },
-    { 600, B600 },
-    { 1200, B1200 },
-    { 1800, B1800 },
-    { 2400, B2400 },
-    { 4800, B4800 },
-    { 9600, B9600 },
-    { 19200, B19200 },
-    { 38400, B38400 },
-    { 57600, B57600 },
-    { 115200, B115200 },
-    { 230400, B230400 },
+    { 50, B50, -1 },
+    { 75, B75, -1 },
+    { 110, B110, -1 },
+    { 134, B134, -1 },
+    { 150, B150, -1 },
+    { 200, B200, -1 },
+    { 300, B300, 3 },
+    { 600, B600 , 4},
+    { 1200, B1200, 5 },
+    { 1800, B1800, -1 },
+    { 2400, B2400, 6 },
+    { 4800, B4800, 7 },
+    { 9600, B9600, 8 },
+    /* We don't support 14400 baud */
+    { 19200, B19200, 10 },
+    /* We don't support 28800 baud */
+    { 38400, B38400, 12 },
+    { 57600, B57600, 13 },
+    { 115200, B115200, 14 },
+    { 230400, B230400, 15 },
+    /* We don't support 460800 baud */
 };
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
@@ -1906,9 +1910,18 @@ get_baud_rate(int rate, int *val)
 {
     int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
-	if (rate == baud_rates[i].real_rate) {
-	    *val = baud_rates[i].val;
-	    return 1;
+	if (cisco_ios_baud_rates) {
+	    if (rate == baud_rates[i].real_rate) {
+	        if (baud_rates[i].cisco_ios_val < 0)
+		    return 0;
+		*val = baud_rates[i].cisco_ios_val;
+		return 1;
+	    }
+	} else {
+	    if (rate == baud_rates[i].cisco_ios_val) {
+		*val = baud_rates[i].val;
+		return 1;
+	    }
 	}
     }
 
@@ -1921,7 +1934,15 @@ get_rate_from_baud_rate(int baud_rate, int *val)
     int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
-	    *val = baud_rates[i].real_rate;
+	    if (cisco_ios_baud_rates) {
+		if (baud_rates[i].real_rate < 0)
+		    /* We are at a baud rate unsopported by the
+		       enumeration, just return zero. */
+		    *val = 0;
+		else
+		    *val = baud_rates[i].real_rate;
+	    } else
+		*val = baud_rates[i].cisco_ios_val;
 	    return;
 	}
     }
@@ -1983,12 +2004,18 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	break;
 
     case 1: /* SET-BAUDRATE */
-	if (len < 6)
-	    return;
+	if (!cisco_ios_baud_rates) {
+	    if (len < 6)
+		return;
+	    val = ntohl(*((uint32_t *) (option+2)));
+	} else {
+	    if (len < 3)
+		return;
+	    val = option[2];
+	}
 
 	val = 0;
 	if (tcgetattr(port->devfd, &termio) != -1) {
-	    val = ntohl(*((uint32_t *) (option+2)));
 	    if ((val != 0) && (get_baud_rate(val, &val))) {
 		/* We have a valid baud rate. */
 		cfsetispeed(&termio, val);
@@ -2001,8 +2028,13 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	get_rate_from_baud_rate(val, &val);
 	outopt[0] = 44;
 	outopt[1] = 101;
-	*((uint32_t *) (outopt+2)) = htonl(val);
-	telnet_send_option(&port->tn_data, outopt, 6);
+	if (cisco_ios_baud_rates) {
+	    *((uint32_t *) (outopt+2)) = htonl(val);
+	    telnet_send_option(&port->tn_data, outopt, 6);
+	} else {
+	    outopt[2] = val;
+	    telnet_send_option(&port->tn_data, outopt, 3);
+	}
 	break;
 
     case 2: /* SET-DATASIZE */

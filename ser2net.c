@@ -22,12 +22,12 @@
 
 /* TODO
  *
- * Add getty support and UUCP locking
  * Add some type of security
  */
 
 #include <stdio.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <sys/types.h>
@@ -46,6 +46,7 @@ static int debug = 0;
 #ifdef USE_UUCP_LOCKING
 int uucp_locking_enabled = 1;
 #endif
+int cisco_ios_baud_rates = 0;
 
 selector_t *ser2net_sel;
 
@@ -58,6 +59,7 @@ static char *help_string =
 #ifdef USE_UUCP_LOCKING
 "  -u - Disable UUCP locking\n"
 #endif
+"  -b - Do CISCO IOS baud-rate negotiation, instead of RFC2217\n"
 "  -v - print the program's version and exit\n";
 
 void
@@ -94,6 +96,10 @@ main(int argc, char *argv[])
 	case 'd':
 	    detach = 0;
 	    debug = 1;
+	    break;
+
+	case 'b':
+	    cisco_ios_baud_rates = 1;
 	    break;
 
 	case 'c':

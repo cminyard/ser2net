@@ -97,4 +97,8 @@ void telnet_init(telnet_data_t *td,
 		 unsigned char *init_seq,
 		 int init_seq_len);
 
+/* Set to true if we are supposed to do CISCO IOS baud rates instead
+   of RFC2217 ones. */
+extern int cisco_ios_baud_rates;
+
 #endif /* _SER2NET_TELNET_H */

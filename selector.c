@@ -548,6 +548,7 @@ send_down(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
 	left = elem->left;
     }
 done:
+    return;
 }
 
 static void
@@ -586,6 +587,7 @@ add_to_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
     print_tree(*top, *last);
     check_tree(*top, *last);
 #endif
+    return;
 }
 
 static void
@@ -662,6 +664,7 @@ remove_from_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
     print_tree(*top, *last);
     check_tree(*top, *last);
 #endif
+    return;
 }
 
 int
