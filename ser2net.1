@@ -29,6 +29,9 @@ Set the configuration file to one other than the default of
 Stops  the  daemon  from  forking  and  detaching  from the controlling
 terminal. This is most useful for debugging purposes.
 .TP
+.I \-v
+Prints the version of the program and exits.
+.TP
 .I \-p port
 Enables the control port and sets the IP port to listen to for the
 control port.
@@ -45,6 +48,29 @@ Display a short list and summary of commands.
 .TP
 .B exit
 Disconnect from the control port.
+.TP
+.B version
+Display the version of this program.
+.TP
+.B monitor <type> <tcp port>
+Display all the input for a given port on
+the calling control port.  Only one direction may be monitored
+at a time.  The type field may be 
+.I tcp
+or
+.I term
+and specifies
+whether to monitor data from the TCP port or from the serial port
+Note that data monitoring is best effort, if the controller port
+cannot keep up the data will be silently dropped.  A controller
+may only monitor one thing and a port may only be monitored by
+one controller.
+.TP
+.B monitor stop
+Stop the current monitor.
+.TP
+.B disconnect <tcp port>
+Disconnect the tcp connection on the port.
 .TP
 .B setporttimeout <tcp port> <timeout>
 Set the amount of time in seconds before the port connection will be

@@ -229,7 +229,7 @@ static char *help_str =
 "       may only monitor one thing and a port may only be monitored by\n\r"
 "       one controller.\n\r"
 "monitor stop - stop the current monitor.\n\r"
-"disconnect <tcp port> - disconnect the tcp connection on the port\n\r"
+"disconnect <tcp port> - disconnect the tcp connection on the port.\n\r"
 "showport [<tcp port>] - Show information about a port. If no port is\n\r"
 "       given, all ports are displayed.\n\r"
 "setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\n\r"
