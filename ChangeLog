@@ -1,4 +1,16 @@
 
+2003-12-20  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c, ser2net.8: Added the ability to have port 0 mean use
+	standard in/out.  This way, you can invoke ser2net from inetd.
+
+	* devcfg.c: Allow "," to be used as an option separator.
+
+	* readconfig.c: Fix handling of lines coming from "-C".
+
+	* ser2net.c: Move creation of the selector to before the option
+	processing, for support of "-C'.
+
 2003-12-19  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Handle receive IACs from the terminal to the TCP

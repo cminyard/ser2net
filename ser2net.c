@@ -89,6 +89,14 @@ main(int argc, char *argv[])
     int i;
     int err;
 
+    err = sel_alloc_selector(&ser2net_sel);
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize ser2net selector: '%s'\n",
+		strerror(err));
+	return -1;
+    }
+
     for (i=1; i<argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
 	    fprintf(stderr, "Invalid argument: '%s'\n", argv[i]);
@@ -156,13 +164,6 @@ main(int argc, char *argv[])
 	}
     }
 
-    err = sel_alloc_selector(&ser2net_sel);
-    if (err) {
-	fprintf(stderr,
-		"Could not initialize ser2net selector: '%s'\n",
-		strerror(err));
-	return -1;
-    }
     setup_sighup();
     if (config_port != NULL) {
 	if (controller_init(config_port) == -1) {

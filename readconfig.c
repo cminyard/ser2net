@@ -180,16 +180,11 @@ free_banners(void)
 void
 handle_config_line(char *inbuf)
 {
-    int len = strlen(inbuf);
     char *portnum, *state, *timeout, *devname, *devcfg;
     char *strtok_data;
     char *errstr;
 
     lineno++;
-    if (inbuf[len-1] != '\n') {
-	syslog(LOG_ERR, "line %d is too long in config file", lineno);
-	return;
-    }
 
     if (banner_continued) {
 	char *str = strtok_r(inbuf, "\n", &strtok_data);
@@ -202,7 +197,6 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    inbuf[len-1] = '\0';
     portnum = strtok_r(inbuf, ":", &strtok_data);
     if (portnum == NULL) {
 	/* An empty line is ok. */
@@ -272,8 +266,17 @@ readconfig(char *filename)
 
     config_num++;
 
-    while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL)
+    while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
+	int len = strlen(inbuf);
+	if (inbuf[len-1] != '\n') {
+	    lineno++;
+	    syslog(LOG_ERR, "line %d is too long in config file", lineno);
+	    continue;
+	}
+	/* Remove the '\n' */
+	inbuf[len-1] = '\0';
 	handle_config_line(inbuf);
+    }
 
     /* Delete anything that wasn't in the new config file. */
     clear_old_port_config(config_num);

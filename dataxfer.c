@@ -879,46 +879,17 @@ display_banner(port_info_t *port)
     }
 }
 
-/* A connection request has come in on a port. */
-static void
-handle_accept_port_read(int fd, void *data)
+/* Called to set up a new connection's file descriptor. */
+static int
+setup_tcp_port(port_info_t *port)
 {
-    port_info_t *port = (port_info_t *) data;
-    socklen_t len;
-    char *err = NULL;
     int options;
     struct timeval then;
-
-    if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
-	err = "Port already in use\n\r";
-    } else if (is_device_already_inuse(port)) {
-	err = "Port's device already in use\n\r";
-    }
-
-    if (err != NULL) {
-	struct sockaddr_in dummy_sockaddr;
-	socklen_t len = sizeof(dummy_sockaddr);
-	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
-
-	if (new_fd != -1) {
-	    write(new_fd, err, strlen(err));
-	    close(new_fd);
-	}
-	return;
-    }
-
-    len = sizeof(port->remote);
-
-    port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
-    if (port->tcpfd == -1) {
-	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
-	return;
-    }
 
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(port->tcpfd);
 	syslog(LOG_ERR, "Could not fcntl the tcp port %s: %m", port->portname);
-	return;
+	return -1;
     }
 
 #ifdef HAVE_TCPD_H
@@ -932,7 +903,7 @@ handle_accept_port_read(int fd, void *data)
 	    char *err = "Access denied\n\r";
 	    write(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
-	    return;
+	    return -1;
 	}
     }
 #endif /* HAVE_TCPD_H */
@@ -948,14 +919,14 @@ handle_accept_port_read(int fd, void *data)
 	    err = "Port already in use by another process\n\r";
 	    write(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
-	    return;
+	    return -1;
 	} else if (rv < 0) {
 	    char *err;
 
 	    err = "Error creating port lock file\n\r";
 	    write(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
-	    return;
+	    return -1;
 	}
     }
 #endif /* USE_UUCP_LOCKING */
@@ -974,7 +945,7 @@ handle_accept_port_read(int fd, void *data)
 	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
-	return;
+	return -1;
     }
 
     if (port->enabled != PORT_RAWLP &&
@@ -984,17 +955,17 @@ handle_accept_port_read(int fd, void *data)
 	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
-	return;
+	return -1;
     }
 
-    /* Turn of BREAK. */
+    /* Turn off BREAK. */
     if (ioctl(port->devfd, TIOCCBRK) == -1) {
 	close(port->tcpfd);
 	close(port->devfd);
 	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
 	       port->devname,
 	       port->portname);
-	return;
+	return -1;
     }
     port->is_2217 = 0;
     port->break_set = 0;
@@ -1045,6 +1016,44 @@ handle_accept_port_read(int fd, void *data)
     sel_start_timer(port->timer, &then);
 
     reset_timer(port);
+    return 0;
+}
+
+/* A connection request has come in on a port. */
+static void
+handle_accept_port_read(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+    socklen_t len;
+    char *err = NULL;
+
+    if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
+	err = "Port already in use\n\r";
+    } else if (is_device_already_inuse(port)) {
+	err = "Port's device already in use\n\r";
+    }
+
+    if (err != NULL) {
+	struct sockaddr_in dummy_sockaddr;
+	socklen_t len = sizeof(dummy_sockaddr);
+	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
+
+	if (new_fd != -1) {
+	    write(new_fd, err, strlen(err));
+	    close(new_fd);
+	}
+	return;
+    }
+
+    len = sizeof(port->remote);
+
+    port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
+    if (port->tcpfd == -1) {
+	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
+	return;
+    }
+
+    setup_tcp_port(port);
 }
 
 /* Start monitoring for connections on a specific port. */
@@ -1052,7 +1061,22 @@ static char *
 startup_port(port_info_t *port)
 {
     int optval = 1;
-    
+
+    if (port->tcpport.sin_port == 0) {
+	/* A zero port means use stdin/stdout */
+	if (is_device_already_inuse(port)) {
+	    char *err = "Port's device already in use\n\r";
+	    write(0, err, strlen(err));
+	    exit(1);
+	} else {
+	    port->acceptfd = -1;
+	    port->tcpfd = 0; /* stdin */
+	    if (setup_tcp_port(port) == -1)
+		exit(1);
+	}
+	return NULL;
+    }
+
     port->acceptfd = socket(PF_INET, SOCK_STREAM, 0);
     if (port->acceptfd == -1) {
 	return "Unable to create TCP socket";
@@ -1164,6 +1188,13 @@ shutdown_port(port_info_t *port, char *reason)
     port->dev_to_tcp_buf_count = 0;
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
+
+    if (port->tcpport.sin_port == 0) {
+	/* This was a zero port (for stdin/stdout), this is only
+	   allowed with one port at a time, and we shut down when it
+	   closes. */
+	exit(0);
+    }
 
     /* If the port has been disabled, then delete it.  Check this before
        the new config so the port will be deleted properly and not
@@ -1291,7 +1322,7 @@ portconfig(char *portnum,
 	return "Could not allocate timer data";
     }
 
-    /* Error from here on out must goto errout. */
+    /* Errors from here on out must goto errout. */
     init_port_data(new_port);
 
     new_port->portname = malloc(strlen(portnum)+1);

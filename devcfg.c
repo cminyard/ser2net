@@ -67,7 +67,7 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
 
     *allow_2217 = 0;
     *banner = NULL;
-    pos = strtok_r(str, " \t", &strtok_data);
+    pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
 	    cfsetospeed(termctl, B300);
@@ -133,7 +133,7 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
 	    goto out;
 	}
 
-	pos = strtok_r(NULL, " \t", &strtok_data);
+	pos = strtok_r(NULL, ", \t", &strtok_data);
     }
 
 out:

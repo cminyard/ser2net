@@ -59,6 +59,10 @@ or localhost,2000.  If this is specified, it will only bind to the
 IP address specified for the port.  Otherwise, it will bind to all the
 ports on the machine.
 
+If the port number is zero, that means that standard in/out will be
+used for the only input/output, and only one port should be specified
+in the config.  This way, it can be used from inetd.
+
 .SH CONTROL PORT
 The control port provides a simple interface for controlling the ports and 
 viewing their status. To accomplish this, it has the following commands:
@@ -197,7 +201,8 @@ The  name  of  the  device  to connect to. This must be in the form of
 .BR /dev/<device> .
 .TP
 .I "device configuration options"
-Sets operational parameters for the serial port.  Options
+Sets operational parameters for the serial port.  Values may be
+separated by spaces or commas.  Options
 .I 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200
 set the various baud rates.
 .I EVEN, ODD, NONE
