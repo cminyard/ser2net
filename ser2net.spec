@@ -1,5 +1,5 @@
 Name: ser2net
-Version: 1.1
+Version: 1.3
 Release: 1
 License: GPL
 Summary: Serial to network proxy
@@ -18,7 +18,7 @@ connection
 %setup
 
 %build
-./configure --prefix="" 
+./configure --prefix="/usr" 
 make
 
 %install
@@ -36,5 +36,8 @@ make DESTDIR=$RPM_BUILD_ROOT install
 
 
 %changelog
+* Fri Jun 29 2001 Corey Minyard <minyard@acm.org>
+- Updated to 1.3
+- Set the prefix to "/" to install at root.
 * Tue Jun 19 2001 Ivan F. Martinez <ivanfm@ecodigit.com.br>
 - package created
