@@ -6,6 +6,8 @@
 	it to make a new command to do this (instead of using devconfig,
 	which didn't really match the devconfig's operation).
 
+	* configure.in, ser2net.spec: Updated to version 1.5
+
 2001-07-26  Corey Minyard <minyard@acm.org>
 
 	* devcfg.c - Added CREAD to the cflags so the serial port will
