@@ -1,4 +1,15 @@
 
+2001-07-03  Corey Minyard <minyard@acm.org>
+	
+	* Makefile.am, ser2net.1, ser2net.8, ser2net.spec - Moved ser2net
+	to /usr/sbin, renamed the makefile to have a .8 extension and
+	put it in /usr/share/man.
+
+	* controller.c - Fixed problems with telnet handling in the
+	control interface.
+	
+	* Updated to version 1.4
+	
 2001-06-29  Corey Minyard <minyard@acm.org>
 
 	* ser2net.spec - Actually put the changed version number in

@@ -63,11 +63,11 @@ typedef struct controller_info {
     struct sockaddr_in remote;		/* The socket address of who
 					   is connected to this port. */
 
-    char telnet_cmd[3];			/* An incoming telnet command. */
+    unsigned char telnet_cmd[3];	/* An incoming telnet command. */
     int  telnet_cmd_pos;		/* The current position in the
 					   telnet command buffer. */
 
-    char inbuf[INBUF_SIZE+1];		/* Buffer to receive command on. */
+    unsigned char inbuf[INBUF_SIZE+1];	/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
 					   in the inbuf. */
 
@@ -434,13 +434,28 @@ handle_tcp_fd_read(int fd, void *data)
 
     for (i=read_start; i<cntlr->inbuf_count; i++) {
 	if (cntlr->telnet_cmd_pos != 0) {
+	    if ((cntlr->telnet_cmd_pos == 1)
+		&& (cntlr->inbuf[i] == 255))
+	    {
+		/* Two IACs in a row causes one IAC to be sent, so
+		   just let this one go through. */
+		continue;
+	    }
+
 	    /* In the middle of a telnet command. */
 	    cntlr->telnet_cmd[cntlr->telnet_cmd_pos] = cntlr->inbuf[i];
 	    cntlr->telnet_cmd_pos++;
 
 	    i = remove_chars(cntlr, i, 1);
 
-	    if (cntlr->telnet_cmd_pos == 3) {
+	    if ((cntlr->telnet_cmd_pos == 2)
+		&& (cntlr->telnet_cmd[1] <= 250))
+	    {
+		/* These are two byte commands, so we have
+		   everything we need to handle the command. */
+		process_telnet_command(cntlr);
+		cntlr->telnet_cmd_pos = 0;
+	    } else if (cntlr->telnet_cmd_pos == 3) {
 		/* We are done with the telnet command. */
 		process_telnet_command(cntlr);
 		cntlr->telnet_cmd_pos = 0;

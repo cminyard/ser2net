@@ -1,5 +1,5 @@
 Name: ser2net
-Version: 1.3
+Version: 1.4
 Release: 1
 License: GPL
 Summary: Serial to network proxy
@@ -18,7 +18,7 @@ connection
 %setup
 
 %build
-./configure --prefix="/usr" 
+./configure --prefix="/usr" --mandir="/usr/share/man"
 make
 
 %install
@@ -31,11 +31,14 @@ make DESTDIR=$RPM_BUILD_ROOT install
 %defattr(-,root,root)                                                                                         
 %config(noreplace) /etc/ser2net.conf
 %doc README NEWS ChangeLog COPYING INSTALL AUTHORS
-/usr/bin/*
-/usr/man/*
+/usr/sbin/*
+/usr/share/man/man8/*
 
 
 %changelog
+* Tue Jul  3 2001 Corey Minyard <minyard@acm.org>
+- Fixed everything to install in the right place.
+- Updated to 1.4
 * Fri Jun 29 2001 Corey Minyard <minyard@acm.org>
 - Updated to 1.3
 - Set the prefix to "/usr" to install at root.
