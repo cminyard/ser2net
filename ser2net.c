@@ -162,6 +162,7 @@ main(int argc, char *argv[])
 
 	/* Detach from the calling terminal. */
 	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
+	syslog(LOG_NOTICE, "ser2net startup");
 	if ((pid = fork()) > 0) {
 	    exit(0);
 	} else if (pid < 0) {

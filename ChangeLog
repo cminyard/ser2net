@@ -1,6 +1,14 @@
 
 2003-12-04  Corey Minyard <minyard@acm.org>
 
+	* dataxfer.c: Add responses for all the telnet com port
+	control commands that we handle.
+
+	* telnet.c: Fixed IAC processing in suboption to be able
+	to handle a stream of IACs properly.
+
+2003-12-04  Corey Minyard <minyard@acm.org>
+
 	* configure.in: Moved to version 2.1.
 
 	* dataxfer.c: Have the telnet option responses use the 1xx

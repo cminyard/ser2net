@@ -2249,22 +2249,36 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
     case 8: /* FLOWCONTROL-SUSPEND */
 	tcflow(port->devfd, TCIOFF);
+	outopt[0] = 44;
+	outopt[1] = 108;
+	telnet_send_option(&port->tn_data, outopt, 2);
 	break;
 
     case 9: /* FLOWCONTROL-RESUME */
 	tcflow(port->devfd, TCION);
+	outopt[0] = 44;
+	outopt[1] = 109;
+	telnet_send_option(&port->tn_data, outopt, 2);
 	break;
 
     case 10: /* SET-LINESTATE-MASK */
 	if (len < 3)
 	    return;
 	port->linestate_mask = option[2];
+	outopt[0] = 44;
+	outopt[1] = 110;
+	outopt[2] = port->linestate_mask;
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 11: /* SET-MODEMSTATE-MASK */
 	if (len < 3)
 	    return;
 	port->modemstate_mask = option[2];
+	outopt[0] = 44;
+	outopt[1] = 111;
+	outopt[2] = port->modemstate_mask;
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 12: /* PURGE_DATA */
@@ -2279,6 +2293,10 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	break;
     purge_found:
 	tcflush(port->devfd, val);
+	outopt[0] = 44;
+	outopt[1] = 112;
+	outopt[2] = option[2];
+	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
     case 6: /* NOTIFY-LINESTATE */

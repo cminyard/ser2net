@@ -52,6 +52,9 @@ struct telnet_data_s
 					   telnet_cmd buffer.  If zero,
 					   no telnet command is in
 					   progress. */
+    int            suboption_iac;	/* If true, we are in a
+					   suboption and processing an
+					   IAC. */
 
     /* Outgoing telnet commands.  The output routines should look at
        this *first* to see if they should transmit some data from

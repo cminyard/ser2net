@@ -205,7 +205,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 		}
 	    } else {
 		/* It's in a suboption, look for the end and IACs. */
-		if (td->telnet_cmd[td->telnet_cmd_pos-1] == 255) {
+	      if (td->suboption_iac) {
 		    if (tn_byte == 240) {
 			/* Remove the IAC 240 from the end. */
 			td->telnet_cmd_pos--;
@@ -219,6 +219,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 			   character, delete them both */
 			td->telnet_cmd_pos--;
 		    }
+		    td->suboption_iac = 0;
 		} else {
 		    if (td->telnet_cmd_pos > MAX_TELNET_CMD_SIZE)
 			/* Always store the last character
@@ -230,12 +231,15 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 	  
 		    td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
 		    td->telnet_cmd_pos++;
+		    if (tn_byte == 255)
+		      td->suboption_iac = 1;
 		}
 	    }
 	} else if (data[i] == 255) {
 	    td->telnet_cmd[td->telnet_cmd_pos] = 255;
 	    len = delete_char(data, i, len);
 	    td->telnet_cmd_pos++;
+	    td->suboption_iac = 0;
 	} else {
 	    i++;
 	}
