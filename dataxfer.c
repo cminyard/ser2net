@@ -91,7 +91,8 @@ typedef struct port_info
 
 
     /* Information about the TCP port. */
-    int            tcpport;		/* The TCP port to listen on
+    char               *portname;       /* The name given for the port. */
+    struct sockaddr_in tcpport;		/* The TCP port to listen on
 					   for connections to this
 					   terminal device. */
     int            acceptfd;		/* The file descriptor used to
@@ -171,7 +172,8 @@ static void
 init_port_data(port_info_t *port)
 {
     port->enabled = 0;
-    port->tcpport = 0;
+    port->portname = "";
+    memset(&(port->tcpport), 0, sizeof(port->tcpport));
     port->acceptfd = 0;
     port->tcpfd = 0;
     port->timeout = 0;
@@ -237,7 +239,7 @@ handle_dev_fd_read(int fd, void *data)
 
     if (port->dev_to_tcp_buf_count < 0) {
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "dev read error for port %d: %m", port->tcpport);
+	syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
 	shutdown_port(port);
 	return;
     } else if (port->dev_to_tcp_buf_count == 0) {
@@ -270,8 +272,8 @@ handle_dev_fd_read(int fd, void *data)
 	    shutdown_port(port);
 	} else {
 	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The tcp write for port %d had error: %m",
-		   port->tcpport);
+	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
+		   port->portname);
 	    shutdown_port(port);
 	}
     } else {
@@ -311,8 +313,8 @@ handle_dev_fd_write(int fd, void *data)
 	    /* This again was due to O_NONBLOCK, just ignore it. */
 	} else {
 	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The dev write for port %d had error: %m",
-		   port->tcpport);
+	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
+		   port->portname);
 	    shutdown_port(port);
 	}
     } else {
@@ -337,7 +339,8 @@ handle_dev_fd_except(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
 
-    syslog(LOG_ERR, "Select exception on device for port %d", port->tcpport);
+    syslog(LOG_ERR, "Select exception on device for port %s",
+	   port->portname);
     shutdown_port(port);
 }
 
@@ -403,7 +406,7 @@ handle_tcp_fd_read(int fd, void *data)
 
     if (port->tcp_to_dev_buf_count < 0) {
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "read error for port %d: %m", port->tcpport);
+	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
 	shutdown_port(port);
 	return;
     } else if (port->tcp_to_dev_buf_count == 0) {
@@ -434,8 +437,8 @@ handle_tcp_fd_read(int fd, void *data)
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else {
 	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The dev write for port %d had error: %m",
-		   port->tcpport);
+	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
+		   port->portname);
 	    shutdown_port(port);
 	}
     } else {
@@ -477,8 +480,8 @@ handle_tcp_fd_write(int fd, void *data)
 	    shutdown_port(port);
 	} else {
 	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The tcp write for port %d had error: %m",
-		   port->tcpport);
+	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
+		   port->portname);
 	    shutdown_port(port);
 	}
     } else {
@@ -503,7 +506,7 @@ handle_tcp_fd_except(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
 
-    syslog(LOG_ERR, "Select exception on port %d", port->tcpport);
+    syslog(LOG_ERR, "Select exception on port %s", port->portname);
     shutdown_port(port);
 }
 
@@ -558,13 +561,13 @@ handle_accept_port_read(int fd, void *data)
 
     port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
     if (port->tcpfd == -1) {
-	syslog(LOG_ERR, "Could not accept on port %d: %m", port->tcpport);
+	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
 	return;
     }
 
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(port->tcpfd);
-	syslog(LOG_ERR, "Could not fcntl the tcp port %d: %m", port->tcpport);
+	syslog(LOG_ERR, "Could not fcntl the tcp port %s: %m", port->portname);
 	return;
     }
 
@@ -595,9 +598,9 @@ handle_accept_port_read(int fd, void *data)
     port->devfd = open(port->devname, options);
     if (port->devfd == -1) {
 	close(port->tcpfd);
-	syslog(LOG_ERR, "Could not open device %s for port %d: %m",
+	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
 	       port->devname,
-	       port->tcpport);
+	       port->portname);
 	return;
     }
 
@@ -605,9 +608,9 @@ handle_accept_port_read(int fd, void *data)
               tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1) {
 	close(port->tcpfd);
 	close(port->devfd);
-	syslog(LOG_ERR, "Could not set up device %s for port %d: %m",
+	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
 	       port->devname,
-	       port->tcpport);
+	       port->portname);
 	return;
     }
 
@@ -648,8 +651,7 @@ handle_accept_port_read(int fd, void *data)
 static char *
 startup_port(port_info_t *port)
 {
-    struct sockaddr_in sock;
-    int    optval = 1;
+    int optval = 1;
     
     port->acceptfd = socket(PF_INET, SOCK_STREAM, 0);
     if (port->acceptfd == -1) {
@@ -670,10 +672,9 @@ startup_port(port_info_t *port)
 	return "Unable to set reuseaddress on socket";
     }
 
-    sock.sin_family = AF_INET;
-    sock.sin_port = htons(port->tcpport);
-    sock.sin_addr.s_addr = INADDR_ANY;
-    if (bind(port->acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
+    if (bind(port->acceptfd,
+	     (struct sockaddr *) &port->tcpport,
+	     sizeof(port->tcpport)) == -1) {
 	close(port->acceptfd);
 	return "Unable to bind TCP port";
     }
@@ -712,9 +713,13 @@ portconfig(char *portnum,
     /* Error from here on out must goto errout. */
     init_port_data(new_port);
 
-    new_port->tcpport = scan_int(portnum);
-    if (new_port->tcpport == -1) {
+    new_port->portname = malloc(strlen(portnum)+1);
+    strcpy(new_port->portname, portnum);
+
+    if (scan_tcp_port(portnum, &(new_port->tcpport)) == -1) {
 	rv = "port number was invalid";
+	free(new_port->portname);
+	new_port->portname = NULL;
 	goto errout;
     }
 
@@ -818,7 +823,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     str = "TCP Port ";
     controller_output(cntlr, str, strlen(str));
-    sprintf(buffer, "%d", port->tcpport);
+    sprintf(buffer, "%s", port->portname);
     controller_output(cntlr, buffer, strlen(buffer));
     controller_output(cntlr, "\n\r", 2);
 
@@ -887,16 +892,10 @@ static port_info_t *
 find_port_by_num(char *portstr)
 {
     port_info_t *port;
-    int portnum = scan_int(portstr);
-
-
-    if (portnum == -1) {
-	return NULL;
-    }
 
     port = ports;
     while (port != NULL) {
-	if (portnum == port->tcpport) {
+	if (strcmp(portstr, port->portname) == 0) {
 	    return port;
 	}
 	port = port->next;

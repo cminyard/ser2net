@@ -24,4 +24,9 @@
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
 
+/* Scan for a TCP port in the form "[x.x.x.x,]x" where the first part is
+   the IP address (options, defaults to INADDR_ANY) and the second part
+   is the port number (required). */
+int scan_tcp_port(char *str, struct sockaddr_in *addr);
+
 #endif /* UTILS */

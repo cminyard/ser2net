@@ -19,6 +19,10 @@
 
 /* This file holds basic utilities used by the ser2net program. */
 
+#include <string.h>
+#include <netinet/in.h>
+#include <netdb.h>
+
 #include "utils.h"
 
 /* Scan for a positive integer, and return it.  Return -1 if the
@@ -52,3 +56,49 @@ scan_int(char *str)
     return rv;
 }
 
+/* Scan for a TCP port in the form "[x.x.x.x,]x" where the first part is
+   the IP address (options, defaults to INADDR_ANY) and the second part
+   is the port number (required). */
+int
+scan_tcp_port(char *str, struct sockaddr_in *addr)
+{
+    char *strtok_data;
+    char *ip;
+    char *port;
+    int  port_num;
+
+    ip = strtok_r(str, ",", &strtok_data);
+    port = strtok_r(NULL, "", &strtok_data);
+    if (port == NULL) {
+	port = ip;
+	ip = NULL;
+	addr->sin_addr.s_addr = INADDR_ANY;
+	port_num = scan_int(port);
+	if (port_num == -1) {
+	    return -1;
+	}
+	addr->sin_port = htons(port_num);
+    } else {
+	/* Both an IP and port were specified. */
+	addr->sin_addr.s_addr = inet_addr(ip);
+	if (addr->sin_addr.s_addr == INADDR_NONE) {
+	    struct hostent *hp;
+
+	    hp = gethostbyname(ip);
+	    if (hp == NULL) {
+		return -1;
+	    }
+	    if (hp->h_addrtype != AF_INET) {
+		return -1;
+	    }
+	    memcpy(&addr->sin_addr, hp->h_addr_list[0], hp->h_length);
+	}
+
+	port_num = scan_int(port);
+	if (port_num == -1) {
+	    return -1;
+	}
+	addr->sin_port = htons(port_num);
+    }
+    addr->sin_family = AF_INET;
+}

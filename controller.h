@@ -20,8 +20,8 @@
 #ifndef CONTROLLER
 #define CONTROLLER
 
-/* Initialize the controller code. */
-void controller_init(int controller_port);
+/* Initialize the controller code, return -1 on error. */
+int controller_init(char *controller_port);
 
 struct controller_info;
 

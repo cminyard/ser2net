@@ -39,7 +39,7 @@
 #include "dataxfer.h"
 
 static char *config_file = "/etc/ser2net.conf";
-static int config_port = -1;
+static char *config_port = NULL;
 static int detach = 1;
 static int debug = 0;
 
@@ -96,11 +96,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No control port specified with -p\n");
 		arg_error(argv[0]);
 	    }
-	    config_port = scan_int(argv[i]);
-	    if (config_port == -1) {
-		fprintf(stderr, "Invalid control port specified with -p\n");
-		arg_error(argv[0]);
-	    }
+	    config_port = argv[i];
 	    break;
 
 	case 'v':
@@ -116,7 +112,10 @@ main(int argc, char *argv[])
     selector_init();
     dataxfer_init();
     if (config_port != -1) {
-	controller_init(config_port);
+	if (controller_init(config_port) == -1) {
+	    fprintf(stderr, "Invalid control port specified with -p\n");
+	    arg_error(argv[0]);
+	}
     }
 
     if (readconfig(config_file) == -1) {

@@ -666,13 +666,15 @@ errout:
 }
 
 /* Set up the controller port to accept connections. */
-void
-controller_init(int controller_port)
+int
+controller_init(char *controller_port)
 {
     struct sockaddr_in sock;
     int    optval = 1;
 
-    port = controller_port;
+    if (scan_tcp_port(controller_port, &sock) == -1) {
+	return -1;
+    }
 
     acceptfd = socket(PF_INET, SOCK_STREAM, 0);
     if (acceptfd == -1) {
@@ -696,9 +698,6 @@ controller_init(int controller_port)
 	exit(1);
     }
 
-    sock.sin_family = AF_INET;
-    sock.sin_port = htons(port);
-    sock.sin_addr.s_addr = INADDR_ANY;
     if (bind(acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
 	close(acceptfd);
 	syslog(LOG_ERR, "Unable to bind TCP port: %m");

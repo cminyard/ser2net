@@ -37,8 +37,12 @@ most useful for debugging purposes.
 Prints the version of the program and exits.
 .TP
 .I \-p port
-Enables the control port and sets the IP port to listen to for the
-control port.
+Enables the control port and sets the TCP port to listen to for the
+control port.  A port number may be of the form [host,]port, such as
+127.0.0.1,2000
+or localhost,2000.  If this is specified, it will only bind to the
+IP address specified for the port.  Otherwise, it will bind to all the
+ports on the machine.
 
 .SH CONTROL PORT
 The control port provides a simple interface for controlling the ports and 
@@ -128,13 +132,16 @@ A file with another name or path may be specified using the
 option.  This  file consists of one or more entries with the following
 format:
 .IP
-<IP port>:<state>:<timeout>:<device>:<options>
+<TCP port>:<state>:<timeout>:<device>:<options>
 .PP
 .SS FIELDS
 .TP
-.I "IP port"
+.I "TCP port"
 Name  or number of the TCP/IP port to accept connections from for this
-device.
+device.  A port number may be of the form [host,]port, such as 127.0.0.1,2000
+or localhost,2000.  If this is specified, it will only bind to the
+IP address specified for the port.  Otherwise, it will bind to all the
+ports on the machine.
 .TP
 .I state
 Either 
