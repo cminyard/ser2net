@@ -1,5 +1,6 @@
 AC_INIT(ser2net.c)
 AM_INIT_AUTOMAKE(ser2net, 1.9)
+AC_PROG_CC
 AM_PROG_LIBTOOL
 AC_ARG_WITH(uucp-locking,
  [  --with-uucp-locking     Enable UUCP-style locking],
@@ -8,7 +9,6 @@ AC_ARG_WITH(uucp-locking,
 if test "$uucp_locking_flag" = yes; then
   AC_DEFINE(USE_UUCP_LOCKING)
 fi
-AC_PROG_CC
 AC_STDC_HEADERS
 AC_HAVE_HEADERS(tcpd.h)
 AC_CHECK_LIB(nsl,main)

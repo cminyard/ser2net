@@ -1,4 +1,9 @@
 
+2003-10-12  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Added real telnet option processing infrastructure,
+	getting read for com port control handling.
+
 2003-04-22  Corey Minyard <minyard@acm.org>
 
 	* configure.in, ser2net.spec: Move to version 1.9.
