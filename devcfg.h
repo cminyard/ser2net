@@ -33,4 +33,10 @@ int devconfig(char *instr, struct termios *termctl);
 /* Prints the configuration of a device to a controller. */
 void show_devcfg(struct controller_info *cntlr, struct termios *termctl);
 
+/* Sets the DTR and RTS lines dynamically. */
+int setdevcontrol(char *instr, int fd);
+
+/* Show the state of the DTR and RTS lines. */
+void show_devcontrol(struct controller_info *cntlr, int fd);
+
 #endif /* DEVCFG */

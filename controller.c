@@ -247,9 +247,14 @@ static char *help_str =
 "setportconfig <tcp port> <config> - Set the port configuration as in\n\r"
 "       the device configuration in the ser2net.conf file.  Valid options\n\r"
 "       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200, EVEN, ODD\n\r"
-"       NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS.\n\r"
+"       NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, LOCAL (ignore\n\r"
+"       model control).\n\r"
 "       Note that these will not change until the port is disconnected\n\r"
 "       and connected again.\n\r"
+"setportcontrol <tcp port> <controls>\n\r"
+"       Dynamically modify the characteristics of the port.  These are\n\r"
+"       immedaite and won't live between connections.  Valid controls are\n\r"
+"       DTRHI, DTRLO, RTSHI, and RTSLO.\n\r"
 "setportenable <tcp port> <enable state> - Sets the port operation state.\n\r"
 "       Valid states are:\n\r"
 "         off - The TCP port is shut down\n\r"
@@ -361,6 +366,21 @@ process_input_line(controller_info_t *cntlr)
 	    goto out;
 	}
 	setportdevcfg(cntlr, tok, str);
+    } else if (strcmp(tok, "setportcontrol") == 0) {
+	tok = strtok_r(NULL, " \t", &strtok_data);
+	if (tok == NULL) {
+	    char *err = "No port given\n\r";
+	    controller_output(cntlr, err, strlen(err));
+	    goto out;
+	}
+
+	str = strtok_r(NULL, "", &strtok_data);
+	if (str == NULL) {
+	    char *err = "No device controls\n\r";
+	    controller_output(cntlr, err, strlen(err));
+	    goto out;
+	}
+	setportcontrol(cntlr, tok, str);
     } else {
 	char *err = "Unknown command: ";
 	controller_output(cntlr, err, strlen(err));

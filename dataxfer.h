@@ -51,6 +51,11 @@ void setportdevcfg(struct controller_info *cntlr,
 		   char *portspec,
 		   char *devcfg);
 
+/* Modify the DTR and RTS lines for the port. */
+void setportcontrol(struct controller_info *cntlr,
+		    char *portspec,
+		    char *controls);
+
 /* Set the enable state of a port (off, raw, telnet).  The parameters
    are all strings that the routine will convert to integers.  Error
    output will be generated on invalid data. */

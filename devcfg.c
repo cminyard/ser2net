@@ -19,7 +19,9 @@
 
 /* This code handles generating the configuration for the serial port. */
 
+#include <unistd.h>
 #include <termios.h>
+#include <termio.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
@@ -187,4 +189,76 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
 	str = "NONE";
     }
     controller_output(cntlr, str, strlen(str));
+}
+
+int
+setdevcontrol(char *instr, int fd)
+{
+    int rv;
+    char *str;
+    char *pos;
+    int status;
+    char *strtok_data;
+
+    str = malloc(strlen(instr) + 1);
+    if (str == NULL) {
+	return -1;
+    }
+
+    strcpy(str, instr);
+
+    pos = strtok_r(str, " \t", &strtok_data);
+    while (pos != NULL) {
+       if (strcmp(pos, "RTSHI") == 0) {
+           ioctl(fd, TIOCMGET, &status);
+           status |= TIOCM_RTS;
+           ioctl(fd, TIOCMSET, &status);
+       } else if (strcmp(pos, "RTSLO") == 0) {
+           ioctl(fd, TIOCMGET, &status);
+           status &= ~TIOCM_RTS;
+           ioctl(fd, TIOCMSET, &status);
+       } else if (strcmp(pos, "DTRHI") == 0) {
+           ioctl(fd, TIOCMGET, &status);
+           status |= TIOCM_DTR;
+           ioctl(fd, TIOCMSET, &status);
+       } else if (strcmp(pos, "DTRLO") == 0) {
+           ioctl(fd, TIOCMGET, &status);
+           status &= ~TIOCM_DTR;               /* AKA drop DTR */
+           ioctl(fd, TIOCMSET, &status);
+	} else {
+	    rv = -1;
+	    goto out;
+	}
+
+	pos = strtok_r(NULL, " \t", &strtok_data);
+    }
+
+out:
+    free(str);
+    return rv;
+}
+
+void
+show_devcontrol(struct controller_info *cntlr, int fd)
+{
+    char *str;
+    int  status;
+
+    ioctl(fd, TIOCMGET, &status);
+
+    if (status & TIOCM_RTS) {
+	str = "RTSHI";
+    } else {
+	str = "RTSLO";
+    }
+    controller_output(cntlr, str, strlen(str));
+    controller_output(cntlr, " ", 1);
+
+    if (status & TIOCM_DTR) {
+	str = "DTRHI";
+    } else {
+	str = "DTRLO";
+    }
+    controller_output(cntlr, str, strlen(str));
+    controller_output(cntlr, " ", 1);
 }

@@ -1,4 +1,11 @@
 
+2001-08-11  Corey Minyard <minyard@acm.org>
+
+	* devcfg.h, devcfg.c, controller.c, dataxfer.c, dataxfer.h, ser2net.8:
+	Ben Adams sent a patch to control the DTR and RTS lines, I rewrote
+	it to make a new command to do this (instead of using devconfig,
+	which didn't really match the devconfig's operation).
+
 2001-07-26  Corey Minyard <minyard@acm.org>
 
 	* devcfg.c - Added CREAD to the cflags so the serial port will

@@ -835,6 +835,16 @@ showport(struct controller_info *cntlr, port_info_t *port)
     show_devcfg(cntlr, &(port->termctl));
     controller_output(cntlr, "\n\r", 2);
 
+    str = "  device controls: ";
+    controller_output(cntlr, str, strlen(str));
+    if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
+	str = "not currently connected\n\r";
+	controller_output(cntlr, str, strlen(str));
+    } else {
+	show_devcontrol(cntlr, port->devfd);
+	controller_output(cntlr, "\n\r", 2);
+    }
+
     str = "  tcp to device state: ";
     controller_output(cntlr, str, strlen(str));
     str = state_str[port->tcp_to_dev_state];
@@ -942,6 +952,33 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
     } else {
 	if (devconfig(devcfg, &(port->termctl)) == -1) {
 	    char *err = "Invalid device config\n\r";
+	    controller_output(cntlr, err, strlen(err));
+	}
+    }
+}
+
+/* Modify the controls of a port.  The port number and configuration
+   are passed in as strings, this code will get the port and then call
+   the code to control the device. */
+void
+setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
+{
+    port_info_t *port;
+
+    port = find_port_by_num(portspec);
+    if (port == NULL) {
+	char *err = "Invalid port number: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, portspec, strlen(portspec));
+	controller_output(cntlr, "\n\r", 2);
+    } else if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
+	char *err = "Port is not currently connected: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, portspec, strlen(portspec));
+	controller_output(cntlr, "\n\r", 2);
+    } else {
+	if (setdevcontrol(controls, port->devfd) == -1) {
+	    char *err = "Invalid device controls\n\r";
 	    controller_output(cntlr, err, strlen(err));
 	}
     }
