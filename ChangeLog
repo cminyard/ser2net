@@ -1,4 +1,12 @@
 
+2004-05-08  Marc Haber
+
+	* ser2net.h: Set the man page section to the right value.
+
+2004-01-24  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Don't attempt to disconnect an unconnected port.
+
 2003-12-20  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c, ser2net.8: Added the ability to have port 0 mean use

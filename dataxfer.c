@@ -1926,6 +1926,12 @@ disconnect_port(struct controller_info *cntlr,
 	controller_output(cntlr, portspec, strlen(portspec));
  	controller_output(cntlr, "\n\r", 2);
  	return;
+    } else if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
+	char *err = "Port not connected: ";
+ 	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, portspec, strlen(portspec));
+ 	controller_output(cntlr, "\n\r", 2);
+ 	return;
     }
  
     shutdown_port(port, "disconnect");
