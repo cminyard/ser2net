@@ -13,6 +13,10 @@
 	Francolin Martinez.  However, some configure work needs to
 	be done to make it actually work properly.
 
+	* dataxfer.c, controller.c, configure.in, ser2net.1 - Fixed the
+	tcp_wrappers stuff to work properly, did the config stuff for it,
+	and added it to the control port as well.
+
 2001-06-15  Corey Minyard <minyard@acm.org>
 	
 	* controller.c - Made sure the monitor port was set to null

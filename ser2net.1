@@ -155,11 +155,17 @@ set the number of data bits.
 .PP
 Blank lines and lines starting with `#' are ignored.
 
+.SH SECURITY
+ser2net uses the tcp wrappers interface to implement host-based security.
+See hosts_access(5) for a description of the file setup.  Two daemons are
+used by ser2net, "ser2net" is for the data ports and "ser2net-control"
+is for the control ports.
+
 .SH FILES
 /etc/ser2net.conf
 
 .SH "SEE ALSO"
-telnet(1)
+telnet(1), hosts_access(5)
 
 .SH "KNOWN PROBLEMS"
 The program does not do UUCP file locking and it won't play nice with
