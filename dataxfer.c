@@ -551,20 +551,22 @@ handle_tcp_fd_read(int fd, void *data)
 		} else if (port->telnet_cmd_pos == 2) {
 		    port->telnet_cmd[port->telnet_cmd_pos] = tn_byte;
 		    port->telnet_cmd_pos++;
-		    if (tn_byte != 250) {
+		    if (port->telnet_cmd[1] != 250) {
 			/* It's a will/won't/do/don't */
 			handle_telnet_cmd(port);
 			port->telnet_cmd_pos = 0;
 		    }
 		} else {
 		    /* It's in a suboption, look for the end and IACs. */
-		    if (port->telnet_cmd[port->telnet_cmd_pos] == 255) {
+		    if (port->telnet_cmd[port->telnet_cmd_pos-1] == 255) {
 			if (tn_byte == 240) {
+			    /* Remove the IAC 240 from the end. */
 			    port->telnet_cmd_pos--;
 			    handle_telnet_cmd(port);
 			    port->telnet_cmd_pos = 0;
 			} else if (tn_byte == 255) {
-			    /* Don't do anything. */
+			    /* Don't do anything, a double 255 means
+			       we leave on 255 in. */
 			} else {
 			    /* If we have an IAC and an invalid
 			       character, delete them both */
@@ -660,6 +662,16 @@ handle_tcp_fd_write(int fd, void *data)
 	write_count = write(port->tcpfd,
 			    &(port->out_telnet_cmd[0]),
 			    port->out_telnet_cmd_size);
+{
+    int i;
+    printf("Sent:");
+    for (i=0; i<write_count; i++) {
+	if ((i % 16) == 0)
+	    printf("\n ");
+	printf(" %2.2x", port->out_telnet_cmd[i]);
+    }
+    printf("\n");
+}
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
@@ -1768,7 +1780,7 @@ struct telnet_cmd {
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
     { TN_OPT_ECHO,		   0,     1,          1,       1, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
-    { TN_OPT_COM_PORT,		   0,     0,          0,       0, 0, 0,
+    { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
       com_port_handler },
 };
 
@@ -1878,6 +1890,135 @@ handle_telnet_cmd(port_info_t *port)
 }
 
 static void
+send_option(port_info_t *port, unsigned char *option, int len)
+{
+    int pos = port->out_telnet_cmd_size;
+    int left = MAX_TELNET_CMD_XMIT_BUF - pos;
+    int real_len;
+    int i;
+
+    /* Make sure to account for any duplicate 255s. */
+    for (real_len=0, i=0; i<len; i++, real_len++) {
+	if (option[i] == 255)
+	    real_len++;
+    }
+
+    real_len += 4; /* Add the initial and end markers. */
+
+    if (real_len > left) {
+	/* Out of data, abort the connection.  This really shouldn't
+	   happen.*/
+	shutdown_port(port, "telnet out of write data");
+	return;
+    }
+
+    i = 0;
+    port->out_telnet_cmd[pos++] = 255;
+    port->out_telnet_cmd[pos++] = 250;
+    for (i=0; i<len; i++, pos++) {
+	port->out_telnet_cmd[pos] = option[i];
+	if (option[i] == 255)
+	    port->out_telnet_cmd[++pos] = option[i];
+    }
+    port->out_telnet_cmd[pos++] = 255;
+    port->out_telnet_cmd[pos++] = 240;
+    port->out_telnet_cmd_size = pos;
+
+    sel_set_fd_read_handler(ser2net_sel, port->devfd,
+			    SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+			     SEL_FD_HANDLER_ENABLED);
+}
+
+static struct baud_rates_s {
+    int real_rate;
+    int val;
+} baud_rates[] =
+{
+    { 50, B50 },
+    { 75, B75 },
+    { 110, B110 },
+    { 134, B134 },
+    { 150, B150 },
+    { 200, B200 },
+    { 300, B300 },
+    { 600, B600 },
+    { 1200, B1200 },
+    { 1800, B1800 },
+    { 2400, B2400 },
+    { 4800, B4800 },
+    { 9600, B9600 },
+    { 19200, B19200 },
+    { 38400, B38400 },
+    { 57600, B57600 },
+    { 115200, B115200 },
+    { 230400, B230400 },
+};
+#define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
+
+int
+get_baud_rate(int rate, int *val)
+{
+    int i;
+    for (i=0; i<BAUD_RATES_LEN; i++) {
+	if (rate == baud_rates[i].real_rate) {
+	    *val = baud_rates[i].val;
+	    return 1;
+	}
+    }
+
+    return 0;
+}
+
+static void
 com_port_handler(port_info_t *port, unsigned char *option, int len)
 {
+    char outopt[16];
+    struct termios termio;
+    int val;
+    
+{
+    int i;
+    printf("Got com port option:");
+    for (i=0; i<len; i++) {
+	if ((i % 16) == 0)
+	    printf("\n ");
+	printf(" %2.2x", option[i]);
+    }
+    printf("\n");
+}
+
+    if (len < 2) 
+	return;
+
+    switch (option[1]) {
+    case 0: /* SIGNATURE? */
+	/* We don't have one. */
+	outopt[0] = 44;
+	outopt[1] = 0;
+	strcpy(outopt+2, "ser2net");
+	send_option(port, outopt, 9);
+	break;
+    case 1: /* SET-BAUDRATE */
+	if (len < 6)
+	    return;
+
+	val = 0;
+	if (tcgetattr(port->devfd, &termio) != -1) {
+	    val = ntohl(*((uint32_t *) option+2));
+	    if ((val != 0) && (get_baud_rate(val, &val))) {
+		/* We have a valid baud rate. */
+		cfsetispeed(&termio, val);
+		cfsetospeed(&termio, val);
+		tcsetattr(port->devfd, TCSADRAIN, &termio);
+	    }
+	    tcgetattr(port->devfd, &termio);
+	    val = cfgetispeed(&termio);
+	}
+ printf("val = %d\n", val);
+	outopt[0] = 44;
+	outopt[1] = 1;
+	*((uint32_t *) (outopt+2)) = htonl(val);
+	send_option(port, outopt, 6);
+    }
 }
