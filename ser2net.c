@@ -123,7 +123,7 @@ main(int argc, char *argv[])
 
     selector_init();
     dataxfer_init();
-    if (config_port != -1) {
+    if (config_port != NULL) {
 	if (controller_init(config_port) == -1) {
 	    fprintf(stderr, "Invalid control port specified with -p\n");
 	    arg_error(argv[0]);

@@ -241,6 +241,8 @@ static char *help_str =
 "disconnect <tcp port> - disconnect the tcp connection on the port.\n\r"
 "showport [<tcp port>] - Show information about a port. If no port is\n\r"
 "       given, all ports are displayed.\n\r"
+"showshortport [<tcp port>] - Show information about a port in a one-line\n\r"
+"       format. If no port is given, all ports are displayed.\n\r"
 "setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\n\r"
 "       before the port connection will be shut down if no activity\n\r"
 "       has been seen on the port.\n\r"
@@ -248,7 +250,7 @@ static char *help_str =
 "       the device configuration in the ser2net.conf file.  Valid options\n\r"
 "       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 115200, EVEN, ODD\n\r"
 "       NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, LOCAL (ignore\n\r"
-"       modem control).\n\r"
+"       modem control), [-]RTSCTS, [-]XONXOFF.\n\r"
 "       Note that these will not change until the port is disconnected\n\r"
 "       and connected again.\n\r"
 "setportcontrol <tcp port> <controls>\n\r"
@@ -289,6 +291,9 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "showport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	showports(cntlr, tok);
+    } else if (strcmp(tok, "showshortport") == 0) {
+	tok = strtok_r(NULL, " \t", &strtok_data);
+	showshortports(cntlr, tok);
     } else if (strcmp(tok, "monitor") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {

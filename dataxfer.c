@@ -985,6 +985,72 @@ dataxfer_init(void)
 
 /* Print information about a port to the control port given in cntlr. */
 static void
+showshortport(struct controller_info *cntlr, port_info_t *port)
+{
+    char buffer[128];
+    int  count;
+    int  need_space = 0;
+
+    snprintf(buffer, 23, "%-22s", port->portname);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, " %-6s ", enabled_str[port->enabled]);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%7d ", port->timeout);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    inet_ntop(AF_INET, &(port->remote.sin_addr), buffer, sizeof(buffer));
+    count = strlen(buffer);
+    controller_output(cntlr, buffer, count);
+    sprintf(buffer, ",%d ", ntohs(port->remote.sin_port));
+    count += strlen(buffer);
+    controller_output(cntlr, buffer, strlen(buffer));
+    while (count < 23) {
+	controller_output(cntlr, " ", 1);
+	count++;
+    }
+
+    snprintf(buffer, 23, "%-22s", port->devname);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, " %-14s ", state_str[port->tcp_to_dev_state]);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%-14s ", state_str[port->dev_to_tcp_state]);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%9d ", port->tcp_bytes_received);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%9d ", port->tcp_bytes_sent);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%9d ", port->dev_bytes_received);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+    sprintf(buffer, "%9d ", port->dev_bytes_sent);
+    controller_output(cntlr, buffer, strlen(buffer));
+
+
+    if (port->enabled != PORT_RAWLP) {
+	show_devcfg(cntlr, &(port->termctl));
+	need_space = 1;
+    }
+
+    if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
+	if (need_space) {
+	    controller_output(cntlr, " ", 1);
+	}
+	    
+	show_devcontrol(cntlr, port->devfd);
+    }
+    controller_output(cntlr, "\n\r", 2);
+
+}
+
+/* Print information about a port to the control port given in cntlr. */
+static void
 showport(struct controller_info *cntlr, port_info_t *port)
 {
     char *str;
@@ -1119,6 +1185,48 @@ showports(struct controller_info *cntlr, char *portspec)
 	    controller_output(cntlr, "\n\r", 2);
 	} else {
 	    showport(cntlr, port);	    
+	}
+    }
+}
+
+/* Handle a showport command from the control port. */
+void
+showshortports(struct controller_info *cntlr, char *portspec)
+{
+    port_info_t *port;
+    char        buffer[512];
+
+    sprintf(buffer,
+	    "%-22s %-6s %7s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\n\r",
+	    "Port name",
+	    "Type",
+	    "Timeout",
+	    "Remote address",
+	    "Device",
+	    "TCP to device",
+	    "Device to TCP",
+	    "TCP in",
+	    "TCP out",
+	    "Dev in",
+	    "Dev out",
+	    "State");
+    controller_output(cntlr, buffer, strlen(buffer));
+    if (portspec == NULL) {
+	/* Dump everything. */
+	port = ports;
+	while (port != NULL) {
+	    showshortport(cntlr, port);
+	    port = port->next;
+	}
+    } else {
+	port = find_port_by_num(portspec);
+	if (port == NULL) {
+	    char *err = "Invalid port number: ";
+	    controller_output(cntlr, err, strlen(err));
+	    controller_output(cntlr, portspec, strlen(portspec));
+	    controller_output(cntlr, "\n\r", 2);
+	} else {
+	    showshortport(cntlr, port);	    
 	}
     }
 }

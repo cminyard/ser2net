@@ -1,10 +1,15 @@
 
-2002-02-19  Przemyslaw Czerpak (druzus@polbox.com),
+2002-02-20  Corey Minyard <minyard@acm.org>
+
+	* controller.c, dataxfer.c, dataxfer.h, ser2net.8:
+	Added a "short" display, where each port is shown on one line.
+	
+2002-02-20  Przemyslaw Czerpak (druzus@polbox.com),
 	Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c, dataxfer.h, configure.in, ser2net.c, ser2net.8:
 	Added UUCP-style locking for ports.
-	
+
 2002-02-19  Corey Minyard <minyard@acm.org>
 
 	* controller.c, controller.h, dataxfer.c, devcfg.c, ser2net.c,
