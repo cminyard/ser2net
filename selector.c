@@ -294,9 +294,13 @@ send_up(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
 	if (parent->left == elem) {
 	    elem->left = parent;
 	    elem->right = parent->right;
+	    if (elem->right)
+		elem->right->up = elem;
 	} else {
 	    elem->right = parent;
 	    elem->left = parent->left;
+	    if (elem->left)
+		elem->left->up = elem;
 	}
 	elem->up = parent->up;
 
