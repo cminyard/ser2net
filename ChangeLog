@@ -2,7 +2,7 @@
 2002-02-19  Przemyslaw Czerpak (druzus@polbox.com),
 	Corey Minyard <minyard@acm.org>
 
-	* dataxfer.c, dataxfer.h, configure.in, ser2net.c:
+	* dataxfer.c, dataxfer.h, configure.in, ser2net.c, ser2net.8:
 	Added UUCP-style locking for ports.
 	
 2002-02-19  Corey Minyard <minyard@acm.org>
