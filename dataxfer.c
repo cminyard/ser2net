@@ -2000,7 +2000,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	}
 	get_rate_from_baud_rate(val, &val);
 	outopt[0] = 44;
-	outopt[1] = 1;
+	outopt[1] = 101;
 	*((uint32_t *) (outopt+2)) = htonl(val);
 	telnet_send_option(&port->tn_data, outopt, 6);
 	break;
@@ -2030,7 +2030,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    }
 	}
 	outopt[0] = 44;
-	outopt[1] = 2;
+	outopt[1] = 102;
 	outopt[2] = val;
 	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
@@ -2061,7 +2061,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		val = 1; /* NONE */
 	}
 	outopt[0] = 44;
-	outopt[1] = 3;
+	outopt[1] = 103;
 	outopt[2] = val;
 	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
@@ -2088,7 +2088,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 		val = 1; /* 1 stop bit. */
 	}
 	outopt[0] = 44;
-	outopt[1] = 4;
+	outopt[1] = 104;
 	outopt[2] = val;
 	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
@@ -2210,7 +2210,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	}
 
 	outopt[0] = 44;
-	outopt[1] = 5;
+	outopt[1] = 105;
 	outopt[2] = val;
 	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
