@@ -1911,14 +1911,12 @@ get_baud_rate(int rate, int *val)
     int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (cisco_ios_baud_rates) {
-	    if (rate == baud_rates[i].real_rate) {
-	        if (baud_rates[i].cisco_ios_val < 0)
-		    return 0;
-		*val = baud_rates[i].cisco_ios_val;
+	    if (rate == baud_rates[i].cisco_ios_val) {
+		*val = baud_rates[i].val;
 		return 1;
 	    }
 	} else {
-	    if (rate == baud_rates[i].cisco_ios_val) {
+	    if (rate == baud_rates[i].real_rate) {
 		*val = baud_rates[i].val;
 		return 1;
 	    }
@@ -1935,14 +1933,15 @@ get_rate_from_baud_rate(int baud_rate, int *val)
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
 	    if (cisco_ios_baud_rates) {
-		if (baud_rates[i].real_rate < 0)
+		if (baud_rates[i].cisco_ios_val < 0)
 		    /* We are at a baud rate unsopported by the
 		       enumeration, just return zero. */
 		    *val = 0;
 		else
-		    *val = baud_rates[i].real_rate;
-	    } else
-		*val = baud_rates[i].cisco_ios_val;
+		    *val = baud_rates[i].cisco_ios_val;
+	    } else {
+		*val = baud_rates[i].real_rate;
+	    }
 	    return;
 	}
     }
@@ -2004,17 +2003,16 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	break;
 
     case 1: /* SET-BAUDRATE */
-	if (!cisco_ios_baud_rates) {
-	    if (len < 6)
-		return;
-	    val = ntohl(*((uint32_t *) (option+2)));
-	} else {
+	if (cisco_ios_baud_rates) {
 	    if (len < 3)
 		return;
 	    val = option[2];
+	} else {
+	    if (len < 6)
+		return;
+	    val = ntohl(*((uint32_t *) (option+2)));
 	}
 
-	val = 0;
 	if (tcgetattr(port->devfd, &termio) != -1) {
 	    if ((val != 0) && (get_baud_rate(val, &val))) {
 		/* We have a valid baud rate. */
@@ -2024,16 +2022,18 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    }
 	    tcgetattr(port->devfd, &termio);
 	    val = cfgetispeed(&termio);
+	} else {
+	    val = 0;
 	}
 	get_rate_from_baud_rate(val, &val);
 	outopt[0] = 44;
 	outopt[1] = 101;
 	if (cisco_ios_baud_rates) {
-	    *((uint32_t *) (outopt+2)) = htonl(val);
-	    telnet_send_option(&port->tn_data, outopt, 6);
-	} else {
 	    outopt[2] = val;
 	    telnet_send_option(&port->tn_data, outopt, 3);
+	} else {
+	    *((uint32_t *) (outopt+2)) = htonl(val);
+	    telnet_send_option(&port->tn_data, outopt, 6);
 	}
 	break;
 
