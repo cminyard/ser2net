@@ -1,6 +1,8 @@
 
 2003-12-04  Corey Minyard <minyard@acm.org>
 
+	* configure.in: Moved to version 2.1.
+
 	* dataxfer.c: Have the telnet option responses use the 1xx
 	responses to the com port control options.  I believe this is
 	wrong, but it is consistent with other products already in the
