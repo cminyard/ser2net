@@ -1,6 +1,6 @@
 Name:		ser2net
-Version:	1.5
-Release:	2
+Version:	1.6
+Release:	1
 License:	GPL
 Summary:	Serial to network proxy
 Group:		System Environment/Daemons
