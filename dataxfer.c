@@ -105,7 +105,7 @@ typedef struct port_info
     int            tcp_to_dev_state;		/* State of transferring
 						   data from the TCP port
                                                    to the device. */
-    char           tcp_to_dev_buf[PORT_BUFSIZE]; /* Buffer used for
+    unsigned char  tcp_to_dev_buf[PORT_BUFSIZE]; /* Buffer used for
                                                     TCP to device
                                                     transfers. */
     int            tcp_to_dev_buf_start;	/* The first byte in
@@ -198,7 +198,7 @@ delete_tcp_to_dev_char(port_info_t *port, int pos)
 {
     int j;
 
-    for (j=pos; j<port->tcp_to_dev_buf_count; j++) {
+    for (j=pos; j<port->tcp_to_dev_buf_count-1; j++) {
 	port->tcp_to_dev_buf[j] = port->tcp_to_dev_buf[j+1];
     }
     port->tcp_to_dev_buf_count--;
@@ -207,7 +207,10 @@ delete_tcp_to_dev_char(port_info_t *port, int pos)
 static void
 handle_telnet_cmd(port_info_t *port)
 {
-    /* Ignore them for now. */
+    if (port->telnet_cmd[1] == 243) { /* A BREAK command. */
+	printf("Sending break\n");
+	tcsendbreak(port->devfd, 0);
+    }
 }
 
 /* Data is ready to read on the serial port. */
@@ -340,21 +343,48 @@ handle_tcp_fd_read(int fd, void *data)
 	int i;
 
 	/* If it's a telnet port, get the commands out of the stream. */
-	for (i=0; i<port->tcp_to_dev_buf_count; i++) {
+	for (i=0; i<port->tcp_to_dev_buf_count;) {
 	    if (port->telnet_cmd_pos != 0) {
+		if ((port->telnet_cmd_pos == 1)
+		    && (port->tcp_to_dev_buf[i] == 255))
+		{
+		    /* Two IACs in a row causes one IAC to be sent, so
+		       just let this one go through. */
+		    i++;
+		    continue;
+		}
+
 		port->telnet_cmd[port->telnet_cmd_pos]
 		    = port->tcp_to_dev_buf[i];
 		delete_tcp_to_dev_char(port, i);
 		port->telnet_cmd_pos++;
-		if (port->telnet_cmd_pos == 3) {
+
+		if ((port->telnet_cmd_pos == 2)
+		    && (port->telnet_cmd[1] <= 250))
+		{
+		    /* These are two byte commands, so we have
+		       everything we need to handle the command. */
+		    handle_telnet_cmd(port);
+		    port->telnet_cmd_pos = 0;
+		} else if (port->telnet_cmd_pos == 3) {
 		    handle_telnet_cmd(port);
 		    port->telnet_cmd_pos = 0;
 		}
-	    } else if (port->tcp_to_dev_buf[i] == 0xff) {
+	    } else if (port->tcp_to_dev_buf[i] == 255) {
 		port->telnet_cmd[port->telnet_cmd_pos]
 		    = port->tcp_to_dev_buf[i];
 		delete_tcp_to_dev_char(port, i);
 		port->telnet_cmd_pos++;
+	    } else {
+		i++;
+	    }
+
+	    if (port->tcp_to_dev_buf_count == 0) {
+		/* We are out of characters but they were all
+                   processed.  We don't want to continue with 0,
+                   because that will mess up the other processing and
+                   it's not necessary. */
+		return;
 	    }
 	}
     }
