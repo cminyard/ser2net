@@ -1,4 +1,12 @@
 
+2003-12-10  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Handle receive IACs from the terminal to the TCP
+	port, duplicating them so they will come through right.
+
+	* telnet.c: Reset the telnet protocol state after two IACs are
+	received.
+
 2003-12-04  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Add responses for all the telnet com port

@@ -163,7 +163,7 @@ typedef struct port_info
     int            dev_to_tcp_state;		/* State of transferring
 						   data from the device to
                                                    the TCP port. */
-    char           dev_to_tcp_buf[PORT_BUFSIZE]; /* Buffer used for
+    unsigned char  dev_to_tcp_buf[PORT_BUFSIZE]; /* Buffer used for
                                                     device to TCP
                                                     transfers. */
     int            dev_to_tcp_buf_start;	/* The first byte in
@@ -405,7 +405,14 @@ handle_dev_fd_read(int fd, void *data)
     int write_count;
 
     port->dev_to_tcp_buf_start = 0;
-    port->dev_to_tcp_buf_count = read(fd, port->dev_to_tcp_buf, PORT_BUFSIZE);
+    if (port->enabled == PORT_TELNET) {
+	/* Leave room for IACs. */
+	port->dev_to_tcp_buf_count = read(fd, port->dev_to_tcp_buf,
+					  PORT_BUFSIZE/2);
+    } else {
+	port->dev_to_tcp_buf_count = read(fd, port->dev_to_tcp_buf,
+					  PORT_BUFSIZE);
+    }
 
     if (port->dev_to_tcp_buf_count < 0) {
 	/* Got an error on the read, shut down the port. */
@@ -419,9 +426,27 @@ handle_dev_fd_read(int fd, void *data)
     }
 
     port->dev_bytes_received += port->dev_to_tcp_buf_count;
+
+    if (port->enabled == PORT_TELNET) {
+	int i, j;
+
+	/* Double the IACs on a telnet stream.  This will fit because
+	   we only use half the buffer for telnet connections. */
+	for (i=0; i<port->dev_to_tcp_buf_count; i++) {
+	    if (port->dev_to_tcp_buf[i] == 255) {
+		for (j=port->dev_to_tcp_buf_count; j>i; j--)
+		    port->dev_to_tcp_buf[j+1] = port->dev_to_tcp_buf[j];
+		port->dev_to_tcp_buf_count++;
+		i++;
+		port->dev_to_tcp_buf[i] = 255;
+	    }
+	}
+    }
+
     write_count = write(port->tcpfd,
 			port->dev_to_tcp_buf,
 			port->dev_to_tcp_buf_count);
+
     if (port->dev_monitor != NULL) {
 	controller_write(port->dev_monitor,
 			 port->dev_to_tcp_buf,

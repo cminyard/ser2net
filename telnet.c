@@ -181,6 +181,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 		/* Two IACs in a row causes one IAC to be sent, so
 		   just let this one go through. */
 		i++;
+		td->telnet_cmd_pos = 0;
 		continue;
 	    }
 
