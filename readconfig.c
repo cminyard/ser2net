@@ -24,11 +24,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <syslog.h>
 
 #include "dataxfer.h"
 #include "readconfig.h"
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
+
+static int config_num = 0;
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
@@ -42,9 +45,11 @@ readconfig(char *filename)
 
     instream = fopen(filename, "r");
     if (instream == NULL) {
-	fprintf(stderr, "Unable to open config file '%s'\n", filename);
+	syslog(LOG_ERR, "Unable to open config file '%s': %m", filename);
 	return -1;
     }
+
+    config_num++;
 
     while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
 	int len = strlen(inbuf);
@@ -54,9 +59,8 @@ readconfig(char *filename)
 
 	lineno++;
 	if (inbuf[len-1] != '\n') {
-	    fprintf(stderr, "line %d is too long in config file\n", lineno);
-	    rv = -1;
-	    goto out;
+	    syslog(LOG_ERR, "line %d is too long in config file", lineno);
+	    continue;
 	}
 
 	if (inbuf[0] == '#') {
@@ -73,23 +77,20 @@ readconfig(char *filename)
 
 	state = strtok_r(NULL, ":", &strtok_data);
 	if (state == NULL) {
-	    fprintf(stderr, "No state given on line %d\n", lineno);
-	    rv = -1;
-	    goto out;
+	    syslog(LOG_ERR, "No state given on line %d", lineno);
+	    continue;
 	}
 
 	timeout = strtok_r(NULL, ":", &strtok_data);
 	if (timeout == NULL) {
-	    fprintf(stderr, "No timeout given on line %d\n", lineno);
-	    rv = -1;
-	    goto out;
+	    syslog(LOG_ERR, "No timeout given on line %d", lineno);
+	    continue;
 	}
 
 	devname = strtok_r(NULL, ":", &strtok_data);
 	if (devname == NULL) {
-	    fprintf(stderr, "No device name given on line %d\n", lineno);
-	    rv = -1;
-	    goto out;
+	    syslog(LOG_ERR, "No device name given on line %d", lineno);
+	    continue;
 	}
 
 	devcfg = strtok_r(NULL, ":", &strtok_data);
@@ -98,15 +99,16 @@ readconfig(char *filename)
 	    devcfg = "";
 	}
 
-	errstr = portconfig(portnum, state, timeout, devname, devcfg);
+	errstr = portconfig(portnum, state, timeout, devname, devcfg,
+			    config_num);
 	if (errstr != NULL) {
-	    fprintf(stderr, "Error on line %d, %s\n", lineno, errstr);
-	    rv = -1;
-	    goto out;
+	    syslog(LOG_ERR, "Error on line %d, %s", lineno, errstr);
 	}
     }
 
-out:
+    /* Delete anything that wasn't in the new config file. */
+    clear_old_port_config(config_num);
+
     fclose(instream);
     return rv;
 }

@@ -31,7 +31,11 @@ char * portconfig(char *portnum,
 		  char *state,
 		  char *timeout,
 		  char *devname,
-		  char *devcfg);
+		  char *devcfg,
+		  int  config_num);
+
+/* Clear out any old ports on a reconfigure.
+void clear_old_port_config(void);
 
 /* Initialize the data transfer code. */
 void dataxfer_init(void);

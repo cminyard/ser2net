@@ -173,6 +173,16 @@ typedef struct port_info
 
     struct port_info *next;		/* Used to keep a linked list
 					   of these. */
+
+    int config_num; /* Keep track of what configuration this was last
+		       updated under.  Setting to -1 means to delete
+		       the port when the current session is done. */
+
+    struct port_info *new_config; /* If the port is reconfigged while
+				     open, this will hold the new
+				     configuration that should be
+				     loaded when the current session
+				     is done. */
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -183,6 +193,8 @@ static unsigned char telnet_init[] = {
     0xff, 0xfe, 0x01,  /* command DON'T ECHO */
     0xff, 0xfd, 0x00   /* command DO BINARY TRANSMISSION */
 };
+
+static void shutdown_port(port_info_t *port);
 
 #ifdef USE_UUCP_LOCKING
 static int
@@ -298,51 +310,31 @@ uucp_mk_lock(char *devname)
 static void
 init_port_data(port_info_t *port)
 {
-    port->enabled = 0;
-    port->portname = "";
+    port->enabled = PORT_DISABLED;
+    port->portname = NULL;
     memset(&(port->tcpport), 0, sizeof(port->tcpport));
-    port->acceptfd = 0;
-    port->tcpfd = 0;
+    port->acceptfd = -1;
+    port->tcpfd = -1;
     port->timeout = 0;
     port->next = NULL;
+    port->new_config = NULL;
+    port->tcp_monitor = NULL;
     
     port->devname = NULL;
     port->devfd = 0;
+    memset(&(port->remote), 0, sizeof(port->remote));
     memset(&(port->termctl), 0, sizeof(port->termctl));
     memset(&(port->last_io_time), 0, sizeof(port->last_io_time));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
-    port->tcp_bytes_received;
-    port->tcp_bytes_sent;
+    port->tcp_bytes_received = 0;
+    port->tcp_bytes_sent = 0;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     port->dev_to_tcp_buf_start = 0;
     port->dev_to_tcp_buf_count = 0;
-    port->dev_bytes_received;
-    port->dev_bytes_sent;
-    port->telnet_cmd_pos = 0;
-}
-
-static void
-shutdown_port(port_info_t *port)
-{
-    clear_fd_handlers(port->devfd);
-    clear_fd_handlers(port->tcpfd);
-    close(port->tcpfd);
-    close(port->devfd);
-#ifdef USE_UUCP_LOCKING
-    uucp_rm_lock(port->devname);
-#endif /* USE_UUCP_LOCKING */
-    port->tcp_to_dev_state = PORT_UNCONNECTED;
-    port->tcp_to_dev_buf_start = 0;
-    port->tcp_to_dev_buf_count = 0;
-    port->tcp_bytes_received;
-    port->tcp_bytes_sent;
-    port->dev_to_tcp_state = PORT_UNCONNECTED;
-    port->dev_to_tcp_buf_start = 0;
-    port->dev_to_tcp_buf_count = 0;
-    port->dev_bytes_received;
-    port->dev_bytes_sent;
+    port->dev_bytes_received = 0;
+    port->dev_bytes_sent = 0;
     port->telnet_cmd_pos = 0;
 }
 
@@ -629,7 +621,7 @@ handle_tcp_fd_write(int fd, void *data)
 	    shutdown_port(port);
 	}
     } else {
-	port->dev_bytes_sent += write_count;
+	port->tcp_bytes_sent += write_count;
 	port->dev_to_tcp_buf_count -= write_count;
 	if (port->dev_to_tcp_buf_count != 0) {
 	    /* We didn't write all the data, continue writing. */
@@ -863,15 +855,132 @@ startup_port(port_info_t *port)
     return NULL;
 }
 
+char *
+change_port_state(port_info_t *port, int state)
+{
+    char *rv = NULL;
+
+    if (port->enabled == state) {
+	return;
+    }
+
+    if (state == PORT_DISABLED) {
+	set_fd_read_handler(port->acceptfd, FD_HANDLER_DISABLED);
+	clear_fd_handlers(port->acceptfd);
+	close(port->acceptfd);
+	port->acceptfd = -1;
+    } else if (port->enabled == PORT_DISABLED) {
+	rv = startup_port(port);
+    }
+
+    port->enabled = state;
+
+    return rv;
+}
+
+static void
+free_port(port_info_t *port)
+{
+    change_port_state(port, PORT_DISABLED);
+    if (port->portname != NULL) {
+	free(port->portname);
+    }
+    if (port->devname != NULL) {
+	free(port->devname);
+    }
+    if (port->new_config != NULL) {
+	free_port(port->new_config);
+    }
+    free(port);
+}
+
+static void
+shutdown_port(port_info_t *port)
+{
+    clear_fd_handlers(port->devfd);
+    clear_fd_handlers(port->tcpfd);
+    close(port->tcpfd);
+    close(port->devfd);
+#ifdef USE_UUCP_LOCKING
+    uucp_rm_lock(port->devname);
+#endif /* USE_UUCP_LOCKING */
+    port->tcp_to_dev_state = PORT_UNCONNECTED;
+    port->tcp_to_dev_buf_start = 0;
+    port->tcp_to_dev_buf_count = 0;
+    port->tcp_bytes_received = 0;
+    port->tcp_bytes_sent = 0;
+    port->dev_to_tcp_state = PORT_UNCONNECTED;
+    port->dev_to_tcp_buf_start = 0;
+    port->dev_to_tcp_buf_count = 0;
+    port->dev_bytes_received = 0;
+    port->dev_bytes_sent = 0;
+    port->telnet_cmd_pos = 0;
+
+    /* If the port has been disabled, then delete it.  Check this before
+       the new config so the port will be deleted properly and not
+       reconfigured on a reconfig. */
+    if (port->config_num == -1) {
+	port_info_t *curr, *prev;
+
+	prev = NULL;
+	curr = ports;
+	while ((curr != NULL) && (curr != port)) {
+	    prev = curr;
+	    curr = curr->next;
+	}
+	if (curr != NULL) {
+	    if (prev == NULL) {
+		ports = curr->next;
+	    } else {
+		prev->next = curr->next;
+	    }
+	    free_port(curr);
+	}
+
+	return; /* We have to return here because we no longer have a port. */
+    }
+
+    if (port->new_config != NULL) {
+	port_info_t *curr, *prev;
+
+	prev = NULL;
+	curr = ports;
+	while ((curr != NULL) && (curr != port)) {
+	    prev = curr;
+	    curr = curr->next;
+	}
+	if (curr != NULL) {
+	    port = curr->new_config;
+	    port->acceptfd = curr->acceptfd;
+	    set_fd_handlers(port->acceptfd,
+			    port,
+			    handle_accept_port_read,
+			    NULL,
+			    NULL);
+	    curr->acceptfd = -1;
+	    port->next = curr->next;
+	    if (prev == NULL) {
+		ports = port;
+	    } else {
+		prev->next = port;
+	    }
+	    curr->enabled = PORT_DISABLED;
+	    curr->new_config = NULL;
+	    free_port(curr);
+	}
+    }
+}
+
 /* Create a port based on a set of parameters passed in. */
 char *
 portconfig(char *portnum,
 	   char *state,
 	   char *timeout,
 	   char *devname,
-	   char *devcfg)
+	   char *devcfg,
+	   int  config_num)
 {
-    port_info_t *new_port;
+    port_info_t *new_port, *curr, *prev;
     char        *rv = NULL;
 
     new_port = malloc(sizeof(port_info_t));
@@ -883,12 +992,14 @@ portconfig(char *portnum,
     init_port_data(new_port);
 
     new_port->portname = malloc(strlen(portnum)+1);
+    if (new_port->portname == NULL) {
+	rv = "unable to allocate port name";
+	goto errout;
+    }
     strcpy(new_port->portname, portnum);
 
     if (scan_tcp_port(portnum, &(new_port->tcpport)) == -1) {
 	rv = "port number was invalid";
-	free(new_port->portname);
-	new_port->portname = NULL;
 	goto errout;
     }
 
@@ -925,6 +1036,56 @@ portconfig(char *portnum,
     }
     strcpy(new_port->devname, devname);
 
+    new_port->config_num = config_num;
+
+    /* See if the port already exists, and reconfigure it if so. */
+    curr = ports;
+    prev = NULL;
+    while (curr != NULL) {
+	if (strcmp(curr->portname, new_port->portname) == 0) {
+	    /* We are reconfiguring this port. */
+	    if (curr->dev_to_tcp_state == PORT_UNCONNECTED) {
+		/* Port is disconnected, just remove it. */
+		int new_state = new_port->enabled;
+
+		new_port->enabled = curr->enabled;
+		new_port->acceptfd = curr->acceptfd;
+		curr->enabled = PORT_DISABLED;
+		curr->acceptfd = -1;
+		set_fd_handlers(new_port->acceptfd,
+				new_port,
+				handle_accept_port_read,
+				NULL,
+				NULL);
+
+		/* Just replace with the new data. */
+		if (prev == NULL) {
+		    ports = new_port;
+		} else {
+		    prev->next = new_port;
+		}
+		new_port->next = curr->next;
+		free_port(curr);
+
+		change_port_state(new_port, new_state);
+	    } else {
+		/* Mark it to be replaced later. */
+		if (curr->new_config != NULL) {
+		    free(curr->new_config);
+		}
+		curr->config_num = config_num;
+		curr->new_config = new_port;
+	    }
+	    return rv;
+	} else {
+	    prev = curr;
+	    curr = curr->next;
+	}
+    }
+
+    /* If we get here, the port is brand new, so don't do anything that
+       would affect a port replacement here. */
+
     if (new_port->enabled != PORT_DISABLED) {
 	rv = startup_port(new_port);
 	if (rv != NULL) {
@@ -932,14 +1093,55 @@ portconfig(char *portnum,
 	}
     }
 
-    new_port->next = ports;
-    ports = new_port;
+    /* Tack it on to the end of the list of ports. */
+    new_port->next = NULL;
+    if (ports == NULL) {
+	ports = new_port;
+    } else {
+	curr = ports;
+	while (curr->next != NULL) {
+	    curr = curr->next;
+	}
+	curr->next = new_port;
+    }
 
-    return NULL;
+    return rv;
 
 errout:
-    free(new_port);
+    free_port(new_port);
     return rv;
+}
+
+int
+clear_old_port_config(int curr_config)
+{
+    port_info_t *curr, *prev;
+
+    curr = ports;
+    prev = NULL;
+    while (curr != NULL) {
+	if (curr->config_num != curr_config) {
+	    /* The port was removed, remove it. */
+	    if (curr->dev_to_tcp_state == PORT_UNCONNECTED) {
+		if (prev == NULL) {
+		    ports = curr->next;
+		    free_port(curr);
+		    curr = ports;
+		} else {
+		    prev->next = curr->next;
+		    free_port(curr);
+		    curr = prev->next;
+		}
+	    } else {
+		curr->config_num = -1;
+		prev = curr;
+		curr = curr->next;
+	    }
+	} else {
+	    prev = curr;
+	    curr = curr->next;
+	}
+    }
 }
 
 /* This is called periodically, it is used to scan for ports that are
@@ -1144,6 +1346,14 @@ showport(struct controller_info *cntlr, port_info_t *port)
     sprintf(buffer, "%d", port->dev_bytes_sent);
     controller_output(cntlr, buffer, strlen(buffer));
     controller_output(cntlr, "\n\r", 2);
+
+    if (port->config_num == -1) {
+	str = "  Port will be deleted when current session closes.\n\r";
+	controller_output(cntlr, str, strlen(str));
+    } else if (port->new_config != NULL) {
+	str = "  Port will be reconfigured when current session closes.\n\r";
+	controller_output(cntlr, str, strlen(str));
+    }
 }
 
 /* Find a port data structure given a port number. */
@@ -1313,49 +1523,38 @@ void
 setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 {
     port_info_t *port;
+    int         new_enable;
+    char        *err;
 
     port = find_port_by_num(portspec);
     if (port == NULL) {
-	char *err = "Invalid port number: ";
+	err = "Invalid port number: ";
 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, portspec, strlen(portspec));
 	controller_output(cntlr, "\n\r", 2);
-    } else {
-	if (strcmp(enable, "off") == 0) {
-	    if (port->enabled != PORT_DISABLED) {
-		if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
-		    shutdown_port(port);
-		}
-		clear_fd_handlers(port->acceptfd);
-		port->enabled = PORT_DISABLED;
-		close(port->acceptfd);
-	    }
-	} else {
-	    int newenable;
-	    if (strcmp(enable, "raw") == 0) {
-		newenable = PORT_RAW;
-	    } else if (strcmp(enable, "rawlp") == 0) {
-		newenable = PORT_RAWLP;
-	    } else if (strcmp(enable, "telnet") == 0) {
-		newenable = PORT_TELNET;
-	    } else {
-		char *err = "Invalid enable: ";
-		controller_output(cntlr, err, strlen(err));
-		controller_output(cntlr, enable, strlen(enable));
-		controller_output(cntlr, "\n\r", 2);
-		return;
-	    }
+	return;
+    }
 
-	    if (port->enabled == PORT_DISABLED) {
-		char *err = startup_port(port);
-		if (err != NULL) {
-		    controller_output(cntlr, err, strlen(err));
-		    controller_output(cntlr, "\n\r", 2);
-		    return;
-		}
-	    }
-	    port->enabled = newenable;
-	}
+    if (strcmp(enable, "off") == 0) {
+	new_enable = PORT_DISABLED;
+    } else if (strcmp(enable, "raw") == 0) {
+	new_enable = PORT_RAW;
+    } else if (strcmp(enable, "rawlp") == 0) {
+	new_enable = PORT_RAWLP;
+    } else if (strcmp(enable, "telnet") == 0) {
+	new_enable = PORT_TELNET;
+    } else {
+	err = "Invalid enable: ";
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, enable, strlen(enable));
+	controller_output(cntlr, "\n\r", 2);
+	return;
+    }
+
+    err = change_port_state(port, new_enable);
+    if (err != NULL) {
+	controller_output(cntlr, err, strlen(err));
+	controller_output(cntlr, "\n\r", 2);
     }
 }
 
@@ -1384,7 +1583,7 @@ data_monitor_start(struct controller_info *cntlr,
 	controller_output(cntlr, "\n\r", 2);
 	return NULL;
     }
-
+ 
     if (strcmp(type, "tcp") == 0) {
 	port->tcp_monitor = cntlr;
 	return port;
@@ -1392,12 +1591,12 @@ data_monitor_start(struct controller_info *cntlr,
 	port->dev_monitor = cntlr;
 	return port;
     } else {
-	char *err = "invalid monitor type: ";
+	 char *err = "invalid monitor type: ";
 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, type, strlen(type));
 	controller_output(cntlr, "\n\r", 2);
 	return NULL;
-    }
+     }
 }
 
 /* Stop monitoring the given id. */
@@ -1420,11 +1619,11 @@ disconnect_port(struct controller_info *cntlr,
     port = find_port_by_num(portspec);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
-	controller_output(cntlr, err, strlen(err));
+ 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, portspec, strlen(portspec));
-	controller_output(cntlr, "\n\r", 2);
-	return;
+ 	controller_output(cntlr, "\n\r", 2);
+ 	return;
     }
-
+ 
     shutdown_port(port);
-}
+ }

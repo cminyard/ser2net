@@ -203,7 +203,17 @@ See hosts_access(5) for a description of the file setup.  Two daemons are
 used by ser2net, "ser2net" is for the data ports and "ser2net-control"
 is for the control ports.
 
-.SH FILES
+.SH "SIGNALS"
+.TP 0.5i
+.B SIGHUP
+If ser2net receives a SIGHUP, it will reread it configuration file
+and make the appropriate changes.  If an inuse port is changed or deleted,
+the actual change will not occur until the port is disconnected.
+
+.SH "Error"
+Almost all error output goes to syslog, not standard output.
+
+.SH "FILES"
 /etc/ser2net.conf
 
 .SH "SEE ALSO"

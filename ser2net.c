@@ -58,6 +58,13 @@ static char *help_string =
 "  -v - print the program's version and exit\n";
 
 void
+reread_config(void)
+{
+    syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
+    readconfig(config_file);
+}
+
+void
 arg_error(char *name)
 {
     fprintf(stderr, help_string, name);
@@ -167,6 +174,8 @@ main(int argc, char *argv[])
 
     /* Ignore SIGPIPEs so they don't kill us. */
     signal(SIGPIPE, SIG_IGN);
+
+    set_sighup_handler(reread_config);
 
     select_loop();
 

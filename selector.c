@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <syslog.h>
+#include <signal.h>
 
 /* The control structure for each file descriptor. */
 typedef struct fd_control
@@ -56,6 +57,13 @@ static fd_set except_set;
 
 static int maxfd; /* The largest file descriptor registered with this
                      code. */
+
+static int got_sighup = 0; /* Did I get a HUP signal? */
+
+void sighup_handler(int sig)
+{
+    got_sighup = 1;
+}
 
 /* Initialize a single file descriptor. */
 static void
@@ -145,6 +153,14 @@ set_fd_except_handler(int fd, int state)
     /* FIXME - what to do on errors? */
 }
 
+
+t_sighup_handler user_sighup_handler = NULL;
+
+void
+set_sighup_handler(t_sighup_handler handler)
+{
+    user_sighup_handler = handler;
+}
 
 #define MAX_TIMEOUT_HANDLERS 10 /* How many routines can be registered
                                    to be called periodically. */
@@ -271,6 +287,13 @@ select_loop(void)
 		}
 	    }
 	}
+
+	if (got_sighup) {
+	    got_sighup = 0;
+	    if (user_sighup_handler != NULL) {
+		user_sighup_handler();
+	    }
+	}
     }
 }
 
@@ -278,7 +301,9 @@ select_loop(void)
 void
 selector_init(void)
 {
-    int i;
+    int              i;
+    int              err;
+    struct sigaction act;
 
     FD_ZERO(&read_set);
     FD_ZERO(&write_set);
@@ -290,5 +315,13 @@ selector_init(void)
 
     for (i=0; i<MAX_TIMEOUT_HANDLERS; i++) {
 	handlers[i] = NULL;
+    }
+
+    act.sa_handler = sighup_handler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = SA_RESTART;
+    err = sigaction(SIGHUP, &act, NULL);
+    if (err) {
+	perror("sigaction");
     }
 }

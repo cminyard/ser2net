@@ -50,6 +50,10 @@ typedef void (*t_timeout_handler)(void);
 void add_timeout_handler(t_timeout_handler handler);
 void remove_timeout_handler(t_timeout_handler handler);
 
+/* Set a handler to handle when SIGHUP is sent to the process. */
+typedef void (*t_sighup_handler)(void);
+void set_sighup_handler(t_sighup_handler handler);
+
 /* This is the main loop for the program. */
 void select_loop(void);
 

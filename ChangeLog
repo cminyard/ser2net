@@ -3,6 +3,10 @@
 
 	* controller.c, dataxfer.c, dataxfer.h, ser2net.8:
 	Added a "short" display, where each port is shown on one line.
+
+	* dataxfer.c, dataxfer.h, readconfig.c, selector.c, selector.h,
+	ser2net.8, ser2net.c:
+	Added the ability to reread the configuration file on a SIGHUP.
 	
 2002-02-20  Przemyslaw Czerpak (druzus@polbox.com),
 	Corey Minyard <minyard@acm.org>
