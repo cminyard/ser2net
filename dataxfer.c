@@ -125,7 +125,7 @@ typedef struct port_info
 					    to this controller port. */
 
 
-    char           telnet_cmd[3];	/* Incoming telnet commands. */
+    unsigned char  telnet_cmd[3];	/* Incoming telnet commands. */
     int            telnet_cmd_pos;      /* Current position in the
 					   telnet_cmd buffer.  If zero,
 					   no telnet command is in

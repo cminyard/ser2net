@@ -31,13 +31,13 @@ make DESTDIR=$RPM_BUILD_ROOT install
 %defattr(-,root,root)                                                                                         
 %config(noreplace) /etc/ser2net.conf
 %doc README NEWS ChangeLog COPYING INSTALL AUTHORS
-/bin/*
-/man/*
+/usr/bin/*
+/usr/man/*
 
 
 %changelog
 * Fri Jun 29 2001 Corey Minyard <minyard@acm.org>
 - Updated to 1.3
-- Set the prefix to "/" to install at root.
+- Set the prefix to "/usr" to install at root.
 * Tue Jun 19 2001 Ivan F. Martinez <ivanfm@ecodigit.com.br>
 - package created
