@@ -1,4 +1,8 @@
 
+2002-10-01  Corey Minyard <minyard@acm.org>
+
+	* selector.c: Fixed bugs in the timer heaps.
+
 2002-09-23  Corey Minyard <minyard@acm.org>
 
 	* selector.c: Fixed a bug in the timer heaps.

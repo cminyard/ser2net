@@ -242,30 +242,23 @@ find_next_pos(sel_timer_t *curr, sel_timer_t ***next, sel_timer_t **parent)
     if (curr->up) {
 	/* Now we are a left node, trace up then back down. */
 	curr = curr->up->right;
+    }
+    while (upcount) {
+	curr = curr->left;
 	upcount--;
-	while (upcount) {
-	    curr = curr->left;
-	}
-    } else {
-	/* We are at the top, so the next node is the left tree of the
-	   leftmost node. */
-	while (curr->left) {
-	    curr = curr->left;
-	}
     }
     *next = &(curr->left);
     *parent = curr;
 }
 
-void
-find_prev_pos(sel_timer_t *curr, sel_timer_t ***prev, sel_timer_t **parent)
+static void
+find_prev_elem(sel_timer_t *curr, sel_timer_t **prev)
 {
     unsigned int upcount = 0;
 
     if (curr->up && (curr->up->right == curr)) {
 	/* We are a right node, the previous node is just my left partner. */
-	*prev = &(curr->up->left);
-	*parent = curr->up;
+	*prev = curr->up->left;
 	return;
     }
 
@@ -278,23 +271,19 @@ find_prev_pos(sel_timer_t *curr, sel_timer_t ***prev, sel_timer_t **parent)
     if (curr->up) {
 	/* Now we are a right node, trace up then back down. */
 	curr = curr->up->left;
-	upcount--;
-	while (upcount) {
-	    curr = curr->right;
-	}
     } else {
-	/* We are at the top, so the prevous node is the right tree of the
-	   rightmost node. */
-	while (curr->right) {
-	    curr = curr->right;
-	}
+	/* We are going to the previous "row". */
+	upcount--;
     }
-    *prev = &(curr->right);
-    *parent = curr;
+    while (upcount) {
+	curr = curr->right;
+	upcount--;
+    }
+    *prev = curr;
 }
 
 static void
-send_up(sel_timer_t *elem, sel_timer_t **top)
+send_up(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
 {
     sel_timer_t *tmp1, *tmp2, *parent;
 
@@ -325,12 +314,15 @@ send_up(sel_timer_t *elem, sel_timer_t **top)
 	parent->left = tmp1;
 	parent->right = tmp2;
 
+	if (*last == elem)
+	    *last = parent;
+
 	parent = elem->up;
     }
 }
 
 static void
-send_down(sel_timer_t *elem, sel_timer_t **top)
+send_down(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
 {
     sel_timer_t *tmp1, *tmp2, *left, *right;
 
@@ -355,6 +347,11 @@ send_down(sel_timer_t *elem, sel_timer_t **top)
 	    left->right = elem->right;
 	    elem->left = tmp1;
 	    elem->right = tmp2;
+	    if (left->right)
+		left->right->up = left;
+
+	    if (*last == left)
+		*last = elem;
 	} else {
 	    right = elem->right;
 	    if (cmp_timeval(&elem->timeout, &right->timeout) > 0) {
@@ -376,10 +373,16 @@ send_down(sel_timer_t *elem, sel_timer_t **top)
 		right->right = elem;
 		elem->left = tmp1;
 		elem->right = tmp2;
+		if (right->left)
+		    right->left->up = left;
+
+		if (*last == right)
+		    *last = elem;
 	    } else {
 		goto done;
 	    }
 	}
+	left = elem->left;
     }
 done:
 }
@@ -403,30 +406,30 @@ add_to_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
     find_next_pos(*last, &next, &parent);
     *next = elem;
     elem->up = parent;
+    *last = elem;
     if (cmp_timeval(&elem->timeout, &parent->timeout) < 0) {
-	send_up(elem, top);
-	*last = parent;
-    } else {
-	*last = elem;
+	send_up(elem, top, last);
     }
 }
 
 static void
 remove_from_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
 {
-    sel_timer_t *to_insert, *dummy;
+    sel_timer_t *to_insert;
 
     /* First remove the last element from the tree, if it's not what's
        being removed, we will use it for insertion into the removal
        place. */
     to_insert = *last;
-    find_prev_pos(to_insert, &last, &dummy);
     if (! to_insert->up) {
 	/* This is the only element in the heap. */
 	*top = NULL;
 	*last = NULL;
 	return;
     } else {
+	/* Set the new last position, and remove the item we will
+           insert. */
+	find_prev_elem(to_insert, last);
 	if (to_insert->up->left == to_insert) {
 	    to_insert->up->left = NULL;
 	} else {
@@ -459,13 +462,16 @@ remove_from_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
     to_insert->left = elem->left;
     to_insert->right = elem->right;
 
+    if (*last == elem)
+	*last = to_insert;
+
     elem = to_insert;
 
     /* Now propigate it to the right place in the tree. */
     if (elem->up && cmp_timeval(&elem->timeout, &elem->up->timeout) < 0) {
-	send_up(elem, top);
+	send_up(elem, top, last);
     } else {
-	send_down(elem, top);
+	send_down(elem, top, last);
     }
 }
 
