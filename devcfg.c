@@ -39,6 +39,8 @@ devinit(struct termios *termctl)
     termctl->c_cflag &= ~(CSIZE);
     termctl->c_cflag |= CS8;
     termctl->c_cflag &= ~(PARENB);
+    termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
+    termctl->c_cflag &= ~(CLOCAL);
 }
 
 /* Configure a serial port control structure based upon input strings
@@ -102,6 +104,12 @@ devconfig(char *instr, struct termios *termctl)
 	    termctl->c_cflag &= ~(PARODD);
 	} else if (strcmp(pos, "ODD") == 0) {
 	    termctl->c_cflag |= PARENB | PARODD;
+        } else if (strcmp(pos, "XONXOFF") == 0) {
+            termctl->c_iflag |= (IXON | IXOFF | IXANY);
+            termctl->c_cc[VSTART] = 17;
+            termctl->c_cc[VSTOP] = 19;      
+        } else if (strcmp(pos, "LOCAL") == 0) {
+            termctl->c_cflag |= CLOCAL;  
 	} else {
 	    rv = -1;
 	    goto out;
@@ -124,6 +132,10 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     int     databits = termctl->c_cflag & CSIZE;
     int     parity_enabled = termctl->c_cflag & PARENB;
     int     parity = termctl->c_cflag & PARODD;
+    int     xon = termctl->c_iflag & IXON;
+    int     xoff = termctl->c_iflag & IXOFF;
+    int     xany = termctl->c_iflag & IXANY;
+    int     clocal = termctl->c_cflag & CLOCAL;
     char    *str;
 
     switch (speed) {
@@ -139,6 +151,14 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     }
     controller_output(cntlr, str, strlen(str));
     controller_output(cntlr, " ", 1);
+
+    if (xon && xoff && xany) {
+      controller_output(cntlr, "XONXOFF ", 8);
+    }      
+    
+    if (clocal) {
+      controller_output(cntlr, "LOCAL ", 6);
+    }
 
     if (stopbits) {
 	str = "2STOPBITS";

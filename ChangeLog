@@ -1,4 +1,9 @@
 
+2001-07-23  Corey Minyard <minyard@acm.org>
+
+	* devcfg.c, ser2net.8, ser2net.conf  - Added a patch from Martin
+	Boese to add CLOCAL and XON/XOFF support as serial port options.
+
 2001-07-03  Corey Minyard <minyard@acm.org>
 	
 	* Makefile.am, ser2net.1, ser2net.8, ser2net.spec - Moved ser2net
