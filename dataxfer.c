@@ -973,7 +973,8 @@ setup_tcp_port(port_info_t *port)
     }
 
     /* Turn off BREAK. */
-    if (ioctl(port->devfd, TIOCCBRK) == -1) {
+    if (port->enabled != PORT_RAWLP &&
+              ioctl(port->devfd, TIOCCBRK) == -1) {
 	close(port->tcpfd);
 	close(port->devfd);
 	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",

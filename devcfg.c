@@ -91,6 +91,9 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
 	} else if (strcmp(pos, "38400") == 0) {
 	    cfsetospeed(termctl, B38400);
 	    cfsetispeed(termctl, B38400);
+	} else if (strcmp(pos, "57600") == 0) {
+	    cfsetospeed(termctl, B57600);
+	    cfsetispeed(termctl, B57600);
 	} else if (strcmp(pos, "115200") == 0) {
 	    cfsetospeed(termctl, B115200);
 	    cfsetispeed(termctl, B115200);
@@ -171,6 +174,7 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     case B9600: str = "9600"; break;
     case B19200: str = "19200"; break;
     case B38400: str = "38400"; break;
+    case B57600: str = "57600"; break;
     case B115200: str = "115200"; break;
     default: str = "unknown speed";
     }

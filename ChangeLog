@@ -1,3 +1,10 @@
+2005-06-13  Yura Kalinichenko <yuk@iceb.vinnitsa.com>
+
+	* controller.c, devcfg.c, ser2net.8, ser2net.conf: Added 57600
+	baud support.
+
+	* dataxfer.c: Don't to breaks on printer lines.
+
 2005-02-12  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move to version 2.2.
