@@ -1,3 +1,11 @@
+2005-07-07  G Goodwill <ggg2sforge at sourceforge.net>
+
+	* dataxfer.c, devcfg.c: Added support for cygwin.
+
+2005-07-07  Rajiv Aaron Manglani <rajav at gentoo.org>
+
+	* configure.in: Make the use of tcp wrappers optional.
+	
 2005-06-13  Yura Kalinichenko <yuk@iceb.vinnitsa.com>
 
 	* controller.c, devcfg.c, ser2net.8, ser2net.conf: Added 57600

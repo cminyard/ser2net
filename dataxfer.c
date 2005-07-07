@@ -2282,13 +2282,25 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
 	/* DTR handling */
 	case 8:
+#ifndef __CYGWIN__
 	    val = TIOCM_DTR;
 	    ioctl(port->devfd, TIOCMBIS, &val);
+#else
+	    ioctl(port->devfd, TIOCMGET, &val);
+	    val |= TIOCM_DTR;
+	    ioctl(port->devfd, TIOCMSET, &val);
+#endif
 	    goto read_dtr_val;
 
 	case 9:
+#ifndef __CYGWIN__
 	    val = TIOCM_DTR;
 	    ioctl(port->devfd, TIOCMBIC, &val);
+#else
+	    ioctl(port->devfd, TIOCMGET, &val);
+	    val &= ~TIOCM_DTR;
+	    ioctl(port->devfd, TIOCMSET, &val);
+#endif
 	    goto read_dtr_val;
 	    
 	case 7:
@@ -2303,13 +2315,25 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
 	/* RTS handling */
 	case 11:
+#ifndef __CYGWIN__
 	    val = TIOCM_RTS;
 	    ioctl(port->devfd, TIOCMBIS, &val);
+#else
+	    ioctl(port->devfd, TIOCMGET, &val);
+	    val |= TIOCM_RTS;
+	    ioctl(port->devfd, TIOCMSET, &val);
+#endif
 	    goto read_rts_val;
 
 	case 12:
+#ifndef __CYGWIN__
 	    val = TIOCM_RTS;
 	    ioctl(port->devfd, TIOCMBIC, &val);
+#else
+	    ioctl(port->devfd, TIOCMGET, &val);
+	    val &= ~TIOCM_RTS;
+	    ioctl(port->devfd, TIOCMSET, &val);
+#endif
 	    goto read_rts_val;
 	    
 	case 10:

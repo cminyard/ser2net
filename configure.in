@@ -9,8 +9,15 @@ AC_ARG_WITH(uucp-locking,
 if test "$uucp_locking_flag" = yes; then
   AC_DEFINE(USE_UUCP_LOCKING)
 fi
+AC_ARG_WITH(tcp-wrappers,
+ [  --with-tcp-wrappers     Enable tcpwrappers support],
+ tcp_wrappers="$withval",
+ tcp_wrappers="no")
+if test "$tcp_wrappers" != "no"
+then
+  AC_HAVE_HEADERS(tcpd.h)
+  AC_CHECK_LIB(wrap,main)
+fi
 AC_STDC_HEADERS
-AC_HAVE_HEADERS(tcpd.h)
 AC_CHECK_LIB(nsl,main)
-AC_CHECK_LIB(wrap,main)
 AC_OUTPUT(Makefile)
