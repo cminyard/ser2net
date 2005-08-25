@@ -1,3 +1,8 @@
+2005-08-25  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Fix a problem wih EAGAIN just returning and not
+	retrying the operation on writing data that has just been read.
+
 2005-07-07  G Goodwill <ggg2sforge at sourceforge.net>
 
 	* dataxfer.c, devcfg.c: Added support for cygwin.

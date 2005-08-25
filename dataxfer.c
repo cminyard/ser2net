@@ -414,6 +414,12 @@ handle_dev_fd_read(int fd, void *data)
 					  PORT_BUFSIZE);
     }
 
+    if (port->dev_monitor != NULL) {
+	controller_write(port->dev_monitor,
+			 port->dev_to_tcp_buf,
+			 port->dev_to_tcp_buf_count);
+    }
+
     if (port->dev_to_tcp_buf_count < 0) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
@@ -443,19 +449,15 @@ handle_dev_fd_read(int fd, void *data)
 	}
     }
 
+ retry_write:
     write_count = write(port->tcpfd,
 			port->dev_to_tcp_buf,
 			port->dev_to_tcp_buf_count);
 
-    if (port->dev_monitor != NULL) {
-	controller_write(port->dev_monitor,
-			 port->dev_to_tcp_buf,
-			 port->dev_to_tcp_buf_count);
-    }
     if (write_count == -1) {
 	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry by returning. */
-	    return;
+	    /* EINTR means we were interrupted, just retry. */
+	    goto retry_write;
 	}
 
 	if (errno == EAGAIN) {
@@ -589,18 +591,20 @@ handle_tcp_fd_read(int fd, void *data)
 	}
     }
 
-    write_count = write(port->devfd,
-			port->tcp_to_dev_buf,
-			port->tcp_to_dev_buf_count);
     if (port->tcp_monitor != NULL) {
 	controller_write(port->tcp_monitor,
 			 port->tcp_to_dev_buf,
 			 port->tcp_to_dev_buf_count);
     }
+
+ retry_write:
+    write_count = write(port->devfd,
+			port->tcp_to_dev_buf,
+			port->tcp_to_dev_buf_count);
     if (write_count == -1) {
 	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry by returning. */
-	    return;
+	    /* EINTR means we were interrupted, just retry. */
+	    goto retry_write;
 	}
 
 	if (errno == EAGAIN) {
