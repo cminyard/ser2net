@@ -2,6 +2,7 @@
 
 	* dataxfer.c: Fix a problem wih EAGAIN just returning and not
 	retrying the operation on writing data that has just been read.
+	Thanks to Shinlun Hsieh <yngwie_x@yahoo.com> for pointing this out.
 
 2005-07-07  G Goodwill <ggg2sforge at sourceforge.net>
 
