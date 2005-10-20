@@ -96,7 +96,7 @@ typedef struct controller_info {
 controller_info_t *controllers = NULL;
 
 /* Used to initialize the telnet session. */
-static char telnet_init_seq[] = {
+static unsigned char telnet_init_seq[] = {
     TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
     TN_IAC, TN_WILL, TN_OPT_ECHO,
     TN_IAC, TN_DONT, TN_OPT_ECHO,
@@ -298,7 +298,7 @@ process_input_line(controller_info_t *cntlr)
     char *tok;
     char *str;
 
-    tok = strtok_r(cntlr->inbuf, " \t", &strtok_data);
+    tok = strtok_r((char *) cntlr->inbuf, " \t", &strtok_data);
     if (tok == NULL) {
 	/* Empty line, just ignore it. */
     } else if (strcmp(tok, "exit") == 0) {
@@ -528,7 +528,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    i = -1;
 	} else {
 	    /* It's a normal character, just echo it. */
-	    controller_output(cntlr, &(cntlr->inbuf[i]), 1);
+	    controller_output(cntlr, (char *) &(cntlr->inbuf[i]), 1);
 	}
     }
 }

@@ -155,7 +155,7 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 }
 
 static int
-delete_char(char *data, int pos, int len)
+delete_char(unsigned char *data, int pos, int len)
 {
     int i;
 

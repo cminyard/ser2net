@@ -416,7 +416,7 @@ handle_dev_fd_read(int fd, void *data)
 
     if (port->dev_monitor != NULL) {
 	controller_write(port->dev_monitor,
-			 port->dev_to_tcp_buf,
+			 (char *) port->dev_to_tcp_buf,
 			 port->dev_to_tcp_buf_count);
     }
 
@@ -593,7 +593,7 @@ handle_tcp_fd_read(int fd, void *data)
 
     if (port->tcp_monitor != NULL) {
 	controller_write(port->tcp_monitor,
-			 port->tcp_to_dev_buf,
+			 (char *) port->tcp_to_dev_buf,
 			 port->tcp_to_dev_buf_count);
     }
 
@@ -2071,7 +2071,7 @@ static void
 com_port_handler(void *cb_data, unsigned char *option, int len)
 {
     port_info_t *port = cb_data;
-    char outopt[16];
+    unsigned char outopt[16];
     struct termios termio;
     int val;
     
@@ -2082,7 +2082,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     case 0: /* SIGNATURE? */
 	outopt[0] = 44;
 	outopt[1] = 0;
-	strcpy(outopt+2, "ser2net");
+	strcpy((char *) outopt+2, "ser2net");
 	telnet_send_option(&port->tn_data, outopt, 9);
 	break;
 
@@ -2188,18 +2188,18 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
 	val = 0;
 	if (tcgetattr(port->devfd, &termio) != -1) {
-	    /* We don't support 1.5 stop bits. */
-	    if ((option[2] == 1) || (option[2] == 3)) {
+	    /* We don't support 1.5 stop bits, which is value 3. */
+	    if ((option[2] == 1) || (option[2] == 2)) {
 		val = option[2];
 		termio.c_cflag &= ~CSTOPB;
 		switch (val) {
 		case 1: break; /* 1 stop bit */
-		case 3: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
+		case 2: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
 		}
 		tcsetattr(port->devfd, TCSANOW, &termio);
 	    }
 	    if (termio.c_cflag & CSTOPB)
-		val = 3; /* 2 stop bits. */
+		val = 2; /* 2 stop bits. */
 	    else
 		val = 1; /* 1 stop bit. */
 	}

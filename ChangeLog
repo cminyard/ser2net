@@ -1,3 +1,14 @@
+2005-10-20  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Fixed a problem with rfc2217 stop bit size setting.
+	It was interpreting the value of "3" as 2 stop bits, but 3 is for
+	1.5 stop bits, and 2 is for 2 stop bits.
+
+	* controller.c: Fixed some warnings dealing with char/unsigned
+	char problems.
+	* dataxfer.c: ditto
+	* telnet.c: ditto
+
 2005-08-25  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix a problem wih EAGAIN just returning and not
