@@ -840,6 +840,16 @@ display_banner(port_info_t *port)
 		    add_port_tcp_char(port, *t);
 		break;
 
+	    case 's':
+		/* ser2net serial parms. */
+		{
+		    char str[15];
+		    serparm_to_str(str, sizeof(str), &(port->termctl));
+		    for (t=str; *t; t++)
+			add_port_tcp_char(port, *t);
+		}
+		break;
+
 	    case '0': case '1': case '2': case '3': case '4': case '5':
 	    case '6': case '7':
 		/* Octal digit */

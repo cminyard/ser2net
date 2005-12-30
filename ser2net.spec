@@ -1,5 +1,5 @@
 Name:		ser2net
-Version:	2.1
+Version:	2.3
 Release:	1
 License:	GPL
 Summary:	Serial to network proxy
@@ -24,8 +24,8 @@ make
 %install
 rm -rf $RPM_BUILD_ROOT
 install -d $RPM_BUILD_ROOT/etc/rc.d/init.d
-install $RPM_SOURCE_DIR/ser2net.conf $RPM_BUILD_ROOT/etc
-install $RPM_SOURCE_DIR/ser2net.init $RPM_BUILD_ROOT/etc/rc.d/init.d/ser2net
+install ser2net.conf $RPM_BUILD_ROOT/etc
+install ser2net.init $RPM_BUILD_ROOT/etc/rc.d/init.d/ser2net
 make DESTDIR=$RPM_BUILD_ROOT install
 
 %files

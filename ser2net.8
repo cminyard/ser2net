@@ -232,8 +232,9 @@ A name for the banner; this may be used in the options of a port.
 .TP
 .I "banner text"
 The text to display as the banner.  This may contain normal "C" escape
-strings, and it may also contain, \\d for the device name and \\p for
-the TCP port number of the given connection.
+strings, and it may also contain, \\d for the device name, \\p for
+the TCP port number, and \\s for the serial port parameters (eg
+9600N81) of the given connection.
 
 .PP
 Blank lines and lines starting with `#' are ignored.

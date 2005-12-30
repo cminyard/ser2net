@@ -21,10 +21,11 @@
 
 #include <unistd.h>
 #include <termios.h>
-#include <termio.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "devcfg.h"
 #include "utils.h"
@@ -159,6 +160,62 @@ out:
     return rv;
 }
 
+static char *
+baud_string(int speed)
+{
+    char *str;
+    switch (speed) {
+    case B300: str = "300"; break;
+    case B1200: str = "1200"; break;
+    case B2400: str = "2400"; break;
+    case B4800: str = "4800"; break;
+    case B9600: str = "9600"; break;
+    case B19200: str = "19200"; break;
+    case B38400: str = "38400"; break;
+    case B57600: str = "57600"; break;
+    case B115200: str = "115200"; break;
+    default: str = "unknown speed";
+    }
+    return str;
+}
+
+void
+serparm_to_str(char *str, int strlen, struct termios *termctl)
+{
+    speed_t speed = cfgetospeed(termctl);
+    int     stopbits = termctl->c_cflag & CSTOPB;
+    int     databits = termctl->c_cflag & CSIZE;
+    int     parity_enabled = termctl->c_cflag & PARENB;
+    int     parity = termctl->c_cflag & PARODD;
+    char    *sstr;
+    char    pchar, schar, dchar;
+
+    sstr = baud_string(speed);
+
+    if (stopbits) 
+	schar = '2';
+    else
+	schar = '1';
+
+    switch (databits) {
+    case CS7: dchar = '7'; break;
+    case CS8: dchar = '8'; break;
+    default: dchar = '?';
+    }
+
+    if (parity_enabled) {
+	if (parity) {
+	    pchar = 'O';
+	} else {
+	    pchar = 'E';
+	}
+    } else {
+	pchar = 'N';
+    }
+
+    snprintf(str, strlen, "%s %c%c%c", sstr, pchar, dchar, schar);
+}
+
 /* Send the serial port device configuration to the control port. */
 void
 show_devcfg(struct controller_info *cntlr, struct termios *termctl)
@@ -176,18 +233,7 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     int     hangup_when_done = termctl->c_cflag & HUPCL;
     char    *str;
 
-    switch (speed) {
-    case B300: str = "300"; break;
-    case B1200: str = "1200"; break;
-    case B2400: str = "2400"; break;
-    case B4800: str = "4800"; break;
-    case B9600: str = "9600"; break;
-    case B19200: str = "19200"; break;
-    case B38400: str = "38400"; break;
-    case B57600: str = "57600"; break;
-    case B115200: str = "115200"; break;
-    default: str = "unknown speed";
-    }
+    str = baud_string(speed);
     controller_output(cntlr, str, strlen(str));
     controller_output(cntlr, " ", 1);
 

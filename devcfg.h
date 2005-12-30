@@ -40,4 +40,7 @@ int setdevcontrol(char *instr, int fd);
 /* Show the state of the DTR and RTS lines. */
 void show_devcontrol(struct controller_info *cntlr, int fd);
 
+/* Convert the serial parameters to a string. */
+void serparm_to_str(char *str, int strlen, struct termios *termctl);
+
 #endif /* DEVCFG */

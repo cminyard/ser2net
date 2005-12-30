@@ -1,3 +1,19 @@
+2005-12-29  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c, devcfg.c, devcfg.h, ser2net.conf, ser2net.8: Added a
+	'\s' banner token for printing out the serial parameters.
+
+	* ser2net.conf: Cleaned up the ugly banner3.
+
+	* Makefile.am: Add ser2net.init to EXTRA_DIST.
+
+	* configure.in: Move to version 2.3.
+
+2005-12-29  Aurelien Jarno <aurel32@debian.org>	
+	
+	* devcfg.c: Don't include "termio.h", but do include
+	"sys/ioctl.h".
+
 2005-10-20  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fixed a problem with rfc2217 stop bit size setting.
