@@ -989,15 +989,10 @@ setup_tcp_port(port_info_t *port)
     /* Turn off BREAK. */
     if (port->enabled != PORT_RAWLP &&
               ioctl(port->devfd, TIOCCBRK) == -1) {
-	close(port->tcpfd);
-	close(port->devfd);
+	/* Probably not critical, but we should at least log something. */
 	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
 	       port->devname,
 	       port->portname);
-#ifdef USE_UUCP_LOCKING
-	uucp_rm_lock(port->devname);
-#endif /* USE_UUCP_LOCKING */
-	return -1;
     }
     port->is_2217 = 0;
     port->break_set = 0;

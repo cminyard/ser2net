@@ -1,3 +1,7 @@
+2006-01-09  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Don't kill the session if TIOCCBRK doesn't work.
+
 2005-12-29  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c, devcfg.c, devcfg.h, ser2net.conf, ser2net.8: Added a
