@@ -51,13 +51,13 @@ version of setting the baud rates.  The default is RFC2217's.
 .I \-v
 Prints the version of the program and exits.
 .TP
-.I \-p port
+.I \-p controlport
 Enables the control port and sets the TCP port to listen to for the
 control port.  A port number may be of the form [host,]port, such as
 127.0.0.1,2000
 or localhost,2000.  If this is specified, it will only bind to the
 IP address specified for the port.  Otherwise, it will bind to all the
-ports on the machine.
+addresses on the machine.
 
 If the port number is zero, that means that standard in/out will be
 used for the only input/output, and only one port should be specified

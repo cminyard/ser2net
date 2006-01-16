@@ -1,3 +1,7 @@
+2006-01-16  Corey Minyard <minyard@acm.org>
+
+	* ser2net.8: Fix the documentation for control ports.
+
 2006-01-09  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Don't kill the session if TIOCCBRK doesn't work.
