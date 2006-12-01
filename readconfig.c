@@ -188,6 +188,8 @@ handle_config_line(char *inbuf)
 
     if (banner_continued) {
 	char *str = strtok_r(inbuf, "\n", &strtok_data);
+	if (!str)
+	    str = "";
 	handle_continued_banner(str);
 	return;
     }

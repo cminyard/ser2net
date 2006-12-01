@@ -1,3 +1,8 @@
+2006-12-01  Corey Minyard <minyard@acm.org>
+
+	* readconfig.c: Handle an ending banner that does not have a '\n'
+	in the last line.
+
 2006-01-16  Corey Minyard <minyard@acm.org>
 
 	* ser2net.8: Fix the documentation for control ports.
