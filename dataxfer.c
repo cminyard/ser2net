@@ -1312,7 +1312,7 @@ got_timeout(selector_t  *sel,
 	if (modemstate != port->last_modemstate) {
 	    unsigned char data[3];
 	    data[0] = TN_OPT_COM_PORT;
-	    data[1] = 7; /* Notify modemstate */
+	    data[1] = 107; /* Notify modemstate */
 	    data[2] = modemstate;
 	    port->last_modemstate = modemstate;
 	    telnet_send_option(&port->tn_data, data, 3);
@@ -2055,7 +2055,7 @@ com_port_will(void *cb_data)
     
     /* send a modemstate notify */
     data[0] = TN_OPT_COM_PORT;
-    data[1] = 7; /* Notify modemstate */
+    data[1] = 107; /* Notify modemstate */
     data[2] = 0;
     if (ioctl(port->devfd, TIOCMGET, &val) != -1) {
 	if (val & TIOCM_CD)

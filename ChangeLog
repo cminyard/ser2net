@@ -1,3 +1,8 @@
+2007-03-19  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Use the proper value for modem data notifies sent
+	to the client, it was 7, use 107 instead.
+
 2006-12-01  Corey Minyard <minyard@acm.org>
 
 	* readconfig.c: Handle an ending banner that does not have a '\n'
