@@ -196,6 +196,10 @@ devices and printers connected to them.
 enables the port and runs the telnet protocol on the port to set up
 telnet parameters.  This is most useful for using telnet.
 .TP
+.I timeout
+The time (in seconds) before the port will be disconnected if there is
+no activity on it.  A zero value disables this funciton.
+.TP
 .I device
 The  name  of  the  device  to connect to. This must be in the form of
 .BR /dev/<device> .
