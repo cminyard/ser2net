@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <errno.h>
 #include <syslog.h>
 #include <string.h>
@@ -911,6 +912,14 @@ setup_tcp_port(port_info_t *port)
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(port->tcpfd);
 	syslog(LOG_ERR, "Could not fcntl the tcp port %s: %m", port->portname);
+	return -1;
+    }
+    options = 1;
+    if (setsockopt(port->tcpfd, IPPROTO_TCP, TCP_NODELAY,
+		   (char *) &options, sizeof(options)) == -1) {
+	close(port->tcpfd);
+	syslog(LOG_ERR, "Could not enable TCP_NODELAY tcp port %s: %m",
+	       port->portname);
 	return -1;
     }
 

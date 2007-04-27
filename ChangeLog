@@ -1,3 +1,8 @@
+2007-04-26  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Disable the Nagle algorithm (enable TCP_NODELAY) on
+	the TCP ports to avoid long delays on short pieces of data.
+
 2007-03-19  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Use the proper value for modem data notifies sent
