@@ -1,3 +1,9 @@
+2007-05-03  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Change the rfc2217 signature response code
+	from 0 to 100.  Best guess on what this should be, as the
+	RFC doesn't give the correct value and says "text".
+
 2007-04-26  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Disable the Nagle algorithm (enable TCP_NODELAY) on

@@ -2095,7 +2095,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     switch (option[1]) {
     case 0: /* SIGNATURE? */
 	outopt[0] = 44;
-	outopt[1] = 0;
+	outopt[1] = 100;
 	strcpy((char *) outopt+2, "ser2net");
 	telnet_send_option(&port->tn_data, outopt, 9);
 	break;
