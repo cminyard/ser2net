@@ -1,3 +1,8 @@
+2007-11-16  Robert Edmonds <edmonds@debian.org>,Corey Minyard <minyard@acm.org>
+	
+	* ser2net.c, ser2net.8: Add a '-P' option to specific that a
+	pidfile be created.
+
 2007-05-03  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Change the rfc2217 signature response code

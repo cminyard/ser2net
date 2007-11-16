@@ -6,6 +6,7 @@ ser2net \- Serial to network proxy
 .SH SYNOPSIS
 .B ser2net
 [\-c configfile] [\-C configline] [\-p controlport] [\-n] [\-d] [\-b] [\-v]
+[-P pidfile]
 
 .SH DESCRIPTION
 The
@@ -39,6 +40,14 @@ terminal. This is useful for running from init.
 .I \-d
 Like -n, but also sends the system logs to standard output. This is
 most useful for debugging purposes.
+.TP
+.I \-P pidfile
+If specified, put the process id (pid) of ser2net in the pidfile,
+replacing whatever was in that file previously.  A pidfile is not created
+by default, you must specify this to create one.  Note also that this
+filename must be specific with the full path, as ser2net will change
+directory to "/" when it becomes a daemon.
+when it 
 .TP
 .I \-u
 If UUCP locking is enabled, this will disable the use of UUCP locks.

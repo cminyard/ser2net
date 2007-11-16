@@ -41,6 +41,7 @@
 
 static char *config_file = "/etc/ser2net.conf";
 static char *config_port = NULL;
+static char *pid_file = NULL;
 static int detach = 1;
 static int debug = 0;
 #ifdef USE_UUCP_LOCKING
@@ -57,8 +58,9 @@ static char *help_string =
 "     specified multiple times for multiple lines.  This is just like a\n"
 "     line in the config file.  This disables the default config file,\n"
 "     you must specify a -c after the last -C to have it read a config\n"
-"     file, too."
+"     file, too.\n"
 "  -p <controller port> - Start a controller session on the given TCP port\n"
+"  -P <file> - set location of pid file\n"
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
 #ifdef USE_UUCP_LOCKING
@@ -81,6 +83,23 @@ arg_error(char *name)
 {
     fprintf(stderr, help_string, name);
     exit(1);
+}
+
+void
+make_pidfile(char *pidfile)
+{
+    FILE *fpidfile;
+    if (!pidfile)
+	return;
+    fpidfile = fopen(pidfile, "w");
+    if (!fpidfile) {
+	syslog(LOG_WARNING,
+	       "Error opening pidfile '%s': %m, pidfile not created",
+	       pidfile);
+	return;
+    }
+    fprintf(fpidfile, "%d\n", getpid());
+    fclose(fpidfile);
 }
 
 int
@@ -147,6 +166,15 @@ main(int argc, char *argv[])
 	    }
 	    config_port = argv[i];
 	    break;
+	
+	case 'P':
+	    i++;
+	    if (i == argc) {
+		fprintf(stderr, "No pid file specified with -P\n");
+		arg_error(argv[0]);
+	    }
+	    pid_file = argv[i];
+	    break;
 
 #ifdef USE_UUCP_LOCKING
 	case 'u':
@@ -209,6 +237,9 @@ main(int argc, char *argv[])
     } else if (debug) {
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
     }
+
+    /* write pid file */
+    make_pidfile(pid_file);
 
     /* Ignore SIGPIPEs so they don't kill us. */
     signal(SIGPIPE, SIG_IGN);
