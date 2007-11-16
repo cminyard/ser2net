@@ -29,7 +29,7 @@ void devinit(struct termios *termctl);
 /* Called to change the configuration of a device based upon the
    string parameters. */
 int devconfig(char *instr, struct termios *termctl, int *allow_2217,
-	      char **banner);
+	      int *disablebreak, char **banner);
 
 /* Prints the configuration of a device to a controller. */
 void show_devcfg(struct controller_info *cntlr, struct termios *termctl);

@@ -1,3 +1,14 @@
+2007-11-16  Corey Minyard <minyard@acm.org>
+
+	* configure.in: Move to version 2.5.
+
+2007-11-16  Harry Flick, Corey Minyard <minyard@acm.org>
+
+	* devcfg.c, devcfg.h, dataxfer.c, ser2net.conf, ser2net.8: Allow a
+	"NOBREAK" option to disable automatically messing with the break
+	operations on the serial port.  Useful for systems with a broken
+	break.
+
 2007-11-16  Robert Edmonds <edmonds@debian.org>,Corey Minyard <minyard@acm.org>
 	
 	* ser2net.c, ser2net.8: Add a '-P' option to specific that a

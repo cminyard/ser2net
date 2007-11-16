@@ -209,6 +209,10 @@ typedef struct port_info
     unsigned char linestate_mask;
     unsigned char modemstate_mask;
     unsigned char last_modemstate;
+
+    /* Disable break-commands */
+    int disablebreak;
+
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -379,6 +383,7 @@ init_port_data(port_info_t *port)
     port->dev_bytes_sent = 0;
     port->is_2217 = 0;
     port->break_set = 0;
+    port->disablebreak = 0;
 }
 
 void
@@ -982,8 +987,10 @@ setup_tcp_port(port_info_t *port)
 	return -1;
     }
 
-    if (port->enabled != PORT_RAWLP &&
-              tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1) {
+    if (port->enabled != PORT_RAWLP
+	&& !port->disablebreak
+        && tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1)
+    {
 	close(port->tcpfd);
 	close(port->devfd);
 	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
@@ -1395,11 +1402,10 @@ portconfig(char *portnum,
     devinit(&(new_port->termctl));
 
     if (devconfig(devcfg, &(new_port->termctl), &new_port->allow_2217,
-		  &new_port->banner)
-	== -1)
+		  &new_port->disablebreak, &new_port->banner) == -1)
     {
-	rv = "device configuration invalid";
-	goto errout;
+	  rv = "device configuration invalid";
+	  goto errout;
     }
 
     new_port->devname = malloc(strlen(devname) + 1);
@@ -1822,7 +1828,7 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
 	controller_output(cntlr, "\n\r", 2);
     } else {
 	if (devconfig(devcfg, &(port->termctl), &port->allow_2217,
-		      &port->banner) == -1)
+		      &port->disablebreak, &port->banner) == -1)
 	{
 	    char *err = "Invalid device config\n\r";
 	    controller_output(cntlr, err, strlen(err));

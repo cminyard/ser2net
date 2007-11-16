@@ -65,7 +65,8 @@ devinit(struct termios *termctl)
    in instr.  These strings are described in the man page for this
    program. */
 int
-devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
+devconfig(char *instr, struct termios *termctl, int *allow_2217,
+	  int *disablebreak, char **banner)
 {
     char *str;
     char *pos;
@@ -78,6 +79,7 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
     }
 
     *allow_2217 = 0;
+    *disablebreak = 0;
     *banner = NULL;
     pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
@@ -145,6 +147,8 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217, char **banner)
             termctl->c_cflag &= ~HUPCL;
         } else if (strcmp(pos, "remctl") == 0) {
 	    *allow_2217 = 1;
+	} else if (strcmp(pos,"NOBREAK") == 0) {
+	    *disablebreak = 1;
 	} else if ((*banner = find_banner(pos))) {
 	    /* It's a banner to display at startup, it's already set. */
 	} else {
