@@ -4,3 +4,8 @@ ports.  See the man page for information about using the program.
 Note that ser2net supports RFC 2217 (remote control of serial port
 parameters), but you must have a complient client.  The only one I
 know if is kermit (http://www.columbia.edu/kermit).
+
+If you want the opposite of ser2net (you want to connect to a "local"
+serial port device that is really remote) then Cyclades has provided
+a tool for this at http://www.coker.com.au/cyclades.  It is capable
+of connecting to ser2net using RFC2217.
