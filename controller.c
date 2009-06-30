@@ -550,17 +550,17 @@ handle_tcp_fd_write(int fd, void *data)
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
-		return;
+		goto out;
 	    }
 
 	    if (errno == EAGAIN) {
 		/* This again was due to O_NONBLOCK, just ignore it. */
 	    } else if (errno == EPIPE) {
-		shutdown_controller(cntlr);
+		goto out_fail;
 	    } else {
 		/* Some other bad error. */
 		syslog(LOG_ERR, "The tcp write for controller had error: %m");
-		shutdown_controller(cntlr);
+		goto out_fail;
 	    }
 	} else {
 	    int i, j;
@@ -572,7 +572,7 @@ handle_tcp_fd_write(int fd, void *data)
 	    if (td->out_telnet_cmd_size != 0)
 		/* If we have more telnet command data to send, don't
 		   send any real data. */
-		return;
+		goto out;
 	}
     }
 
@@ -583,11 +583,11 @@ handle_tcp_fd_write(int fd, void *data)
 	if (errno == EAGAIN) {
 	    /* This again was due to O_NONBLOCK, just ignore it. */
 	} else if (errno == EPIPE) {
-	    shutdown_controller(cntlr);
+	    goto out_fail;
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for controller had error: %m");
-	    shutdown_controller(cntlr);
+	    goto out_fail;
 	}
     } else {
 	cntlr->outbuf_count -= write_count;
@@ -604,6 +604,11 @@ handle_tcp_fd_write(int fd, void *data)
 				     SEL_FD_HANDLER_DISABLED);
 	}
     }
+ out:
+    return;
+
+ out_fail:
+    shutdown_controller(cntlr);
 }
 
 /* Handle an exception from the TCP port. */

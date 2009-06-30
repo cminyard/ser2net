@@ -1,3 +1,20 @@
+2009-06-30  Sebastian Andrzej Siewior <bigeasy@linutronix.de>
+
+	* controller.c: Fix use after free in controller
+
+          The controller will use its dynamically allocated data after it
+	  got free() in error path. What we see in syslog is:
+
+          Jun 30 10:26:38 consrv3 ser2net[3073]: read error for
+		controller port: Connection reset by peer
+          Jun 30 10:26:39 consrv3 ser2net[3073]: The tcp write for
+		controller had error: Bad file descriptor
+
+          The first error is "legal" because the destitnation decided to
+	  close its socket a little to early than expected. The second
+	  error is allready bad because it tries to use allready
+	  deallocated fd. Later we segfault.
+
 2007-11-16  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move to version 2.5.
