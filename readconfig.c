@@ -177,11 +177,79 @@ free_banners(void)
     }
 }
 
+struct tracefile_s
+{
+    char *name;
+    char *str;
+    struct tracefile_s *next;
+};
+
+/* All the tracefiles in the system. */
+struct tracefile_s *tracefiles = NULL;
+
+static void
+handle_tracefile(char *name, char *fname)
+{
+    struct tracefile_s *new_tracefile;
+
+    new_tracefile = malloc(sizeof(*new_tracefile));
+    if (!new_tracefile) {
+	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	return;
+    }
+
+    new_tracefile->name = strdup(name);
+    if (!new_tracefile->name) {
+	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	free(new_tracefile);
+	return;
+    }
+
+    new_tracefile->str = strdup(fname);
+    if (!new_tracefile->str) {
+	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	free(new_tracefile->name);
+	free(new_tracefile);
+	return;
+    }
+
+    new_tracefile->next = tracefiles;
+    tracefiles = new_tracefile;
+}
+
+char *
+find_tracefile(char *name)
+{
+    struct tracefile_s *tracefile = tracefiles;
+
+    while (tracefile) {
+	if (strcmp(name, tracefile->name) == 0)
+	    return tracefile->str;
+	tracefile = tracefile->next;
+    }
+    return NULL;
+}
+
+static void
+free_tracefiles(void)
+{
+    struct tracefile_s *tracefile;
+
+    while (tracefiles) {
+	tracefile = tracefiles;
+	tracefiles = tracefiles->next;
+	free(tracefile->name);
+	free(tracefile->str);
+	free(tracefile);
+    }
+}
+
+
 void
 handle_config_line(char *inbuf)
 {
     char *portnum, *state, *timeout, *devname, *devcfg;
-    char *strtok_data;
+    char *strtok_data = NULL;
     char *errstr;
 
     lineno++;
@@ -213,6 +281,21 @@ handle_config_line(char *inbuf)
 	    return;
 	}
 	handle_banner(name, str);
+	return;
+    }
+
+    if (strcmp(portnum, "TRACEFILE") == 0) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No tracefile name given on line %d", lineno);
+	    return;
+	}
+	if ((str == NULL) || (strlen(str) == 0)) {
+	    syslog(LOG_ERR, "No tracefile given on line %d", lineno);
+	    return;
+	}
+	handle_tracefile(name, str);
 	return;
     }
 
@@ -265,6 +348,7 @@ readconfig(char *filename)
     }
 
     free_banners();
+    free_tracefiles();
 
     config_num++;
 

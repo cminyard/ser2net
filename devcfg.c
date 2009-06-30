@@ -65,22 +65,24 @@ devinit(struct termios *termctl)
    in instr.  These strings are described in the man page for this
    program. */
 int
-devconfig(char *instr, struct termios *termctl, int *allow_2217,
-	  int *disablebreak, char **banner)
+devconfig(char *instr, dev_info_t *dinfo)
 {
     char *str;
     char *pos;
     char *strtok_data;
     int  rv = 0;
+    struct termios *termctl = &dinfo->termctl;
 
     str = strdup(instr);
     if (str == NULL) {
 	return -1;
     }
 
-    *allow_2217 = 0;
-    *disablebreak = 0;
-    *banner = NULL;
+    dinfo->allow_2217 = 0;
+    dinfo->disablebreak = 0;
+    dinfo->banner = NULL;
+    dinfo->trace_read = NULL;
+    dinfo->trace_write = NULL;
     pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
@@ -146,11 +148,25 @@ devconfig(char *instr, struct termios *termctl, int *allow_2217,
         } else if (strcmp(pos, "-HANGUP_WHEN_DONE") == 0) {
             termctl->c_cflag &= ~HUPCL;
         } else if (strcmp(pos, "remctl") == 0) {
-	    *allow_2217 = 1;
-	} else if (strcmp(pos,"NOBREAK") == 0) {
-	    *disablebreak = 1;
-	} else if ((*banner = find_banner(pos))) {
+	    dinfo->allow_2217 = 1;
+	} else if (strcmp(pos, "NOBREAK") == 0) {
+	    dinfo->disablebreak = 1;
+	} else if (strncmp(pos, "tr:", 3) == 0) {
+	    /* trace read, data from the port to the socket */
+	    dinfo->trace_read = find_tracefile(pos + 3);
+	    /* FIXME - error handling */
+	} else if (strncmp(pos, "tw:", 3) == 0) {
+	    /* trace read, data from the socket to the port */
+	    dinfo->trace_write = find_tracefile(pos + 3);
+	    /* FIXME - error handling */
+	} else if (strncmp(pos, "tb:", 3) == 0) {
+	    /* trace both directions. */
+	    dinfo->trace_read = find_tracefile(pos + 3);
+	    dinfo->trace_write = dinfo->trace_read;
+	    /* FIXME - error handling */
+	} else if ((dinfo->banner = find_banner(pos))) {
 	    /* It's a banner to display at startup, it's already set. */
+	    /* FIXME - error handling */
 	} else {
 	    rv = -1;
 	    goto out;

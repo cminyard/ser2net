@@ -132,8 +132,6 @@ typedef struct port_info
     int            devfd;		/* The file descriptor for the
                                            device, only valid if the
                                            TCP port is open. */
-    struct termios termctl;		/* The termios information to
-					   set for the device. */
     unsigned int dev_bytes_received;    /* Number of bytes read from the
 					   device. */
     unsigned int dev_bytes_sent;        /* Number of bytes written to the
@@ -190,14 +188,8 @@ typedef struct port_info
 				     loaded when the current session
 				     is done. */
 
-    /* Banner to display at startup, or NULL if none. */
-    char *banner;
-
     /* Data for the telnet processing */
     telnet_data_t tn_data;
-
-    /* Allow RFC 2217 mode */
-    int allow_2217;
 
     /* Is RFC 2217 mode enabled? */
     int is_2217;
@@ -210,9 +202,11 @@ typedef struct port_info
     unsigned char modemstate_mask;
     unsigned char last_modemstate;
 
-    /* Disable break-commands */
-    int disablebreak;
+    /* Read and write trace files, -1 if not used. */
+    int wt_file;
+    int rt_file;
 
+    dev_info_t dinfo; /* device configuration information */
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -370,7 +364,7 @@ init_port_data(port_info_t *port)
     port->devname = NULL;
     port->devfd = 0;
     memset(&(port->remote), 0, sizeof(port->remote));
-    memset(&(port->termctl), 0, sizeof(port->termctl));
+    memset(&(port->dinfo.termctl), 0, sizeof(port->dinfo.termctl));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->tcp_to_dev_buf_start = 0;
     port->tcp_to_dev_buf_count = 0;
@@ -383,7 +377,9 @@ init_port_data(port_info_t *port)
     port->dev_bytes_sent = 0;
     port->is_2217 = 0;
     port->break_set = 0;
-    port->disablebreak = 0;
+    port->dinfo.disablebreak = 0;
+    port->wt_file = -1;
+    port->rt_file = -1;
 }
 
 void
@@ -436,6 +432,10 @@ handle_dev_fd_read(int fd, void *data)
 	shutdown_port(port, "closed port");
 	return;
     }
+
+    if (port->rt_file)
+	/* Do read tracing, ignore errors. */
+	write(port->rt_file, port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
 
     port->dev_bytes_received += port->dev_to_tcp_buf_count;
 
@@ -579,6 +579,10 @@ handle_tcp_fd_read(int fd, void *data)
 	shutdown_port(port, "tcp read close");
 	return;
     }
+
+    if (port->wt_file)
+	/* Do write tracing, ignore errors. */
+	write(port->wt_file, port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
 
     port->tcp_bytes_received += port->tcp_to_dev_buf_count;
 
@@ -811,10 +815,10 @@ display_banner(port_info_t *port)
     char *s;
     char *t;
 
-    if (!port->banner)
+    if (!port->dinfo.banner)
 	return;
 
-    s = port->banner;
+    s = port->dinfo.banner;
     while (*s) {
 	if (*s == '\\') {
 	    s++;
@@ -850,7 +854,7 @@ display_banner(port_info_t *port)
 		/* ser2net serial parms. */
 		{
 		    char str[15];
-		    serparm_to_str(str, sizeof(str), &(port->termctl));
+		    serparm_to_str(str, sizeof(str), &(port->dinfo.termctl));
 		    for (t=str; *t; t++)
 			add_port_tcp_char(port, *t);
 		}
@@ -905,6 +909,27 @@ display_banner(port_info_t *port)
 	    add_port_tcp_char(port, *s);
 	s++;
     }
+}
+
+static void
+setup_trace(port_info_t *port)
+{
+    if (port->dinfo.trace_write) {
+	/* FIXME */
+    } else
+	port->wt_file = -1;
+
+    if (port->dinfo.trace_read) {
+	if (port->dinfo.trace_write
+	    && (strcmp(port->dinfo.trace_read, port->dinfo.trace_write) == 0)){
+	    port->rt_file = port->wt_file;
+	    goto out;
+	}
+	/* FIXME */
+    } else
+	port->rt_file = -1;
+ out:
+    return;
 }
 
 /* Called to set up a new connection's file descriptor. */
@@ -988,8 +1013,8 @@ setup_tcp_port(port_info_t *port)
     }
 
     if (port->enabled != PORT_RAWLP
-	&& !port->disablebreak
-        && tcsetattr(port->devfd, TCSANOW, &(port->termctl)) == -1)
+	&& !port->dinfo.disablebreak
+        && tcsetattr(port->devfd, TCSANOW, &(port->dinfo.termctl)) == -1)
     {
 	close(port->tcpfd);
 	close(port->devfd);
@@ -1053,6 +1078,8 @@ setup_tcp_port(port_info_t *port)
     }
 
     display_banner(port);
+
+    setup_trace(port);
 
     gettimeofday(&then, NULL);
     then.tv_sec += 1;
@@ -1399,10 +1426,9 @@ portconfig(char *portnum,
 	goto errout;
     }
 
-    devinit(&(new_port->termctl));
+    devinit(&(new_port->dinfo.termctl));
 
-    if (devconfig(devcfg, &(new_port->termctl), &new_port->allow_2217,
-		  &new_port->disablebreak, &new_port->banner) == -1)
+    if (devconfig(devcfg, &new_port->dinfo) == -1)
     {
 	  rv = "device configuration invalid";
 	  goto errout;
@@ -1576,7 +1602,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 
 
     if (port->enabled != PORT_RAWLP) {
-	show_devcfg(cntlr, &(port->termctl));
+	show_devcfg(cntlr, &(port->dinfo.termctl));
 	need_space = 1;
     }
 
@@ -1637,7 +1663,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
 	str = "none\n\r";
 	controller_output(cntlr, str, strlen(str));
     } else {
-	show_devcfg(cntlr, &(port->termctl));
+	show_devcfg(cntlr, &(port->dinfo.termctl));
 	controller_output(cntlr, "\n\r", 2);
     }
 
@@ -1827,8 +1853,7 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
 	controller_output(cntlr, portspec, strlen(portspec));
 	controller_output(cntlr, "\n\r", 2);
     } else {
-	if (devconfig(devcfg, &(port->termctl), &port->allow_2217,
-		      &port->disablebreak, &port->banner) == -1)
+	if (devconfig(devcfg, &port->dinfo) == -1)
 	{
 	    char *err = "Invalid device config\n\r";
 	    controller_output(cntlr, err, strlen(err));
@@ -2058,7 +2083,7 @@ com_port_will(void *cb_data)
     unsigned char data[3];
     int val;
 
-    if (! port->allow_2217)
+    if (! port->dinfo.allow_2217)
 	return 0;
 
     /* The remote end turned on RFC2217 handling. */

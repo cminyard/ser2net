@@ -34,4 +34,7 @@ int scan_tcp_port(char *str, struct sockaddr_in *addr);
 /* Search for a banner by name. */
 char *find_banner(char *name);
 
+/* Search for a tracefile by name. */
+char *find_tracefile(char *name);
+
 #endif /* UTILS */

@@ -26,10 +26,30 @@
 /* Called to initially configure a terminal. */
 void devinit(struct termios *termctl);
 
+typedef struct dev_info {
+    /* The termios information to set for the device. */
+    struct termios termctl;
+
+    /* Allow RFC 2217 mode */
+    int allow_2217;
+
+    /* Disable break-commands */
+    int disablebreak;
+
+    /* Banner to display at startup, or NULL if none. */
+    char *banner;
+
+    /*
+     * File to read/write trace, NULL if none.  If the same, then
+     * trace information is in the same file.
+     */
+    char *trace_read;
+    char *trace_write;
+} dev_info_t;
+
 /* Called to change the configuration of a device based upon the
    string parameters. */
-int devconfig(char *instr, struct termios *termctl, int *allow_2217,
-	      int *disablebreak, char **banner);
+int devconfig(char *instr, dev_info_t *info);
 
 /* Prints the configuration of a device to a controller. */
 void show_devcfg(struct controller_info *cntlr, struct termios *termctl);
