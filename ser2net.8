@@ -172,6 +172,10 @@ or
 .IP
 BANNER:<banner name>:<banner text>
 .PP
+or
+.IP
+TRACEFILE:<tracefile name>:<tracefile>
+.PP
 
 .SS FIELDS
 .TP
@@ -241,18 +245,122 @@ the README for more info.
 .I <banner name>
 displays the given banner when a user connects to the port.
 
+.I tr:<filename>
+When the port is opened, open the given tracefile and store all data read
+from the physical device (and thus written to the user's TCP port) in
+the file.  The actual filename is specified in the TRACEFILE directive.
+If the file already exists, it is appended.  The file is closed
+when the port is closed.
+
+.I tw:<filename>
+Like tr, but traces data written to the device.
+
+.I tb:<filename>
+trace both read and written data to the same file.
+
 .TP
 .I "banner name"
 A name for the banner; this may be used in the options of a port.
 .TP
 .I "banner text"
-The text to display as the banner.  This may contain normal "C" escape
-strings, and it may also contain, \\d for the device name, \\p for
-the TCP port number, and \\s for the serial port parameters (eg
-9600N81) of the given connection.
+The text to display as the banner.  It takes escape sequences for
+substituting strings, see "FILENAME AND BANNER FORMATTING" for details.
+
+.TP
+.I "tracefile name"
+A name for the tracefile, this is used in the tw, tr, and tb options
+of a port.
+.TP
+.I "tracefile"
+The file to send the trace into.  Note that this takes escape
+sequences for substituting strings, see "FILENAME AND BANNER
+FORMATTING" for details.  Note that when using the time escape
+sequences, the time is read once at port startup, so if you use both
+tw and tr they will have the same date and time.
 
 .PP
 Blank lines and lines starting with `#' are ignored.
+
+.SH FILENAME AND BANNER FORMATTING
+Filenames and banners may contain normal "C" escape sequences:
+
+.RS 2
+\ea - bell
+.br
+\eb - backspace
+.br
+\ef - form feed
+.br
+\en - newline
+.br
+\er - carraige return
+.br
+\et - tab
+.br
+\ev - vertical tab
+.br
+\e\e - \e
+.br
+\e? - ?
+.br
+\e' - '
+.br
+\e" - "
+.br
+\ennn - octal value for nnn
+.br
+\exXX - hex value for XX
+.RE
+
+They may also contain, \ed for the device name and \ep for the TCP
+port number.
+
+A banner may contain \es for the serial port parameters (eg 9600N81)
+of the given connection.
+
+A filename may also contain the following sequences:
+
+.RS 2
+\eY -> year
+.br
+\ey -> day of the year (days since Jan 1)
+.br
+\eM -> month (Jan, Feb, Mar, etc.)
+.br
+\em -> month (as a number)
+.br
+\eA -> day of the week (Mon, Tue, etc.)
+.br
+\eD -> day of the month
+.br
+\ee -> epoc (seconds since Jan 1, 1970)
+.br
+\eU -> microseconds in the current second
+.br
+\ep -> local port number
+.br
+\ed -> local device name
+.br
+\eI -> remote IP address (in dot format)
+.br
+\eH -> hour (24-hour time)
+.br
+\eh -> hour (12-hour time)
+.br
+\ei -> minute
+.br
+\es -> second
+.br
+\eq -> am/pm
+.br
+\eP -> AM/PM
+.RE
+
+These sequences may be used to make the filename unique per open and
+identify which port/device the filename was for.  Note that in
+filenames when using \ed, everything up to and including last / in the
+device name is removed, because you can't have a / in a filename.  So
+in a filename /dev/ttyS0 would become just ttyS0.
 
 .SH SECURITY
 ser2net uses the tcp wrappers interface to implement host-based security.

@@ -151,15 +151,15 @@ devconfig(char *instr, dev_info_t *dinfo)
 	    dinfo->allow_2217 = 1;
 	} else if (strcmp(pos, "NOBREAK") == 0) {
 	    dinfo->disablebreak = 1;
-	} else if (strncmp(pos, "tr:", 3) == 0) {
+	} else if (strncmp(pos, "tr=", 3) == 0) {
 	    /* trace read, data from the port to the socket */
 	    dinfo->trace_read = find_tracefile(pos + 3);
 	    /* FIXME - error handling */
-	} else if (strncmp(pos, "tw:", 3) == 0) {
-	    /* trace read, data from the socket to the port */
+	} else if (strncmp(pos, "tw=", 3) == 0) {
+	    /* trace write, data from the socket to the port */
 	    dinfo->trace_write = find_tracefile(pos + 3);
 	    /* FIXME - error handling */
-	} else if (strncmp(pos, "tb:", 3) == 0) {
+	} else if (strncmp(pos, "tb=", 3) == 0) {
 	    /* trace both directions. */
 	    dinfo->trace_read = find_tracefile(pos + 3);
 	    dinfo->trace_write = dinfo->trace_read;

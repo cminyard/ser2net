@@ -1,3 +1,8 @@
+2009-10-15  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c, devcfg.c, readconfig.c, ser2net.8, ser2net.conf: Add
+	the ability to trace data read written to trace files.
+
 2009-07-19  Geoff Simmons <gsimmons@gsimmons.org>
 
 	* ser2net.conf: Some documentation cleanup, added missing docs

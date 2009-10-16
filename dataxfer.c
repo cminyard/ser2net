@@ -38,6 +38,7 @@
 #include <string.h>
 #include <signal.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "dataxfer.h"
 #include "selector.h"
@@ -399,6 +400,44 @@ reset_timer(port_info_t *port)
     port->timeout_left = port->timeout;
 }
 
+static void
+do_trace(port_info_t *port, int file, unsigned char *buf, unsigned int buf_len)
+{
+    int rv;
+
+    while (buf_len > 0) {
+    retry_write:
+	rv = write(file, buf, buf_len);
+	if (rv == -1) {
+	    char errbuf[128];
+	    int err = errno;
+
+	    if (err == EINTR)
+		goto retry_write;
+	    
+	    /* Fatal error writing to the file, log it and close the file. */
+
+	    if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
+		syslog(LOG_ERR, "Unable write to trace file on port %s: %d",
+		       port->portname, err);
+	    else
+		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
+		       port->portname, errbuf);
+	    
+	    if (file == port->rt_file)
+		port->rt_file = -1;
+	    if (file == port->wt_file)
+		port->wt_file = -1;
+	    close(file);
+	    return;
+	}
+
+	/* Handle a partial write */
+	buf_len -= rv;
+	buf += rv;
+    }
+}
+
 /* Data is ready to read on the serial port. */
 static void
 handle_dev_fd_read(int fd, void *data)
@@ -433,9 +472,10 @@ handle_dev_fd_read(int fd, void *data)
 	return;
     }
 
-    if (port->rt_file)
+    if (port->rt_file != -1)
 	/* Do read tracing, ignore errors. */
-	write(port->rt_file, port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
+	do_trace(port, port->rt_file,
+		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
 
     port->dev_bytes_received += port->dev_to_tcp_buf_count;
 
@@ -580,10 +620,6 @@ handle_tcp_fd_read(int fd, void *data)
 	return;
     }
 
-    if (port->wt_file)
-	/* Do write tracing, ignore errors. */
-	write(port->wt_file, port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
-
     port->tcp_bytes_received += port->tcp_to_dev_buf_count;
 
     if (port->enabled == PORT_TELNET) {
@@ -606,6 +642,11 @@ handle_tcp_fd_read(int fd, void *data)
 			 (char *) port->tcp_to_dev_buf,
 			 port->tcp_to_dev_buf_count);
     }
+
+    if (port->wt_file != -1)
+	/* Do write tracing, ignore errors. */
+	do_trace(port, port->wt_file,
+		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
 
  retry_write:
     write_count = write(port->devfd,
@@ -911,12 +952,369 @@ display_banner(port_info_t *port)
     }
 }
 
+enum fn_tr_state {
+    TR_NORMAL, TR_ESC, TR_ESCx1, TR_ESCx2, TR_ESCo1, TR_ESCo2
+};
+
+static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+
+static int
+translate_filename(port_info_t *port, const char *raw,
+		   char *cooked, unsigned int cooked_len,
+		   const struct timeval *tv)
+{
+    const char *s = raw;
+    enum fn_tr_state state = TR_NORMAL;
+    char c = 0;
+    unsigned int left;
+    char *cooked_end = cooked + cooked_len;
+    int rv;
+    struct tm time;
+    int v;
+    char *t;
+
+
+    localtime_r(&tv->tv_sec, &time);
+
+    while (*s) {
+	left = cooked_end - cooked;
+	if (!left)
+	    return -1;
+
+	if (state == TR_NORMAL) {
+	    if (*s == '\\')
+		state = TR_ESC;
+	    else
+		*cooked++ = *s;
+	    goto nextchar;
+	}
+
+	if (state == TR_ESCx1 || state == TR_ESCx2) {
+	    int v;
+
+	    if (!isxdigit(*s))
+		return -1;
+	    if (isdigit(*s))
+		v = *s - '0';
+	    else if (isupper(*s))
+		v = *s - 'A' + 10;
+	    else
+		v = *s - 'a' + 10;
+	    c = (c << 4) | v;
+
+	    if (state == TR_ESCx2) {
+		*cooked++ = c;
+		state = TR_NORMAL;
+	    } else
+		state = TR_ESCx2;
+	}
+
+	if (state == TR_ESCo1 || state == TR_ESCo2) {
+	    if (*s < '0' || *s > '7')
+		return -1;
+	    c = (c << 4) | (*s - '0');
+
+	    if (state == TR_ESCo2) {
+		*cooked++ = c;
+		state = TR_NORMAL;
+	    } else
+		state = TR_ESCo2;
+	}
+
+	switch (*s) {
+        /* \\ -> \ */
+	case '\\':
+	    *cooked++ = '\\';
+	    break;
+
+	case 'a':
+	    *cooked++ = 7;
+	    break;
+
+	case 'b':
+	    *cooked++ = 8;
+	    break;
+
+	case 'f':
+	    *cooked++ = 12;
+	    break;
+
+	case 'n':
+	    *cooked++ = 10;
+	    break;
+
+	case 'r':
+	    *cooked++ = 13;
+	    break;
+
+	case 't':
+	    *cooked++ = 9;
+	    break;
+
+	case 'v':
+	    *cooked++ = 11;
+	    break;
+
+	case '\'':
+	    *cooked++ = '\'';
+	    break;
+
+	case '?':
+	    *cooked++ = '?';
+	    break;
+
+	case '"':
+	    *cooked++ = '"';
+	    break;
+
+        /* \nnn -> octal value of nnn */
+	case '0': case '1': case '2': case '3': case '4': case '5':
+	case '6': case '7':
+	    state = TR_ESCo1;
+	    c = *s - '0';
+	    break;
+
+        /* \xXX -> hex value of XX */
+	case 'x':
+	    state = TR_ESCx1;
+	    c = 0;
+	    break;
+
+        /* \Y -> year */
+	case 'Y':
+	    rv = snprintf(cooked, left, "%d", time.tm_year + 1900);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \y -> day of the year (days since Jan 1) */
+	case 'y':
+	    rv = snprintf(cooked, left, "%d", time.tm_yday);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \M -> month (Jan, Feb, Mar, etc.) */
+	case 'M':
+	    if (time.tm_mon >= 12)
+		*cooked++ = '?';
+	    else {
+		rv = snprintf(cooked, left, "%s", smonths[time.tm_mon]);
+		if ((unsigned int) rv > left)
+		    return -1;
+		cooked += rv;
+	    }
+	    break;
+
+        /* \m -> month (as a number) */
+	case 'm':
+	    rv = snprintf(cooked, left, "%d", time.tm_mon);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \A -> day of the week (Mon, Tue, etc.) */
+	case 'A':
+	    if (time.tm_mon >= 12)
+		*cooked++ = '?';
+	    else {
+		rv = snprintf(cooked, left, "%s", sdays[time.tm_wday]);
+		if ((unsigned int) rv > left)
+		    return -1;
+		cooked += rv;
+	    }
+	    break;
+
+        /* \D -> day of the month */
+	case 'D':
+	    rv = snprintf(cooked, left, "%d", time.tm_mday);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \H -> hour (24-hour time) */
+	case 'H':
+	    rv = snprintf(cooked, left, "%2.2d", time.tm_hour);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \h -> hour (12-hour time) */
+	case 'h':
+	    v = time.tm_hour;
+	    if (v == 0)
+		v = 12;
+	    else if (v > 12)
+		v -= 12;
+	    rv = snprintf(cooked, left, "%2.2d", v);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \i -> minute */
+	case 'i':
+	    rv = snprintf(cooked, left, "%2.2d", time.tm_min);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \s -> second */
+	case 's':
+	    rv = snprintf(cooked, left, "%2.2d", time.tm_sec);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \q -> am/pm */
+	case 'q':
+	    if (time.tm_hour < 12)
+		rv = snprintf(cooked, left, "am");
+	    else
+		rv = snprintf(cooked, left, "pm");
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \P -> AM/PM */
+	case 'P':
+	    if (time.tm_hour < 12)
+		rv = snprintf(cooked, left, "AM");
+	    else
+		rv = snprintf(cooked, left, "PM");
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \T -> time (HH:MM:SS) */
+	case 'T':
+	    rv = snprintf(cooked, left, "%2.2d:%2.2d:%2.2d",
+			  time.tm_hour, time.tm_min, time.tm_sec);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \e -> epoc (seconds since Jan 1, 1970) */
+	case 'e':
+	    rv = snprintf(cooked, left, "%ld", tv->tv_sec);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \U -> microseconds in the current second */
+	case 'U':
+	    rv = snprintf(cooked, left, "%6.6ld", tv->tv_usec);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \p -> local port number */
+	case 'p':
+	    rv = snprintf(cooked, left, "%s", port->portname);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \d -> local device name */
+	case 'd':
+	    /* Remove everything but the device name. */
+	    t = strrchr(port->devname, '/');
+	    if (t)
+		t++;
+	    else
+		t = port->devname;
+	    rv = snprintf(cooked, left, "%s", t);
+	    if ((unsigned int) rv > left)
+		return -1;
+	    cooked += rv;
+	    break;
+
+        /* \I -> remote IP address (in dot format) */
+	case 'I':
+	    if (!inet_ntop(AF_INET, &(port->remote.sin_addr), cooked, left))
+		return -1;
+	    while (*cooked)
+		cooked++;
+	    break;
+
+	default:
+	    return -1;
+	}
+
+	if (state == TR_ESC)
+	    state = TR_NORMAL;
+
+    nextchar:
+	s++;
+    }
+
+    if (state != TR_NORMAL)
+	/* Trailing \ is an error */
+	return -1;
+
+    left = cooked_end - cooked;
+    if (!left)
+	/* No room for the terminator */
+	return -1;
+
+    *cooked = '\0';
+
+    return 0;
+}
+
+static int
+open_trace_file(port_info_t *port, const char *trfilename, struct timeval *tv)
+{
+    int rv;
+    char trfile[FILENAME_MAX];
+
+    rv = translate_filename(port, trfilename, trfile, sizeof(trfile), tv);
+    if (rv == -1) {
+	syslog(LOG_ERR, "Unable to translate trace file %s", trfilename);
+	goto out;
+    }
+
+    rv = open(trfile, O_WRONLY | O_CREAT | O_APPEND, 0600);
+    if (rv == -1) {
+	char errbuf[128];
+	int err = errno;
+
+	if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
+	    syslog(LOG_ERR, "Unable to open trace file %s: %d",
+		   trfile, err);
+	else
+	    syslog(LOG_ERR, "Unable to open trace file %s: %s",
+		   trfile, errbuf);
+    }
+ out:
+    return rv;
+}
+
 static void
 setup_trace(port_info_t *port)
 {
-    if (port->dinfo.trace_write) {
-	/* FIXME */
-    } else
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+
+    if (port->dinfo.trace_write)
+	port->wt_file = open_trace_file(port, port->dinfo.trace_write, &tv);
+    else
 	port->wt_file = -1;
 
     if (port->dinfo.trace_read) {
@@ -925,7 +1323,7 @@ setup_trace(port_info_t *port)
 	    port->rt_file = port->wt_file;
 	    goto out;
 	}
-	/* FIXME */
+	port->rt_file = open_trace_file(port, port->dinfo.trace_read, &tv);
     } else
 	port->rt_file = -1;
  out:
@@ -1237,6 +1635,14 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port, char *reason)
 {
+    if (port->rt_file != -1) {
+	close(port->rt_file);
+	port->rt_file = -1;
+    }
+    if (port->wt_file != -1) {
+	close(port->wt_file);
+	port->wt_file = -1;
+    }
     sel_stop_timer(port->timer);
     sel_clear_fd_handlers(ser2net_sel, port->devfd);
     sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
