@@ -200,6 +200,9 @@ main(int argc, char *argv[])
 	}
     }
 
+    if (debug && !detach)
+	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
+
     if (config_file) {
 	if (readconfig(config_file) == -1) {
 	    return 1;
@@ -234,8 +237,6 @@ main(int argc, char *argv[])
 	close(0);
 	close(1);
 	close(2);
-    } else if (debug) {
-	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
     }
 
     /* write pid file */

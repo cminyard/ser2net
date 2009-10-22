@@ -245,17 +245,17 @@ the README for more info.
 .I <banner name>
 displays the given banner when a user connects to the port.
 
-.I tr:<filename>
+.I tr=<filename>
 When the port is opened, open the given tracefile and store all data read
 from the physical device (and thus written to the user's TCP port) in
 the file.  The actual filename is specified in the TRACEFILE directive.
 If the file already exists, it is appended.  The file is closed
 when the port is closed.
 
-.I tw:<filename>
+.I tw=<filename>
 Like tr, but traces data written to the device.
 
-.I tb:<filename>
+.I tb=<filename>
 trace both read and written data to the same file.
 
 .TP

@@ -1,3 +1,13 @@
+2009-10-22  Corey Minyard <minyard@acm.org>
+
+	* ser2net.c: Set up routing errors to stderr before reading the
+	config so config errors come out properly to stdout.
+
+	* ser2net.8, ser2net.conf: Fix the documentation, it's tw=, not
+	tw: for the tracefile stuff.
+
+	* configure.in: Move to 2.7-rc2.
+
 2009-10-15  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c, devcfg.c, readconfig.c, ser2net.8, ser2net.conf: Add
