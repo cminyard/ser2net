@@ -41,10 +41,11 @@ typedef struct dev_info {
 
     /*
      * File to read/write trace, NULL if none.  If the same, then
-     * trace information is in the same file.
+     * trace information is in the same file, only one open is done.
      */
     char *trace_read;
     char *trace_write;
+    char *trace_both;
 } dev_info_t;
 
 /* Called to change the configuration of a device based upon the

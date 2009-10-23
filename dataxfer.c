@@ -206,6 +206,7 @@ typedef struct port_info
     /* Read and write trace files, -1 if not used. */
     int wt_file;
     int rt_file;
+    int bt_file;
 
     dev_info_t dinfo; /* device configuration information */
 } port_info_t;
@@ -381,6 +382,7 @@ init_port_data(port_info_t *port)
     port->dinfo.disablebreak = 0;
     port->wt_file = -1;
     port->rt_file = -1;
+    port->bt_file = -1;
 }
 
 void
@@ -428,6 +430,8 @@ do_trace(port_info_t *port, int file, unsigned char *buf, unsigned int buf_len)
 		port->rt_file = -1;
 	    if (file == port->wt_file)
 		port->wt_file = -1;
+	    if (file == port->bt_file)
+		port->bt_file = -1;
 	    close(file);
 	    return;
 	}
@@ -475,6 +479,10 @@ handle_dev_fd_read(int fd, void *data)
     if (port->rt_file != -1)
 	/* Do read tracing, ignore errors. */
 	do_trace(port, port->rt_file,
+		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
+    if (port->bt_file != -1)
+	/* Do both tracing, ignore errors. */
+	do_trace(port, port->bt_file,
 		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
 
     port->dev_bytes_received += port->dev_to_tcp_buf_count;
@@ -646,6 +654,10 @@ handle_tcp_fd_read(int fd, void *data)
     if (port->wt_file != -1)
 	/* Do write tracing, ignore errors. */
 	do_trace(port, port->wt_file,
+		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
+    if (port->bt_file != -1)
+	/* Do both tracing, ignore errors. */
+	do_trace(port, port->bt_file,
 		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
 
  retry_write:
@@ -1321,11 +1333,25 @@ setup_trace(port_info_t *port)
 	if (port->dinfo.trace_write
 	    && (strcmp(port->dinfo.trace_read, port->dinfo.trace_write) == 0)){
 	    port->rt_file = port->wt_file;
-	    goto out;
+	    goto try_both;
 	}
 	port->rt_file = open_trace_file(port, port->dinfo.trace_read, &tv);
     } else
 	port->rt_file = -1;
+ try_both:
+    if (port->dinfo.trace_both) {
+	if (port->dinfo.trace_write
+	    && (strcmp(port->dinfo.trace_both, port->dinfo.trace_write) == 0)){
+	    port->bt_file = port->wt_file;
+	    goto out;
+	} else if (port->dinfo.trace_read
+	    && (strcmp(port->dinfo.trace_both, port->dinfo.trace_read) == 0)){
+	    port->bt_file = port->rt_file;
+	    goto out;
+	}
+	port->bt_file = open_trace_file(port, port->dinfo.trace_both, &tv);
+    } else
+	port->bt_file = -1;
  out:
     return;
 }
@@ -1635,13 +1661,23 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port, char *reason)
 {
-    if (port->rt_file != -1) {
-	close(port->rt_file);
-	port->rt_file = -1;
-    }
     if (port->wt_file != -1) {
 	close(port->wt_file);
+	if (port->rt_file == port->wt_file)
+	    port->rt_file = -1;
+	if (port->bt_file == port->wt_file)
+	    port->bt_file = -1;
 	port->wt_file = -1;
+    }
+    if (port->rt_file != -1) {
+	close(port->rt_file);
+	if (port->bt_file == port->rt_file)
+	    port->bt_file = -1;
+	port->rt_file = -1;
+    }
+    if (port->bt_file != -1) {
+	close(port->bt_file);
+	port->bt_file = -1;
     }
     sel_stop_timer(port->timer);
     sel_clear_fd_handlers(ser2net_sel, port->devfd);

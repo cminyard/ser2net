@@ -227,7 +227,7 @@ find_tracefile(char *name)
 	    return tracefile->str;
 	tracefile = tracefile->next;
     }
-    syslog(LOG_ERR, "Tracefile %s not found", name);
+    syslog(LOG_ERR, "Tracefile %s not found, it will be ignored", name);
     return NULL;
 }
 

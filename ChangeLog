@@ -1,3 +1,13 @@
+2009-10-23  Corey Minyard <minyard@acm.org>
+
+	* configure.in: Move to 2.7-rc3.
+
+	* dataxfer.c, devcfg.c, devcfg.h, ser2net.h: Modified the tb=
+	directive to work separately from tw= and tr=, so you can do all
+	three at the same time independently.
+
+	* readconfig.c: Improved an error report.
+	
 2009-10-22  Corey Minyard <minyard@acm.org>
 
 	* ser2net.c: Set up routing errors to stderr before reading the

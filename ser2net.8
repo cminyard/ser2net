@@ -256,7 +256,9 @@ when the port is closed.
 Like tr, but traces data written to the device.
 
 .I tb=<filename>
-trace both read and written data to the same file.
+trace both read and written data to the same file.  Note that this is
+independent of tr and tw, so you may be tracing read, write, and both
+to different files.
 
 .TP
 .I "banner name"
