@@ -238,7 +238,7 @@ ignores (- checks) the modem control lines (DCD, DTR, etc.)
 lowers (- does not lower) the modem control lines (DCD, DTR, etc.) when
 the connection closes.
 .I NOBREAK
-Disables automatic clearing of the break setting of the port.
+disables automatic clearing of the break setting of the port.
 .I remctl
 allows remote control of the serial port parameters via RFC 2217.  See
 the README for more info.
@@ -259,6 +259,26 @@ Like tr, but traces data written to the device.
 trace both read and written data to the same file.  Note that this is
 independent of tr and tw, so you may be tracing read, write, and both
 to different files.
+
+.I [-]hexdump
+turns on (- turns off) hexdump output to all trace files.  Each line in the
+trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
+useful for debuging a binary protocol.
+
+.I [-]timestamp
+adds (- removes) a timestamp to all of the trace files. A timestamp
+is prepended to each line if hexdump is active for the trace file.  A
+timestamped line is also recorded in the trace file when a remote client
+connects or disconnects from the port.
+
+.I [-][tr-|tw-|tb-]hexdump
+turns on (- turns off) hexdump output for only one trace file.
+May be combined with [-]hexdump.  Order is important.
+
+.I [-][tr-|tw-|tb-]timestamp
+adds (- removes) a timestamp to only one the trace files
+May be combined with [-]timestamp.  Order is important.
+
 
 .TP
 .I "banner name"

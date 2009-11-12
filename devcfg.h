@@ -26,6 +26,13 @@
 /* Called to initially configure a terminal. */
 void devinit(struct termios *termctl);
 
+typedef struct trace_info_s
+{
+    int            hexdump;     /* output each block as a hexdump */
+    int            timestamp;   /* preceed each line with a timestamp */
+    char          *file;        /* open file.  NULL if not used */
+} trace_info_t;
+
 typedef struct dev_info {
     /* The termios information to set for the device. */
     struct termios termctl;
@@ -43,9 +50,9 @@ typedef struct dev_info {
      * File to read/write trace, NULL if none.  If the same, then
      * trace information is in the same file, only one open is done.
      */
-    char *trace_read;
-    char *trace_write;
-    char *trace_both;
+    trace_info_t trace_read;
+    trace_info_t trace_write;
+    trace_info_t trace_both;
 } dev_info_t;
 
 /* Called to change the configuration of a device based upon the

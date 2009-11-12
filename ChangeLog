@@ -1,3 +1,8 @@
+2009-11-12  Philip Gwyn
+
+	* dataxfer.c, devcfg.c, devcfg.h, ser2net.8: Add the ability to
+	dump trace files in a binary format with timestamps.
+
 2009-11-03  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move version to 2.7 for release.

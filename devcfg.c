@@ -81,9 +81,15 @@ devconfig(char *instr, dev_info_t *dinfo)
     dinfo->allow_2217 = 0;
     dinfo->disablebreak = 0;
     dinfo->banner = NULL;
-    dinfo->trace_read = NULL;
-    dinfo->trace_write = NULL;
-    dinfo->trace_both = NULL;
+    dinfo->trace_read.file = NULL;
+    dinfo->trace_read.hexdump = 0;
+    dinfo->trace_read.timestamp = 0;
+    dinfo->trace_write.file = NULL;
+    dinfo->trace_write.hexdump = 0;
+    dinfo->trace_write.timestamp = 0;
+    dinfo->trace_both.file = NULL;
+    dinfo->trace_both.hexdump = 0;
+    dinfo->trace_both.timestamp = 0;
     pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
@@ -152,18 +158,47 @@ devconfig(char *instr, dev_info_t *dinfo)
 	    dinfo->allow_2217 = 1;
 	} else if (strcmp(pos, "NOBREAK") == 0) {
 	    dinfo->disablebreak = 1;
+	} else if (strcmp(pos, "hexdump") == 0 ||
+	           strcmp(pos, "-hexdump") == 0) {
+	    dinfo->trace_read.hexdump = (*pos != '-');
+	    dinfo->trace_write.hexdump = (*pos != '-');
+	    dinfo->trace_both.hexdump = (*pos != '-');
+	} else if (strcmp(pos, "timestamp") == 0 ||
+	           strcmp(pos, "-timestamp") == 0) {
+	    dinfo->trace_read.timestamp = (*pos != '-');
+	    dinfo->trace_write.timestamp = (*pos != '-');
+	    dinfo->trace_both.timestamp = (*pos != '-');
+	} else if (strcmp(pos, "tr-hexdump") == 0 ||
+	           strcmp(pos, "-tr-hexdump") == 0) {
+	    dinfo->trace_read.hexdump = (*pos != '-');
+	} else if (strcmp(pos, "tr-timestamp") == 0 ||
+	           strcmp(pos, "-tr-timestamp") == 0) {
+	    dinfo->trace_read.timestamp = (*pos != '-');
+	} else if (strcmp(pos, "tw-hexdump") == 0 ||
+	           strcmp(pos, "-tw-hexdump") == 0) {
+	    dinfo->trace_write.hexdump = (*pos != '-');
+	} else if (strcmp(pos, "tw-timestamp") == 0 ||
+	           strcmp(pos, "-tw-timestamp") == 0) {
+	    dinfo->trace_write.timestamp = (*pos != '-');
+	} else if (strcmp(pos, "tb-hexdump") == 0 ||
+	           strcmp(pos, "-tb-hexdump") == 0) {
+	    dinfo->trace_both.hexdump = (*pos != '-');
+	} else if (strcmp(pos, "tb-timestamp") == 0 ||
+	           strcmp(pos, "-tb-timestamp") == 0) {
+	    dinfo->trace_both.timestamp = (*pos != '-');
 	} else if (strncmp(pos, "tr=", 3) == 0) {
 	    /* trace read, data from the port to the socket */
-	    dinfo->trace_read = find_tracefile(pos + 3);
+	    dinfo->trace_read.file = find_tracefile(pos + 3);
 	} else if (strncmp(pos, "tw=", 3) == 0) {
 	    /* trace write, data from the socket to the port */
-	    dinfo->trace_write = find_tracefile(pos + 3);
+	    dinfo->trace_write.file = find_tracefile(pos + 3);
 	} else if (strncmp(pos, "tb=", 3) == 0) {
 	    /* trace both directions. */
-	    dinfo->trace_both = find_tracefile(pos + 3);
+	    dinfo->trace_both.file = find_tracefile(pos + 3);
 	} else if ((dinfo->banner = find_banner(pos))) {
 	    /* It's a banner to display at startup, it's already set. */
 	} else {
+	    /* fprintf( stderr, "Unknown token %s\n", pos );     */
 	    rv = -1;
 	    goto out;
 	}

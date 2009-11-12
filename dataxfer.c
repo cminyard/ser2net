@@ -48,6 +48,9 @@
 
 extern selector_t *ser2net_sel;
 
+#define SERIAL "term"
+#define NET    "tcp "
+
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
 #include <tcpd.h>
@@ -79,6 +82,13 @@ char *state_str[] = { "unconnected", "waiting input", "waiting output" };
 char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
 
 #define PORT_BUFSIZE	1024
+
+typedef struct trace_s
+{
+    int            hexdump;     /* output each block as a hexdump */
+    int            timestamp;   /* preceed each line with a timestamp */
+    int            file;        /* open file.  -1 if not used */
+} trace_t;
 
 typedef struct port_info
 {
@@ -203,10 +213,10 @@ typedef struct port_info
     unsigned char modemstate_mask;
     unsigned char last_modemstate;
 
-    /* Read and write trace files, -1 if not used. */
-    int wt_file;
-    int rt_file;
-    int bt_file;
+    /* Read and write trace information */
+    trace_t wt;
+    trace_t rt;
+    trace_t bt;
 
     dev_info_t dinfo; /* device configuration information */
 } port_info_t;
@@ -380,9 +390,15 @@ init_port_data(port_info_t *port)
     port->is_2217 = 0;
     port->break_set = 0;
     port->dinfo.disablebreak = 0;
-    port->wt_file = -1;
-    port->rt_file = -1;
-    port->bt_file = -1;
+    port->wt.file = -1;
+    port->wt.timestamp = 0;
+    port->wt.hexdump = 0;
+    port->rt.file = -1;
+    port->rt.timestamp = 0;
+    port->rt.hexdump = 0;
+    port->bt.file = -1;
+    port->bt.timestamp = 0;
+    port->bt.hexdump = 0;
 }
 
 void
@@ -402,14 +418,87 @@ reset_timer(port_info_t *port)
     port->timeout_left = port->timeout;
 }
 
+
+static int
+timestamp(trace_t *tr, char *buf, int size)
+{
+    time_t result;
+    if(!tr->timestamp)
+        return 0;
+    result = time(NULL);
+    return strftime(buf, size, "%Y/%m/%d %H:%M:%S ", localtime(&result));
+}
+
+static int
+trace_write_end(char *out, int size, unsigned char *start, int col)
+{
+    int pos=0, w;
+
+    strncat(out, " |", size-pos);
+    pos += 2;
+    for(w = 0; w < col; w++) {
+        pos += snprintf(out + pos, size - pos, "%c",
+			isprint(start[w]) ? start[w] : '.');
+    }
+    strncat(out+pos, "|\n", size-pos);
+    pos += 2;
+    return pos;
+}
+
+int
+trace_write(port_info_t *port, trace_t *tr, unsigned char *buf,
+	    unsigned int buf_len, char *prefix)
+{
+    int rv=0, q, w, col=0, pos, file = tr->file;
+    static char out[1024];
+    unsigned char *start;
+
+    if( buf_len == 0 ) 
+        return 0;
+
+    if(!tr->hexdump)
+        return write(file, buf, buf_len);
+
+    pos = timestamp(tr, out, sizeof(out));    
+    pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
+        
+    start = buf;
+    for (q = 0; q < buf_len; q++) {
+        pos += snprintf(out + pos, sizeof(out) - pos, "%02x ", buf[q]);
+        col++;
+        if (col >= 8) {
+            pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
+            rv = write(file, out, strlen(out));
+            if (rv < 0)
+                return rv;           
+            pos = timestamp(tr, out, sizeof(out));    
+            pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
+            col = 0;
+            start = buf + q + 1;
+        }
+    }
+    if ( col > 0 ) {
+        for (w = 8; w > col; w--) {
+            strncat(out + pos, "   ", sizeof(out) - pos);
+            pos += 3;
+        }
+        pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
+        rv = write(file, out, strlen(out));
+        if(rv < 0)
+            return rv;
+    }
+    return buf_len;
+}
+
 static void
-do_trace(port_info_t *port, int file, unsigned char *buf, unsigned int buf_len)
+do_trace(port_info_t *port, trace_t *tr, unsigned char *buf,
+	 unsigned int buf_len, char *prefix)
 {
     int rv;
 
     while (buf_len > 0) {
     retry_write:
-	rv = write(file, buf, buf_len);
+	rv = trace_write(port, tr, buf, buf_len, prefix);
 	if (rv == -1) {
 	    char errbuf[128];
 	    int err = errno;
@@ -426,13 +515,8 @@ do_trace(port_info_t *port, int file, unsigned char *buf, unsigned int buf_len)
 		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
 		       port->portname, errbuf);
 	    
-	    if (file == port->rt_file)
-		port->rt_file = -1;
-	    if (file == port->wt_file)
-		port->wt_file = -1;
-	    if (file == port->bt_file)
-		port->bt_file = -1;
-	    close(file);
+	    close(tr->file);
+	    tr->file = -1;
 	    return;
 	}
 
@@ -441,6 +525,62 @@ do_trace(port_info_t *port, int file, unsigned char *buf, unsigned int buf_len)
 	buf += rv;
     }
 }
+
+static void
+header_trace(port_info_t *port)
+{
+    static char buf[1024];
+    static trace_t tr = { 1, 1, -1 };
+    int len = 0, doneR=-1, doneW=-1;
+
+    len += timestamp(&tr, buf, sizeof(buf));
+    len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
+    inet_ntop(AF_INET, &(port->remote.sin_addr), buf + len, sizeof(buf) - len);
+    len += strlen(buf + len);
+    len += snprintf(buf + len, sizeof(buf) - len, ":%i)\n",
+		    port->remote.sin_port);
+
+    if (port->rt.file != -1 && port->rt.timestamp) {
+        write(port->rt.file, buf, len);
+        doneR = port->rt.file;
+    }
+    /* don't output to wt.file if it's the same as rt.file */
+    if (port->wt.file != doneR && port->wt.timestamp) {
+        write(port->wt.file, buf, len);
+        doneW = port->wt.file;
+    }
+    /* don't output to bt.file if it's the same as rt.file or wt.file */
+    if (port->bt.file != doneR && port->bt.file != doneW 
+                && port->bt.timestamp)
+        write(port->bt.file, buf, len);    
+}
+
+static void
+footer_trace(port_info_t *port, char *reason)
+{
+    static char buf[1024];
+    static trace_t tr = { 1, 1, -1 };
+    int len=0, doneR=-1, doneW=-1;
+
+    len += timestamp(&tr, buf, sizeof(buf));
+    len += snprintf(buf + len, sizeof(buf), "CLOSE (%s)\n", reason);
+
+    if (port->rt.file != -1 && port->rt.timestamp) {
+        write(port->rt.file, buf, len);
+        doneR = port->rt.file;
+    }
+    /* don't output to wt.file if it's the same as rt.file */
+    if (port->wt.file != doneR && port->wt.timestamp) {
+        write(port->wt.file, buf, len);
+        doneW = port->wt.file;
+    }
+    /* don't output to bt.file if it's the same as rt.file or wt.file */
+    if (port->bt.file != doneR && port->bt.file != doneW 
+                && port->bt.timestamp)
+        write(port->bt.file, buf, len);
+}
+
+
 
 /* Data is ready to read on the serial port. */
 static void
@@ -476,14 +616,14 @@ handle_dev_fd_read(int fd, void *data)
 	return;
     }
 
-    if (port->rt_file != -1)
+    if (port->rt.file != -1)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, port->rt_file,
-		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
-    if (port->bt_file != -1)
+	do_trace(port, &port->rt,
+		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count, SERIAL);
+    if (port->bt.file != -1)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->bt_file,
-		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count);
+	do_trace(port, &port->bt,
+		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count, SERIAL);
 
     port->dev_bytes_received += port->dev_to_tcp_buf_count;
 
@@ -651,14 +791,14 @@ handle_tcp_fd_read(int fd, void *data)
 			 port->tcp_to_dev_buf_count);
     }
 
-    if (port->wt_file != -1)
+    if (port->wt.file != -1)
 	/* Do write tracing, ignore errors. */
-	do_trace(port, port->wt_file,
-		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
-    if (port->bt_file != -1)
+	do_trace(port, &port->wt,
+		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, NET);
+    if (port->bt.file != -1)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->bt_file,
-		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count);
+	do_trace(port, &port->bt,
+		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, NET);
 
  retry_write:
     write_count = write(port->devfd,
@@ -973,7 +1113,7 @@ static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
 static int
-translate_filename(port_info_t *port, const char *raw,
+translate_filename(port_info_t *port, char *raw,
 		   char *cooked, unsigned int cooked_len,
 		   const struct timeval *tv)
 {
@@ -1289,10 +1429,14 @@ translate_filename(port_info_t *port, const char *raw,
     return 0;
 }
 
-static int
-open_trace_file(port_info_t *port, const char *trfilename, struct timeval *tv)
+static void
+open_trace_file(port_info_t *port, 
+                trace_info_t *in,
+                trace_t *out,
+                struct timeval *tv)
 {
     int rv;
+    char *trfilename = in->file;
     char trfile[FILENAME_MAX];
 
     rv = translate_filename(port, trfilename, trfile, sizeof(trfile), tv);
@@ -1313,8 +1457,13 @@ open_trace_file(port_info_t *port, const char *trfilename, struct timeval *tv)
 	    syslog(LOG_ERR, "Unable to open trace file %s: %s",
 		   trfile, errbuf);
     }
+    else {
+        out->hexdump = in->hexdump;
+        out->timestamp = in->timestamp;
+    }
  out:
-    return rv;
+    out->file = rv;
+    return;
 }
 
 static void
@@ -1324,34 +1473,43 @@ setup_trace(port_info_t *port)
 
     gettimeofday(&tv, NULL);
 
-    if (port->dinfo.trace_write)
-	port->wt_file = open_trace_file(port, port->dinfo.trace_write, &tv);
+    if (port->dinfo.trace_write.file)
+	open_trace_file(port, &port->dinfo.trace_write, &port->wt, &tv);
     else
-	port->wt_file = -1;
+	port->wt.file = -1;
 
-    if (port->dinfo.trace_read) {
-	if (port->dinfo.trace_write
-	    && (strcmp(port->dinfo.trace_read, port->dinfo.trace_write) == 0)){
-	    port->rt_file = port->wt_file;
+    if (port->dinfo.trace_read.file) {
+	if (port->dinfo.trace_write.file
+	    && (strcmp(port->dinfo.trace_read.file,
+		       port->dinfo.trace_write.file) == 0)) {
+	    port->rt.file = port->wt.file;
+	    port->rt.timestamp = port->wt.timestamp;
+	    port->rt.hexdump   = port->wt.hexdump;
 	    goto try_both;
 	}
-	port->rt_file = open_trace_file(port, port->dinfo.trace_read, &tv);
+	open_trace_file(port, &port->dinfo.trace_read, &port->rt, &tv);
     } else
-	port->rt_file = -1;
+	port->rt.file = -1;
  try_both:
-    if (port->dinfo.trace_both) {
-	if (port->dinfo.trace_write
-	    && (strcmp(port->dinfo.trace_both, port->dinfo.trace_write) == 0)){
-	    port->bt_file = port->wt_file;
+    if (port->dinfo.trace_both.file) {
+	if (port->dinfo.trace_write.file
+	    && (strcmp(port->dinfo.trace_both.file,
+		       port->dinfo.trace_write.file) == 0)) {
+	    port->bt.file = port->wt.file;
+	    port->bt.timestamp = port->wt.timestamp;
+	    port->bt.hexdump   = port->wt.hexdump;
 	    goto out;
-	} else if (port->dinfo.trace_read
-	    && (strcmp(port->dinfo.trace_both, port->dinfo.trace_read) == 0)){
-	    port->bt_file = port->rt_file;
+	} else if (port->dinfo.trace_read.file
+	    && (strcmp(port->dinfo.trace_both.file,
+		       port->dinfo.trace_read.file) == 0)) {
+	    port->bt.file = port->rt.file;
+	    port->bt.timestamp = port->rt.timestamp;
+	    port->bt.hexdump   = port->rt.hexdump;
 	    goto out;
 	}
-	port->bt_file = open_trace_file(port, port->dinfo.trace_both, &tv);
+	open_trace_file(port, &port->dinfo.trace_both, &port->bt, &tv);
     } else
-	port->bt_file = -1;
+	port->bt.file = -1;
  out:
     return;
 }
@@ -1504,6 +1662,7 @@ setup_tcp_port(port_info_t *port)
     display_banner(port);
 
     setup_trace(port);
+    header_trace(port);
 
     gettimeofday(&then, NULL);
     then.tv_sec += 1;
@@ -1547,6 +1706,7 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
+    /* XXX log port->remote */
     setup_tcp_port(port);
 }
 
@@ -1661,23 +1821,25 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port, char *reason)
 {
-    if (port->wt_file != -1) {
-	close(port->wt_file);
-	if (port->rt_file == port->wt_file)
-	    port->rt_file = -1;
-	if (port->bt_file == port->wt_file)
-	    port->bt_file = -1;
-	port->wt_file = -1;
+    footer_trace( port, reason );
+    
+    if (port->wt.file != -1) {
+	close(port->wt.file);
+	if (port->rt.file == port->wt.file)
+	    port->rt.file = -1;
+	if (port->bt.file == port->wt.file)
+	    port->bt.file = -1;
+	port->wt.file = -1;
     }
-    if (port->rt_file != -1) {
-	close(port->rt_file);
-	if (port->bt_file == port->rt_file)
-	    port->bt_file = -1;
-	port->rt_file = -1;
+    if (port->rt.file != -1) {
+	close(port->rt.file);
+	if (port->bt.file == port->rt.file)
+	    port->bt.file = -1;
+	port->rt.file = -1;
     }
-    if (port->bt_file != -1) {
-	close(port->bt_file);
-	port->bt_file = -1;
+    if (port->bt.file != -1) {
+	close(port->bt.file);
+	port->bt.file = -1;
     }
     sel_stop_timer(port->timer);
     sel_clear_fd_handlers(ser2net_sel, port->devfd);
