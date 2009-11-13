@@ -1,3 +1,8 @@
+2009-11-12  Corey Minyard <minyard@acm.org>
+
+	* ser2net.spec, ser2net.spec.in: Fix the version in the spec
+	file to be updated automatically.
+
 2009-11-12  Philip Gwyn
 
 	* dataxfer.c, devcfg.c, devcfg.h, ser2net.8: Add the ability to

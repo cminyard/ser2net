@@ -20,4 +20,4 @@ then
 fi
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
-AC_OUTPUT(Makefile)
+AC_OUTPUT([Makefile ser2net.spec])

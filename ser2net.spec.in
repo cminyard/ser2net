@@ -1,5 +1,5 @@
 Name:		ser2net
-Version:	2.3
+Version:	@VERSION@
 Release:	1
 License:	GPL
 Summary:	Serial to network proxy
