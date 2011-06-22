@@ -1,3 +1,9 @@
+2010-03-11  Mats Erik Andersson <mats.andersson@mea.homelinux.org>,
+	Corey Minyard <minyard@acm.org>
+
+	* controller.c, dataxfer.c, utils.c, utils.h: Add IPV6 address
+	compatability.
+
 2009-11-12  Corey Minyard <minyard@acm.org>
 
 	* ser2net.spec, ser2net.spec.in: Fix the version in the spec

@@ -33,6 +33,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <netdb.h>
 #include <errno.h>
 #include <syslog.h>
 #include <string.h>
@@ -122,7 +123,7 @@ typedef struct port_info
 
     /* Information about the TCP port. */
     char               *portname;       /* The name given for the port. */
-    struct sockaddr_in tcpport;		/* The TCP port to listen on
+    struct sockaddr_storage tcpport;	/* The TCP port to listen on
 					   for connections to this
 					   terminal device. */
     int            acceptfd;		/* The file descriptor used to
@@ -131,7 +132,7 @@ typedef struct port_info
     int            tcpfd;		/* When connected, the file
                                            descriptor for the TCP
                                            port used for I/O. */
-    struct sockaddr_in remote;		/* The socket address of who
+    struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
     unsigned int tcp_bytes_received;    /* Number of bytes read from the
 					   TCP port. */
@@ -532,13 +533,20 @@ header_trace(port_info_t *port)
     static char buf[1024];
     static trace_t tr = { 1, 1, -1 };
     int len = 0, doneR=-1, doneW=-1;
+    char portstr[NI_MAXSERV];
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    inet_ntop(AF_INET, &(port->remote.sin_addr), buf + len, sizeof(buf) - len);
+    getnameinfo((struct sockaddr *) &(port->remote), sizeof(port->remote),
+		buf + len, sizeof(buf) - len,
+		portstr, sizeof(portstr), NI_NUMERICHOST);
     len += strlen(buf + len);
-    len += snprintf(buf + len, sizeof(buf) - len, ":%i)\n",
-		    port->remote.sin_port);
+    if ((sizeof(buf) - len) > 2) {
+	buf[len] = ':';
+	len++;
+    }
+    strncpy(buf + len, portstr, sizeof(buf) - len);
+    len += strlen(buf + len);
 
     if (port->rt.file != -1 && port->rt.timestamp) {
         write(port->rt.file, buf, len);
@@ -1398,7 +1406,9 @@ translate_filename(port_info_t *port, char *raw,
 
         /* \I -> remote IP address (in dot format) */
 	case 'I':
-	    if (!inet_ntop(AF_INET, &(port->remote.sin_addr), cooked, left))
+	    if (!getnameinfo((struct sockaddr *) &(port->remote),
+			sizeof(port->remote),
+			cooked, left, NULL, 0, NI_NUMERICHOST))
 		return -1;
 	    while (*cooked)
 		cooked++;
@@ -1687,7 +1697,7 @@ handle_accept_port_read(int fd, void *data)
     }
 
     if (err != NULL) {
-	struct sockaddr_in dummy_sockaddr;
+	struct sockaddr_storage dummy_sockaddr;
 	socklen_t len = sizeof(dummy_sockaddr);
 	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
@@ -1715,8 +1725,11 @@ static char *
 startup_port(port_info_t *port)
 {
     int optval = 1;
+    int portnum;
 
-    if (port->tcpport.sin_port == 0) {
+    portnum = port_from_in_addr(port->tcpport.ss_family,
+				(struct sockaddr *) &port->tcpport);
+    if (portnum == 0) {
 	/* A zero port means use stdin/stdout */
 	if (is_device_already_inuse(port)) {
 	    char *err = "Port's device already in use\n\r";
@@ -1731,7 +1744,7 @@ startup_port(port_info_t *port)
 	return NULL;
     }
 
-    port->acceptfd = socket(PF_INET, SOCK_STREAM, 0);
+    port->acceptfd = socket(port->tcpport.ss_family, SOCK_STREAM, 0);
     if (port->acceptfd == -1) {
 	return "Unable to create TCP socket";
     }
@@ -1749,6 +1762,10 @@ startup_port(port_info_t *port)
 	close(port->acceptfd);
 	return "Unable to set reuseaddress on socket";
     }
+
+    check_ipv6_only(port->tcpport.ss_family,
+		    (struct sockaddr *) &port->tcpport,
+		    port->acceptfd);
 
     if (bind(port->acceptfd,
 	     (struct sockaddr *) &port->tcpport,
@@ -1821,6 +1838,8 @@ free_port(port_info_t *port)
 static void
 shutdown_port(port_info_t *port, char *reason)
 {
+    int portnum;
+
     footer_trace( port, reason );
     
     if (port->wt.file != -1) {
@@ -1863,7 +1882,9 @@ shutdown_port(port_info_t *port, char *reason)
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
-    if (port->tcpport.sin_port == 0) {
+    portnum = port_from_in_addr(port->tcpport.ss_family,
+				(struct sockaddr *) &port->tcpport);
+    if (portnum == 0) {
 	/* This was a zero port (for stdin/stdout), this is only
 	   allowed with one port at a time, and we shut down when it
 	   closes. */
@@ -2159,7 +2180,7 @@ clear_old_port_config(int curr_config)
 static void
 showshortport(struct controller_info *cntlr, port_info_t *port)
 {
-    char buffer[128];
+    char buffer[NI_MAXHOST], portbuff[NI_MAXSERV];
     int  count;
     int  need_space = 0;
 
@@ -2172,10 +2193,13 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     sprintf(buffer, "%7d ", port->timeout);
     controller_output(cntlr, buffer, strlen(buffer));
 
-    inet_ntop(AF_INET, &(port->remote.sin_addr), buffer, sizeof(buffer));
+    getnameinfo((struct sockaddr *) &(port->remote), sizeof(port->remote),
+		    buffer, sizeof(buffer),
+		    portbuff, sizeof(portbuff),
+		    NI_NUMERICHOST | NI_NUMERICSERV);
     count = strlen(buffer);
     controller_output(cntlr, buffer, count);
-    sprintf(buffer, ",%d ", ntohs(port->remote.sin_port));
+    sprintf(buffer, ",%s ", portbuff);
     count += strlen(buffer);
     controller_output(cntlr, buffer, strlen(buffer));
     while (count < 23) {
@@ -2226,7 +2250,7 @@ static void
 showport(struct controller_info *cntlr, port_info_t *port)
 {
     char *str;
-    char buffer[128];
+    char buffer[NI_MAXHOST], portbuff[NI_MAXSERV];
 
     str = "TCP Port ";
     controller_output(cntlr, str, strlen(str));
@@ -2248,10 +2272,13 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     str = "  connected to (or last connection): ";
     controller_output(cntlr, str, strlen(str));
-    inet_ntop(AF_INET, &(port->remote.sin_addr), buffer, sizeof(buffer));
+    getnameinfo((struct sockaddr *) &(port->remote), sizeof(port->remote),
+		    buffer, sizeof(buffer),
+		    portbuff, sizeof(portbuff),
+		    NI_NUMERICHOST | NI_NUMERICSERV);
     controller_output(cntlr, buffer, strlen(buffer));
     controller_output(cntlr, ":", 1);
-    sprintf(buffer, "%d", ntohs(port->remote.sin_port));
+    sprintf(buffer, ",%s ", portbuff);
     controller_output(cntlr, buffer, strlen(buffer));
     controller_output(cntlr, "\n\r", 2);
 

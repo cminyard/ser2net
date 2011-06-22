@@ -22,7 +22,6 @@
 #include <string.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 
 #include "utils.h"
@@ -58,51 +57,59 @@ scan_int(char *str)
     return rv;
 }
 
-/* Scan for a TCP port in the form "[x.x.x.x,]x" where the first part is
-   the IP address (options, defaults to INADDR_ANY) and the second part
-   is the port number (required). */
+/* Scan for a TCP port in the form "[hostname,]x", where the optional
+   first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
+   In the absence of a host specification, a wildcard address is used.
+   The mandatory second part is the port number or a service name. */
 int
-scan_tcp_port(char *str, struct sockaddr_in *addr)
+scan_tcp_port(char *str, struct sockaddr_storage *addr)
 {
     char *strtok_data;
     char *ip;
     char *port;
-    int  port_num;
+    struct addrinfo hints, *ai;
+
+    memset(addr, 0, sizeof(*addr));
 
     ip = strtok_r(str, ",", &strtok_data);
     port = strtok_r(NULL, "", &strtok_data);
     if (port == NULL) {
 	port = ip;
 	ip = NULL;
-	addr->sin_addr.s_addr = INADDR_ANY;
-	port_num = scan_int(port);
-	if (port_num == -1) {
-	    return -1;
-	}
-	addr->sin_port = htons(port_num);
-    } else {
-	/* Both an IP and port were specified. */
-	addr->sin_addr.s_addr = inet_addr(ip);
-	if (addr->sin_addr.s_addr == INADDR_NONE) {
-	    struct hostent *hp;
-
-	    hp = gethostbyname(ip);
-	    if (hp == NULL) {
-		return -1;
-	    }
-	    if (hp->h_addrtype != AF_INET) {
-		return -1;
-	    }
-	    memcpy(&addr->sin_addr, hp->h_addr_list[0], hp->h_length);
-	}
-
-	port_num = scan_int(port);
-	if (port_num == -1) {
-	    return -1;
-	}
-	addr->sin_port = htons(port_num);
     }
-    addr->sin_family = AF_INET;
+    
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_flags = AI_PASSIVE;
+    hints.ai_family = AF_INET6;		/* Needed for kernel 2.6.30+ */
+    if (getaddrinfo(ip, port, &hints, &ai))
+	return -1;
 
+    memcpy(addr, ai->ai_addr, ai->ai_addrlen);
+    freeaddrinfo(ai);
     return 0;
+}
+
+void
+check_ipv6_only(int family, struct sockaddr *addr, int fd)
+{
+    if ((family == AF_INET6)
+	&& IN6_IS_ADDR_UNSPECIFIED(&(((struct sockaddr_in6 *) addr)->sin6_addr)))
+    {
+	int null = 0;
+
+	setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &null, sizeof(null));
+    }
+}
+
+int
+port_from_in_addr(int family, struct sockaddr *addr)
+{
+    switch (family) {
+    case AF_INET6:
+	return ((struct sockaddr_in6 *) addr)->sin6_port;
+
+    case AF_INET:
+    default:
+	return ((struct sockaddr_in *) addr)->sin_port;
+    }
 }

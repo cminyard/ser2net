@@ -26,15 +26,20 @@
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
 
-/* Scan for a TCP port in the form "[x.x.x.x,]x" where the first part is
-   the IP address (options, defaults to INADDR_ANY) and the second part
-   is the port number (required). */
-int scan_tcp_port(char *str, struct sockaddr_in *addr);
+/* Scan for a TCP port in the form "[hostname,]x", where the optional
+ * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
+ * In the absence of a host specification, a wildcard address is used.
+ * The mandatory second part is the port number or a service name. */
+int scan_tcp_port(char *str, struct sockaddr_storage *addr);
 
 /* Search for a banner by name. */
 char *find_banner(char *name);
 
 /* Search for a tracefile by name. */
 char *find_tracefile(char *name);
+
+void check_ipv6_only(int family, struct sockaddr *addr, int fd);
+
+int port_from_in_addr(int family, struct sockaddr *addr);
 
 #endif /* UTILS */

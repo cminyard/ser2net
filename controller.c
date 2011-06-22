@@ -63,7 +63,7 @@ typedef struct controller_info {
     int            tcpfd;		/* When connected, the file
                                            descriptor for the TCP
                                            port used for I/O. */
-    struct sockaddr_in remote;		/* The socket address of who
+    struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
 
     unsigned char inbuf[INBUF_SIZE+1];	/* Buffer to receive command on. */
@@ -706,7 +706,7 @@ errout:
 errout2:
     {
 	/* We have a problem so refuse this one. */
-	struct sockaddr_in dummy_sockaddr;
+	struct sockaddr_storage dummy_sockaddr;
 	socklen_t len = sizeof(dummy_sockaddr);
 	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
@@ -721,14 +721,14 @@ errout2:
 int
 controller_init(char *controller_port)
 {
-    struct sockaddr_in sock;
+    struct sockaddr_storage sock;
     int    optval = 1;
 
     if (scan_tcp_port(controller_port, &sock) == -1) {
 	return -1;
     }
 
-    acceptfd = socket(PF_INET, SOCK_STREAM, 0);
+    acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
     if (acceptfd == -1) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	exit(1);
@@ -749,6 +749,10 @@ controller_init(char *controller_port)
 	syslog(LOG_ERR, "Unable to set reuseaddress on socket: %m");
 	exit(1);
     }
+
+    check_ipv6_only(sock.ss_family,
+		    ((struct sockaddr *) &sock),
+		    acceptfd);
 
     if (bind(acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
 	close(acceptfd);
