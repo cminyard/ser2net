@@ -228,7 +228,7 @@ controller_output(struct controller_info *cntlr,
 void
 controller_write(struct controller_info *cntlr, char *data, int count)
 {
-    write(cntlr->tcpfd, data, count);
+    write_ignore_fail(cntlr->tcpfd, data, count);
 }
 
 static void
@@ -711,7 +711,7 @@ errout2:
 	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
 	if (new_fd != -1) {
-	    write(new_fd, err, strlen(err));
+	    write_ignore_fail(new_fd, err, strlen(err));
 	    close(new_fd);
 	}
     }

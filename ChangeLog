@@ -1,3 +1,16 @@
+2011-06-22  Corey Minyard <minyard@acm.org>
+
+	* utils.h, utils.c, controller.c, dataxfer.c: Fix some warnings
+	about the write() return value not being checked.  These were
+	almost all cases where a failure didn't matter (tracing), except
+	for writing the pid file, where it should have been a handled
+	failure.
+
+	* dataxfer.c: Cleaned up some style issues in the UUCP locking code.
+
+	* ser2net.c: Fixed a warning about not checking the chdir() return
+	code, and added some improved logging information to syslog.
+
 2010-03-11  Mats Erik Andersson <mats.andersson@mea.homelinux.org>,
 	Corey Minyard <minyard@acm.org>
 
@@ -17,7 +30,7 @@
 2009-11-03  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move version to 2.7 for release.
-	
+
 2009-10-23  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move to 2.7-rc3.

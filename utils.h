@@ -42,4 +42,10 @@ void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
 int port_from_in_addr(int family, struct sockaddr *addr);
 
+/* Make sure the full contents get written, return an error if it occurs. */
+int write_full(int fd, char *data, size_t count);
+
+/* Write the data completely out, return without comment on error. */
+void write_ignore_fail(int fd, char *data, size_t count);
+
 #endif /* UTILS */

@@ -32,6 +32,7 @@
 #include <syslog.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "readconfig.h"
 #include "controller.h"
@@ -218,7 +219,7 @@ main(int argc, char *argv[])
 	if ((pid = fork()) > 0) {
 	    exit(0);
 	} else if (pid < 0) {
-	    syslog(LOG_ERR, "Error forking first fork");
+	    syslog(LOG_ERR, "Error forking first fork: %s", strerror(errno));
 	    exit(1);
 	} else {
 	    /* setsid() is necessary if we really want to demonize */
@@ -227,13 +228,17 @@ main(int argc, char *argv[])
 	    if ((pid = fork()) > 0) {
 		exit(0);
 	    } else if (pid < 0) {
-		syslog(LOG_ERR, "Error forking second fork");
+		syslog(LOG_ERR, "Error forking second fork: %s",
+		       strerror(errno));
 		exit(1);
 	    }
 	}
 
 	/* Close all my standard I/O. */
-	chdir("/");
+	if (chdir("/") < 0) {
+	    syslog(LOG_ERR, "unable to chdir to '/': %s", strerror(errno));
+	    exit(1);
+	}
 	close(0);
 	close(1);
 	close(2);

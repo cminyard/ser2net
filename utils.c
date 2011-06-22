@@ -23,6 +23,8 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <errno.h>
+#include <unistd.h>
 
 #include "utils.h"
 
@@ -111,5 +113,34 @@ port_from_in_addr(int family, struct sockaddr *addr)
     case AF_INET:
     default:
 	return ((struct sockaddr_in *) addr)->sin_port;
+    }
+}
+
+int
+write_full(int fd, char *data, size_t count)
+{
+    size_t written;
+
+ restart:
+    while ((written = write(fd, data, count) > 0)) {
+	data += written;
+	count -= written;
+    }
+    if (written < 0) {
+	if (errno == EAGAIN)
+	    goto restart;
+	return -1;
+    }
+    return 0;
+}
+
+void
+write_ignore_fail(int fd, char *data, size_t count)
+{
+    size_t written;
+
+    while ((written = write(fd, data, count) > 0)) {
+	data += written;
+	count -= written;
     }
 }

@@ -301,34 +301,39 @@ static int
 uucp_mk_lock(char *devname)
 {
     struct stat stt;
-    int pid=-1;
+    int pid = -1;
 
-    if (!uucp_locking_enabled) return 0;
+    if (!uucp_locking_enabled)
+	return 0;
 
-    if( stat(uucp_lck_dir, &stt) == 0 ) { /* is lock file directory present? */
-	char *lck_file, buf[64];
+    if (stat(uucp_lck_dir, &stt) == 0) { /* is lock file directory present? */
+	char *lck_file;
+	union {
+	    uint32_t ival;
+	    char     str[64];
+	} buf;
 	int fd;
 
 	lck_file = malloc(uucp_fname_lock_size(devname));
-	if (lck_file == NULL) {
+	if (lck_file == NULL)
 	    return -1;
-	}
+
 	uucp_fname_lock(lck_file, devname);
 
 	pid = 0;
-	if( (fd = open(lck_file, O_RDONLY)) >= 0 ) {
+	if ((fd = open(lck_file, O_RDONLY)) >= 0) {
 	    int n;
 
-    	    n = read(fd, buf, sizeof(buf));
+    	    n = read(fd, &buf, sizeof(buf));
 	    close(fd);
 	    if( n == 4 ) 		/* Kermit-style lockfile. */
-		pid = *(int *)buf;
-	    else if( n > 0 ) {		/* Ascii lockfile. */
-		buf[n] = 0;
-		sscanf(buf, "%d", &pid);
+		pid = buf.ival;
+	    else if (n > 0) {		/* Ascii lockfile. */
+		buf.str[n] = 0;
+		sscanf(buf.str, "%d", &pid);
 	    }
 
-	    if( pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH ) {
+	    if (pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH) {
 		/* death lockfile - remove it */
 		unlink(lck_file);
 		sleep(1);
@@ -338,19 +343,24 @@ uucp_mk_lock(char *devname)
 
 	}
 
-	if( pid == 0 ) {
+	if (pid == 0) {
 	    int mask;
+	    size_t rv;
 
 	    mask = umask(022);
 	    fd = open(lck_file, O_WRONLY | O_CREAT | O_EXCL, 0666);
 	    umask(mask);
-	    if( fd >= 0 ) {
-		snprintf( buf, sizeof(buf), "%10ld\t%s\n",
-					     (long)getpid(), progname );
-		write( fd, buf, strlen(buf) );
+	    if (fd >= 0) {
+		snprintf(buf.str, sizeof(buf), "%10ld\t%s\n",
+			 (long)getpid(), progname );
+		rv = write_full(fd, buf.str, strlen(buf.str));
 		close(fd);
+		if (rv < 0) {
+		    pid = -1;
+		    unlink(lck_file);
+		}
 	    } else {
-		pid = 1;
+		pid = -1;
 	    }
 	}
 
@@ -549,18 +559,18 @@ header_trace(port_info_t *port)
     len += strlen(buf + len);
 
     if (port->rt.file != -1 && port->rt.timestamp) {
-        write(port->rt.file, buf, len);
+        write_ignore_fail(port->rt.file, buf, len);
         doneR = port->rt.file;
     }
     /* don't output to wt.file if it's the same as rt.file */
     if (port->wt.file != doneR && port->wt.timestamp) {
-        write(port->wt.file, buf, len);
+        write_ignore_fail(port->wt.file, buf, len);
         doneW = port->wt.file;
     }
     /* don't output to bt.file if it's the same as rt.file or wt.file */
     if (port->bt.file != doneR && port->bt.file != doneW 
                 && port->bt.timestamp)
-        write(port->bt.file, buf, len);    
+        write_ignore_fail(port->bt.file, buf, len);    
 }
 
 static void
@@ -574,18 +584,18 @@ footer_trace(port_info_t *port, char *reason)
     len += snprintf(buf + len, sizeof(buf), "CLOSE (%s)\n", reason);
 
     if (port->rt.file != -1 && port->rt.timestamp) {
-        write(port->rt.file, buf, len);
+        write_ignore_fail(port->rt.file, buf, len);
         doneR = port->rt.file;
     }
     /* don't output to wt.file if it's the same as rt.file */
     if (port->wt.file != doneR && port->wt.timestamp) {
-        write(port->wt.file, buf, len);
+        write_ignore_fail(port->wt.file, buf, len);
         doneW = port->wt.file;
     }
     /* don't output to bt.file if it's the same as rt.file or wt.file */
     if (port->bt.file != doneR && port->bt.file != doneW 
                 && port->bt.timestamp)
-        write(port->bt.file, buf, len);
+        write_ignore_fail(port->bt.file, buf, len);
 }
 
 
@@ -1570,14 +1580,14 @@ setup_tcp_port(port_info_t *port)
 	    char *err;
 
 	    err = "Port already in use by another process\n\r";
-	    write(port->tcpfd, err, strlen(err));
+	    write_ignore_fail(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
 	    return -1;
 	} else if (rv < 0) {
 	    char *err;
 
 	    err = "Error creating port lock file\n\r";
-	    write(port->tcpfd, err, strlen(err));
+	    write_ignore_fail(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
 	    return -1;
 	}
@@ -1702,7 +1712,7 @@ handle_accept_port_read(int fd, void *data)
 	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
 
 	if (new_fd != -1) {
-	    write(new_fd, err, strlen(err));
+	    write_ignore_fail(new_fd, err, strlen(err));
 	    close(new_fd);
 	}
 	return;
@@ -1733,7 +1743,7 @@ startup_port(port_info_t *port)
 	/* A zero port means use stdin/stdout */
 	if (is_device_already_inuse(port)) {
 	    char *err = "Port's device already in use\n\r";
-	    write(0, err, strlen(err));
+	    write_ignore_fail(0, err, strlen(err));
 	    exit(1);
 	} else {
 	    port->acceptfd = -1;
