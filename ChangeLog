@@ -1,3 +1,10 @@
+2011-08-12  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Fix some unaligned write issues in telnet options.
+
+	* dataxfer.c: Fix some signed/unsigned comparison issues and
+	a typo.
+
 2011-06-22  Corey Minyard <minyard@acm.org>
 
 	* utils.h, utils.c, controller.c, dataxfer.c: Fix some warnings

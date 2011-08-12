@@ -460,7 +460,8 @@ int
 trace_write(port_info_t *port, trace_t *tr, unsigned char *buf,
 	    unsigned int buf_len, char *prefix)
 {
-    int rv=0, q, w, col=0, pos, file = tr->file;
+    int rv=0, w, col=0, pos, file = tr->file;
+    unsigned int q;
     static char out[1024];
     unsigned char *start;
 
@@ -2678,7 +2679,7 @@ static struct baud_rates_s {
 int
 get_baud_rate(int rate, int *val)
 {
-    int i;
+    unsigned int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (cisco_ios_baud_rates) {
 	    if (rate == baud_rates[i].cisco_ios_val) {
@@ -2699,12 +2700,12 @@ get_baud_rate(int rate, int *val)
 void
 get_rate_from_baud_rate(int baud_rate, int *val)
 {
-    int i;
+    unsigned int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
 	    if (cisco_ios_baud_rates) {
 		if (baud_rates[i].cisco_ios_val < 0)
-		    /* We are at a baud rate unsopported by the
+		    /* We are at a baud rate unsupported by the
 		       enumeration, just return zero. */
 		    *val = 0;
 		else
@@ -2780,7 +2781,13 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	} else {
 	    if (len < 6)
 		return;
-	    val = ntohl(*((uint32_t *) (option+2)));
+	    /* Basically the same as:
+	     *  val = ntohl(*((uint32_t *) (option+2)));
+	     * but handled unaligned cases */
+	    val = option[2] << 24;
+	    val |= option[3] << 16;
+	    val |= option[4] << 8;
+	    val |= option[5];
 	}
 
 	if (tcgetattr(port->devfd, &termio) != -1) {
@@ -2802,7 +2809,14 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    outopt[2] = val;
 	    telnet_send_option(&port->tn_data, outopt, 3);
 	} else {
-	    *((uint32_t *) (outopt+2)) = htonl(val);
+	    uint32_t nval = htonl(val);
+	    /* Basically the same as:
+	     * *((uint32_t *) (outopt+2)) = htonl(val);
+	     * but handles unaligned cases */
+	    outopt[2] = nval >> 24;
+	    outopt[3] = nval >> 16;
+	    outopt[4] = nval >> 8;
+	    outopt[5] = nval;
 	    telnet_send_option(&port->tn_data, outopt, 6);
 	}
 	break;
