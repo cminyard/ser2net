@@ -41,7 +41,8 @@
 #include "dataxfer.h"
 
 static char *config_file = "/etc/ser2net.conf";
-static char *config_port = NULL;
+int config_port_from_cmdline = 0;
+char *config_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
 static int detach = 1;
 static int debug = 0;
@@ -74,9 +75,41 @@ void
 reread_config(void)
 {
     if (config_file) {
+	char *prev_config_port = config_port;
+	config_port = NULL;
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
 	readconfig(config_file);
+	if (config_port_from_cmdline) {
+	    /* Never override the config port from the command line. */
+	    free(config_port);
+	    config_port = prev_config_port;
+	    goto config_port_unchanged;
+	}
+	if (config_port && prev_config_port
+	    && (strcmp(config_port, prev_config_port) == 0)) {
+	    free(prev_config_port);
+	    goto config_port_unchanged;
+	}
+
+	if (prev_config_port) {
+	    controller_shutdown();
+	    free(prev_config_port);
+	}
+
+	if (config_port) {
+	    int rv = controller_init(config_port);
+	    if (rv == CONTROLLER_INVALID_TCP_SPEC)
+		syslog(LOG_ERR, "Invalid control port specified: %s",
+		       config_port);
+	    if (rv) {
+		syslog(LOG_ERR, "Control port is disabled");
+		free(config_port);
+		config_port = NULL;
+	    }
+	}
     }
+ config_port_unchanged:
+    return;
 }
 
 void
@@ -165,7 +198,12 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No control port specified with -p\n");
 		arg_error(argv[0]);
 	    }
-	    config_port = argv[i];
+	    config_port = strdup(argv[i]);
+	    if (!config_port) {
+		fprintf(stderr, "Could not allocate memory for -p\n");
+		exit(1);
+	    }
+	    config_port_from_cmdline = 1;
 	    break;
 	
 	case 'P':
@@ -194,12 +232,6 @@ main(int argc, char *argv[])
     }
 
     setup_sighup();
-    if (config_port != NULL) {
-	if (controller_init(config_port) == -1) {
-	    fprintf(stderr, "Invalid control port specified with -p\n");
-	    arg_error(argv[0]);
-	}
-    }
 
     if (debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
@@ -207,6 +239,21 @@ main(int argc, char *argv[])
     if (config_file) {
 	if (readconfig(config_file) == -1) {
 	    return 1;
+	}
+    }
+
+    if (config_port != NULL) {
+	int rv;
+	rv = controller_init(config_port);
+	if (rv == CONTROLLER_INVALID_TCP_SPEC) {
+	    fprintf(stderr, "Invalid control port specified: %s\n",
+		    config_port);
+	    arg_error(argv[0]);
+	}
+	if (rv == CONTROLLER_CANT_OPEN_PORT) {
+	    fprintf(stderr, "Unable to open control port, see syslog: %s\n",
+		    config_port);
+	    exit(1);
 	}
     }
 

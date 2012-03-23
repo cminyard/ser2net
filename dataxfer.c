@@ -1700,6 +1700,7 @@ handle_accept_port_read(int fd, void *data)
     port_info_t *port = (port_info_t *) data;
     socklen_t len;
     char *err = NULL;
+    int optval;
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
 	err = "Port already in use\n\r";
@@ -1724,6 +1725,15 @@ handle_accept_port_read(int fd, void *data)
     port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
     if (port->tcpfd == -1) {
 	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
+	return;
+    }
+
+    optval = 1;
+    if (setsockopt(port->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
+		   sizeof(optval)) == -1) {
+	close(port->tcpfd);
+	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on tcp port %s: %m",
+	       port->portname);
 	return;
     }
 

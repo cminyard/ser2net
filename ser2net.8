@@ -176,6 +176,10 @@ or
 .IP
 TRACEFILE:<tracefile name>:<tracefile>
 .PP
+or
+.IP
+CONTROLPORT:<port spec>
+.PP
 
 .SS FIELDS
 .TP
@@ -299,6 +303,12 @@ sequences for substituting strings, see "FILENAME AND BANNER
 FORMATTING" for details.  Note that when using the time escape
 sequences, the time is read once at port startup, so if you use both
 tw and tr they will have the same date and time.
+.TP
+.I "port spec"
+The control port specification as defined by the [\-p] option on the
+command line.  This lets the control port be specified in the configuration
+file.  The command line will override this, and only the first port
+specified is used.
 
 .PP
 Blank lines and lines starting with `#' are ignored.

@@ -20,8 +20,13 @@
 #ifndef CONTROLLER
 #define CONTROLLER
 
+#define CONTROLLER_INVALID_TCP_SPEC	-1
+#define CONTROLLER_CANT_OPEN_PORT	-2
 /* Initialize the controller code, return -1 on error. */
 int controller_init(char *controller_port);
+
+/* Disable the control port. */
+void controller_shutdown(void);
 
 struct controller_info;
 

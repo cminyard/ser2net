@@ -33,6 +33,8 @@
 
 #define MAX_BANNER_SIZE 256
 
+extern char *config_port;
+
 static int config_num = 0;
 
 static int banner_continued = 0;
@@ -271,6 +273,21 @@ handle_config_line(char *inbuf)
     portnum = strtok_r(inbuf, ":", &strtok_data);
     if (portnum == NULL) {
 	/* An empty line is ok. */
+	return;
+    }
+
+    if (strcmp(portnum, "CONTROLPORT") == 0) {
+	if (config_port)
+	    /*
+	     * The control port has already been configured either on the
+	     * command line or on a previous statement.  Only take the first.
+	     */
+	    return;
+	config_port = strdup(strtok_r(NULL, "\n", &strtok_data));
+	if (!config_port) {
+	    syslog(LOG_ERR, "Could not allocate memory for CONTROLPORT");
+	    return;
+	}
 	return;
     }
 

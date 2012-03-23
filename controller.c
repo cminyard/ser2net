@@ -628,6 +628,7 @@ handle_accept_port_read(int fd, void *data)
     controller_info_t *cntlr;
     socklen_t         len;
     char              *err = NULL;
+    int               optval;
 
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\n\r";
@@ -668,6 +669,14 @@ handle_accept_port_read(int fd, void *data)
     if (fcntl(cntlr->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(cntlr->tcpfd);
 	syslog(LOG_ERR, "Could not fcntl the tcp port: %m");
+	goto errout;
+    }
+
+    optval = 1;
+    if (setsockopt(cntlr->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
+		   sizeof(optval)) == -1) {
+	close(cntlr->tcpfd);
+	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on the tcp port: %m");
 	goto errout;
     }
 
@@ -724,20 +733,20 @@ controller_init(char *controller_port)
     struct sockaddr_storage sock;
     int    optval = 1;
 
-    if (scan_tcp_port(controller_port, &sock) == -1) {
-	return -1;
-    }
-
+    if (scan_tcp_port(controller_port, &sock) == -1)
+	return CONTROLLER_INVALID_TCP_SPEC;
+    
     acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
     if (acceptfd == -1) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
-	exit(1);
+	return CONTROLLER_CANT_OPEN_PORT;
     }
 
     if (fcntl(acceptfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(acceptfd);
+	acceptfd = -1;
 	syslog(LOG_ERR, "Could not fcntl the accept port: %m");
-	exit(1);
+	return CONTROLLER_CANT_OPEN_PORT;
     }
 
     if (setsockopt(acceptfd,
@@ -746,8 +755,9 @@ controller_init(char *controller_port)
 		   (void *)&optval,
 		   sizeof(optval)) == -1) {
 	close(acceptfd);
+	acceptfd = -1;
 	syslog(LOG_ERR, "Unable to set reuseaddress on socket: %m");
-	exit(1);
+	return CONTROLLER_CANT_OPEN_PORT;
     }
 
     check_ipv6_only(sock.ss_family,
@@ -756,14 +766,16 @@ controller_init(char *controller_port)
 
     if (bind(acceptfd, (struct sockaddr *) &sock, sizeof(sock)) == -1) {
 	close(acceptfd);
+	acceptfd = -1;
 	syslog(LOG_ERR, "Unable to bind TCP port: %m");
-	exit(1);
+	return CONTROLLER_CANT_OPEN_PORT;
     }
 
     if (listen(acceptfd, 1) != 0) {
 	close(acceptfd);
+	acceptfd = -1;
 	syslog(LOG_ERR, "Unable to listen to TCP port: %m");
-	exit(1);
+	return CONTROLLER_CANT_OPEN_PORT;
     }
 
     sel_set_fd_handlers(ser2net_sel,
@@ -774,4 +786,14 @@ controller_init(char *controller_port)
 			NULL);
     sel_set_fd_read_handler(ser2net_sel, acceptfd, SEL_FD_HANDLER_ENABLED);
     return 0;
+}
+
+void
+controller_shutdown(void)
+{
+    if (acceptfd == -1)
+	return;
+    sel_clear_fd_handlers(ser2net_sel, acceptfd);
+    close(acceptfd);
+    acceptfd = -1;
 }

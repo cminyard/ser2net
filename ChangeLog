@@ -1,3 +1,12 @@
+2012-03-27  Corey Minyard <minyard@acm.org>
+
+	* ser2net.c, readconfig.c, ser2net.h, controller.c, ser2net.conf:
+	Add a method to specify the control port in the ser2net config
+	file.
+
+	* dataxfer.c, controller.c: Add SO_KEEPALIVE to socket connections
+	so the connection will drop if the other end just goes away.
+
 2011-08-12  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix some unaligned write issues in telnet options.
