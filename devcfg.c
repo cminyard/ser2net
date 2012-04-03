@@ -95,6 +95,9 @@ devconfig(char *instr, dev_info_t *dinfo)
 	if (strcmp(pos, "300") == 0) {
 	    cfsetospeed(termctl, B300);
 	    cfsetispeed(termctl, B300);
+	} else if (strcmp(pos, "600") == 0) {
+	    cfsetospeed(termctl, B600);
+	    cfsetispeed(termctl, B600);
 	} else if (strcmp(pos, "1200") == 0) {
 	    cfsetospeed(termctl, B1200);
 	    cfsetispeed(termctl, B1200);
@@ -217,6 +220,7 @@ baud_string(int speed)
     char *str;
     switch (speed) {
     case B300: str = "300"; break;
+    case B600: str = "600"; break;
     case B1200: str = "1200"; break;
     case B2400: str = "2400"; break;
     case B4800: str = "4800"; break;

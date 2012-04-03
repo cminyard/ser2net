@@ -1,3 +1,7 @@
+2012-04-03  Corey Minyard <minyard@acm.org>
+
+	* devcfg.c: Add 600 baud.
+
 2012-03-27  Corey Minyard <minyard@acm.org>
 
 	* ser2net.c, readconfig.c, ser2net.h, controller.c, ser2net.conf:
@@ -6,6 +10,8 @@
 
 	* dataxfer.c, controller.c: Add SO_KEEPALIVE to socket connections
 	so the connection will drop if the other end just goes away.
+
+	* configure.in: Move to 2.8-rc1.
 
 2011-08-12  Corey Minyard <minyard@acm.org>
 
