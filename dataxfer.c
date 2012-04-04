@@ -1678,6 +1678,9 @@ setup_tcp_port(port_info_t *port)
     } else {
 	sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				SEL_FD_HANDLER_ENABLED);
+	/* In case there is a banner to write. */
+	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				 SEL_FD_HANDLER_ENABLED);
     }
 
     display_banner(port);

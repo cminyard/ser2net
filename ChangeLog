@@ -1,3 +1,9 @@
+2012-04-04  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Turn on the tcp write handler at first for raw
+	sockets, otherwise the banner won't come out till some data
+	comes in on the port.
+
 2012-04-03  Corey Minyard <minyard@acm.org>
 
 	* devcfg.c: Add 600 baud.
