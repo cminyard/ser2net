@@ -137,9 +137,9 @@ write_full(int fd, char *data, size_t count)
 void
 write_ignore_fail(int fd, char *data, size_t count)
 {
-    size_t written;
+    ssize_t written;
 
-    while ((written = write(fd, data, count) > 0)) {
+    while ((written = write(fd, data, count)) > 0) {
 	data += written;
 	count -= written;
     }

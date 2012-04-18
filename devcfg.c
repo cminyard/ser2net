@@ -72,6 +72,8 @@ devconfig(char *instr, dev_info_t *dinfo)
     char *strtok_data;
     int  rv = 0;
     struct termios *termctl = &dinfo->termctl;
+    enum str_type stype;
+    char *s;
 
     str = strdup(instr);
     if (str == NULL) {
@@ -81,6 +83,8 @@ devconfig(char *instr, dev_info_t *dinfo)
     dinfo->allow_2217 = 0;
     dinfo->disablebreak = 0;
     dinfo->banner = NULL;
+    dinfo->openstr = NULL;
+    dinfo->closestr = NULL;
     dinfo->trace_read.file = NULL;
     dinfo->trace_read.hexdump = 0;
     dinfo->trace_read.timestamp = 0;
@@ -198,8 +202,13 @@ devconfig(char *instr, dev_info_t *dinfo)
 	} else if (strncmp(pos, "tb=", 3) == 0) {
 	    /* trace both directions. */
 	    dinfo->trace_both.file = find_tracefile(pos + 3);
-	} else if ((dinfo->banner = find_banner(pos))) {
-	    /* It's a banner to display at startup, it's already set. */
+	} else if ((s = find_str(pos, &stype))) {
+	    /* It's a startup banner or open/close string, it's already set. */
+	    switch (stype) {
+	    case BANNER: dinfo->banner = s; break;
+	    case OPENSTR: dinfo->openstr = s; break;
+	    case CLOSESTR: dinfo->closestr = s; break;
+	    }
 	} else {
 	    /* fprintf( stderr, "Unknown token %s\n", pos );     */
 	    rv = -1;

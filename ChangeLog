@@ -1,3 +1,51 @@
+2012-04-18  Corey Minyard <minyard@acm.org>
+
+	* buffer.c, buffer.h, Makefile.am: Added a new type and set of
+	operations for buffer handling.  This simplifies and allows
+	abstraction of other parts of the code.
+
+	* dataxfer.c, telnet.c, telnet.h, controller.c: Switch
+	out_telnet_cmd and associated parts to be the new buffer type.
+
+	* dataxfer.c: Switch the banner over to the new buffer type.
+
+	* dataxfer.c: Consolidate banner and filename string handling.
+	Note that there was an issue with \s, as it was something
+	different in banners and filenames.  Added new options, \S (for
+	seconds) and \B (for serial port parameters) to resolve this
+	issue, and \s is backwards compatible but deprecated.
+
+	* ser2net.8, ser2net.conf: Since the consolidated banner/filename
+	processing allows all the \<x> options to be available for both
+	banners and filenames, rework the documentation.
+
+	* dataxfer.c: Convert the main I/O buffers for data transfer to
+	the new buffer type.
+
+	* devcfg.h, devcfg.c, readconfig.c, utils.h: Added a
+	new OPENSTR and CLOSESTR option for the configuration file.  These
+	are strings that will be transmitted to the device when a port is
+	opened and/or closed.
+
+	* ser2net.8, ser2net.conf: Added docs for the OPENSTR and CLOSESTR
+	options.
+
+	* dataxfer.c: Handle the new OPENSTR and CLOSESTR options.  This
+	required adding a new state, PORT_CLOSING, for the tcp_to_dev_state
+	to say that the port is closing but data is going out, and splitting
+	up the shutdown handling.
+
+	* utils.c: Fixed a bug that cause the "port in use" error on the
+	TCP connection to be printed strangely.
+
+	* dataxfer.c: Since the banner handling no longer depends on being
+	able to put the whole banner in the output buffer, reduce the port
+	buffer sizes to 64 bytes to reduce memory usage
+
+	* selector.c: maxfd was not initialized for a selector, fix that.
+
+	* configure.in: Move to 2.8-rc2.
+
 2012-04-04  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Turn on the tcp write handler at first for raw

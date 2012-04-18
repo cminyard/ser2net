@@ -19,18 +19,12 @@ find_cmd(struct telnet_cmd *array, unsigned char option)
 void
 telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len)
 {
-    int pos = td->out_telnet_cmd_size;
-    int left = MAX_TELNET_CMD_XMIT_BUF - pos;
-
-    if (len > left) {
+    if (buffer_output(&td->out_telnet_cmd, cmd, len) == -1) {
 	/* Out of data, abort the connection.  This really shouldn't
 	   happen.*/
 	td->error = 1;
 	return;
     }
-
-    memcpy(td->out_telnet_cmd+pos, cmd, len);
-    td->out_telnet_cmd_size += len;
 
     td->output_ready(td->cb_data);
 }
@@ -119,10 +113,8 @@ handle_telnet_cmd(telnet_data_t *td)
 void
 telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 {
-    int pos = td->out_telnet_cmd_size;
-    int left = MAX_TELNET_CMD_XMIT_BUF - pos;
-    int real_len;
-    int i;
+    unsigned int real_len;
+    unsigned int i;
 
     /* Make sure to account for any duplicate 255s. */
     for (real_len=0, i=0; i<len; i++, real_len++) {
@@ -132,24 +124,22 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 
     real_len += 4; /* Add the initial and end markers. */
 
-    if (real_len > left) {
+    if (real_len > buffer_left(&td->out_telnet_cmd)) {
 	/* Out of data, abort the connection.  This really shouldn't
 	   happen.*/
 	td->error = 1;
 	return;
     }
 
-    i = 0;
-    td->out_telnet_cmd[pos++] = 255;
-    td->out_telnet_cmd[pos++] = 250;
-    for (i=0; i<len; i++, pos++) {
-	td->out_telnet_cmd[pos] = option[i];
+    buffer_outchar(&td->out_telnet_cmd, 255);
+    buffer_outchar(&td->out_telnet_cmd, 250);
+    for (i=0; i<len; i++) {
+	buffer_outchar(&td->out_telnet_cmd, option[i]);
 	if (option[i] == 255)
-	    td->out_telnet_cmd[++pos] = option[i];
+	    buffer_outchar(&td->out_telnet_cmd, option[i]);
     }
-    td->out_telnet_cmd[pos++] = 255;
-    td->out_telnet_cmd[pos++] = 240;
-    td->out_telnet_cmd_size = pos;
+    buffer_outchar(&td->out_telnet_cmd, 255);
+    buffer_outchar(&td->out_telnet_cmd, 240);
 
     td->output_ready(td->cb_data);
 }
@@ -259,14 +249,13 @@ telnet_init(telnet_data_t *td,
 	    int init_seq_len)
 {
     td->telnet_cmd_pos = 0;
-    td->out_telnet_cmd_size = 0;
+    buffer_init(&td->out_telnet_cmd, td->out_telnet_cmdbuf,
+		sizeof(td->out_telnet_cmdbuf));
     td->error = 0;
     td->cb_data = cb_data;
     td->output_ready = output_ready;
     td->cmd_handler = cmd_handler;
     td->cmds = cmds;
 
-    memcpy(td->out_telnet_cmd, init_seq, init_seq_len);
-    td->out_telnet_cmd_size = init_seq_len;
-    td->output_ready(cb_data);
+    telnet_cmd_send(td, init_seq, init_seq_len);
 }

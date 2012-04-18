@@ -28,154 +28,164 @@
 
 #include "dataxfer.h"
 #include "readconfig.h"
+#include "utils.h"
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
-
-#define MAX_BANNER_SIZE 256
 
 extern char *config_port;
 
 static int config_num = 0;
 
-static int banner_continued = 0;
-static char *working_banner_name = NULL;
-static char working_banner[MAX_BANNER_SIZE+1];
-static int working_banner_len = 0;
-static int banner_truncated = 0;
-
 static int lineno = 0;
 
-struct banner_s
+struct longstr_s
 {
     char *name;
     char *str;
-    struct banner_s *next;
+    enum str_type type;
+    struct longstr_s *next;
 };
 
-/* All the banners in the system. */
-struct banner_s *banners = NULL;
+static struct longstr_s *working_longstr;
+static int working_longstr_continued = 0;
+static int working_longstr_len = 0;
+
+/* All the strings in the system. */
+struct longstr_s *longstrs = NULL;
 
 static void
-handle_new_banner(void)
+finish_longstr(void)
 {
-    struct banner_s *new_banner;
+    if (!working_longstr)
+	/* Couldn't allocate memory someplace. */
+	goto out;
 
-    working_banner[working_banner_len] = '\0';
+    /* On the final alloc an extra byte will be added for the nil char */
+    working_longstr->str[working_longstr_len] = '\0';
     
-    if (banner_truncated)
-	syslog(LOG_ERR, "banner ending on line %d was truncated, max length"
-	       " is %d characters", lineno, MAX_BANNER_SIZE);
+    working_longstr->next = longstrs;
+    longstrs = working_longstr;
+    working_longstr = NULL;
 
-    if (!working_banner_name) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
-	goto out;
+ out:
+    working_longstr_len = 0;
+}
+
+/* Parse the incoming string, it may be on multiple lines. */
+static void
+handle_longstr(char *name, char *line, enum str_type type)
+{
+    int line_len = strlen(line);
+
+    working_longstr_continued = (line_len > 0) && (line[line_len-1] == '\\');
+
+    working_longstr = malloc(sizeof(*working_longstr));
+    if (!working_longstr) {
+	syslog(LOG_ERR, "Out of memory handling string on %d", lineno);
+	return;
     }
+    working_longstr->type = type;
 
-    new_banner = malloc(sizeof(*new_banner));
-    if (!new_banner) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
-	free(working_banner_name);
-	goto out;
-    }
-
-    new_banner->name = working_banner_name;
-    new_banner->str = strdup(working_banner);
-    if (!new_banner->str) {
-	syslog(LOG_ERR, "Out of memory handling banner on %d", lineno);
-	free(new_banner->name);
-	free(new_banner);
+    working_longstr->name = strdup(name);
+    if (!working_longstr->name) {
+	free(working_longstr);
+	working_longstr = NULL;
+	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
 	return;
     }
 
-    new_banner->next = banners;
-    banners = new_banner;
+    if (working_longstr_continued)
+	line_len--;
 
- out:
-    working_banner_name = NULL;
-    working_banner_len = 0;
-    banner_truncated = 0;
-    banner_continued = 0;
-}
-
-/* Parse the incoming banner, it may be on multiple lines. */
-static void
-handle_banner(char *name, char *line)
-{
-    int line_len = strlen(line);
-    int real_line_len = line_len;
-
-    /* handle a NULL return later. */
-    working_banner_name = strdup(name);
-
-    if (line_len >= MAX_BANNER_SIZE) {
-	banner_truncated = 1;
-	line_len = MAX_BANNER_SIZE;
-    }
-    memcpy(working_banner, line, line_len);
-    working_banner_len = line_len;
-
-    if ((real_line_len > 0) && (line[real_line_len-1] == '\\')) {
-	/* remove the '\' */
-	working_banner_len--;
-	banner_continued = 1;
-    } else {
-	handle_new_banner();
+    /* Add 1 if it's not continued and thus needs the '\0' */
+    working_longstr->str = malloc(line_len + !working_longstr_continued);
+    if (!working_longstr->str) {
+	free(working_longstr->name);
+	free(working_longstr);
+	working_longstr = NULL;
+	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
+	return;
     }
 
+    memcpy(working_longstr->str, line, line_len);
+    working_longstr_len = line_len;
+
+    if (!working_longstr_continued)
+	finish_longstr();
 }
 
 static void
-handle_continued_banner(char *line)
+handle_continued_longstr(char *line)
 {
     int line_len = strlen(line);
-    int real_line_len = line_len;
+    char *newstr;
 
-    if ((line_len + working_banner_len) > MAX_BANNER_SIZE) {
-	banner_truncated = 1;
-	line_len = MAX_BANNER_SIZE - working_banner_len;
-    }
-    memcpy(working_banner+working_banner_len, line, line_len);
-    working_banner_len += line_len;
+    working_longstr_continued = (line_len > 0) && (line[line_len-1] == '\\');
 
-    if ((real_line_len == 0) || (line[real_line_len-1] != '\\')) {
-	handle_new_banner();
-    } else {
-	/* remove the '\' */
-	working_banner_len--;
+    if (!working_longstr)
+	/* Ran out of memory during processing */
+	goto out;
+
+    if (working_longstr_continued)
+	line_len--;
+
+    /* Add 1 if it's not continued and thus needs the '\0' */
+    newstr = realloc(working_longstr->str, (working_longstr_len + line_len
+					    + !working_longstr_continued));
+    if (!newstr) {
+	free(working_longstr->str);
+	free(working_longstr->name);
+	free(working_longstr);
+	working_longstr = NULL;
+	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
+	goto out;
     }
+    working_longstr->str = newstr;
+    memcpy(working_longstr->str + working_longstr_len, line, line_len);
+    working_longstr_len += line_len;
+
+out:
+    if (!working_longstr_continued)
+	finish_longstr();
 }
 
 char *
-find_banner(char *name)
+find_str(char *name, enum str_type *type)
 {
-    struct banner_s *banner = banners;
+    struct longstr_s *longstr = longstrs;
 
-    while (banner) {
-	if (strcmp(name, banner->name) == 0)
-	    return banner->str;
-	banner = banner->next;
+    while (longstr) {
+	if (strcmp(name, longstr->name) == 0) {
+	    *type = longstr->type;
+	    return longstr->str;
+	}
+	longstr = longstr->next;
     }
     return NULL;
 }
 
 static void
-free_banners(void)
+free_longstrs(void)
 {
-    struct banner_s *banner;
+    struct longstr_s *longstr;
 
-    if (working_banner_name)
-	free(working_banner_name);
-    working_banner_name = NULL;
-    working_banner_len = 0;
-    banner_truncated = 0;
-    banner_continued = 0;
+    if (working_longstr) {
+	if (working_longstr->name)
+	    free(working_longstr->name);
+	if (working_longstr->str)
+	    free(working_longstr->str);
+	free(working_longstr);
+	working_longstr = NULL;
+    }
+    working_longstr_len = 0;
+    working_longstr_continued = 0;
 
-    while (banners) {
-	banner = banners;
-	banners = banners->next;
-	free(banner->name);
-	free(banner->str);
-	free(banner);
+    while (longstrs) {
+	longstr = longstrs;
+	longstrs = longstrs->next;
+	free(longstr->name);
+	free(longstr->str);
+	free(longstr);
     }
 }
 
@@ -257,11 +267,11 @@ handle_config_line(char *inbuf)
 
     lineno++;
 
-    if (banner_continued) {
+    if (working_longstr_continued) {
 	char *str = strtok_r(inbuf, "\n", &strtok_data);
 	if (!str)
 	    str = "";
-	handle_continued_banner(str);
+	handle_continued_longstr(str);
 	return;
     }
 
@@ -298,7 +308,29 @@ handle_config_line(char *inbuf)
 	    syslog(LOG_ERR, "No banner name given on line %d", lineno);
 	    return;
 	}
-	handle_banner(name, str);
+	handle_longstr(name, str, BANNER);
+	return;
+    }
+
+    if (strcmp(portnum, "OPENSTR") == 0) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No open string name given on line %d", lineno);
+	    return;
+	}
+	handle_longstr(name, str, OPENSTR);
+	return;
+    }
+
+    if (strcmp(portnum, "CLOSESTR") == 0) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No close string name given on line %d", lineno);
+	    return;
+	}
+	handle_longstr(name, str, CLOSESTR);
 	return;
     }
 
@@ -365,7 +397,7 @@ readconfig(char *filename)
 	return -1;
     }
 
-    free_banners();
+    free_longstrs();
     free_tracefiles();
 
     config_num++;

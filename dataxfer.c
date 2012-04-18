@@ -73,7 +73,10 @@ static char *progname = "ser2net";
 					     input side. */
 #define PORT_WAITING_OUTPUT_CLEAR	2 /* Waiting for output to clear
 					     so I can send data. */
-char *state_str[] = { "unconnected", "waiting input", "waiting output" };
+#define PORT_CLOSING			3 /* Waiting for output close
+					     string to be sent. */
+char *state_str[] = { "unconnected", "waiting input", "waiting output",
+		      "closing" };
 
 #define PORT_DISABLED		0 /* The port is not open. */
 #define PORT_RAW		1 /* Port will not do telnet negotiation. */
@@ -82,7 +85,7 @@ char *state_str[] = { "unconnected", "waiting input", "waiting output" };
 #define PORT_TELNET		3 /* Port will do telnet negotiation. */
 char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
 
-#define PORT_BUFSIZE	1024
+#define PORT_BUFSIZE	64
 
 typedef struct trace_s
 {
@@ -138,6 +141,7 @@ typedef struct port_info
 					   TCP port. */
     unsigned int tcp_bytes_sent;        /* Number of bytes written to the
 					   TCP port. */
+    struct sbuf *banner;		/* Outgoing banner */
 
     /* Information about the terminal device. */
     char           *devname;		/* The full path to the device */
@@ -155,34 +159,34 @@ typedef struct port_info
     int            tcp_to_dev_state;		/* State of transferring
 						   data from the TCP port
                                                    to the device. */
-    unsigned char  tcp_to_dev_buf[PORT_BUFSIZE]; /* Buffer used for
-                                                    TCP to device
-                                                    transfers. */
-    int            tcp_to_dev_buf_start;	/* The first byte in
-						   the buffer that is
-						   ready to send. */
-    int            tcp_to_dev_buf_count;	/* The number of bytes
-                                                   in the buffer to
-                                                   send. */
+    struct sbuf    tcp_to_dev;			/* Buffer struct for
+						   TCP to device
+						   transfers. */
+    unsigned char  tcp_to_devbuf[PORT_BUFSIZE]; /* Buffer used for
+						   TCP to device
+						   transfers. */
     struct controller_info *tcp_monitor; /* If non-null, send any input
 					    received from the TCP port
 					    to this controller port. */
+    struct sbuf *devstr;		 /* Outgoing string */
 
+    char *closestr;			/* Since the close string is
+					   processed at shutdown, the
+					   conf may have been redone and
+					   the data freed.  So keep a
+					   copy here. */
 
     /* Information use when transferring information from the terminal
        device to the TCP port. */
     int            dev_to_tcp_state;		/* State of transferring
 						   data from the device to
                                                    the TCP port. */
-    unsigned char  dev_to_tcp_buf[PORT_BUFSIZE]; /* Buffer used for
-                                                    device to TCP
-                                                    transfers. */
-    int            dev_to_tcp_buf_start;	/* The first byte in
-						   the buffer that is
-						   ready to send. */
-    int            dev_to_tcp_buf_count;	/* The number of bytes
-                                                   in the buffer to
-                                                   send. */
+    struct sbuf    dev_to_tcp;			/* Buffer struct for
+						   device to TCP
+						   transfers. */
+    unsigned char  dev_to_tcpbuf[PORT_BUFSIZE]; /* Buffer used for
+						   device to TCP
+						   transfers. */
     struct controller_info *dev_monitor; /* If non-null, send any input
 					    received from the device
 					    to this controller port. */
@@ -225,6 +229,7 @@ typedef struct port_info
 port_info_t *ports = NULL; /* Linked list of ports. */
 
 static void shutdown_port(port_info_t *port, char *reason);
+static void finish_shutdown_port(port_info_t *port);
 
 /* The init sequence we use. */
 static unsigned char telnet_init_seq[] = {
@@ -389,16 +394,20 @@ init_port_data(port_info_t *port)
     memset(&(port->remote), 0, sizeof(port->remote));
     memset(&(port->dinfo.termctl), 0, sizeof(port->dinfo.termctl));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
-    port->tcp_to_dev_buf_start = 0;
-    port->tcp_to_dev_buf_count = 0;
+    buffer_init(&port->tcp_to_dev, port->tcp_to_devbuf,
+		sizeof(port->tcp_to_devbuf));
     port->tcp_bytes_received = 0;
     port->tcp_bytes_sent = 0;
+    port->banner = NULL;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
-    port->dev_to_tcp_buf_start = 0;
-    port->dev_to_tcp_buf_count = 0;
+    buffer_init(&port->dev_to_tcp, port->dev_to_tcpbuf,
+		sizeof(port->dev_to_tcpbuf));
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
+    port->devstr = NULL;
+    port->closestr = NULL;
     port->is_2217 = 0;
+    port->dev_monitor = NULL;
     port->break_set = 0;
     port->dinfo.disablebreak = 0;
     port->wt.file = -1;
@@ -410,17 +419,6 @@ init_port_data(port_info_t *port)
     port->bt.file = -1;
     port->bt.timestamp = 0;
     port->bt.hexdump = 0;
-}
-
-void
-delete_tcp_to_dev_char(port_info_t *port, int pos)
-{
-    int j;
-
-    for (j=pos; j<port->tcp_to_dev_buf_count-1; j++) {
-	port->tcp_to_dev_buf[j] = port->tcp_to_dev_buf[j+1];
-    }
-    port->tcp_to_dev_buf_count--;
 }
 
 static void
@@ -606,30 +604,28 @@ static void
 handle_dev_fd_read(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    int write_count;
+    int count;
 
-    port->dev_to_tcp_buf_start = 0;
+    port->dev_to_tcp.pos = 0;
     if (port->enabled == PORT_TELNET) {
 	/* Leave room for IACs. */
-	port->dev_to_tcp_buf_count = read(fd, port->dev_to_tcp_buf,
-					  PORT_BUFSIZE/2);
+	count = read(fd, port->dev_to_tcp.buf, port->tcp_to_dev.maxsize/2);
     } else {
-	port->dev_to_tcp_buf_count = read(fd, port->dev_to_tcp_buf,
-					  PORT_BUFSIZE);
+	count = read(fd, port->dev_to_tcp.buf, port->tcp_to_dev.maxsize);
     }
 
     if (port->dev_monitor != NULL) {
 	controller_write(port->dev_monitor,
-			 (char *) port->dev_to_tcp_buf,
-			 port->dev_to_tcp_buf_count);
+			 (char *) port->dev_to_tcp.buf,
+			 count);
     }
 
-    if (port->dev_to_tcp_buf_count < 0) {
+    if (count < 0) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
 	shutdown_port(port, "dev read error");
 	return;
-    } else if (port->dev_to_tcp_buf_count == 0) {
+    } else if (count == 0) {
 	/* The port got closed somehow, shut it down. */
 	shutdown_port(port, "closed port");
 	return;
@@ -637,37 +633,34 @@ handle_dev_fd_read(int fd, void *data)
 
     if (port->rt.file != -1)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, &port->rt,
-		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count, SERIAL);
+	do_trace(port, &port->rt, port->dev_to_tcp.buf, count, SERIAL);
     if (port->bt.file != -1)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, &port->bt,
-		 port->dev_to_tcp_buf, port->dev_to_tcp_buf_count, SERIAL);
+	do_trace(port, &port->bt, port->dev_to_tcp.buf, count, SERIAL);
 
-    port->dev_bytes_received += port->dev_to_tcp_buf_count;
+    port->dev_bytes_received += count;
 
     if (port->enabled == PORT_TELNET) {
 	int i, j;
 
 	/* Double the IACs on a telnet stream.  This will fit because
 	   we only use half the buffer for telnet connections. */
-	for (i=0; i<port->dev_to_tcp_buf_count; i++) {
-	    if (port->dev_to_tcp_buf[i] == 255) {
-		for (j=port->dev_to_tcp_buf_count; j>i; j--)
-		    port->dev_to_tcp_buf[j+1] = port->dev_to_tcp_buf[j];
-		port->dev_to_tcp_buf_count++;
+	for (i=0; i<count; i++) {
+	    if (port->dev_to_tcp.buf[i] == 255) {
+		for (j=count; j>i; j--)
+		    port->dev_to_tcp.buf[j+1] = port->dev_to_tcp.buf[j];
+		count++;
 		i++;
-		port->dev_to_tcp_buf[i] = 255;
+		port->dev_to_tcp.buf[i] = 255;
 	    }
 	}
     }
 
- retry_write:
-    write_count = write(port->tcpfd,
-			port->dev_to_tcp_buf,
-			port->dev_to_tcp_buf_count);
+    port->dev_to_tcp.cursize = count;
 
-    if (write_count == -1) {
+ retry_write:
+    count = write(port->tcpfd, port->dev_to_tcp.buf, port->dev_to_tcp.cursize);
+    if (count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry. */
 	    goto retry_write;
@@ -692,12 +685,12 @@ handle_dev_fd_read(int fd, void *data)
 	    return;
 	}
     } else {
-	port->tcp_bytes_sent += write_count;
-	port->dev_to_tcp_buf_count -= write_count;
-	if (port->dev_to_tcp_buf_count != 0) {
+	port->tcp_bytes_sent += count;
+	port->dev_to_tcp.cursize -= count;
+	if (port->dev_to_tcp.cursize != 0) {
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
-	    port->dev_to_tcp_buf_start += write_count;
+	    port->dev_to_tcp.pos = count;
 	    sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				    SEL_FD_HANDLER_DISABLED);
 	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
@@ -713,46 +706,36 @@ handle_dev_fd_read(int fd, void *data)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_dev_fd_write(int fd, void *data)
+dev_fd_write(port_info_t *port, struct sbuf *buf)
 {
-    port_info_t *port = (port_info_t *) data;
-    int write_count;
+    int reterr, buferr;
 
-    write_count = write(port->devfd,
-			&(port->tcp_to_dev_buf[port->tcp_to_dev_buf_start]),
-			port->tcp_to_dev_buf_count);
-    if (write_count == -1) {
-	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry by returning. */
-	    return;
-	}
+    reterr = buffer_write(port->devfd, buf, &buferr);
+    if (reterr == -1) {
+	syslog(LOG_ERR, "The dev write for port %s had error: %m",
+	       port->portname);
+	shutdown_port(port, "dev write error");
+	return;
+    }
 
-	if (errno == EAGAIN) {
-	    /* This again was due to O_NONBLOCK, just ignore it. */
-	} else {
-	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
-		   port->portname);
-	    shutdown_port(port, "dev write error");
-	    return;
-	}
-    } else {
-	port->dev_bytes_sent += write_count;
-	port->tcp_to_dev_buf_count -= write_count;
-	if (port->tcp_to_dev_buf_count != 0) {
-	    /* We didn't write all the data, continue writing. */
-	    port->tcp_to_dev_buf_start += write_count;
-	} else {
-	    /* We are done writing, turn the reader back on. */
-	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
-				    SEL_FD_HANDLER_ENABLED);
-	    sel_set_fd_write_handler(ser2net_sel, port->devfd,
-				     SEL_FD_HANDLER_DISABLED);
-	    port->tcp_to_dev_state = PORT_WAITING_INPUT;
-	}
+    if (buffer_cursize(buf) == 0) {
+	/* We are done writing, turn the reader back on. */
+	sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
+				SEL_FD_HANDLER_ENABLED);
+	sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				 SEL_FD_HANDLER_DISABLED);
+	port->tcp_to_dev_state = PORT_WAITING_INPUT;
     }
 
     reset_timer(port);
+}
+
+static void
+handle_dev_fd_write(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    dev_fd_write(port, &port->tcp_to_dev);
 }
 
 /* Handle an exception from the serial port. */
@@ -766,37 +749,78 @@ handle_dev_fd_except(int fd, void *data)
     shutdown_port(port, "fd exception");
 }
 
+/* Output the devstr buffer */
+static void
+handle_dev_fd_devstr_write(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    dev_fd_write(port, port->devstr);
+    if (buffer_cursize(port->devstr) == 0) {
+	sel_set_fd_handlers(ser2net_sel,
+			    port->devfd,
+			    port,
+			    handle_dev_fd_read,
+			    handle_dev_fd_write,
+			    handle_dev_fd_except);
+	free(port->devstr->buf);
+	free(port->devstr);
+	port->devstr = NULL;    }
+}
+
+/* Output the devstr buffer */
+static void
+handle_dev_fd_close_write(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+    int reterr, buferr;
+
+    reterr = buffer_write(port->devfd, port->devstr, &buferr);
+    if (reterr == -1) {
+	syslog(LOG_ERR, "The dev write for port %s had error: %m",
+	       port->portname);
+	goto closeit;
+    }
+
+    if (buffer_cursize(port->devstr) != 0)
+	return;
+
+closeit:
+    finish_shutdown_port(port);
+}
+
 /* Data is ready to read on the TCP port. */
 static void
 handle_tcp_fd_read(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    int write_count;
+    int count;
 
-    port->tcp_to_dev_buf_start = 0;
-    port->tcp_to_dev_buf_count = read(fd, port->tcp_to_dev_buf, PORT_BUFSIZE);
-
-    if (port->tcp_to_dev_buf_count < 0) {
+    port->tcp_to_dev.pos = 0;
+    count = read(fd, port->tcp_to_dev.buf, port->tcp_to_dev.maxsize);
+    if (count < 0) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
 	shutdown_port(port, "tcp read error");
 	return;
-    } else if (port->tcp_to_dev_buf_count == 0) {
+    } else if (count == 0) {
 	/* The other end closed the port, shut it down. */
 	shutdown_port(port, "tcp read close");
 	return;
     }
+    port->tcp_to_dev.cursize = count;
 
-    port->tcp_bytes_received += port->tcp_to_dev_buf_count;
+    port->tcp_bytes_received += count;
 
     if (port->enabled == PORT_TELNET) {
-	port->tcp_to_dev_buf_count = process_telnet_data
-	    (port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, &port->tn_data);
+	port->tcp_to_dev.cursize = process_telnet_data(port->tcp_to_dev.buf,
+						       count,
+						       &port->tn_data);
 	if (port->tn_data.error) {
 	    shutdown_port(port, "telnet output error");
 	    return;
 	}
-	if (port->tcp_to_dev_buf_count == 0) {
+	if (port->tcp_to_dev.cursize == 0) {
 	    /* We are out of characters; they were all processed.  We
 	       don't want to continue with 0, because that will mess
 	       up the other processing and it's not necessary. */
@@ -806,24 +830,22 @@ handle_tcp_fd_read(int fd, void *data)
 
     if (port->tcp_monitor != NULL) {
 	controller_write(port->tcp_monitor,
-			 (char *) port->tcp_to_dev_buf,
-			 port->tcp_to_dev_buf_count);
+			 (char *) port->tcp_to_dev.buf,
+			 port->tcp_to_dev.cursize);
     }
 
     if (port->wt.file != -1)
 	/* Do write tracing, ignore errors. */
 	do_trace(port, &port->wt,
-		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, NET);
+		 port->tcp_to_dev.buf, port->tcp_to_dev.cursize, NET);
     if (port->bt.file != -1)
 	/* Do both tracing, ignore errors. */
 	do_trace(port, &port->bt,
-		 port->tcp_to_dev_buf, port->tcp_to_dev_buf_count, NET);
+		 port->tcp_to_dev.buf, port->tcp_to_dev.cursize, NET);
 
  retry_write:
-    write_count = write(port->devfd,
-			port->tcp_to_dev_buf,
-			port->tcp_to_dev_buf_count);
-    if (write_count == -1) {
+    count = write(port->devfd, port->tcp_to_dev.buf, port->tcp_to_dev.cursize);
+    if (count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry. */
 	    goto retry_write;
@@ -845,12 +867,12 @@ handle_tcp_fd_read(int fd, void *data)
 	    return;
 	}
     } else {
-	port->dev_bytes_sent += write_count;
-	port->tcp_to_dev_buf_count -= write_count;
-	if (port->tcp_to_dev_buf_count != 0) {
+	port->dev_bytes_sent += count;
+	port->tcp_to_dev.cursize -= count;
+	if (port->tcp_to_dev.cursize != 0) {
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
-	    port->tcp_to_dev_buf_start += write_count;
+	    port->tcp_to_dev.pos = count;
 	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
 				    SEL_FD_HANDLER_DISABLED);
 	    sel_set_fd_write_handler(ser2net_sel, port->devfd,
@@ -866,86 +888,63 @@ handle_tcp_fd_read(int fd, void *data)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_tcp_fd_write(int fd, void *data)
+tcp_fd_write(port_info_t *port, struct sbuf *buf)
 {
-    port_info_t *port = (port_info_t *) data;
     telnet_data_t *td = &port->tn_data;
-    int write_count;
+    int buferr, reterr;
 
-    if (td->out_telnet_cmd_size > 0) {
-	write_count = write(port->tcpfd,
-			    &(td->out_telnet_cmd[0]),
-			    td->out_telnet_cmd_size);
-	if (write_count == -1) {
-	    if (errno == EINTR) {
-		/* EINTR means we were interrupted, just retry by returning. */
-		return;
-	    }
-
-	    if (errno == EAGAIN) {
-		/* This again was due to O_NONBLOCK, just ignore it. */
-	    } else if (errno == EPIPE) {
+    if (buffer_cursize(&td->out_telnet_cmd) > 0) {
+	reterr = buffer_write(port->tcpfd, &td->out_telnet_cmd, &buferr);
+	if (reterr == -1) {
+	    if (buferr == EPIPE) {
 		shutdown_port(port, "EPIPE");
-		return;
 	    } else {
 		/* Some other bad error. */
 		syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		       port->portname);
 		shutdown_port(port, "tcp write error");
-		return;
 	    }
-	} else {
-	    int i, j;
+	}
 
-	    /* Copy the remaining data. */
-	    for (j=0, i=write_count; i<td->out_telnet_cmd_size; i++, j++)
-		td->out_telnet_cmd[j] = td->out_telnet_cmd[i];
-	    td->out_telnet_cmd_size -= write_count;
-	    if (td->out_telnet_cmd_size != 0)
-		/* If we have more telnet command data to send, don't
-		   send any real data. */
-		return;
+	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
+	    /* If we have more telnet command data to send, don't
+	       send any real data. */
+	    return;
 	}
     }
 
-    write_count = write(port->tcpfd,
-			&(port->dev_to_tcp_buf[port->dev_to_tcp_buf_start]),
-			port->dev_to_tcp_buf_count);
-    if (write_count == -1) {
-	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry by returning. */
-	    return;
-	}
-
-	if (errno == EAGAIN) {
-	    /* This again was due to O_NONBLOCK, just ignore it. */
-	} else if (errno == EPIPE) {
+    reterr = buffer_write(port->tcpfd, buf, &buferr);
+    if (reterr == -1) {
+	if (buferr == EPIPE) {
 	    shutdown_port(port, "EPIPE");
-	    return;
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		   port->portname);
 	    shutdown_port(port, "tcp write error");
-	    return;
 	}
-    } else {
-	port->tcp_bytes_sent += write_count;
-	port->dev_to_tcp_buf_count -= write_count;
-	if (port->dev_to_tcp_buf_count != 0) {
-	    /* We didn't write all the data, continue writing. */
-	    port->dev_to_tcp_buf_start += write_count;
-	} else {
-	    /* We are done writing, turn the reader back on. */
-	    sel_set_fd_read_handler(ser2net_sel, port->devfd,
-				    SEL_FD_HANDLER_ENABLED);
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-				     SEL_FD_HANDLER_DISABLED);
-	    port->dev_to_tcp_state = PORT_WAITING_INPUT;
-	}
+	return;
+    }
+    if (buffer_cursize(buf) == 0) {
+	/* We are done writing, turn the reader back on. */
+	sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				SEL_FD_HANDLER_ENABLED);
+	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				 SEL_FD_HANDLER_DISABLED);
+	port->dev_to_tcp_state = PORT_WAITING_INPUT;
     }
 
     reset_timer(port);
+}
+
+/* The TCP port has room to write some data.  This is only activated
+   if a write fails to complete, it is deactivated as soon as writing
+   is available again. */
+static void
+handle_tcp_fd_write(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+    tcp_fd_write(port, &port->dev_to_tcp);
 }
 
 /* Handle an exception from the TCP port. */
@@ -956,6 +955,25 @@ handle_tcp_fd_except(int fd, void *data)
 
     syslog(LOG_ERR, "Select exception on port %s", port->portname);
     shutdown_port(port, "tcp fd exception");
+}
+
+static void
+handle_tcp_fd_banner_write(int fd, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    tcp_fd_write(port, port->banner);
+    if (buffer_cursize(port->banner) == 0) {
+	sel_set_fd_handlers(ser2net_sel,
+			    port->tcpfd,
+			    port,
+			    handle_tcp_fd_read,
+			    handle_tcp_fd_write,
+			    handle_tcp_fd_except);
+	free(port->banner->buf);
+	free(port->banner);
+	port->banner = NULL;
+    }
 }
 
 static void
@@ -998,16 +1016,6 @@ is_device_already_inuse(port_info_t *check_port)
     return 0;
 }
 
-static void
-add_port_tcp_char(port_info_t *port, char c)
-{
-    int pos = port->dev_to_tcp_buf_start + port->dev_to_tcp_buf_count;
-    if (pos >= PORT_BUFSIZE)
-	return;
-    port->dev_to_tcp_buf[pos] = c;
-    port->dev_to_tcp_buf_count++;
-}
-
 static int
 from_hex_digit(char c)
 {
@@ -1020,17 +1028,17 @@ from_hex_digit(char c)
     return 0;
 }
 
+static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+
 static void
-display_banner(port_info_t *port)
+process_str(port_info_t *port, struct tm *time, struct timeval *tv, char *s,
+	    void (*op)(void *data, char val), void *data, int isfilename)
 {
     char val;
-    char *s;
     char *t;
 
-    if (!port->dinfo.banner)
-	return;
-
-    s = port->dinfo.banner;
     while (*s) {
 	if (*s == '\\') {
 	    s++;
@@ -1038,37 +1046,52 @@ display_banner(port_info_t *port)
 		return;
 	    switch (*s) {
 	    /* Standard "C" characters. */
-	    case 'a': add_port_tcp_char(port, 7); break;
-	    case 'b': add_port_tcp_char(port, 8); break;
-	    case 'f': add_port_tcp_char(port, 12); break;
-	    case 'n': add_port_tcp_char(port, 10); break;
-	    case 'r': add_port_tcp_char(port, 13); break;
-	    case 't': add_port_tcp_char(port, 9); break;
-	    case 'v': add_port_tcp_char(port, 11); break;
-	    case '\\': add_port_tcp_char(port, '\\'); break;
-	    case '?': add_port_tcp_char(port, '?'); break;
-	    case '\'': add_port_tcp_char(port, '\''); break;
-	    case '"': add_port_tcp_char(port, '"'); break;
+	    case 'a': op(data, 7); break;
+	    case 'b': op(data, 8); break;
+	    case 'f': op(data, 12); break;
+	    case 'n': op(data, 10); break;
+	    case 'r': op(data, 13); break;
+	    case 't': op(data, 9); break;
+	    case 'v': op(data, 11); break;
+	    case '\\': op(data, '\\'); break;
+	    case '?': op(data, '?'); break;
+	    case '\'': op(data, '\''); break;
+	    case '"': op(data, '"'); break;
 
 	    case 'd':
 		/* ser2net device name. */
-		for (t=port->devname; *t; t++)
-		    add_port_tcp_char(port, *t);
+		if (isfilename) {
+		    /* Can't have '/' in a filename. */
+		    t = strrchr(port->devname, '/');
+		    if (t)
+			t++;
+		    else
+			t = port->devname;
+		} else
+		    t = port->devname;
+		for (; *t; t++)
+		    op(data, *t);
 		break;
 
 	    case 'p':
 		/* ser2net TCP port. */
 		for (t=port->portname; *t; t++)
-		    add_port_tcp_char(port, *t);
+		    op(data, *t);
 		break;
 
 	    case 's':
+		if (isfilename)
+		    goto seconds;
+		goto serparms;
+
+	    case 'B':
+	    serparms:
 		/* ser2net serial parms. */
 		{
 		    char str[15];
 		    serparm_to_str(str, sizeof(str), &(port->dinfo.termctl));
 		    for (t=str; *t; t++)
-			add_port_tcp_char(port, *t);
+			op(data, *t);
 		}
 		break;
 
@@ -1078,7 +1101,7 @@ display_banner(port_info_t *port)
 		val = (*s) - '0';
 		s++;
 		if (!*s) {
-		    add_port_tcp_char(port, val);
+		    op(data, val);
 		    return;
 		}
 		if (!isdigit(*s)) {
@@ -1087,7 +1110,7 @@ display_banner(port_info_t *port)
 		val = (val * 8) + (*s) - '0';
 		s++;
 		if (!*s) {
-		    add_port_tcp_char(port, val);
+		    op(data, val);
 		    return;
 		}
 		if (!isdigit(*s)) {
@@ -1106,7 +1129,7 @@ display_banner(port_info_t *port)
 		val = from_hex_digit(*s);
 		s++;
 		if (!*s) {
-		    add_port_tcp_char(port, val);
+		    op(data, val);
 		    return;
 		}
 		if (!isdigit(*s))
@@ -1114,340 +1137,267 @@ display_banner(port_info_t *port)
 		val = (val * 16) + from_hex_digit(*s);
 		break;
 
+	    /* \Y -> year */
+	    case 'Y':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%d", time->tm_year + 1900);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \y -> day of the year (days since Jan 1) */
+	    case 'y':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%d", time->tm_yday);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \M -> month (Jan, Feb, Mar, etc.) */
+	    case 'M':
+		if (time->tm_mon >= 12)
+		    op(data, '?');
+		else {
+		    char *dp = smonths[time->tm_mon];
+		    for (; *dp; dp++)
+			op(data, *dp);
+		}
+		break;
+
+	    /* \m -> month (as a number) */
+	    case 'm':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%d", time->tm_mon);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \A -> day of the week (Mon, Tue, etc.) */
+	    case 'A':
+		if (time->tm_wday >= 7)
+		    op(data, '?');
+		else {
+		    char *dp = sdays[time->tm_wday];
+		    for (; *dp; dp++)
+			op(data, *dp);
+		}
+		break;
+
+	    /* \D -> day of the month */
+	    case 'D':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%d", time->tm_mday);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \H -> hour (24-hour time) */
+	    case 'H':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%2.2d", time->tm_hour);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \h -> hour (12-hour time) */
+	    case 'h':
+	    {
+		char d[10], *dp;
+		int v;
+
+		v = time->tm_hour;
+		if (v == 0)
+		    v = 12;
+		else if (v > 12)
+		    v -= 12;
+		snprintf(d, sizeof(d), "%2.2d", v);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \i -> minute */
+	    case 'i':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%2.2d", time->tm_min);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \S -> second */
+	    case 'S':
+	    seconds:
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%2.2d", time->tm_sec);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \q -> am/pm */
+	    case 'q':
+		if (time->tm_hour < 12) {
+		    op(data, 'a');
+		} else {
+		    op(data, 'p');
+		}
+		op(data, 'm');
+		break;
+
+	    /* \P -> AM/PM */
+	    case 'P':
+		if (time->tm_hour < 12) {
+		    op(data, 'A');
+		} else {
+		    op(data, 'P');
+		}
+		op(data, 'M');
+		break;
+
+	    /* \T -> time (HH:MM:SS) */
+	    case 'T':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%2.2d:%2.2d:%2.2d",
+			 time->tm_hour, time->tm_min, time->tm_sec);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \e -> epoc (seconds since Jan 1, 1970) */
+	    case 'e':
+	    {
+		char d[30], *dp;
+		snprintf(d, sizeof(d), "%ld", tv->tv_sec);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \U -> microseconds in the current second */
+	    case 'U':
+	    {
+		char d[10], *dp;
+		snprintf(d, sizeof(d), "%6.6ld", tv->tv_usec);
+		for (dp = d; *dp; dp++)
+		    op(data, *dp);
+		break;
+	    }
+
+	    /* \I -> remote IP address (in dot format) */
+	    case 'I':
+	    {
+		char ip[100], *ipp;
+		if (!getnameinfo((struct sockaddr *) &(port->remote),
+				 sizeof(port->remote),
+				 ip, sizeof(ip), NULL, 0, NI_NUMERICHOST))
+		    break;
+		for (ipp = ip; *ipp; ipp++)
+		    op(data, *ipp);
+		break;
+	    }
+
 	    default:
-		add_port_tcp_char(port, *s);
+		op(data, *s);
 	    }
 	} else
-	    add_port_tcp_char(port, *s);
+	    op(data, *s);
 	s++;
     }
 }
 
-enum fn_tr_state {
-    TR_NORMAL, TR_ESC, TR_ESCx1, TR_ESCx2, TR_ESCo1, TR_ESCo2
+static void
+count_op(void *data, char c)
+{
+    unsigned int *idata = data;
+
+    (*idata)++;
+}
+
+struct bufop_data {
+    unsigned int pos;
+    char *str;
 };
 
-static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-			   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-
-static int
-translate_filename(port_info_t *port, char *raw,
-		   char *cooked, unsigned int cooked_len,
-		   const struct timeval *tv)
+static void
+buffer_op(void *data, char c)
 {
-    const char *s = raw;
-    enum fn_tr_state state = TR_NORMAL;
-    char c = 0;
-    unsigned int left;
-    char *cooked_end = cooked + cooked_len;
-    int rv;
-    struct tm time;
-    int v;
-    char *t;
+    struct bufop_data *bufop = data;
+    bufop->str[bufop->pos] = c;
+    (bufop->pos)++;
+}
 
+static char *
+process_str_to_str(port_info_t *port, char *str, struct timeval *tv,
+		   unsigned int *lenrv, int isfilename)
+{
+    unsigned int len = 0;
+    struct tm now;
+    struct bufop_data bufop;
 
-    localtime_r(&tv->tv_sec, &time);
-
-    while (*s) {
-	left = cooked_end - cooked;
-	if (!left)
-	    return -1;
-
-	if (state == TR_NORMAL) {
-	    if (*s == '\\')
-		state = TR_ESC;
-	    else
-		*cooked++ = *s;
-	    goto nextchar;
-	}
-
-	if (state == TR_ESCx1 || state == TR_ESCx2) {
-	    int v;
-
-	    if (!isxdigit(*s))
-		return -1;
-	    if (isdigit(*s))
-		v = *s - '0';
-	    else if (isupper(*s))
-		v = *s - 'A' + 10;
-	    else
-		v = *s - 'a' + 10;
-	    c = (c << 4) | v;
-
-	    if (state == TR_ESCx2) {
-		*cooked++ = c;
-		state = TR_NORMAL;
-	    } else
-		state = TR_ESCx2;
-	}
-
-	if (state == TR_ESCo1 || state == TR_ESCo2) {
-	    if (*s < '0' || *s > '7')
-		return -1;
-	    c = (c << 4) | (*s - '0');
-
-	    if (state == TR_ESCo2) {
-		*cooked++ = c;
-		state = TR_NORMAL;
-	    } else
-		state = TR_ESCo2;
-	}
-
-	switch (*s) {
-        /* \\ -> \ */
-	case '\\':
-	    *cooked++ = '\\';
-	    break;
-
-	case 'a':
-	    *cooked++ = 7;
-	    break;
-
-	case 'b':
-	    *cooked++ = 8;
-	    break;
-
-	case 'f':
-	    *cooked++ = 12;
-	    break;
-
-	case 'n':
-	    *cooked++ = 10;
-	    break;
-
-	case 'r':
-	    *cooked++ = 13;
-	    break;
-
-	case 't':
-	    *cooked++ = 9;
-	    break;
-
-	case 'v':
-	    *cooked++ = 11;
-	    break;
-
-	case '\'':
-	    *cooked++ = '\'';
-	    break;
-
-	case '?':
-	    *cooked++ = '?';
-	    break;
-
-	case '"':
-	    *cooked++ = '"';
-	    break;
-
-        /* \nnn -> octal value of nnn */
-	case '0': case '1': case '2': case '3': case '4': case '5':
-	case '6': case '7':
-	    state = TR_ESCo1;
-	    c = *s - '0';
-	    break;
-
-        /* \xXX -> hex value of XX */
-	case 'x':
-	    state = TR_ESCx1;
-	    c = 0;
-	    break;
-
-        /* \Y -> year */
-	case 'Y':
-	    rv = snprintf(cooked, left, "%d", time.tm_year + 1900);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \y -> day of the year (days since Jan 1) */
-	case 'y':
-	    rv = snprintf(cooked, left, "%d", time.tm_yday);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \M -> month (Jan, Feb, Mar, etc.) */
-	case 'M':
-	    if (time.tm_mon >= 12)
-		*cooked++ = '?';
-	    else {
-		rv = snprintf(cooked, left, "%s", smonths[time.tm_mon]);
-		if ((unsigned int) rv > left)
-		    return -1;
-		cooked += rv;
-	    }
-	    break;
-
-        /* \m -> month (as a number) */
-	case 'm':
-	    rv = snprintf(cooked, left, "%d", time.tm_mon);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \A -> day of the week (Mon, Tue, etc.) */
-	case 'A':
-	    if (time.tm_mon >= 12)
-		*cooked++ = '?';
-	    else {
-		rv = snprintf(cooked, left, "%s", sdays[time.tm_wday]);
-		if ((unsigned int) rv > left)
-		    return -1;
-		cooked += rv;
-	    }
-	    break;
-
-        /* \D -> day of the month */
-	case 'D':
-	    rv = snprintf(cooked, left, "%d", time.tm_mday);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \H -> hour (24-hour time) */
-	case 'H':
-	    rv = snprintf(cooked, left, "%2.2d", time.tm_hour);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \h -> hour (12-hour time) */
-	case 'h':
-	    v = time.tm_hour;
-	    if (v == 0)
-		v = 12;
-	    else if (v > 12)
-		v -= 12;
-	    rv = snprintf(cooked, left, "%2.2d", v);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \i -> minute */
-	case 'i':
-	    rv = snprintf(cooked, left, "%2.2d", time.tm_min);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \s -> second */
-	case 's':
-	    rv = snprintf(cooked, left, "%2.2d", time.tm_sec);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \q -> am/pm */
-	case 'q':
-	    if (time.tm_hour < 12)
-		rv = snprintf(cooked, left, "am");
-	    else
-		rv = snprintf(cooked, left, "pm");
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \P -> AM/PM */
-	case 'P':
-	    if (time.tm_hour < 12)
-		rv = snprintf(cooked, left, "AM");
-	    else
-		rv = snprintf(cooked, left, "PM");
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \T -> time (HH:MM:SS) */
-	case 'T':
-	    rv = snprintf(cooked, left, "%2.2d:%2.2d:%2.2d",
-			  time.tm_hour, time.tm_min, time.tm_sec);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \e -> epoc (seconds since Jan 1, 1970) */
-	case 'e':
-	    rv = snprintf(cooked, left, "%ld", tv->tv_sec);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \U -> microseconds in the current second */
-	case 'U':
-	    rv = snprintf(cooked, left, "%6.6ld", tv->tv_usec);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \p -> local port number */
-	case 'p':
-	    rv = snprintf(cooked, left, "%s", port->portname);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \d -> local device name */
-	case 'd':
-	    /* Remove everything but the device name. */
-	    t = strrchr(port->devname, '/');
-	    if (t)
-		t++;
-	    else
-		t = port->devname;
-	    rv = snprintf(cooked, left, "%s", t);
-	    if ((unsigned int) rv > left)
-		return -1;
-	    cooked += rv;
-	    break;
-
-        /* \I -> remote IP address (in dot format) */
-	case 'I':
-	    if (!getnameinfo((struct sockaddr *) &(port->remote),
-			sizeof(port->remote),
-			cooked, left, NULL, 0, NI_NUMERICHOST))
-		return -1;
-	    while (*cooked)
-		cooked++;
-	    break;
-
-	default:
-	    return -1;
-	}
-
-	if (state == TR_ESC)
-	    state = TR_NORMAL;
-
-    nextchar:
-	s++;
+    localtime_r(&tv->tv_sec, &now);
+    process_str(port, &now, tv, str, count_op, &len, isfilename);
+    if (len == 0)
+	return NULL;
+    if (!lenrv)
+	/* If we don't return a length, append a nil char. */
+	len++;
+    bufop.pos = 0;
+    bufop.str = malloc(len);
+    if (!bufop.str) {
+	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
+	return NULL;
     }
+    process_str(port, &now, tv, str, buffer_op, &bufop, isfilename);
 
-    if (state != TR_NORMAL)
-	/* Trailing \ is an error */
-	return -1;
+    if (lenrv)
+	*lenrv = len;
+    else
+	bufop.str[bufop.pos] = '\0';
 
-    left = cooked_end - cooked;
-    if (!left)
-	/* No room for the terminator */
-	return -1;
+    return bufop.str;
+}
 
-    *cooked = '\0';
+static struct sbuf *
+process_str_to_buf(port_info_t *port, char *str)
+{
+    char *bstr;
+    struct sbuf *buf;
+    unsigned int len;
+    struct timeval tv;
 
-    return 0;
+    if (!str)
+	return NULL;
+    gettimeofday(&tv, NULL);
+
+    buf = malloc(sizeof(*buf));
+    if (!buf) {
+	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
+	return NULL;
+    }
+    bstr = process_str_to_str(port, str, &tv, &len, 0);
+    if (!bstr) {
+	free(buf);
+	syslog(LOG_ERR, "Error processing string: %s", port->portname);
+	return NULL;
+    }
+    buffer_init(buf, (unsigned char *) bstr, len);
+    buf->cursize = len;
+    return buf;
 }
 
 static void
@@ -1458,12 +1408,13 @@ open_trace_file(port_info_t *port,
 {
     int rv;
     char *trfilename = in->file;
-    char trfile[FILENAME_MAX];
+    char *trfile;
 
-    rv = translate_filename(port, trfilename, trfile, sizeof(trfile), tv);
-    if (rv == -1) {
+    trfile = process_str_to_str(port, trfilename, tv, NULL, 1);
+    if (!trfile) {
 	syslog(LOG_ERR, "Unable to translate trace file %s", trfilename);
-	goto out;
+	out->file = -1;
+	return;
     }
 
     rv = open(trfile, O_WRONLY | O_CREAT | O_APPEND, 0600);
@@ -1482,9 +1433,9 @@ open_trace_file(port_info_t *port,
         out->hexdump = in->hexdump;
         out->timestamp = in->timestamp;
     }
- out:
+
+    free(trfile);
     out->file = rv;
-    return;
 }
 
 static void
@@ -1492,6 +1443,7 @@ setup_trace(port_info_t *port)
 {
     struct timeval tv;
 
+    /* Only get the time once so all trace files have consistent times. */
     gettimeofday(&tv, NULL);
 
     if (port->dinfo.trace_write.file)
@@ -1541,6 +1493,8 @@ setup_tcp_port(port_info_t *port)
 {
     int options;
     struct timeval then;
+    sel_fd_handler_t tcp_write_handler;
+    sel_fd_handler_t dev_write_handler;
 
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(port->tcpfd);
@@ -1641,13 +1595,27 @@ setup_tcp_port(port_info_t *port)
     port->is_2217 = 0;
     port->break_set = 0;
 
+    port->banner = process_str_to_buf(port, port->dinfo.banner);
+    if (port->banner)
+	tcp_write_handler = handle_tcp_fd_banner_write;
+    else
+	tcp_write_handler = handle_tcp_fd_write;
+
+    port->devstr = process_str_to_buf(port, port->dinfo.openstr);
+    if (port->devstr)
+	dev_write_handler = handle_dev_fd_devstr_write;
+    else
+	dev_write_handler = handle_dev_fd_write;
+
+    port->closestr = strdup(port->dinfo.closestr);
+
     sel_set_fd_handlers(ser2net_sel,
 			port->devfd,
 			port,
 			port->enabled == PORT_RAWLP
 			? NULL
 			: handle_dev_fd_read,
-			handle_dev_fd_write,
+			dev_write_handler,
 			handle_dev_fd_except);
     sel_set_fd_read_handler(ser2net_sel,
 			    port->devfd,
@@ -1656,13 +1624,16 @@ setup_tcp_port(port_info_t *port)
 			     : SEL_FD_HANDLER_ENABLED));
     sel_set_fd_except_handler(ser2net_sel, port->devfd,
 			      SEL_FD_HANDLER_ENABLED);
+    if (port->devstr)
+	sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				 SEL_FD_HANDLER_ENABLED);
     port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
     sel_set_fd_handlers(ser2net_sel,
 			port->tcpfd,
 			port,
 			handle_tcp_fd_read,
-			handle_tcp_fd_write,
+			tcp_write_handler,
 			handle_tcp_fd_except);
     sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
 			    SEL_FD_HANDLER_ENABLED);
@@ -1676,14 +1647,13 @@ setup_tcp_port(port_info_t *port)
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
     } else {
+	buffer_init(&port->tn_data.out_telnet_cmd, NULL, 0);
 	sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				SEL_FD_HANDLER_ENABLED);
-	/* In case there is a banner to write. */
-	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-				 SEL_FD_HANDLER_ENABLED);
+	if (port->banner)
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_ENABLED);
     }
-
-    display_banner(port);
 
     setup_trace(port);
     header_trace(port);
@@ -1860,49 +1830,36 @@ free_port(port_info_t *port)
 }
 
 static void
-shutdown_port(port_info_t *port, char *reason)
+finish_shutdown_port(port_info_t *port)
 {
     int portnum;
 
-    footer_trace( port, reason );
-    
-    if (port->wt.file != -1) {
-	close(port->wt.file);
-	if (port->rt.file == port->wt.file)
-	    port->rt.file = -1;
-	if (port->bt.file == port->wt.file)
-	    port->bt.file = -1;
-	port->wt.file = -1;
-    }
-    if (port->rt.file != -1) {
-	close(port->rt.file);
-	if (port->bt.file == port->rt.file)
-	    port->bt.file = -1;
-	port->rt.file = -1;
-    }
-    if (port->bt.file != -1) {
-	close(port->bt.file);
-	port->bt.file = -1;
-    }
-    sel_stop_timer(port->timer);
-    sel_clear_fd_handlers(ser2net_sel, port->devfd);
-    sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
-    close(port->tcpfd);
     /* To avoid blocking on close if we have written bytes and are in
        flow-control, we flush the output queue. */
+    sel_clear_fd_handlers(ser2net_sel, port->devfd);
     tcflush(port->devfd, TCOFLUSH);
     close(port->devfd);
 #ifdef USE_UUCP_LOCKING
     uucp_rm_lock(port->devname);
 #endif /* USE_UUCP_LOCKING */
     port->tcp_to_dev_state = PORT_UNCONNECTED;
-    port->tcp_to_dev_buf_start = 0;
-    port->tcp_to_dev_buf_count = 0;
+    buffer_reset(&port->tcp_to_dev);
     port->tcp_bytes_received = 0;
     port->tcp_bytes_sent = 0;
+    if (port->banner) {
+	free(port->banner->buf);
+	free(port->banner);
+	port->banner = NULL;
+    }
+    if (port->devstr) {
+	free(port->devstr->buf);
+	free(port->devstr);
+	port->devstr = NULL;
+    }
+    if (port->closestr)
+	free(port->closestr);
     port->dev_to_tcp_state = PORT_UNCONNECTED;
-    port->dev_to_tcp_buf_start = 0;
-    port->dev_to_tcp_buf_count = 0;
+    buffer_reset(&port->dev_to_tcp);
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
@@ -1969,6 +1926,56 @@ shutdown_port(port_info_t *port, char *reason)
 	    free_port(curr);
 	}
     }
+}
+
+static void
+shutdown_port(port_info_t *port, char *reason)
+{
+    footer_trace(port, reason);
+    
+    if (port->wt.file != -1) {
+	close(port->wt.file);
+	if (port->rt.file == port->wt.file)
+	    port->rt.file = -1;
+	if (port->bt.file == port->wt.file)
+	    port->bt.file = -1;
+	port->wt.file = -1;
+    }
+    if (port->rt.file != -1) {
+	close(port->rt.file);
+	if (port->bt.file == port->rt.file)
+	    port->bt.file = -1;
+	port->rt.file = -1;
+    }
+    if (port->bt.file != -1) {
+	close(port->bt.file);
+	port->bt.file = -1;
+    }
+    sel_stop_timer(port->timer);
+    sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
+    close(port->tcpfd);
+
+    if (port->devstr) {
+	free(port->devstr->buf);
+	free(port->devstr);
+    }
+    port->devstr = process_str_to_buf(port, port->closestr);
+    if (port->devstr) {
+	port->tcp_to_dev_state = PORT_CLOSING;
+	sel_set_fd_read_handler(ser2net_sel, port->devfd,
+				SEL_FD_HANDLER_DISABLED);
+	sel_set_fd_except_handler(ser2net_sel, port->devfd,
+				  SEL_FD_HANDLER_DISABLED);
+	sel_set_fd_handlers(ser2net_sel,
+			    port->devfd,
+			    port,
+			    NULL,
+			    handle_dev_fd_close_write,
+			    NULL);
+	sel_set_fd_write_handler(ser2net_sel, port->devfd,
+				 SEL_FD_HANDLER_ENABLED);
+    } else
+	finish_shutdown_port(port);
 }
 
 void

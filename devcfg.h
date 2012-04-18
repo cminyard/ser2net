@@ -46,6 +46,12 @@ typedef struct dev_info {
     /* Banner to display at startup, or NULL if none. */
     char *banner;
 
+    /* String to send to device at startup, or NULL if none. */
+    char *openstr;
+
+    /* String to send to device at close, or NULL if none. */
+    char *closestr;
+
     /*
      * File to read/write trace, NULL if none.  If the same, then
      * trace information is in the same file, only one open is done.

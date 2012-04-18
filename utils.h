@@ -32,8 +32,9 @@ int scan_int(char *str);
  * The mandatory second part is the port number or a service name. */
 int scan_tcp_port(char *str, struct sockaddr_storage *addr);
 
-/* Search for a banner by name. */
-char *find_banner(char *name);
+/* Search for a banner/open/close string by name. */
+enum str_type { BANNER, OPENSTR, CLOSESTR };
+char *find_str(char *name, enum str_type *type);
 
 /* Search for a tracefile by name. */
 char *find_tracefile(char *name);

@@ -543,37 +543,22 @@ handle_tcp_fd_write(int fd, void *data)
     telnet_data_t *td = &cntlr->tn_data;
     int write_count;
 
-    if (td->out_telnet_cmd_size > 0) {
-	write_count = write(cntlr->tcpfd,
-			    &(td->out_telnet_cmd[0]),
-			    td->out_telnet_cmd_size);
-	if (write_count == -1) {
-	    if (errno == EINTR) {
-		/* EINTR means we were interrupted, just retry by returning. */
-		goto out;
-	    }
+    if (buffer_cursize(&td->out_telnet_cmd) > 0) {
+	int buferr, reterr;
 
-	    if (errno == EAGAIN) {
-		/* This again was due to O_NONBLOCK, just ignore it. */
-	    } else if (errno == EPIPE) {
+	reterr = buffer_write(cntlr->tcpfd, &td->out_telnet_cmd, &buferr);
+	if (reterr == -1) {
+	    if (buferr == EPIPE) {
 		goto out_fail;
 	    } else {
 		/* Some other bad error. */
 		syslog(LOG_ERR, "The tcp write for controller had error: %m");
 		goto out_fail;
 	    }
-	} else {
-	    int i, j;
-
-	    /* Copy the remaining data. */
-	    for (j=0, i=write_count; i<td->out_telnet_cmd_size; i++, j++)
-		td->out_telnet_cmd[j] = td->out_telnet_cmd[i];
-	    td->out_telnet_cmd_size -= write_count;
-	    if (td->out_telnet_cmd_size != 0)
-		/* If we have more telnet command data to send, don't
-		   send any real data. */
-		goto out;
 	}
+	if (buffer_cursize(&td->out_telnet_cmd) > 0)
+	    /* Still telnet data left, don't send regular data */
+	    goto out;
     }
 
     write_count = write(cntlr->tcpfd,

@@ -849,6 +849,7 @@ sel_alloc_selector(selector_t **new_selector)
 	init_fd(&(sel->fds[i]));
     }
 
+    sel->maxfd = 0;
     sel->timer_top = NULL;
     sel->timer_last = NULL;
 
