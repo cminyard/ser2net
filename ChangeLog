@@ -1,3 +1,8 @@
+2012-07-22  qchats lee <qchats@gmail.com>
+
+	* dataxfer.c: Add a missing ")" after the "OPEN(..." when
+	header tracing.
+
 2012-04-18  Corey Minyard <minyard@acm.org>
 
 	* buffer.c, buffer.h, Makefile.am: Added a new type and set of

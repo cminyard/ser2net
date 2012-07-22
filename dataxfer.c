@@ -550,6 +550,7 @@ header_trace(port_info_t *port)
 		buf + len, sizeof(buf) - len,
 		portstr, sizeof(portstr), NI_NUMERICHOST);
     len += strlen(buf + len);
+    len += snprintf(buf + len, sizeof(buf) - len, ")\n");
     if ((sizeof(buf) - len) > 2) {
 	buf[len] = ':';
 	len++;
