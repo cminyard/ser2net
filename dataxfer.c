@@ -550,13 +550,13 @@ header_trace(port_info_t *port)
 		buf + len, sizeof(buf) - len,
 		portstr, sizeof(portstr), NI_NUMERICHOST);
     len += strlen(buf + len);
-    len += snprintf(buf + len, sizeof(buf) - len, ")\n");
     if ((sizeof(buf) - len) > 2) {
 	buf[len] = ':';
 	len++;
     }
     strncpy(buf + len, portstr, sizeof(buf) - len);
     len += strlen(buf + len);
+    len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
     if (port->rt.file != -1 && port->rt.timestamp) {
         write_ignore_fail(port->rt.file, buf, len);

@@ -1,3 +1,12 @@
+2012-07-23  qchats lee <qchats@gmail.com>
+
+	* dataxfer.c: My change for this did not match Qchats' change,
+	so fix that.
+
+	* utils.c: Fix the write_full() function to handle the return
+	result properly; the parenthesis in the if statement ended
+	in the wrong place.
+
 2012-07-22  qchats lee <qchats@gmail.com>
 
 	* dataxfer.c: Add a missing ")" after the "OPEN(..." when

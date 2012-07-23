@@ -122,7 +122,7 @@ write_full(int fd, char *data, size_t count)
     size_t written;
 
  restart:
-    while ((written = write(fd, data, count) > 0)) {
+    while ((written = write(fd, data, count)) > 0) {
 	data += written;
 	count -= written;
     }
