@@ -1608,7 +1608,10 @@ setup_tcp_port(port_info_t *port)
     else
 	dev_write_handler = handle_dev_fd_write;
 
-    port->closestr = strdup(port->dinfo.closestr);
+    if (port->dinfo.closestr)
+	port->closestr = strdup(port->dinfo.closestr);
+    else
+	port->closestr = NULL;
 
     sel_set_fd_handlers(ser2net_sel,
 			port->devfd,

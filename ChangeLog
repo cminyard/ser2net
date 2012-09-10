@@ -1,3 +1,9 @@
+2012-09-10  Corey Minyard <minyard@acm.org>
+
+	* dataxfer.c: Fix a bug reported by Jan-Benedict Glaw, where
+	port->dinfo.openstr may be NULL, but srdup is called on it
+	without checking.  Add a check.
+
 2012-07-23  qchats lee <qchats@gmail.com>
 
 	* dataxfer.c: My change for this did not match Qchats' change,
