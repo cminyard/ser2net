@@ -6,6 +6,8 @@
 	clean shutdown handling so locks are properly removed when the
 	program is killed with SIGINT.
 
+	* dataxfer.c: Modify the lock files to be Linux FHS compiliant.
+
 2012-09-10  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix a bug reported by Jan-Benedict Glaw, where

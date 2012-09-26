@@ -60,9 +60,6 @@ static char *progname = "ser2net";
 
 #ifdef USE_UUCP_LOCKING
 static char *uucp_lck_dir = "/var/lock";
-#ifndef HAVE_TCPD_H
-static char *progname = "ser2net";
-#endif
 #endif /* USE_UUCP_LOCKING */
 
 
@@ -356,8 +353,8 @@ uucp_mk_lock(char *devname)
 	    fd = open(lck_file, O_WRONLY | O_CREAT | O_EXCL, 0666);
 	    umask(mask);
 	    if (fd >= 0) {
-		snprintf(buf.str, sizeof(buf), "%10ld\t%s\n",
-			 (long)getpid(), progname );
+		snprintf(buf.str, sizeof(buf), "%10ld\n",
+			 (long)getpid());
 		rv = write_full(fd, buf.str, strlen(buf.str));
 		close(fd);
 		if (rv < 0) {
