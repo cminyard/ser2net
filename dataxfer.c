@@ -390,7 +390,7 @@ init_port_data(port_info_t *port)
     port->tcp_monitor = NULL;
     
     port->devname = NULL;
-    port->devfd = 0;
+    port->devfd = -1;
     memset(&(port->remote), 0, sizeof(port->remote));
     memset(&(port->dinfo.termctl), 0, sizeof(port->dinfo.termctl));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
@@ -1499,6 +1499,7 @@ setup_tcp_port(port_info_t *port)
 
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(port->tcpfd);
+	port->tcpfd = -1;
 	syslog(LOG_ERR, "Could not fcntl the tcp port %s: %m", port->portname);
 	return -1;
     }
@@ -1506,6 +1507,7 @@ setup_tcp_port(port_info_t *port)
     if (setsockopt(port->tcpfd, IPPROTO_TCP, TCP_NODELAY,
 		   (char *) &options, sizeof(options)) == -1) {
 	close(port->tcpfd);
+	port->tcpfd = -1;
 	syslog(LOG_ERR, "Could not enable TCP_NODELAY tcp port %s: %m",
 	       port->portname);
 	return -1;
@@ -1522,6 +1524,7 @@ setup_tcp_port(port_info_t *port)
 	    char *err = "Access denied\n\r";
 	    write(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
+	    port->tcpfd = -1;
 	    return -1;
 	}
     }
@@ -1538,6 +1541,7 @@ setup_tcp_port(port_info_t *port)
 	    err = "Port already in use by another process\n\r";
 	    write_ignore_fail(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
+	    port->tcpfd = -1;
 	    return -1;
 	} else if (rv < 0) {
 	    char *err;
@@ -1545,6 +1549,7 @@ setup_tcp_port(port_info_t *port)
 	    err = "Error creating port lock file\n\r";
 	    write_ignore_fail(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
+	    port->tcpfd = -1;
 	    return -1;
 	}
     }
@@ -1561,6 +1566,7 @@ setup_tcp_port(port_info_t *port)
     port->devfd = open(port->devname, options);
     if (port->devfd == -1) {
 	close(port->tcpfd);
+	port->tcpfd = -1;
 	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
@@ -1575,7 +1581,9 @@ setup_tcp_port(port_info_t *port)
         && tcsetattr(port->devfd, TCSANOW, &(port->dinfo.termctl)) == -1)
     {
 	close(port->tcpfd);
+	port->tcpfd = -1;
 	close(port->devfd);
+	port->devfd = -1;
 	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
 	       port->devname,
 	       port->portname);
@@ -1840,9 +1848,12 @@ finish_shutdown_port(port_info_t *port)
 
     /* To avoid blocking on close if we have written bytes and are in
        flow-control, we flush the output queue. */
-    sel_clear_fd_handlers(ser2net_sel, port->devfd);
-    tcflush(port->devfd, TCOFLUSH);
-    close(port->devfd);
+    if (port->devfd != -1) {
+	sel_clear_fd_handlers(ser2net_sel, port->devfd);
+	tcflush(port->devfd, TCOFLUSH);
+	close(port->devfd);
+	port->devfd = -1;
+    }
 #ifdef USE_UUCP_LOCKING
     uucp_rm_lock(port->devname);
 #endif /* USE_UUCP_LOCKING */
@@ -1882,6 +1893,7 @@ finish_shutdown_port(port_info_t *port)
     if (port->config_num == -1) {
 	port_info_t *curr, *prev;
 
+	change_port_state(port, PORT_DISABLED);
 	prev = NULL;
 	curr = ports;
 	while ((curr != NULL) && (curr != port)) {
@@ -1956,15 +1968,18 @@ shutdown_port(port_info_t *port, char *reason)
 	port->bt.file = -1;
     }
     sel_stop_timer(port->timer);
-    sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
-    close(port->tcpfd);
+    if (port->tcpfd != -1) {
+	sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
+	close(port->tcpfd);
+	port->tcpfd = -1;
+    }
 
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
     }
     port->devstr = process_str_to_buf(port, port->closestr);
-    if (port->devstr) {
+    if (port->devstr && (port->devfd != -1)) {
 	port->tcp_to_dev_state = PORT_CLOSING;
 	sel_set_fd_read_handler(ser2net_sel, port->devfd,
 				SEL_FD_HANDLER_DISABLED);
@@ -3138,4 +3153,22 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     default:
 	break;
     }
+}
+
+void
+shutdown_ports(void)
+{
+    port_info_t *port = ports;
+    
+    while (port != NULL) {
+	port->config_num = -1;
+	shutdown_port(port, "program shutdown");
+	port = port->next;
+    }
+}
+
+int
+check_ports_shutdown(void)
+{
+    return ports == NULL;
 }

@@ -76,10 +76,13 @@ int sel_start_timer(sel_timer_t    *timer,
 
 int sel_stop_timer(sel_timer_t *timer);
 
-/* Set a handler to handle when SIGHUP is sent to the process. */
-typedef void (*t_sighup_handler)(void);
-void set_sighup_handler(t_sighup_handler handler);
-void setup_sighup(void);
+/* Set a handler to handle shen signals are sent to the process. */
+typedef void (*t_signal_handler)(void);
+void set_signal_handler(int sig, t_signal_handler handler);
+void setup_signals(void);
+
+/* Run the selector processing once and return */
+void sel_select_once(selector_t *sel);
 
 /* This is the main loop for the program. */
 void sel_select_loop(selector_t *sel);

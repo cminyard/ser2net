@@ -136,6 +136,17 @@ make_pidfile(char *pidfile)
     fclose(fpidfile);
 }
 
+void
+shutdown_cleanly(void)
+{
+    shutdown_ports();
+    do {
+	if (check_ports_shutdown())
+	    exit(1);
+	sel_select_once(ser2net_sel);
+    } while(1);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -231,7 +242,7 @@ main(int argc, char *argv[])
 	}
     }
 
-    setup_sighup();
+    setup_signals();
 
     if (debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
@@ -297,7 +308,8 @@ main(int argc, char *argv[])
     /* Ignore SIGPIPEs so they don't kill us. */
     signal(SIGPIPE, SIG_IGN);
 
-    set_sighup_handler(reread_config);
+    set_signal_handler(SIGHUP, reread_config);
+    set_signal_handler(SIGINT, shutdown_cleanly);
 
     sel_select_loop(ser2net_sel);
 

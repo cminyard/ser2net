@@ -34,6 +34,10 @@ char * portconfig(char *portnum,
 		  char *devcfg,
 		  int  config_num);
 
+/* Shut down all the ports, and provide a way to check when done. */
+void shutdown_ports(void);
+int check_ports_shutdown(void);
+
 /* Clear out any old ports on a reconfigure. */
 void clear_old_port_config(int config_num);
 

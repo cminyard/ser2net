@@ -102,8 +102,10 @@ struct selector_s
     sel_timer_t *timer_top, *timer_last;
 };
 
-static t_sighup_handler user_sighup_handler = NULL;
+static t_signal_handler user_sighup_handler = NULL;
+static t_signal_handler user_sigint_handler = NULL;
 static int got_sighup = 0; /* Did I get a HUP signal? */
+static int got_sigint = 0; /* Did I get an INT signal? */
 
 /* Initialize a single file descriptor. */
 static void
@@ -725,11 +727,8 @@ sel_stop_timer(sel_timer_t *timer)
     return 0;
 }
 
-/* The main loop for the program.  This will select on the various
-   sets, then scan for any available I/O to process.  It also monitors
-   the time and call the timeout handlers periodically. */
 void
-sel_select_loop(selector_t *sel)
+sel_select_once(selector_t *sel)
 {
     fd_set      tmp_read_set;
     fd_set      tmp_write_set;
@@ -739,95 +738,109 @@ sel_select_loop(selector_t *sel)
     sel_timer_t *timer;
     struct timeval timeout, *to_time;
 
-    for (;;) {
-	if (sel->timer_top) {
-	    struct timeval now;
+    if (sel->timer_top) {
+	struct timeval now;
 
-	    /* Check for timers to time out. */
-	    gettimeofday(&now, NULL);
+	/* Check for timers to time out. */
+	gettimeofday(&now, NULL);
+	timer = sel->timer_top;
+	while (cmp_timeval(&now, &timer->timeout) >= 0) {
+	    remove_from_heap(&(sel->timer_top),
+			     &(sel->timer_last),
+			     timer);
+
+	    timer->in_heap = 0;
+	    timer->handler(sel, timer, timer->user_data);
+
 	    timer = sel->timer_top;
-	    while (cmp_timeval(&now, &timer->timeout) >= 0) {
-		remove_from_heap(&(sel->timer_top),
-				 &(sel->timer_last),
-				 timer);
-
-		timer->in_heap = 0;
-		timer->handler(sel, timer, timer->user_data);
-
-		timer = sel->timer_top;
-		gettimeofday(&now, NULL);
-		if (!timer)
-		    goto no_timers;
-	    }
-
-	    /* Calculate how long to wait now. */
-	    diff_timeval(&timeout, &sel->timer_top->timeout, &now);
-	    to_time = &timeout;
-	} else {
-	no_timers:
-	    to_time = NULL;
-	}
-	memcpy(&tmp_read_set, &sel->read_set, sizeof(tmp_read_set));
-	memcpy(&tmp_write_set, &sel->write_set, sizeof(tmp_write_set));
-	memcpy(&tmp_except_set, &sel->except_set, sizeof(tmp_except_set));
-	err = select(sel->maxfd+1,
-		     &tmp_read_set,
-		     &tmp_write_set,
-		     &tmp_except_set,
-		     to_time);
-	if (err == 0) {
-	    /* A timeout occurred. */
-	} else if (err < 0) {
-	    /* An error occurred. */
-	    if (errno == EINTR) {
-		/* EINTR is ok, just restart the operation. */
-		timeout.tv_sec = 1;
-		timeout.tv_usec = 0;
-	    } else {
-		/* An error is bad, we need to abort. */
-		syslog(LOG_ERR, "select_loop() - select: %m");
-		exit(1);
-	    }
-	} else {
-	    /* We got some I/O. */
-	    for (i=0; i<=sel->maxfd; i++) {
-		if (FD_ISSET(i, &tmp_read_set)) {
-		    if (sel->fds[i].handle_read == NULL) {
-			/* Somehow we don't have a handler for this.
-                           Just shut it down. */
-			sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		    } else {
-			sel->fds[i].handle_read(i, sel->fds[i].data);
-		    }
-		}
-		if (FD_ISSET(i, &tmp_write_set)) {
-		    if (sel->fds[i].handle_write == NULL) {
-			/* Somehow we don't have a handler for this.
-                           Just shut it down. */
-			sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		    } else {
-			sel->fds[i].handle_write(i, sel->fds[i].data);
-		    }
-		}
-		if (FD_ISSET(i, &tmp_except_set)) {
-		    if (sel->fds[i].handle_except == NULL) {
-			/* Somehow we don't have a handler for this.
-                           Just shut it down. */
-			sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		    } else {
-			sel->fds[i].handle_except(i, sel->fds[i].data);
-		    }
-		}
-	    }
+	    gettimeofday(&now, NULL);
+	    if (!timer)
+		goto no_timers;
 	}
 
-	if (got_sighup) {
-	    got_sighup = 0;
-	    if (user_sighup_handler != NULL) {
-		user_sighup_handler();
+	/* Calculate how long to wait now. */
+	diff_timeval(&timeout, &sel->timer_top->timeout, &now);
+	to_time = &timeout;
+    } else {
+      no_timers:
+	to_time = NULL;
+    }
+    memcpy(&tmp_read_set, &sel->read_set, sizeof(tmp_read_set));
+    memcpy(&tmp_write_set, &sel->write_set, sizeof(tmp_write_set));
+    memcpy(&tmp_except_set, &sel->except_set, sizeof(tmp_except_set));
+    err = select(sel->maxfd+1,
+		 &tmp_read_set,
+		 &tmp_write_set,
+		 &tmp_except_set,
+		 to_time);
+    if (err == 0) {
+	/* A timeout occurred. */
+    } else if (err < 0) {
+	/* An error occurred. */
+	if (errno == EINTR) {
+	    /* EINTR is ok, just restart the operation. */
+	    timeout.tv_sec = 1;
+	    timeout.tv_usec = 0;
+	} else {
+	    /* An error is bad, we need to abort. */
+	    syslog(LOG_ERR, "select_loop() - select: %m");
+	    exit(1);
+	}
+    } else {
+	/* We got some I/O. */
+	for (i=0; i<=sel->maxfd; i++) {
+	    if (FD_ISSET(i, &tmp_read_set)) {
+		if (sel->fds[i].handle_read == NULL) {
+		    /* Somehow we don't have a handler for this.
+		       Just shut it down. */
+		    sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+		} else {
+		    sel->fds[i].handle_read(i, sel->fds[i].data);
+		}
+	    }
+	    if (FD_ISSET(i, &tmp_write_set)) {
+		if (sel->fds[i].handle_write == NULL) {
+		    /* Somehow we don't have a handler for this.
+		       Just shut it down. */
+		    sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+		} else {
+		    sel->fds[i].handle_write(i, sel->fds[i].data);
+		}
+	    }
+	    if (FD_ISSET(i, &tmp_except_set)) {
+		if (sel->fds[i].handle_except == NULL) {
+		    /* Somehow we don't have a handler for this.
+		       Just shut it down. */
+		    sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+		} else {
+		    sel->fds[i].handle_except(i, sel->fds[i].data);
+		}
 	    }
 	}
     }
+
+    if (got_sighup) {
+	got_sighup = 0;
+	if (user_sighup_handler != NULL) {
+	    user_sighup_handler();
+	}
+    }
+    if (got_sigint) {
+	got_sigint = 0;
+	if (user_sigint_handler != NULL) {
+	    user_sigint_handler();
+	}
+    }
+}
+
+/* The main loop for the program.  This will select on the various
+   sets, then scan for any available I/O to process.  It also monitors
+   the time and call the timeout handlers periodically. */
+void
+sel_select_loop(selector_t *sel)
+{
+    for (;;)
+	sel_select_once(sel);
 }
 
 /* Initialize the select code. */
@@ -883,19 +896,27 @@ sel_free_selector(selector_t *sel)
 }
 
 void
-set_sighup_handler(t_sighup_handler handler)
+set_signal_handler(int sig, t_signal_handler handler)
 {
-    user_sighup_handler = handler;
+    if (sig == SIGHUP)
+	user_sighup_handler = handler;
+    else if (sig == SIGINT)
+	user_sigint_handler = handler;
 }
 
 
-void sighup_handler(int sig)
+static void sighup_handler(int sig)
 {
     got_sighup = 1;
 }
 
+static void sigint_handler(int sig)
+{
+    got_sigint = 1;
+}
+
 void
-setup_sighup(void)
+setup_signals(void)
 {
     struct sigaction act;
     int              err;
@@ -904,6 +925,14 @@ setup_sighup(void)
     sigemptyset(&act.sa_mask);
     act.sa_flags = SA_RESTART;
     err = sigaction(SIGHUP, &act, NULL);
+    if (err) {
+	perror("sigaction");
+    }
+
+    act.sa_handler = sigint_handler;
+    /* Only handle SIGINT once. */
+    act.sa_flags |= SA_RESETHAND;
+    err = sigaction(SIGINT, &act, NULL);
     if (err) {
 	perror("sigaction");
     }
