@@ -1,3 +1,7 @@
+2012-09-26  Corey Minyard <minyard@acm.org>
+
+	* configure.in: Move to 2.8-rc3
+
 2012-09-10  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix a bug reported by Jan-Benedict Glaw, where
