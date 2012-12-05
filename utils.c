@@ -64,7 +64,7 @@ scan_int(char *str)
    In the absence of a host specification, a wildcard address is used.
    The mandatory second part is the port number or a service name. */
 int
-scan_tcp_port(char *str, struct sockaddr_storage *addr)
+scan_tcp_port(char *str, struct sockaddr_storage *addr, socklen_t *addr_len)
 {
     char *strtok_data;
     char *ip;
@@ -87,6 +87,7 @@ scan_tcp_port(char *str, struct sockaddr_storage *addr)
 	return -1;
 
     memcpy(addr, ai->ai_addr, ai->ai_addrlen);
+    *addr_len = ai->ai_addrlen;
     freeaddrinfo(ai);
     return 0;
 }

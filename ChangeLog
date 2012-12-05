@@ -1,3 +1,12 @@
+2012-12-04  Corey Minyard <minyard@acm.org>
+
+	* utils.c, utils.h:  Modify scan_tcp_port to return the length of
+	the socket info returned by getaddrinfo().
+
+	* controller.c, dataxfer.c: Use the length returned by
+	scan_tcp_port(), not the size of sockaddr_storage, for the length
+	of the socket information.
+
 2012-09-26  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move to 2.8-rc3

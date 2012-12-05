@@ -126,6 +126,7 @@ typedef struct port_info
     struct sockaddr_storage tcpport;	/* The TCP port to listen on
 					   for connections to this
 					   terminal device. */
+    socklen_t      tcpport_len;         /* Length of above */
     int            acceptfd;		/* The file descriptor used to
 					   accept connections on the
 					   TCP port. */
@@ -379,6 +380,7 @@ init_port_data(port_info_t *port)
     port->enabled = PORT_DISABLED;
     port->portname = NULL;
     memset(&(port->tcpport), 0, sizeof(port->tcpport));
+    port->tcpport_len = 0;
     port->acceptfd = -1;
     port->tcpfd = -1;
     port->timeout = 0;
@@ -1772,7 +1774,7 @@ startup_port(port_info_t *port)
 
     if (bind(port->acceptfd,
 	     (struct sockaddr *) &port->tcpport,
-	     sizeof(port->tcpport)) == -1) {
+	     port->tcpport_len) == -1) {
 	close(port->acceptfd);
 	return "Unable to bind TCP port";
     }
@@ -2074,7 +2076,9 @@ portconfig(char *portnum,
     }
     strcpy(new_port->portname, portnum);
 
-    if (scan_tcp_port(portnum, &(new_port->tcpport)) == -1) {
+    if (scan_tcp_port(portnum, &new_port->tcpport, &new_port->tcpport_len)
+        == -1)
+    {
 	rv = "port number was invalid";
 	goto errout;
     }
