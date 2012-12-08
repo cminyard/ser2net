@@ -82,7 +82,7 @@ scan_tcp_port(char *str, struct sockaddr_storage *addr, socklen_t *addr_len)
     
     memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_PASSIVE;
-    hints.ai_family = AF_INET6;		/* Needed for kernel 2.6.30+ */
+    hints.ai_family = AF_UNSPEC;
     if (getaddrinfo(ip, port, &hints, &ai))
 	return -1;
 
