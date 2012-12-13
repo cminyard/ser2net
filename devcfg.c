@@ -126,6 +126,71 @@ devconfig(char *instr, dev_info_t *dinfo)
 	} else if (strcmp(pos, "115200") == 0) {
 	    cfsetospeed(termctl, B115200);
 	    cfsetispeed(termctl, B115200);
+#ifdef B230400
+	} else if (strcmp(pos, "230400") == 0) {
+	    cfsetospeed(termctl, B230400);
+	    cfsetispeed(termctl, B230400);
+#endif
+#ifdef B460800
+	} else if (strcmp(pos, "460800") == 0) {
+	    cfsetospeed(termctl, B460800);
+	    cfsetispeed(termctl, B460800);
+#endif
+#ifdef B500000
+	} else if (strcmp(pos, "500000") == 0) {
+	    cfsetospeed(termctl, B500000);
+	    cfsetispeed(termctl, B500000);
+#endif
+#ifdef B576000
+	} else if (strcmp(pos, "576000") == 0) {
+	    cfsetospeed(termctl, B576000);
+	    cfsetispeed(termctl, B576000);
+#endif
+#ifdef B921600
+	} else if (strcmp(pos, "921600") == 0) {
+	    cfsetospeed(termctl, B921600);
+	    cfsetispeed(termctl, B921600);
+#endif
+#ifdef B1000000
+	} else if (strcmp(pos, "1000000") == 0) {
+	    cfsetospeed(termctl, B1000000);
+	    cfsetispeed(termctl, B1000000);
+#endif
+#ifdef B1152000
+	} else if (strcmp(pos, "1152000") == 0) {
+	    cfsetospeed(termctl, B1152000);
+	    cfsetispeed(termctl, B1152000);
+#endif
+#ifdef B1500000
+	} else if (strcmp(pos, "1500000") == 0) {
+	    cfsetospeed(termctl, B1500000);
+	    cfsetispeed(termctl, B1500000);
+#endif
+#ifdef B2000000
+	} else if (strcmp(pos, "2000000") == 0) {
+	    cfsetospeed(termctl, B2000000);
+	    cfsetispeed(termctl, B2000000);
+#endif
+#ifdef B2500000
+	} else if (strcmp(pos, "2500000") == 0) {
+	    cfsetospeed(termctl, B2500000);
+	    cfsetispeed(termctl, B2500000);
+#endif
+#ifdef B3000000
+	} else if (strcmp(pos, "3000000") == 0) {
+	    cfsetospeed(termctl, B3000000);
+	    cfsetispeed(termctl, B3000000);
+#endif
+#ifdef B3500000
+	} else if (strcmp(pos, "3500000") == 0) {
+	    cfsetospeed(termctl, B3500000);
+	    cfsetispeed(termctl, B3500000);
+#endif
+#ifdef B4000000
+	} else if (strcmp(pos, "4000000") == 0) {
+	    cfsetospeed(termctl, B4000000);
+	    cfsetispeed(termctl, B4000000);	    
+#endif
 	} else if (strcmp(pos, "1STOPBIT") == 0) {
 	    termctl->c_cflag &= ~(CSTOPB);
 	} else if (strcmp(pos, "2STOPBITS") == 0) {
@@ -238,6 +303,45 @@ baud_string(int speed)
     case B38400: str = "38400"; break;
     case B57600: str = "57600"; break;
     case B115200: str = "115200"; break;
+#ifdef B230400
+    case B230400: str = "230400"; break;
+#endif
+#ifdef B460800
+    case B460800: str = "460800"; break;
+#endif
+#ifdef B500000
+    case B500000: str = "500000"; break;
+#endif
+#ifdef B576000
+    case B576000: str = "576000"; break;
+#endif
+#ifdef B921600
+    case B921600: str = "921600"; break;
+#endif
+#ifdef B1000000
+    case B1000000: str = "1000000"; break;
+#endif
+#ifdef B1152000
+    case B1152000: str = "1152000"; break;
+#endif
+#ifdef B1500000
+    case B1500000: str = "1500000"; break;
+#endif
+#ifdef B2000000
+    case B2000000: str = "2000000"; break;
+#endif
+#ifdef B2500000
+    case B2500000: str = "2500000"; break;
+#endif
+#ifdef B3000000
+    case B3000000: str = "3000000"; break;
+#endif
+#ifdef B3500000
+    case B3500000: str = "3500000"; break;
+#endif
+#ifdef B4000000
+    case B4000000: str = "4000000"; break;
+#endif
     default: str = "unknown speed";
     }
     return str;
