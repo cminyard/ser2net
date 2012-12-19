@@ -9,3 +9,8 @@ If you want the opposite of ser2net (you want to connect to a "local"
 serial port device that is really remote) then Cyclades has provided
 a tool for this at http://www.coker.com.au/cyclades.  It is capable
 of connecting to ser2net using RFC2217.
+
+If you check this out from git, you won't have all the configure
+programs and files, because those are generated.  Do:
+   autoreconf -i
+to generate everything first.  Then you can run configure.
