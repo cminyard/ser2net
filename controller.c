@@ -719,10 +719,16 @@ controller_init(char *controller_port)
     socklen_t sock_len;
     int    optval = 1;
 
-    if (scan_tcp_port(controller_port, &sock, &sock_len) == -1)
+    if (scan_tcp_port(controller_port, AF_UNSPEC, &sock, &sock_len) == -1)
 	return CONTROLLER_INVALID_TCP_SPEC;
     
     acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
+    if ((acceptfd == -1) && (errno == EAFNOSUPPORT)) {
+	/* Retry IPV4-only */
+	if (scan_tcp_port(controller_port, AF_INET, &sock, &sock_len) == -1)
+	    return CONTROLLER_INVALID_TCP_SPEC;
+	acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
+    }
     if (acceptfd == -1) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	return CONTROLLER_CANT_OPEN_PORT;

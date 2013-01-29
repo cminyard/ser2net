@@ -30,7 +30,7 @@ int scan_int(char *str);
  * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
  * In the absence of a host specification, a wildcard address is used.
  * The mandatory second part is the port number or a service name. */
-int scan_tcp_port(char *str, struct sockaddr_storage *addr,
+int scan_tcp_port(char *str, int domain, struct sockaddr_storage *addr,
                   socklen_t *addr_len);
 
 /* Search for a banner/open/close string by name. */

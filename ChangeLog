@@ -1,3 +1,11 @@
+2013-01-29  Corey Minyard <minyard@acm.org>
+
+	* utils.h, utils.c: Have scan_tcp_port() take the domain.
+
+	* dataxfer.c, controller.c: If the socket open fails with
+	EAFNOSUPPORT, retry the address with IF_INET (IPV4-only).  This
+	way the call will still work even if IPV6 is disabled.
+
 2012-12-19  Corey Minyard <minyard@acm.org>
 
 	* README: Add info on how to generate configure and friends.

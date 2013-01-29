@@ -1749,7 +1749,23 @@ startup_port(port_info_t *port)
 	return NULL;
     }
 
+    if (scan_tcp_port(port->portname, AF_UNSPEC,
+		      &port->tcpport, &port->tcpport_len)
+	== -1)
+    {
+	return "port number was invalid";
+    }
     port->acceptfd = socket(port->tcpport.ss_family, SOCK_STREAM, 0);
+    if ((port->acceptfd == -1) && (errno == EAFNOSUPPORT)) {
+	/* Retry IPV4-only */
+	if (scan_tcp_port(port->portname, AF_INET,
+			  &port->tcpport, &port->tcpport_len)
+	    == -1)
+	{
+	    return "port number was invalid";
+	}
+	port->acceptfd = socket(port->tcpport.ss_family, SOCK_STREAM, 0);
+    }
     if (port->acceptfd == -1) {
 	return "Unable to create TCP socket";
     }
@@ -2076,7 +2092,8 @@ portconfig(char *portnum,
     }
     strcpy(new_port->portname, portnum);
 
-    if (scan_tcp_port(portnum, &new_port->tcpport, &new_port->tcpport_len)
+    if (scan_tcp_port(new_port->portname, AF_UNSPEC,
+		      &new_port->tcpport, &new_port->tcpport_len)
         == -1)
     {
 	rv = "port number was invalid";
@@ -2171,9 +2188,8 @@ portconfig(char *portnum,
 
     if (new_port->enabled != PORT_DISABLED) {
 	rv = startup_port(new_port);
-	if (rv != NULL) {
+	if (rv)
 	    goto errout;
-	}
     }
 
     /* Tack it on to the end of the list of ports. */
