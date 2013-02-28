@@ -1351,13 +1351,15 @@ process_str_to_str(port_info_t *port, char *str, struct timeval *tv,
 
     localtime_r(&tv->tv_sec, &now);
     process_str(port, &now, tv, str, count_op, &len, isfilename);
-    if (len == 0)
-	return NULL;
     if (!lenrv)
 	/* If we don't return a length, append a nil char. */
 	len++;
     bufop.pos = 0;
-    bufop.str = malloc(len);
+    if (len == 0)
+	/* malloc(0) sometimes return NULL */
+	bufop.str = malloc(1);
+    else
+	bufop.str = malloc(len);
     if (!bufop.str) {
 	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
 	return NULL;

@@ -75,7 +75,13 @@ finish_longstr(void)
 static void
 handle_longstr(char *name, char *line, enum str_type type)
 {
-    int line_len = strlen(line);
+    int line_len;
+
+    /* If the user gave an empty string, we get a NULL. */
+    if (!line)
+	line = "";
+
+    line_len = strlen(line);
 
     working_longstr_continued = (line_len > 0) && (line[line_len-1] == '\\');
 

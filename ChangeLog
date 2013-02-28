@@ -1,3 +1,7 @@
+2013-02-28  Corey Minyard <minyard@acm.org>
+	* dataxfer.c, readconfig.c: Properly handle an empty string passed
+	as a banner, openstr, or closestr.
+
 2013-01-29  Corey Minyard <minyard@acm.org>
 
 	* utils.h, utils.c: Have scan_tcp_port() take the domain.
