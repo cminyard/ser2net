@@ -1,4 +1,17 @@
+2013-03-01  Corey Minyard <minyard@acm.org>
+
+	* Makefile.am: Added 'ACLOCAL_AMFLAGS = -I m4' as suggested by
+	libtoolize.
+
+	* configure.in -> configure.ac
+
+	* configure.ac: Add 'AC_CONFIG_MACRO_DIR([m4])' as suggested by
+	libtoolize.
+
+	* configure.ac: Version 2.8.
+
 2013-02-28  Corey Minyard <minyard@acm.org>
+
 	* dataxfer.c, readconfig.c: Properly handle an empty string passed
 	as a banner, openstr, or closestr.
 

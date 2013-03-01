@@ -1,5 +1,5 @@
 AC_INIT(ser2net.c)
-AM_INIT_AUTOMAKE(ser2net, 2.8-rc3)
+AM_INIT_AUTOMAKE(ser2net, 2.8)
 AC_PROG_CC
 AM_PROG_LIBTOOL
 AC_ARG_WITH(uucp-locking,
@@ -18,6 +18,7 @@ then
   AC_HAVE_HEADERS(tcpd.h)
   AC_CHECK_LIB(wrap,main)
 fi
+AC_CONFIG_MACRO_DIR([m4])
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
 AC_OUTPUT([Makefile ser2net.spec])

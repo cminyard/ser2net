@@ -1,4 +1,5 @@
 sbin_PROGRAMS = ser2net
+ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS=-Wall
 ser2net_SOURCES = controller.c dataxfer.c devcfg.c readconfig.c selector.c \
 	ser2net.c utils.c telnet.c buffer.c
