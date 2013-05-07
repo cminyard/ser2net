@@ -85,6 +85,8 @@ buffer_output(struct sbuf *buf, unsigned char *data, unsigned int len)
 	return -1;
 
     end = buf->pos + buf->cursize;
+    if (end > buf->maxsize)
+	end -= buf->maxsize;
     if (end + len > buf->maxsize) {
 	int availend = buf->maxsize - end;
 	memcpy(buf->buf + end, data, availend);

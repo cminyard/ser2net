@@ -1,3 +1,8 @@
+2013-05-07  Corey Minyard <minyard@acm.org>
+
+	* buffer.c: Add a buffer wrap that was missed, identified by
+	Brian Rzycki.
+
 2013-03-01  Corey Minyard <minyard@acm.org>
 
 	* Makefile.am: Added 'ACLOCAL_AMFLAGS = -I m4' as suggested by
