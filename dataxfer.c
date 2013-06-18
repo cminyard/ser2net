@@ -2867,14 +2867,13 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    outopt[2] = val;
 	    telnet_send_option(&port->tn_data, outopt, 3);
 	} else {
-	    uint32_t nval = htonl(val);
 	    /* Basically the same as:
 	     * *((uint32_t *) (outopt+2)) = htonl(val);
 	     * but handles unaligned cases */
-	    outopt[2] = nval >> 24;
-	    outopt[3] = nval >> 16;
-	    outopt[4] = nval >> 8;
-	    outopt[5] = nval;
+	    outopt[2] = val >> 24;
+	    outopt[3] = val >> 16;
+	    outopt[4] = val >> 8;
+	    outopt[5] = val;
 	    telnet_send_option(&port->tn_data, outopt, 6);
 	}
 	break;

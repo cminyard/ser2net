@@ -1,3 +1,10 @@
+2013-06-29  Yegor Yefremov <yegorslists@googlemail.com>
+
+	* dataxfer.c: The baudrate, that will be sent to the client,
+	was converted twice: first with htonl() and then via copying
+	to the buffer. As result 38400 was transfered as 6500960000
+	instead of 6500009600.
+
 2013-05-07  Corey Minyard <minyard@acm.org>
 
 	* buffer.c: Add a buffer wrap that was missed, identified by
