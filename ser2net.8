@@ -71,6 +71,9 @@ addresses on the machine.
 If the port number is zero, that means that standard in/out will be
 used for the only input/output, and only one port should be specified
 in the config.  This way, it can be used from inetd.
+.TP
+.I \-s signature
+Specifies the default RFC2217 signature.
 
 .SH CONTROL PORT
 The control port provides a simple interface for controlling the ports and 
@@ -174,6 +177,10 @@ BANNER:<banner name>:<banner text>
 .PP
 or
 .IP
+SIGNATURE:<signature name>:<signature text>
+.PP
+or
+.IP
 OPENSTR:<openstr name>:<openstr text>
 .PP
 or
@@ -223,7 +230,7 @@ telnet parameters.  This is most useful for using telnet.
 .TP
 .I timeout
 The time (in seconds) before the port will be disconnected if there is
-no activity on it.  A zero value disables this funciton.
+no activity on it.  A zero value disables this function.
 .TP
 .I device
 The  name  of  the  device  to connect to. This must be in the form of
@@ -256,6 +263,8 @@ allows remote control of the serial port parameters via RFC 2217.  See
 the README for more info.
 .I <banner name>
 displays the given banner when a user connects to the port.
+.I <signature name>
+sends RFC2217 signature on clients request.
 .I <openstr name>
 Send the given string to the device when the port is opened.
 .I <closestr name>
@@ -279,7 +288,7 @@ to different files.
 .I [-]hexdump
 turns on (- turns off) hexdump output to all trace files.  Each line in the
 trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
-useful for debuging a binary protocol.
+useful for debugging a binary protocol.
 
 .I [-]timestamp
 adds (- removes) a timestamp to all of the trace files. A timestamp
@@ -339,7 +348,7 @@ escape sequences and a large number of other escape sequences, too:
 .br
 \en - newline
 .br
-\er - carraige return
+\er - carriage return
 .br
 \et - tab
 .br
@@ -398,7 +407,7 @@ escape sequences and a large number of other escape sequences, too:
 \eP -> AM/PM
 .RE
 
-In addition, for backwards compatability because filenames and banners
+In addition, for backwards compatibility because filenames and banners
 used to have different formatting, \es is the serial port parameters
 if in a banner and seconds if in a filename.  Use of this is
 discouraged as it may change in the future.

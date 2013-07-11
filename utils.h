@@ -34,7 +34,7 @@ int scan_tcp_port(char *str, int domain, struct sockaddr_storage *addr,
                   socklen_t *addr_len);
 
 /* Search for a banner/open/close string by name. */
-enum str_type { BANNER, OPENSTR, CLOSESTR };
+enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE };
 char *find_str(char *name, enum str_type *type);
 
 /* Search for a tracefile by name. */

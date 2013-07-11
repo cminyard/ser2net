@@ -29,6 +29,7 @@
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "utils.h"
+#include "telnet.h"
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
 
@@ -315,6 +316,17 @@ handle_config_line(char *inbuf)
 	    return;
 	}
 	handle_longstr(name, str, BANNER);
+	return;
+    }
+
+    if (strcmp(portnum, "SIGNATURE") == 0) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No signature given on line %d", lineno);
+	    return;
+	}
+	handle_longstr(name, str, SIGNATURE);
 	return;
     }
 

@@ -106,4 +106,7 @@ void telnet_init(telnet_data_t *td,
    of RFC2217 ones. */
 extern int cisco_ios_baud_rates;
 
+/* The default rfc2217 signature if none is provided. */
+extern char *rfc2217_signature;
+
 #endif /* _SER2NET_TELNET_H */

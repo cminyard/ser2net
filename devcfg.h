@@ -46,6 +46,9 @@ typedef struct dev_info {
     /* Banner to display at startup, or NULL if none. */
     char *banner;
 
+    /* RFC 2217 signature. */
+    char *signature;
+
     /* String to send to device at startup, or NULL if none. */
     char *openstr;
 

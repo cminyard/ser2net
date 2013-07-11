@@ -52,6 +52,7 @@ int uucp_locking_enabled = 1;
 int cisco_ios_baud_rates = 0;
 
 selector_t *ser2net_sel;
+char *rfc2217_signature = "ser2net";
 
 static char *help_string =
 "%s: Valid parameters are:\n"
@@ -69,7 +70,8 @@ static char *help_string =
 "  -u - Disable UUCP locking\n"
 #endif
 "  -b - Do CISCO IOS baud-rate negotiation, instead of RFC2217\n"
-"  -v - print the program's version and exit\n";
+"  -v - print the program's version and exit\n"
+"  -s - specify a default signature for RFC2217 protocol\n";
 
 void
 reread_config(void)
@@ -235,6 +237,15 @@ main(int argc, char *argv[])
 	case 'v':
 	    printf("%s version %s\n", argv[0], VERSION);
 	    exit(0);
+
+	case 's':
+            i++;
+            if (i == argc) {
+	        fprintf(stderr, "No signature specified\n");
+		exit(1);
+            }
+            rfc2217_signature = argv[i];
+            break;
 
 	default:
 	    fprintf(stderr, "Invalid option: '%s'\n", argv[i]);

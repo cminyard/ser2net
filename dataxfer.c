@@ -2123,11 +2123,14 @@ portconfig(char *portnum,
 
     devinit(&(new_port->dinfo.termctl));
 
-    if (devconfig(devcfg, &new_port->dinfo) == -1)
-    {
+    if (devconfig(devcfg, &new_port->dinfo) == -1) {
 	  rv = "device configuration invalid";
 	  goto errout;
     }
+
+    /* set default signature, if none provided */
+    if (!new_port->dinfo.signature)
+        new_port->dinfo.signature = rfc2217_signature;
 
     new_port->devname = malloc(strlen(devname) + 1);
     if (new_port->devname == NULL) {
@@ -2816,7 +2819,7 @@ static void
 com_port_handler(void *cb_data, unsigned char *option, int len)
 {
     port_info_t *port = cb_data;
-    unsigned char outopt[16];
+    unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
     struct termios termio;
     int val;
     
@@ -2825,11 +2828,18 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
     switch (option[1]) {
     case 0: /* SIGNATURE? */
-	outopt[0] = 44;
-	outopt[1] = 100;
-	strcpy((char *) outopt+2, "ser2net");
-	telnet_send_option(&port->tn_data, outopt, 9);
+	{
+		/* truncate signature, if it exceeds buffer size */
+		int sign_len = strlen(port->dinfo.signature);
+		if (sign_len > (MAX_TELNET_CMD_XMIT_BUF - 2))
+			sign_len = MAX_TELNET_CMD_XMIT_BUF - 2;
+
+		outopt[0] = 44;
+		outopt[1] = 100;
+		strncpy((char *) outopt+2, port->dinfo.signature, sign_len);
+		telnet_send_option(&port->tn_data, outopt, 2 + sign_len);
 	break;
+	}
 
     case 1: /* SET-BAUDRATE */
 	if (cisco_ios_baud_rates) {

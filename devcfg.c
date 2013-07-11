@@ -83,6 +83,7 @@ devconfig(char *instr, dev_info_t *dinfo)
     dinfo->allow_2217 = 0;
     dinfo->disablebreak = 0;
     dinfo->banner = NULL;
+    dinfo->signature = NULL;
     dinfo->openstr = NULL;
     dinfo->closestr = NULL;
     dinfo->trace_read.file = NULL;
@@ -268,9 +269,11 @@ devconfig(char *instr, dev_info_t *dinfo)
 	    /* trace both directions. */
 	    dinfo->trace_both.file = find_tracefile(pos + 3);
 	} else if ((s = find_str(pos, &stype))) {
-	    /* It's a startup banner or open/close string, it's already set. */
+	    /* It's a startup banner, signature or open/close string,
+	       it's already set. */
 	    switch (stype) {
 	    case BANNER: dinfo->banner = s; break;
+	    case SIGNATURE: dinfo->signature = s; break;
 	    case OPENSTR: dinfo->openstr = s; break;
 	    case CLOSESTR: dinfo->closestr = s; break;
 	    }
