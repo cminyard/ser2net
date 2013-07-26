@@ -1,7 +1,7 @@
 2013-07-26  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix a bug in format strings where hex element (\x)
-	would have the wrong values for a-f.
+	would have the wrong values for a-f.  Pointed out by Galen Seitz.
 
 2013-07-26  Corey Minyard <minyard@acm.org>
 
