@@ -1,3 +1,7 @@
+2013-07-26  Corey Minyard <minyard@acm.org>
+
+	* configure.ac: Version 2.9.
+
 2013-07-25  Yegor Yefremov <yegorslists@googlemail.com>
 
 	* Make RFC2217 signature configurable:
