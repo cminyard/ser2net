@@ -1,3 +1,8 @@
+2013-07-28  Corey Minyard <minyard@acm.org>
+
+	* configure.ac: Move to version 2.9.1.  There was an issue with
+	the configure setup.  So autoreconf and redistribute.
+
 2013-07-26  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Fix a bug in format strings where hex element (\x)
