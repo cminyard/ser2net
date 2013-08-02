@@ -717,16 +717,19 @@ controller_init(char *controller_port)
 {
     struct sockaddr_storage sock;
     socklen_t sock_len;
-    int    optval = 1;
+    int optval = 1;
+    int rv;
 
-    if (scan_tcp_port(controller_port, AF_UNSPEC, &sock, &sock_len) == -1)
-	return CONTROLLER_INVALID_TCP_SPEC;
+    rv = scan_tcp_port(controller_port, AF_UNSPEC, &sock, &sock_len);
+    if (rv)
+	goto handle_bad_port;
     
     acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
     if ((acceptfd == -1) && (errno == EAFNOSUPPORT)) {
 	/* Retry IPV4-only */
-	if (scan_tcp_port(controller_port, AF_INET, &sock, &sock_len) == -1)
-	    return CONTROLLER_INVALID_TCP_SPEC;
+	rv = scan_tcp_port(controller_port, AF_INET, &sock, &sock_len);
+	if (rv)
+	    goto handle_bad_port;
 	acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
     }
     if (acceptfd == -1) {
@@ -778,6 +781,14 @@ controller_init(char *controller_port)
 			NULL);
     sel_set_fd_read_handler(ser2net_sel, acceptfd, SEL_FD_HANDLER_ENABLED);
     return 0;
+
+  handle_bad_port:
+    if (rv == EINVAL)
+	return CONTROLLER_INVALID_TCP_SPEC;
+    else if (rv == ENOMEM)
+	return CONTROLLER_OUT_OF_MEMORY;
+    else
+	return -1;
 }
 
 void

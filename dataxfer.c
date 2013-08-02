@@ -1733,6 +1733,7 @@ startup_port(port_info_t *port)
 {
     int optval = 1;
     int portnum;
+    int rv;
 
     portnum = port_from_in_addr(port->tcpport.ss_family,
 				(struct sockaddr *) &port->tcpport);
@@ -1751,21 +1752,18 @@ startup_port(port_info_t *port)
 	return NULL;
     }
 
-    if (scan_tcp_port(port->portname, AF_UNSPEC,
-		      &port->tcpport, &port->tcpport_len)
-	== -1)
-    {
-	return "port number was invalid";
-    }
+    rv = scan_tcp_port(port->portname, AF_UNSPEC,
+		       &port->tcpport, &port->tcpport_len);
+    if (rv)
+	goto handle_bad_port;
+
     port->acceptfd = socket(port->tcpport.ss_family, SOCK_STREAM, 0);
     if ((port->acceptfd == -1) && (errno == EAFNOSUPPORT)) {
 	/* Retry IPV4-only */
-	if (scan_tcp_port(port->portname, AF_INET,
-			  &port->tcpport, &port->tcpport_len)
-	    == -1)
-	{
-	    return "port number was invalid";
-	}
+	rv = scan_tcp_port(port->portname, AF_INET,
+			   &port->tcpport, &port->tcpport_len);
+	if (rv)
+	    goto handle_bad_port;
 	port->acceptfd = socket(port->tcpport.ss_family, SOCK_STREAM, 0);
     }
     if (port->acceptfd == -1) {
@@ -1812,6 +1810,14 @@ startup_port(port_info_t *port)
 			    SEL_FD_HANDLER_ENABLED);
 
     return NULL;
+
+  handle_bad_port:
+    if (rv == EINVAL)
+	return "port specification was invalid";
+    else if (rv == ENOMEM)
+	return "out of memory scanning port";
+    else
+	return strerror(rv);
 }
 
 char *

@@ -103,6 +103,12 @@ reread_config(void)
 	    if (rv == CONTROLLER_INVALID_TCP_SPEC)
 		syslog(LOG_ERR, "Invalid control port specified: %s",
 		       config_port);
+	    else if (rv == CONTROLLER_OUT_OF_MEMORY)
+		syslog(LOG_ERR, "Out of memory opening control port: %s",
+		       config_port);
+	    else if (rv == CONTROLLER_CANT_OPEN_PORT)
+		syslog(LOG_ERR, "Can't open control port: %s",
+		       config_port);
 	    if (rv) {
 		syslog(LOG_ERR, "Control port is disabled");
 		free(config_port);

@@ -1,3 +1,16 @@
+2013-08-07  Corey Minyard <minyard@acm.org>
+
+	* utils.c, controller.c, dataxfer.c: Return an errno from
+	scan_tcp_port() so it can return an out of memory error.
+
+	* controller.c, controller.h, ser2net.c: Add an out of memory
+	return code from controller_init().
+
+2013-07-31 Longshine <longxianghe@gmail.com>
+
+	* utils.c: Copy input string to a temporary buffer before
+	calling strtok_r in scan_tcp_port.
+
 2013-07-28  Corey Minyard <minyard@acm.org>
 
 	* configure.ac: Move to version 2.9.1.  There was an issue with
