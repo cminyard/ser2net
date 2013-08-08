@@ -201,9 +201,10 @@ CONTROLPORT:<port spec>
 .I "TCP port"
 Name  or number of the TCP/IP port to accept connections from for this
 device.  A port number may be of the form [host,]port, such as 127.0.0.1,2000
-or localhost,2000.  If this is specified, it will only bind to the
+or localhost,2000, or ::,2000.  If this is specified, it will only bind to the
 IP address specified for the port.  Otherwise, it will bind to all the
-ports on the machine.
+ports on the machine.  You can specify an IPV6 address in the port, any
+colon before the comma is ignored for parsing fields.
 .TP
 .I state
 Either 

@@ -21,13 +21,15 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <netdb.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "utils.h"
+#include "selector.h"
+
+extern selector_t *ser2net_sel;
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid. */
@@ -65,15 +67,12 @@ scan_int(char *str)
    In the absence of a host specification, a wildcard address is used.
    The mandatory second part is the port number or a service name. */
 int
-scan_tcp_port(char *str, int domain,
-	      struct sockaddr_storage *addr, socklen_t *addr_len)
+scan_tcp_port(char *str, struct addrinfo **rai)
 {
     char *strtok_data, *strtok_buffer;
     char *ip;
     char *port;
     struct addrinfo hints, *ai;
-
-    memset(addr, 0, sizeof(*addr));
 
     strtok_buffer = strdup(str);
     if (!strtok_buffer)
@@ -85,19 +84,20 @@ scan_tcp_port(char *str, int domain,
 	port = ip;
 	ip = NULL;
     }
-    
+
     memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_PASSIVE;
-    hints.ai_family = domain;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(ip, port, &hints, &ai)) {
 	free(strtok_buffer);
 	return EINVAL;
     }
 
     free(strtok_buffer);
-    memcpy(addr, ai->ai_addr, ai->ai_addrlen);
-    *addr_len = ai->ai_addrlen;
-    freeaddrinfo(ai);
+    if (*rai)
+	freeaddrinfo(*rai);
+    *rai = ai;
     return 0;
 }
 
@@ -114,16 +114,49 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
 }
 
 int
-port_from_in_addr(int family, struct sockaddr *addr)
+open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data)
 {
-    switch (family) {
-    case AF_INET6:
-	return ((struct sockaddr_in6 *) addr)->sin6_port;
+    struct addrinfo *rp;
+    int fd;
+    int optval = 1;
+    int family = AF_INET6; /* Try IPV6 first, then IPV4. */
 
-    case AF_INET:
-    default:
-	return ((struct sockaddr_in *) addr)->sin_port;
+  restart:
+    for (rp = ai; rp != NULL; rp = rp->ai_next) {
+	if (family != rp->ai_family)
+	    continue;
+	fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+	if (fd == -1)
+	    continue;
+
+	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
+	    goto next;
+
+	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+		       (void *)&optval, sizeof(optval)) == -1)
+	    goto next;
+
+	check_ipv6_only(rp->ai_family, rp->ai_addr, fd);
+
+	if (bind(fd, rp->ai_addr, rp->ai_addrlen) != 0)
+	    goto next;
+
+	if (listen(fd, 1) != 0)
+	    goto next;
+
+	sel_set_fd_handlers(ser2net_sel, fd, data, readhndlr, NULL, NULL);
+	sel_set_fd_read_handler(ser2net_sel, fd, SEL_FD_HANDLER_ENABLED);
+	return fd;
+
+      next:
+	close(fd);
     }
+    if (family == AF_INET6) {
+	family = AF_INET;
+	goto restart;
+    }
+
+    return -1;
 }
 
 int

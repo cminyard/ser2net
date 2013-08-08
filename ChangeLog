@@ -1,3 +1,24 @@
+2013-08-08  Corey Minyard <minyard@acm.org>
+
+	* utils.c, utils.h, dataxfer.c, controller.c: Rework the handling
+	of addresses to work properly with all the return values of
+	getaddrinfo, and to prefer IPV6 over IPV4 when opening the socket.
+	This means if you specify a number, it will open the IPV6 ::,port
+	address first.  This was a big cleanup, and moved a lot of the
+	base socket handling into utils.h.
+
+	* dataxfer.c: Rework the stdio handling so it doesn't rely on the
+	port number in the address, since that is now gone.
+
+	* dataxfer.c: Set port->closestr to NULL when freeing it to avoid
+	a double-free.
+
+	* readconfig.c, ser2net.8: Rework the input handling so an IPV6
+	can be specified as part of the portnum parameter.  This was hard
+	because IPV6 addresses have ':' in them.  Basically, if there is a
+	"," in the port specification, assume that everything from the
+	beginning of the line to the ':' after the ',' is the port number.
+
 2013-08-07  Corey Minyard <minyard@acm.org>
 
 	* utils.c, controller.c, dataxfer.c: Return an errno from

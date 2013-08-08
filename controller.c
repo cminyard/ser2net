@@ -17,9 +17,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <sys/types.h>
 #include <sys/time.h>
-#include <sys/socket.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -47,6 +45,7 @@ static char *progname = "ser2net-control";
 
 /* This file holds the code that runs the control port. */
 
+static struct addrinfo *cntrl_ai;
 static int acceptfd;	/* The file descriptor for the accept port. */
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -715,80 +714,25 @@ errout2:
 int
 controller_init(char *controller_port)
 {
-    struct sockaddr_storage sock;
-    socklen_t sock_len;
-    int optval = 1;
     int rv;
 
-    rv = scan_tcp_port(controller_port, AF_UNSPEC, &sock, &sock_len);
-    if (rv)
-	goto handle_bad_port;
-    
-    acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
-    if ((acceptfd == -1) && (errno == EAFNOSUPPORT)) {
-	/* Retry IPV4-only */
-	rv = scan_tcp_port(controller_port, AF_INET, &sock, &sock_len);
-	if (rv)
-	    goto handle_bad_port;
-	acceptfd = socket(sock.ss_family, SOCK_STREAM, 0);
+    rv = scan_tcp_port(controller_port, &cntrl_ai);
+    if (rv) {
+	if (rv == EINVAL)
+	    return CONTROLLER_INVALID_TCP_SPEC;
+	else if (rv == ENOMEM)
+	    return CONTROLLER_OUT_OF_MEMORY;
+	else
+	    return -1;
     }
+    
+    acceptfd = open_socket(cntrl_ai, handle_accept_port_read, NULL);
     if (acceptfd == -1) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	return CONTROLLER_CANT_OPEN_PORT;
     }
 
-    if (fcntl(acceptfd, F_SETFL, O_NONBLOCK) == -1) {
-	close(acceptfd);
-	acceptfd = -1;
-	syslog(LOG_ERR, "Could not fcntl the accept port: %m");
-	return CONTROLLER_CANT_OPEN_PORT;
-    }
-
-    if (setsockopt(acceptfd,
-		   SOL_SOCKET,
-		   SO_REUSEADDR,
-		   (void *)&optval,
-		   sizeof(optval)) == -1) {
-	close(acceptfd);
-	acceptfd = -1;
-	syslog(LOG_ERR, "Unable to set reuseaddress on socket: %m");
-	return CONTROLLER_CANT_OPEN_PORT;
-    }
-
-    check_ipv6_only(sock.ss_family,
-		    ((struct sockaddr *) &sock),
-		    acceptfd);
-
-    if (bind(acceptfd, (struct sockaddr *) &sock, sock_len) == -1) {
-	close(acceptfd);
-	acceptfd = -1;
-	syslog(LOG_ERR, "Unable to bind TCP port: %m");
-	return CONTROLLER_CANT_OPEN_PORT;
-    }
-
-    if (listen(acceptfd, 1) != 0) {
-	close(acceptfd);
-	acceptfd = -1;
-	syslog(LOG_ERR, "Unable to listen to TCP port: %m");
-	return CONTROLLER_CANT_OPEN_PORT;
-    }
-
-    sel_set_fd_handlers(ser2net_sel,
-			acceptfd,
-			NULL,
-			handle_accept_port_read,
-			NULL,
-			NULL);
-    sel_set_fd_read_handler(ser2net_sel, acceptfd, SEL_FD_HANDLER_ENABLED);
     return 0;
-
-  handle_bad_port:
-    if (rv == EINVAL)
-	return CONTROLLER_INVALID_TCP_SPEC;
-    else if (rv == ENOMEM)
-	return CONTROLLER_OUT_OF_MEMORY;
-    else
-	return -1;
 }
 
 void

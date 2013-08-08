@@ -264,11 +264,22 @@ free_tracefiles(void)
     }
 }
 
+static int
+startswith(char *str, const char *test, char **strtok_data)
+{
+    int len = strlen(test);
+
+    if ((strncmp(str, test, len) == 0) && (str[len] == ':')) {
+	strtok_r(str, ":", strtok_data);
+	return 1;
+    }
+    return 0;
+}
 
 void
 handle_config_line(char *inbuf)
 {
-    char *portnum, *state, *timeout, *devname, *devcfg;
+    char *portnum, *state, *timeout, *devname, *devcfg, *comma;
     char *strtok_data = NULL;
     char *errstr;
 
@@ -287,13 +298,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    portnum = strtok_r(inbuf, ":", &strtok_data);
-    if (portnum == NULL) {
-	/* An empty line is ok. */
-	return;
-    }
-
-    if (strcmp(portnum, "CONTROLPORT") == 0) {
+    if (startswith(inbuf, "CONTROLPORT", &strtok_data)) {
 	if (config_port)
 	    /*
 	     * The control port has already been configured either on the
@@ -308,7 +313,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    if (strcmp(portnum, "BANNER") == 0) {
+    if (startswith(inbuf, "BANNER", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
@@ -319,7 +324,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    if (strcmp(portnum, "SIGNATURE") == 0) {
+    if (startswith(inbuf, "SIGNATURE", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
@@ -330,7 +335,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    if (strcmp(portnum, "OPENSTR") == 0) {
+    if (startswith(inbuf, "OPENSTR", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
@@ -341,7 +346,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    if (strcmp(portnum, "CLOSESTR") == 0) {
+    if (startswith(inbuf, "CLOSESTR", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
@@ -352,7 +357,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    if (strcmp(portnum, "TRACEFILE") == 0) {
+    if (startswith(inbuf, "TRACEFILE", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
@@ -365,6 +370,21 @@ handle_config_line(char *inbuf)
 	}
 	handle_tracefile(name, str);
 	return;
+    }
+
+    comma = strchr(inbuf, ',');
+    if (comma) {
+	if (!strtok_r(comma, ":", &strtok_data)) {
+	    syslog(LOG_ERR, "Invalid port on line %d", lineno);
+	    return;
+	}
+	portnum = inbuf;
+    } else {
+	portnum = strtok_r(inbuf, ":", &strtok_data);
+	if (portnum == NULL) {
+	    /* An empty line is ok. */
+	    return;
+	}
     }
 
     state = strtok_r(NULL, ":", &strtok_data);
