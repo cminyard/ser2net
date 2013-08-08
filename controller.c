@@ -46,7 +46,8 @@ static char *progname = "ser2net-control";
 /* This file holds the code that runs the control port. */
 
 static struct addrinfo *cntrl_ai;
-static int acceptfd;	/* The file descriptor for the accept port. */
+static int *acceptfds;	/* The file descriptor for the accept port. */
+static unsigned int nr_acceptfds;
 
 static int max_controller_ports = 4;	/* How many control connections
 					   do we allow at a time. */
@@ -726,8 +727,9 @@ controller_init(char *controller_port)
 	    return -1;
     }
     
-    acceptfd = open_socket(cntrl_ai, handle_accept_port_read, NULL);
-    if (acceptfd == -1) {
+    acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL,
+			    &nr_acceptfds);
+    if (acceptfds == NULL) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	return CONTROLLER_CANT_OPEN_PORT;
     }
@@ -738,9 +740,12 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    if (acceptfd == -1)
+    unsigned int i;
+    if (acceptfds != NULL)
 	return;
-    sel_clear_fd_handlers(ser2net_sel, acceptfd);
-    close(acceptfd);
-    acceptfd = -1;
+    for (i = 0; i < nr_acceptfds; i++) {
+	sel_clear_fd_handlers(ser2net_sel, acceptfds[i]);
+	close(acceptfds[i]);
+    }
+    acceptfds = NULL;
 }

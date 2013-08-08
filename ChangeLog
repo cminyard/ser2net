@@ -19,6 +19,11 @@
 	"," in the port specification, assume that everything from the
 	beginning of the line to the ':' after the ',' is the port number.
 
+	* utils.c, utils.h, dataxfer.c, controller.c: Modified address
+	handling so that ser2net opens all the addresses returned by
+	getaddrinfo, not just the first one.  That should make things
+	work correctly in a lot more cases.
+
 2013-08-07  Corey Minyard <minyard@acm.org>
 
 	* utils.c, controller.c, dataxfer.c: Return an errno from

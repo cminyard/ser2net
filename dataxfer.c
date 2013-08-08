@@ -122,9 +122,10 @@ typedef struct port_info
     char               *portname;       /* The name given for the port. */
     int                is_stdio;	/* Do stdio on the port? */
     struct addrinfo    *ai;		/* The address list for the portname. */
-    int            acceptfd;		/* The file descriptor used to
+    int            *acceptfds;		/* The file descriptor used to
 					   accept connections on the
 					   TCP port. */
+    unsigned int   nr_acceptfds;
     int            tcpfd;		/* When connected, the file
                                            descriptor for the TCP
                                            port used for I/O. */
@@ -374,7 +375,7 @@ init_port_data(port_info_t *port)
 {
     port->enabled = PORT_DISABLED;
     port->portname = NULL;
-    port->acceptfd = -1;
+    port->acceptfds = NULL;
     port->tcpfd = -1;
     port->timeout = 0;
     port->next = NULL;
@@ -1732,7 +1733,7 @@ startup_port(port_info_t *port)
 	    write_ignore_fail(0, err, strlen(err));
 	    exit(1);
 	} else {
-	    port->acceptfd = -1;
+	    port->acceptfds = NULL;
 	    port->tcpfd = 0; /* stdin */
 	    if (setup_tcp_port(port) == -1)
 		exit(1);
@@ -1740,11 +1741,22 @@ startup_port(port_info_t *port)
 	return NULL;
     }
 
-    port->acceptfd = open_socket(port->ai, handle_accept_port_read, port);
-    if (port->acceptfd == -1)
+    port->acceptfds = open_socket(port->ai, handle_accept_port_read, port,
+				  &port->nr_acceptfds);
+    if (port->acceptfds == NULL)
 	return "Unable to create TCP socket";
 
     return NULL;
+}
+
+static void
+redo_port_handlers(port_info_t *port)
+{
+    unsigned int i;
+
+    for (i = 0; i < port->nr_acceptfds; i++)
+	sel_set_fd_handlers(ser2net_sel, port->acceptfds[i], port,
+			    handle_accept_port_read, NULL, NULL);
 }
 
 char *
@@ -1756,13 +1768,18 @@ change_port_state(port_info_t *port, int state)
 	return rv;
 
     if (state == PORT_DISABLED) {
-	if (port->acceptfd != -1) {
-	    sel_set_fd_read_handler(ser2net_sel,
-				    port->acceptfd,
-				    SEL_FD_HANDLER_DISABLED);
-	    sel_clear_fd_handlers(ser2net_sel, port->acceptfd);
-	    close(port->acceptfd);
-	    port->acceptfd = -1;
+	if (port->acceptfds != NULL) {
+	    unsigned int i;
+
+	    for (i = 0; i < port->nr_acceptfds; i++) {
+		sel_set_fd_read_handler(ser2net_sel,
+					port->acceptfds[i],
+					SEL_FD_HANDLER_DISABLED);
+		sel_clear_fd_handlers(ser2net_sel, port->acceptfds[i]);
+		close(port->acceptfds[i]);
+	    }
+	    free(port->acceptfds);
+	    port->acceptfds = NULL;
 	}
     } else if (port->enabled == PORT_DISABLED) {
 	rv = startup_port(port);
@@ -1786,6 +1803,8 @@ free_port(port_info_t *port)
 	free_port(port->new_config);
     if (port->ai)
 	freeaddrinfo(port->ai);
+    if (port->acceptfds)
+	free(port->acceptfds);
     free(port);
 }
 
@@ -1871,14 +1890,10 @@ finish_shutdown_port(port_info_t *port)
 	}
 	if (curr != NULL) {
 	    port = curr->new_config;
-	    port->acceptfd = curr->acceptfd;
-	    sel_set_fd_handlers(ser2net_sel,
-				port->acceptfd,
-				port,
-				handle_accept_port_read,
-				NULL,
-				NULL);
-	    curr->acceptfd = -1;
+	    port->acceptfds = curr->acceptfds;
+	    port->nr_acceptfds = curr->nr_acceptfds;
+	    curr->acceptfds = NULL;
+	    redo_port_handlers(port);
 	    port->next = curr->next;
 	    if (prev == NULL) {
 		ports = port;
@@ -2092,15 +2107,11 @@ portconfig(char *portnum,
 		int new_state = new_port->enabled;
 
 		new_port->enabled = curr->enabled;
-		new_port->acceptfd = curr->acceptfd;
+		new_port->acceptfds = curr->acceptfds;
+		new_port->nr_acceptfds = curr->nr_acceptfds;
 		curr->enabled = PORT_DISABLED;
-		curr->acceptfd = -1;
-		sel_set_fd_handlers(ser2net_sel,
-				    new_port->acceptfd,
-				    new_port,
-				    handle_accept_port_read,
-				    NULL,
-				    NULL);
+		curr->acceptfds = NULL;
+		redo_port_handlers(new_port);
 
 		/* Just replace with the new data. */
 		if (prev == NULL) {

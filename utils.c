@@ -113,50 +113,69 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
     }
 }
 
-int
-open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data)
+int *
+open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
+	    unsigned int *nr_fds)
 {
     struct addrinfo *rp;
-    int fd;
     int optval = 1;
     int family = AF_INET6; /* Try IPV6 first, then IPV4. */
+    int *fds;
+    unsigned int curr_fd = 0;
+    unsigned int max_fds = 0;
+
+    for (rp = ai; rp != NULL; rp = rp->ai_next)
+	max_fds++;
+
+    fds = malloc(sizeof(int) * max_fds);
+    if (!fds)
+	return NULL;
 
   restart:
     for (rp = ai; rp != NULL; rp = rp->ai_next) {
 	if (family != rp->ai_family)
 	    continue;
-	fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-	if (fd == -1)
+
+	fds[curr_fd] = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+	if (fds[curr_fd] == -1)
 	    continue;
 
-	if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
+	if (fcntl(fds[curr_fd], F_SETFL, O_NONBLOCK) == -1)
 	    goto next;
 
-	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+	if (setsockopt(fds[curr_fd], SOL_SOCKET, SO_REUSEADDR,
 		       (void *)&optval, sizeof(optval)) == -1)
 	    goto next;
 
-	check_ipv6_only(rp->ai_family, rp->ai_addr, fd);
+	check_ipv6_only(rp->ai_family, rp->ai_addr, fds[curr_fd]);
 
-	if (bind(fd, rp->ai_addr, rp->ai_addrlen) != 0)
+	if (bind(fds[curr_fd], rp->ai_addr, rp->ai_addrlen) != 0)
 	    goto next;
 
-	if (listen(fd, 1) != 0)
+	if (listen(fds[curr_fd], 1) != 0)
 	    goto next;
 
-	sel_set_fd_handlers(ser2net_sel, fd, data, readhndlr, NULL, NULL);
-	sel_set_fd_read_handler(ser2net_sel, fd, SEL_FD_HANDLER_ENABLED);
-	return fd;
+	sel_set_fd_handlers(ser2net_sel, fds[curr_fd], data,
+			    readhndlr, NULL, NULL);
+	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd],
+				SEL_FD_HANDLER_ENABLED);
+	curr_fd++;
+	continue;
 
       next:
-	close(fd);
+	close(fds[curr_fd]);
     }
     if (family == AF_INET6) {
 	family = AF_INET;
 	goto restart;
     }
 
-    return -1;
+    if (curr_fd == 0) {
+	free(fds);
+	fds = NULL;
+    }
+    *nr_fds = curr_fd;
+    return fds;
 }
 
 int

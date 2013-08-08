@@ -35,9 +35,18 @@ int scan_int(char *str);
  * The mandatory second part is the port number or a service name. */
 int scan_tcp_port(char *str, struct addrinfo **ai);
 
-/* Open a socket given the addrinfo list */
-int open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
-		void *data);
+/* 
+ * Open a set of sockets given the addrinfo list, one per address.
+ * Return the actual number of sockets opened in nr_fds.  Set the
+ * I/O handler to readhndlr, with the given data.
+ *
+ * Note that if the function is unable to open an address, it just
+ * goes on.  It returns NULL if it is unable to open any addresses.
+ * Also, open IPV6 addresses first.  This way, addresses in shared
+ * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
+ */
+int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
+		 void *data, unsigned int *nr_fds);
 
 /* Search for a banner/open/close string by name. */
 enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE };
