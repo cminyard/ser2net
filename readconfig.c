@@ -25,6 +25,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <syslog.h>
+#include <stdarg.h>
 
 #include "dataxfer.h"
 #include "readconfig.h"
@@ -156,8 +157,8 @@ out:
 	finish_longstr();
 }
 
-char *
-find_str(char *name, enum str_type *type)
+const char *
+find_str(const char *name, enum str_type *type)
 {
     struct longstr_s *longstr = longstrs;
 
@@ -236,8 +237,8 @@ handle_tracefile(char *name, char *fname)
     tracefiles = new_tracefile;
 }
 
-char *
-find_tracefile(char *name)
+const char *
+find_tracefile(const char *name)
 {
     struct tracefile_s *tracefile = tracefiles;
 
@@ -276,12 +277,29 @@ startswith(char *str, const char *test, char **strtok_data)
     return 0;
 }
 
+static int
+syslog_eprint(struct absout *e, const char *str, ...)
+{
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    syslog(LOG_ERR, "%s on line %d", buf, *((int *) e->data));
+    return 0;
+}
+
+static struct absout syslog_eout = {
+    .out = syslog_eprint,
+    .data = &lineno
+};
+
 void
 handle_config_line(char *inbuf)
 {
     char *portnum, *state, *timeout, *devname, *devcfg, *comma;
     char *strtok_data = NULL;
-    char *errstr;
 
     lineno++;
 
@@ -411,11 +429,8 @@ handle_config_line(char *inbuf)
 	devcfg = "";
     }
 
-    errstr = portconfig(portnum, state, timeout, devname, devcfg,
-			config_num);
-    if (errstr != NULL) {
-	syslog(LOG_ERR, "Error on line %d, %s", lineno, errstr);
-    }
+    portconfig(&syslog_eout, portnum, state, timeout, devname, devcfg,
+	       config_num);
 }
 
 /* Read the specified configuration file and call the routine to

@@ -26,13 +26,19 @@
 extern int uucp_locking_enabled;
 #endif
 
+struct absout {
+    int (*out)(struct absout *e, const char *str, ...);
+    void *data;
+};
+
 /* Create a port given the criteria. */
-char * portconfig(char *portnum,
-		  char *state,
-		  char *timeout,
-		  char *devname,
-		  char *devcfg,
-		  int  config_num);
+int portconfig(struct absout *eout,
+	       char *portnum,
+	       char *state,
+	       char *timeout,
+	       char *devname,
+	       char *devcfg,
+	       int  config_num);
 
 /* Shut down all the ports, and provide a way to check when done. */
 void shutdown_ports(void);

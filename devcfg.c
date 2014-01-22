@@ -287,15 +287,15 @@ devinit(struct termios *termctl)
    in instr.  These strings are described in the man page for this
    program. */
 static int
-devconfig(struct devcfg_data *d, char *instr, dev_info_t *dinfo)
+devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
+	  int (*otherconfig)(void *data, struct absout *eout, const char *item),
+	  void *data)
 {
     struct termios *termctl = &d->termctl;
     char *str;
     char *pos;
     char *strtok_data;
     int  rv = 0;
-    enum str_type stype;
-    char *s;
 
     devinit(termctl);
 
@@ -304,20 +304,6 @@ devconfig(struct devcfg_data *d, char *instr, dev_info_t *dinfo)
 	return -1;
     }
 
-    dinfo->allow_2217 = 0;
-    dinfo->banner = NULL;
-    dinfo->signature = NULL;
-    dinfo->openstr = NULL;
-    dinfo->closestr = NULL;
-    dinfo->trace_read.file = NULL;
-    dinfo->trace_read.hexdump = 0;
-    dinfo->trace_read.timestamp = 0;
-    dinfo->trace_write.file = NULL;
-    dinfo->trace_write.hexdump = 0;
-    dinfo->trace_write.timestamp = 0;
-    dinfo->trace_both.file = NULL;
-    dinfo->trace_both.hexdump = 0;
-    dinfo->trace_both.timestamp = 0;
     pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
@@ -450,66 +436,17 @@ devconfig(struct devcfg_data *d, char *instr, dev_info_t *dinfo)
             termctl->c_cflag |= HUPCL;  
         } else if (strcmp(pos, "-HANGUP_WHEN_DONE") == 0) {
             termctl->c_cflag &= ~HUPCL;
-        } else if (strcmp(pos, "remctl") == 0) {
-	    dinfo->allow_2217 = 1;
 	} else if (strcmp(pos, "NOBREAK") == 0) {
 	    d->disablebreak = 1;
-	} else if (strcmp(pos, "hexdump") == 0 ||
-	           strcmp(pos, "-hexdump") == 0) {
-	    dinfo->trace_read.hexdump = (*pos != '-');
-	    dinfo->trace_write.hexdump = (*pos != '-');
-	    dinfo->trace_both.hexdump = (*pos != '-');
-	} else if (strcmp(pos, "timestamp") == 0 ||
-	           strcmp(pos, "-timestamp") == 0) {
-	    dinfo->trace_read.timestamp = (*pos != '-');
-	    dinfo->trace_write.timestamp = (*pos != '-');
-	    dinfo->trace_both.timestamp = (*pos != '-');
-	} else if (strcmp(pos, "tr-hexdump") == 0 ||
-	           strcmp(pos, "-tr-hexdump") == 0) {
-	    dinfo->trace_read.hexdump = (*pos != '-');
-	} else if (strcmp(pos, "tr-timestamp") == 0 ||
-	           strcmp(pos, "-tr-timestamp") == 0) {
-	    dinfo->trace_read.timestamp = (*pos != '-');
-	} else if (strcmp(pos, "tw-hexdump") == 0 ||
-	           strcmp(pos, "-tw-hexdump") == 0) {
-	    dinfo->trace_write.hexdump = (*pos != '-');
-	} else if (strcmp(pos, "tw-timestamp") == 0 ||
-	           strcmp(pos, "-tw-timestamp") == 0) {
-	    dinfo->trace_write.timestamp = (*pos != '-');
-	} else if (strcmp(pos, "tb-hexdump") == 0 ||
-	           strcmp(pos, "-tb-hexdump") == 0) {
-	    dinfo->trace_both.hexdump = (*pos != '-');
-	} else if (strcmp(pos, "tb-timestamp") == 0 ||
-	           strcmp(pos, "-tb-timestamp") == 0) {
-	    dinfo->trace_both.timestamp = (*pos != '-');
-	} else if (strncmp(pos, "tr=", 3) == 0) {
-	    /* trace read, data from the port to the socket */
-	    dinfo->trace_read.file = find_tracefile(pos + 3);
-	} else if (strncmp(pos, "tw=", 3) == 0) {
-	    /* trace write, data from the socket to the port */
-	    dinfo->trace_write.file = find_tracefile(pos + 3);
-	} else if (strncmp(pos, "tb=", 3) == 0) {
-	    /* trace both directions. */
-	    dinfo->trace_both.file = find_tracefile(pos + 3);
-	} else if ((s = find_str(pos, &stype))) {
-	    /* It's a startup banner, signature or open/close string,
-	       it's already set. */
-	    switch (stype) {
-	    case BANNER: dinfo->banner = s; break;
-	    case SIGNATURE: dinfo->signature = s; break;
-	    case OPENSTR: dinfo->openstr = s; break;
-	    case CLOSESTR: dinfo->closestr = s; break;
-	    }
 	} else {
-	    /* fprintf( stderr, "Unknown token %s\n", pos );     */
-	    rv = -1;
-	    goto out;
+	    if (otherconfig(data, eout, pos) == -1)
+		goto out;
 	}
 
 	pos = strtok_r(NULL, ", \t", &strtok_data);
     }
 
-out:
+ out:
     free(str);
     return rv;
 }
@@ -614,7 +551,7 @@ devcfg_serparm_to_str(struct io *io, char *str, int strlen)
 
 /* Send the serial port device configuration to the control port. */
 static void
-devcfg_show_devcfg(struct io *io, struct controller_info *cntlr)
+devcfg_show_devcfg(struct io *io, struct absout *out)
 {
     struct devcfg_data *d = io->my_data;
     struct termios *termctl = &d->termctl;
@@ -632,24 +569,22 @@ devcfg_show_devcfg(struct io *io, struct controller_info *cntlr)
     int     hangup_when_done = termctl->c_cflag & HUPCL;
     char    *str;
 
-    str = baud_string(speed);
-    controller_output(cntlr, str, strlen(str));
-    controller_output(cntlr, " ", 1);
+    out->out(out, "%s ", baud_string(speed));
 
     if (xon && xoff && xany) {
-      controller_output(cntlr, "XONXOFF ", 8);
+      out->out(out, "XONXOFF ");
     }      
     
     if (flow_rtscts) {
-      controller_output(cntlr, "RTSCTS ", 7);
+      out->out(out, "RTSCTS ");
     }
 
     if (clocal) {
-      controller_output(cntlr, "LOCAL ", 6);
+      out->out(out, "LOCAL ");
     }
 
     if (hangup_when_done) {
-      controller_output(cntlr, "HANGUP_WHEN_DONE ", 17);
+      out->out(out, "HANGUP_WHEN_DONE ");
     }
 
     if (stopbits) {
@@ -657,16 +592,14 @@ devcfg_show_devcfg(struct io *io, struct controller_info *cntlr)
     } else {
 	str = "1STOPBIT";
     }
-    controller_output(cntlr, str, strlen(str));
-    controller_output(cntlr, " ", 1);
+    out->out(out, "%s ", str);
 
     switch (databits) {
     case CS7: str = "7DATABITS"; break;
     case CS8: str = "8DATABITS"; break;
     default: str = "unknown databits";
     }
-    controller_output(cntlr, str, strlen(str));
-    controller_output(cntlr, " ", 1);
+    out->out(out, "%s ", str);
 
     if (parity_enabled) {
 	if (parity) {
@@ -677,7 +610,7 @@ devcfg_show_devcfg(struct io *io, struct controller_info *cntlr)
     } else {
 	str = "NONE";
     }
-    controller_output(cntlr, str, strlen(str));
+    out->out(out, "%s", str);
 }
 
 static int
@@ -730,7 +663,7 @@ out:
 }
 
 static void
-devcfg_show_devcontrol(struct io *io, struct controller_info *cntlr)
+devcfg_show_devcontrol(struct io *io, struct absout *out)
 {
     struct devcfg_data *d = io->my_data;
     char *str;
@@ -743,16 +676,14 @@ devcfg_show_devcontrol(struct io *io, struct controller_info *cntlr)
     } else {
 	str = "RTSLO";
     }
-    controller_output(cntlr, str, strlen(str));
-    controller_output(cntlr, " ", 1);
+    out->out(out, "%s ", str);
 
     if (status & TIOCM_DTR) {
 	str = "DTRHI";
     } else {
 	str = "DTRLO";
     }
-    controller_output(cntlr, str, strlen(str));
-    controller_output(cntlr, " ", 1);
+    out->out(out, "%s ", str);
 }
 
 static void
@@ -1233,11 +1164,14 @@ static void devcfg_free(struct io *io)
 }
 
 static int
-devcfg_reconfig(struct io *io, char *instr, dev_info_t *dinfo)
+devcfg_reconfig(struct io *io, struct absout *eout, const char *instr,
+		int (*otherconfig)(void *data, struct absout *eout,
+				   const char *item),
+		void *data)
 {
     struct devcfg_data *d = io->my_data;
 
-    return devconfig(d, instr, dinfo);
+    return devconfig(d, eout, instr, otherconfig, data);
 }
 
 static struct io_f devcfg_io_f = {
@@ -1265,7 +1199,11 @@ static struct io_f devcfg_io_f = {
     .serparm_to_str = devcfg_serparm_to_str
 };
 
-int devcfg_init(struct io *io, char *instr, dev_info_t *dinfo)
+int
+devcfg_init(struct io *io, struct absout *eout, const char *instr,
+	    int (*otherconfig)(void *data, struct absout *eout,
+			       const char *item),
+	    void *data)
 {
     struct devcfg_data *d;
 
@@ -1275,7 +1213,7 @@ int devcfg_init(struct io *io, char *instr, dev_info_t *dinfo)
     memset(d, 0, sizeof(*d));
     d->devfd = -1;
 
-    if (devconfig(d, instr, dinfo) == -1) {
+    if (devconfig(d, eout, instr, otherconfig, data) == -1) {
 	free(d);
 	return -1;
     }

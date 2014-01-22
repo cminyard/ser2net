@@ -50,10 +50,10 @@ int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 
 /* Search for a banner/open/close string by name. */
 enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE };
-char *find_str(char *name, enum str_type *type);
+const char *find_str(const char *name, enum str_type *type);
 
 /* Search for a tracefile by name. */
-char *find_tracefile(char *name);
+const char *find_tracefile(const char *name);
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 

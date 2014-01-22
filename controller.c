@@ -19,6 +19,7 @@
 
 #include <sys/time.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
@@ -184,7 +185,7 @@ controller_output(struct controller_info *cntlr,
 	    newbuf = malloc(new_size);
 
 	    if (newbuf == NULL) {
-		/* Out of memory, just ignore thre request */
+		/* Out of memory, just ignore the request */
 		return;
 	    }
 
@@ -222,6 +223,29 @@ controller_output(struct controller_info *cntlr,
 	sel_set_fd_write_handler(ser2net_sel, cntlr->tcpfd,
 				 SEL_FD_HANDLER_ENABLED);
     }
+}
+
+int
+controller_voutputf(struct controller_info *cntlr, const char *str, va_list ap)
+{
+    char buffer[1024];
+    int rv;
+
+    rv = vsnprintf(buffer, sizeof(buffer), str, ap);
+    controller_output(cntlr, buffer, rv);
+    return rv;
+}
+
+int
+controller_outputf(struct controller_info *cntlr, const char *str, ...)
+{
+    va_list ap;
+    int rv;
+
+    va_start(ap, str);
+    rv = controller_voutputf(cntlr, str, ap);
+    va_end(ap);
+    return rv;
 }
 
 /* Write some data directly to the controllers output port. */

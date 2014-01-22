@@ -6,6 +6,13 @@
 	* utils.c, utils.h, controller.h, controller.c: Fix some const
 	correctness issues
 
+	* conroller.c, controller.h: Add printf-style output.
+
+	* dataxfer.h, dataxfer.c, devcfg.h, devcfg.c, io.h, readconfig:
+	Rework the error and output handling to make it more flexible, so
+	errors can be output with useful information from the lower
+	levels.
+
 2013-08-08  Corey Minyard <minyard@acm.org>
 
 	* utils.c, utils.h, dataxfer.c, controller.c: Rework the handling

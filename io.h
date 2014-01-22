@@ -20,8 +20,8 @@
 #ifndef SER2NET_IO_H
 #define SER2NET_IO_H
 
-#include "controller.h"
 #include "devcfg.h"
+#include "dataxfer.h"
 
 struct io_f;
 
@@ -42,7 +42,10 @@ struct io {
 struct io_f {
     int (*setup)(struct io *io, const char *name, const char **errstr);
     void (*shutdown)(struct io *io);
-    int (*reconfig)(struct io *io, char *instr, dev_info_t *dinfo);
+    int (*reconfig)(struct io *io, struct absout *eout, const char *instr,
+	    int (*otherconfig)(void *data, struct absout *eout,
+			       const char *item),
+	    void *data);
     int (*read)(struct io *io, void *buf, size_t size);
     int (*write)(struct io *io, void *buf, size_t size);
     void (*read_handler_enable)(struct io *io, int enabled);
@@ -51,8 +54,8 @@ struct io_f {
     int (*send_break)(struct io *io);
     int (*get_modem_state)(struct io *io, unsigned char *val);
     int (*set_devcontrol)(struct io *io, const char *controls);
-    void (*show_devcontrol)(struct io *io, struct controller_info *cntlr);
-    void (*show_devcfg)(struct io *io, struct controller_info *cntlr);
+    void (*show_devcontrol)(struct io *io, struct absout *out);
+    void (*show_devcfg)(struct io *io, struct absout *out);
     int (*baud_rate)(struct io *io, int *val);
     int (*data_size)(struct io *io, unsigned char *val);
     int (*parity)(struct io *io, unsigned char *val);

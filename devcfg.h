@@ -21,7 +21,7 @@
 #define DEVCFG
 
 #include <termios.h>
-#include "controller.h"
+#include "dataxfer.h"
 
 struct io;
 
@@ -29,7 +29,7 @@ typedef struct trace_info_s
 {
     int            hexdump;     /* output each block as a hexdump */
     int            timestamp;   /* preceed each line with a timestamp */
-    char          *file;        /* open file.  NULL if not used */
+    const char     *file;        /* open file.  NULL if not used */
 } trace_info_t;
 
 typedef struct dev_info {
@@ -37,16 +37,16 @@ typedef struct dev_info {
     int allow_2217;
 
     /* Banner to display at startup, or NULL if none. */
-    char *banner;
+    const char *banner;
 
     /* RFC 2217 signature. */
-    char *signature;
+    const char *signature;
 
     /* String to send to device at startup, or NULL if none. */
-    char *openstr;
+    const char *openstr;
 
     /* String to send to device at close, or NULL if none. */
-    char *closestr;
+    const char *closestr;
 
     /*
      * File to read/write trace, NULL if none.  If the same, then
@@ -57,6 +57,9 @@ typedef struct dev_info {
     trace_info_t trace_both;
 } dev_info_t;
 
-int devcfg_init(struct io *io, char *instr, dev_info_t *dinfo);
+int devcfg_init(struct io *io, struct absout *eout, const char *instr,
+		int (*otherconfig)(void *data, struct absout *eout,
+				   const char *item),
+		void *data);
 
 #endif /* DEVCFG */

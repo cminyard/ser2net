@@ -20,6 +20,8 @@
 #ifndef CONTROLLER
 #define CONTROLLER
 
+#include <stdarg.h>
+
 #define CONTROLLER_INVALID_TCP_SPEC	-1
 #define CONTROLLER_CANT_OPEN_PORT	-2
 #define CONTROLLER_OUT_OF_MEMORY	-3
@@ -35,6 +37,16 @@ struct controller_info;
    to write, the count field is the number of bytes to write. */
 void controller_output(struct controller_info *cntlr,
 		       const char *data, int count);
+
+/* Send some output to a controller port.  The data field is the data
+   to write, the count field is the number of bytes to write. */
+int controller_outputf(struct controller_info *cntlr,
+		       const char *str, ...);
+
+/* Send some output to a controller port.  The data field is the data
+   to write, the count field is the number of bytes to write. */
+int controller_voutputf(struct controller_info *cntlr,
+			const char *str, va_list ap);
 
 /* Write some data directly to the controllers output port. */
 void controller_write(struct controller_info *cntlr,
