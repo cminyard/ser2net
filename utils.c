@@ -197,7 +197,7 @@ write_full(int fd, char *data, size_t count)
 }
 
 void
-write_ignore_fail(int fd, char *data, size_t count)
+write_ignore_fail(int fd, const char *data, size_t count)
 {
     ssize_t written;
 

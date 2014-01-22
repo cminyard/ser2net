@@ -157,7 +157,7 @@ shutdown_controller(controller_info_t *cntlr)
    buffer as necessary. */
 void
 controller_output(struct controller_info *cntlr,
-		  char                   *data,
+		  const char             *data,
 		  int                    count)
 {
     if (cntlr->outbuf != NULL) {
@@ -226,7 +226,7 @@ controller_output(struct controller_info *cntlr,
 
 /* Write some data directly to the controllers output port. */
 void
-controller_write(struct controller_info *cntlr, char *data, int count)
+controller_write(struct controller_info *cntlr, const char *data, int count)
 {
     write_ignore_fail(cntlr->tcpfd, data, count);
 }
