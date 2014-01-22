@@ -26,9 +26,231 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <errno.h>
+#include <syslog.h>
 
+#include "selector.h"
 #include "devcfg.h"
 #include "utils.h"
+#include "telnet.h"
+#include "dataxfer.h"
+
+#include <assert.h>
+
+extern selector_t *ser2net_sel;
+
+struct devcfg_data {
+    /* Information about the terminal device. */
+    char           *devname;		/* The full path to the device */
+    int            devfd;		/* The file descriptor for the
+                                           device, only valid if the
+                                           TCP port is open. */
+    struct termios termctl;
+
+    /* Holds whether break is on or not. */
+    int break_set;
+
+    /* Disable break-commands */
+    int disablebreak;
+};
+
+static struct baud_rates_s {
+    int real_rate;
+    int val;
+    int cisco_ios_val;
+} baud_rates[] =
+{
+    { 50, B50, -1 },
+    { 75, B75, -1 },
+    { 110, B110, -1 },
+    { 134, B134, -1 },
+    { 150, B150, -1 },
+    { 200, B200, -1 },
+    { 300, B300, 3 },
+    { 600, B600 , 4},
+    { 1200, B1200, 5 },
+    { 1800, B1800, -1 },
+    { 2400, B2400, 6 },
+    { 4800, B4800, 7 },
+    { 9600, B9600, 8 },
+    /* We don't support 14400 baud */
+    { 19200, B19200, 10 },
+    /* We don't support 28800 baud */
+    { 38400, B38400, 12 },
+    { 57600, B57600, 13 },
+    { 115200, B115200, 14 },
+    { 230400, B230400, 15 },
+    /* We don't support 460800 baud */
+};
+#define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
+
+int
+get_baud_rate(int rate, int *val)
+{
+    unsigned int i;
+    for (i=0; i<BAUD_RATES_LEN; i++) {
+	if (cisco_ios_baud_rates) {
+	    if (rate == baud_rates[i].cisco_ios_val) {
+		*val = baud_rates[i].val;
+		return 1;
+	    }
+	} else {
+	    if (rate == baud_rates[i].real_rate) {
+		*val = baud_rates[i].val;
+		return 1;
+	    }
+	}
+    }
+
+    return 0;
+}
+
+void
+get_rate_from_baud_rate(int baud_rate, int *val)
+{
+    unsigned int i;
+    for (i=0; i<BAUD_RATES_LEN; i++) {
+	if (baud_rate == baud_rates[i].val) {
+	    if (cisco_ios_baud_rates) {
+		if (baud_rates[i].cisco_ios_val < 0)
+		    /* We are at a baud rate unsupported by the
+		       enumeration, just return zero. */
+		    *val = 0;
+		else
+		    *val = baud_rates[i].cisco_ios_val;
+	    } else {
+		*val = baud_rates[i].real_rate;
+	    }
+	    return;
+	}
+    }
+}
+
+#ifdef USE_UUCP_LOCKING
+static char *uucp_lck_dir = "/var/lock";
+
+static int
+uucp_fname_lock_size(char *devname)
+{
+    char *ptr;
+
+    (ptr = strrchr(devname, '/'));
+    if (ptr == NULL) {
+	ptr = devname;
+    } else {
+	ptr = ptr + 1;
+    }
+
+    return 7 + strlen(uucp_lck_dir) + strlen(ptr);
+}
+
+static void
+uucp_fname_lock(char *buf, char *devname)
+{
+    char *ptr;
+
+    (ptr = strrchr(devname, '/'));
+    if (ptr == NULL) {
+	ptr = devname;
+    } else {
+	ptr = ptr + 1;
+    }
+    sprintf(buf, "%s/LCK..%s", uucp_lck_dir, ptr);
+}
+
+static void
+uucp_rm_lock(char *devname)
+{
+    char *lck_file;
+
+    if (!uucp_locking_enabled) return;
+
+    lck_file = malloc(uucp_fname_lock_size(devname));
+    if (lck_file == NULL) {
+	return;
+    }
+    uucp_fname_lock(lck_file, devname);
+    unlink(lck_file);
+    free(lck_file);
+}
+
+/* return 0=OK, -1=error, 1=locked by other proces */
+static int
+uucp_mk_lock(char *devname)
+{
+    struct stat stt;
+    int pid = -1;
+
+    if (!uucp_locking_enabled)
+	return 0;
+
+    if (stat(uucp_lck_dir, &stt) == 0) { /* is lock file directory present? */
+	char *lck_file;
+	union {
+	    uint32_t ival;
+	    char     str[64];
+	} buf;
+	int fd;
+
+	lck_file = malloc(uucp_fname_lock_size(devname));
+	if (lck_file == NULL)
+	    return -1;
+
+	uucp_fname_lock(lck_file, devname);
+
+	pid = 0;
+	if ((fd = open(lck_file, O_RDONLY)) >= 0) {
+	    int n;
+
+    	    n = read(fd, &buf, sizeof(buf));
+	    close(fd);
+	    if( n == 4 ) 		/* Kermit-style lockfile. */
+		pid = buf.ival;
+	    else if (n > 0) {		/* Ascii lockfile. */
+		buf.str[n] = 0;
+		sscanf(buf.str, "%d", &pid);
+	    }
+
+	    if (pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH) {
+		/* death lockfile - remove it */
+		unlink(lck_file);
+		sleep(1);
+		pid = 0;
+	    } else
+		pid = 1;
+
+	}
+
+	if (pid == 0) {
+	    int mask;
+	    size_t rv;
+
+	    mask = umask(022);
+	    fd = open(lck_file, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	    umask(mask);
+	    if (fd >= 0) {
+		snprintf(buf.str, sizeof(buf), "%10ld\n",
+			 (long)getpid());
+		rv = write_full(fd, buf.str, strlen(buf.str));
+		close(fd);
+		if (rv < 0) {
+		    pid = -1;
+		    unlink(lck_file);
+		}
+	    } else {
+		pid = -1;
+	    }
+	}
+
+	free(lck_file);
+    }
+
+    return pid;
+}
+#endif /* USE_UUCP_LOCKING */
 
 #ifdef __CYGWIN__
 void cfmakeraw(struct termios *termios_p) {
@@ -43,7 +265,7 @@ void cfmakeraw(struct termios *termios_p) {
 /* Initialize a serial port control structure for the first time.
    This should only be called when the port is created.  It sets the
    port to the default 9600N81. */
-void
+static void
 devinit(struct termios *termctl)
 {
     cfmakeraw(termctl);
@@ -64,16 +286,18 @@ devinit(struct termios *termctl)
 /* Configure a serial port control structure based upon input strings
    in instr.  These strings are described in the man page for this
    program. */
-int
-devconfig(char *instr, dev_info_t *dinfo)
+static int
+devconfig(struct devcfg_data *d, char *instr, dev_info_t *dinfo)
 {
+    struct termios *termctl = &d->termctl;
     char *str;
     char *pos;
     char *strtok_data;
     int  rv = 0;
-    struct termios *termctl = &dinfo->termctl;
     enum str_type stype;
     char *s;
+
+    devinit(termctl);
 
     str = strdup(instr);
     if (str == NULL) {
@@ -81,7 +305,6 @@ devconfig(char *instr, dev_info_t *dinfo)
     }
 
     dinfo->allow_2217 = 0;
-    dinfo->disablebreak = 0;
     dinfo->banner = NULL;
     dinfo->signature = NULL;
     dinfo->openstr = NULL;
@@ -230,7 +453,7 @@ devconfig(char *instr, dev_info_t *dinfo)
         } else if (strcmp(pos, "remctl") == 0) {
 	    dinfo->allow_2217 = 1;
 	} else if (strcmp(pos, "NOBREAK") == 0) {
-	    dinfo->disablebreak = 1;
+	    d->disablebreak = 1;
 	} else if (strcmp(pos, "hexdump") == 0 ||
 	           strcmp(pos, "-hexdump") == 0) {
 	    dinfo->trace_read.hexdump = (*pos != '-');
@@ -350,9 +573,11 @@ baud_string(int speed)
     return str;
 }
 
-void
-serparm_to_str(char *str, int strlen, struct termios *termctl)
+static void
+devcfg_serparm_to_str(struct io *io, char *str, int strlen)
 {
+    struct devcfg_data *d = io->my_data;
+    struct termios *termctl = &d->termctl;
     speed_t speed = cfgetospeed(termctl);
     int     stopbits = termctl->c_cflag & CSTOPB;
     int     databits = termctl->c_cflag & CSIZE;
@@ -388,9 +613,12 @@ serparm_to_str(char *str, int strlen, struct termios *termctl)
 }
 
 /* Send the serial port device configuration to the control port. */
-void
-show_devcfg(struct controller_info *cntlr, struct termios *termctl)
+static void
+devcfg_show_devcfg(struct io *io, struct controller_info *cntlr)
 {
+    struct devcfg_data *d = io->my_data;
+    struct termios *termctl = &d->termctl;
+    
     speed_t speed = cfgetospeed(termctl);
     int     stopbits = termctl->c_cflag & CSTOPB;
     int     databits = termctl->c_cflag & CSIZE;
@@ -452,9 +680,11 @@ show_devcfg(struct controller_info *cntlr, struct termios *termctl)
     controller_output(cntlr, str, strlen(str));
 }
 
-int
-setdevcontrol(char *instr, int fd)
+static int
+devcfg_set_devcontrol(struct io *io, const char *instr)
 {
+    struct devcfg_data *d = io->my_data;
+    int fd = d->devfd;
     int rv = 0;
     char *str;
     char *pos;
@@ -499,13 +729,14 @@ out:
     return rv;
 }
 
-void
-show_devcontrol(struct controller_info *cntlr, int fd)
+static void
+devcfg_show_devcontrol(struct io *io, struct controller_info *cntlr)
 {
+    struct devcfg_data *d = io->my_data;
     char *str;
     int  status;
 
-    ioctl(fd, TIOCMGET, &status);
+    ioctl(d->devfd, TIOCMGET, &status);
 
     if (status & TIOCM_RTS) {
 	str = "RTSHI";
@@ -523,3 +754,534 @@ show_devcontrol(struct controller_info *cntlr, int fd)
     controller_output(cntlr, str, strlen(str));
     controller_output(cntlr, " ", 1);
 }
+
+static void
+do_read(int fd, void *data)
+{
+    struct io *io = data;
+    io->read_handler(io);
+}
+
+static void
+do_write(int fd, void *data)
+{
+    struct io *io = data;
+    io->write_handler(io);
+}
+
+static void
+do_except(int fd, void *data)
+{
+    struct io *io = data;
+    io->except_handler(io);
+}
+
+static int devcfg_setup(struct io *io, const char *name, const char **errstr)
+{
+    struct devcfg_data *d = io->my_data;
+    int options;
+
+#ifdef USE_UUCP_LOCKING
+    {
+	int rv;
+
+	rv = uucp_mk_lock(io->devname);
+	if (rv > 0 ) {
+	    *errstr = "Port already in use by another process\n\r";
+	    return -1;
+	} else if (rv < 0) {
+	    *errstr = "Error creating port lock file\n\r";
+	    return -1;
+	}
+    }
+#endif /* USE_UUCP_LOCKING */
+
+    /* Oct 05 2001 druzus: NOCTTY - don't make 
+       device control tty for our process */
+    options = O_NONBLOCK | O_NOCTTY;
+    if (io->read_disabled) {
+	options |= O_WRONLY;
+    } else {
+	options |= O_RDWR;
+    }
+    d->devfd = open(io->devname, options);
+    if (d->devfd == -1) {
+	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
+	       io->devname,
+	       name);
+#ifdef USE_UUCP_LOCKING
+	uucp_rm_lock(io->devname);
+#endif /* USE_UUCP_LOCKING */
+	return -1;
+    }
+
+    if (!io->read_disabled && !d->disablebreak
+        && tcsetattr(d->devfd, TCSANOW, &d->termctl) == -1)
+    {
+	close(d->devfd);
+	d->devfd = -1;
+	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
+	       io->devname,
+	       name);
+#ifdef USE_UUCP_LOCKING
+	uucp_rm_lock(io->devname);
+#endif /* USE_UUCP_LOCKING */
+	return -1;
+    }
+
+    /* Turn off BREAK. */
+    if (!io->read_disabled && ioctl(d->devfd, TIOCCBRK) == -1) {
+	/* Probably not critical, but we should at least log something. */
+	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
+	       io->devname,
+	       name);
+    }
+
+    sel_set_fd_handlers(ser2net_sel, d->devfd, io,
+			io->read_disabled ? NULL : do_read,
+			do_write, do_except);
+    return 0;
+}
+
+static void devcfg_shutdown(struct io *io)
+{
+    struct devcfg_data *d = io->my_data;
+
+    /* To avoid blocking on close if we have written bytes and are in
+       flow-control, we flush the output queue. */
+    if (d->devfd != -1) {
+	sel_clear_fd_handlers(ser2net_sel, d->devfd);
+	tcflush(d->devfd, TCOFLUSH);
+	close(d->devfd);
+	d->devfd = -1;
+    }
+#ifdef USE_UUCP_LOCKING
+    uucp_rm_lock(io->devname);
+#endif /* USE_UUCP_LOCKING */
+}
+
+static int devcfg_read(struct io *io, void *buf, size_t size)
+{
+    struct devcfg_data *d = io->my_data;
+
+    return read(d->devfd, buf, size);
+}
+
+static int devcfg_write(struct io *io, void *buf, size_t size)
+{
+    struct devcfg_data *d = io->my_data;
+
+    return write(d->devfd, buf, size);
+}
+
+static void devcfg_read_handler_enable(struct io *io, int enabled)
+{
+    struct devcfg_data *d = io->my_data;
+
+    sel_set_fd_read_handler(ser2net_sel, d->devfd,
+			    enabled ? SEL_FD_HANDLER_ENABLED :
+			    SEL_FD_HANDLER_DISABLED);
+}
+
+static void devcfg_write_handler_enable(struct io *io, int enabled)
+{
+    struct devcfg_data *d = io->my_data;
+
+    sel_set_fd_write_handler(ser2net_sel, d->devfd,
+			     enabled ? SEL_FD_HANDLER_ENABLED :
+			     SEL_FD_HANDLER_DISABLED);
+}
+
+static void devcfg_except_handler_enable(struct io *io, int enabled)
+{
+    struct devcfg_data *d = io->my_data;
+
+    sel_set_fd_except_handler(ser2net_sel, d->devfd,
+			      enabled ? SEL_FD_HANDLER_ENABLED :
+			      SEL_FD_HANDLER_DISABLED);
+}
+
+static int devcfg_send_break(struct io *io)
+{
+    struct devcfg_data *d = io->my_data;
+
+    tcsendbreak(d->devfd, 0);
+    return 0;
+}
+
+static int devcfg_get_modem_state(struct io *io, unsigned char *modemstate)
+{
+    struct devcfg_data *d = io->my_data;
+    int val;
+
+    if (ioctl(d->devfd, TIOCMGET, &val) != -1)
+	return -1;
+
+    *modemstate = 0;
+    if (val & TIOCM_CD)
+	*modemstate |= 0x80;
+    if (val & TIOCM_RI)
+	*modemstate |= 0x40;
+    if (val & TIOCM_DSR)
+	*modemstate |= 0x20;
+    if (val & TIOCM_CTS)
+	*modemstate |= 0x10;
+    return 0;
+}
+
+static int devcfg_baud_rate(struct io *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+
+    if (tcgetattr(d->devfd, &termio) == -1) {
+	*val = 0;
+	return -1;
+    }
+
+    if ((val != 0) && (get_baud_rate(*val, val))) {
+	/* We have a valid baud rate. */
+	cfsetispeed(&termio, *val);
+	cfsetospeed(&termio, *val);
+	tcsetattr(d->devfd, TCSANOW, &termio);
+    }
+
+    tcgetattr(d->devfd, &termio);
+    *val = cfgetispeed(&termio);
+    get_rate_from_baud_rate(*val, val);
+
+    return 0;
+}
+
+static int devcfg_data_size(struct io *io, unsigned char *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+
+    if (tcgetattr(d->devfd, &termio) == -1) {
+	*val = 0;
+	return -1;
+    }
+
+    if ((*val >= 5) && (*val <= 8)) {
+	termio.c_cflag &= ~CSIZE;
+	switch (*val) {
+	case 5: termio.c_cflag |= CS5; break;
+	case 6: termio.c_cflag |= CS6; break;
+	case 7: termio.c_cflag |= CS7; break;
+	case 8: termio.c_cflag |= CS8; break;
+	}
+	tcsetattr(d->devfd, TCSANOW, &termio);
+    }
+
+    switch (termio.c_cflag & CSIZE) {
+    case CS5: *val = 5; break;
+    case CS6: *val = 6; break;
+    case CS7: *val = 7; break;
+    case CS8: *val = 8; break;
+    default:  *val = 0;
+    }
+
+    return 0;
+}
+
+static int devcfg_parity(struct io *io, unsigned char *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+
+    if (tcgetattr(d->devfd, &termio) == -1) {
+	*val = 0;
+	return -1;
+    }
+
+    /* We don't support MARK or SPACE parity. */
+    if ((*val >= 1) && (*val <= 3)) {
+	termio.c_cflag &= ~(PARENB | PARODD);
+	switch (*val) {
+	case 1: break; /* NONE */
+	case 2: termio.c_cflag |= PARENB | PARODD; break; /* ODD */
+	case 3: termio.c_cflag |= PARENB; break; /* EVEN */
+	}
+	tcsetattr(d->devfd, TCSANOW, &termio);
+    }
+
+    if (termio.c_cflag & PARENB) {
+	if (termio.c_cflag & PARODD)
+	    *val = 2; /* ODD */
+	else
+	    *val = 3; /* EVEN */
+    } else
+	*val = 1; /* NONE */
+
+    return 0;
+}
+
+static int devcfg_stop_size(struct io *io, unsigned char *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+
+    if (tcgetattr(d->devfd, &termio) == -1) {
+	*val = 0;
+	return -1;
+    }
+
+    if ((*val >= 1) && (*val <= 2)) {
+	termio.c_cflag &= ~CSTOPB;
+	switch (*val) {
+	case 1: break; /* 1 stop bit */
+	case 2: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
+	}
+	tcsetattr(d->devfd, TCSANOW, &termio);
+    }
+
+    if (termio.c_cflag & CSTOPB)
+	*val = 2; /* 2 stop bits. */
+    else
+	*val = 1; /* 1 stop bit. */
+
+    return 0;
+}
+
+static int devcfg_flow_control(struct io *io, unsigned char val)
+{
+    struct devcfg_data *d = io->my_data;
+
+    tcflow(d->devfd, val ? TCIOFF : TCION);
+    return 0;
+}
+
+static int devcfg_control(struct io *io, unsigned char *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+    int ival;
+
+    if (tcgetattr(d->devfd, &termio) == -1) {
+	*val = 0;
+	return -1;
+    }
+
+    switch (*val) {
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+	/* Outbound/both flow control */
+	if (tcgetattr(d->devfd, &termio) != -1) {
+	    if (*val != 0) {
+		termio.c_iflag &= ~(IXON | IXOFF);
+		termio.c_cflag &= ~CRTSCTS;
+		switch (*val) {
+		case 1: break; /* NONE */
+		case 2: termio.c_iflag |= IXON | IXOFF; break;
+		case 3: termio.c_cflag |= CRTSCTS; break;
+		}
+		tcsetattr(d->devfd, TCSANOW, &termio);
+	    }
+	    if (termio.c_cflag & CRTSCTS)
+		*val = 3;
+	    else if (termio.c_iflag & IXON)
+		*val = 2;
+	    else
+		*val = 1;
+	}
+	break;
+
+    case 13:
+    case 14:
+    case 15:
+    case 16:
+    case 17:
+    case 18:
+    case 19:
+	/* Inbound flow-control */
+	if (tcgetattr(d->devfd, &termio) != -1) {
+	    if (*val == 15) {
+		/* We can only set XON/XOFF independently */
+		termio.c_iflag |= IXOFF;
+		tcsetattr(d->devfd, TCSANOW, &termio);
+	    }
+	    if (termio.c_cflag & CRTSCTS)
+		*val = 16;
+	    else if (termio.c_iflag & IXOFF)
+		*val = 15;
+	    else
+		*val = 14;
+	}
+	break;
+
+	/* Handle BREAK stuff. */
+    case 6:
+	if (ioctl(d->devfd, TIOCCBRK) != -1)
+	    d->break_set = 0;
+	goto read_break_val;
+
+    case 5:
+	if (ioctl(d->devfd, TIOCSBRK) != -1)
+	    d->break_set = 1;
+	goto read_break_val;
+	    
+    case 4:
+    read_break_val:
+	if (d->break_set)
+	    *val = 5;
+	else
+	    *val = 6;
+	break;
+
+    /* DTR handling */
+    case 8:
+#ifndef __CYGWIN__
+	ival = TIOCM_DTR;
+	ioctl(d->devfd, TIOCMBIS, &ival);
+#else
+	ioctl(d->devfd, TIOCMGET, &ival);
+	ival |= TIOCM_DTR;
+	ioctl(d->devfd, TIOCMSET, &ival);
+#endif
+	    goto read_dtr_val;
+
+    case 9:
+#ifndef __CYGWIN__
+	ival = TIOCM_DTR;
+	ioctl(d->devfd, TIOCMBIC, &ival);
+#else
+	ioctl(d->devfd, TIOCMGET, &ival);
+	ival &= ~TIOCM_DTR;
+	ioctl(d->devfd, TIOCMSET, &ival);
+#endif
+	goto read_dtr_val;
+	    
+    case 7:
+    read_dtr_val:
+	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)
+	    *val = 7;
+	else if (ival & TIOCM_DTR)
+	    *val = 8;
+	else
+	    *val = 9;
+	break;
+
+    /* RTS handling */
+    case 11:
+#ifndef __CYGWIN__
+	ival = TIOCM_RTS;
+	ioctl(d->devfd, TIOCMBIS, &ival);
+#else
+	ioctl(d->devfd, TIOCMGET, &ival);
+	ival |= TIOCM_RTS;
+	ioctl(d->devfd, TIOCMSET, &ival);
+#endif
+	goto read_rts_val;
+	
+    case 12:
+#ifndef __CYGWIN__
+	ival = TIOCM_RTS;
+	ioctl(d->devfd, TIOCMBIC, &ival);
+#else
+	ioctl(d->devfd, TIOCMGET, &ival);
+	ival &= ~TIOCM_RTS;
+	ioctl(d->devfd, TIOCMSET, &ival);
+#endif
+	goto read_rts_val;
+	    
+    case 10:
+    read_rts_val:
+	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)
+	    *val = 10;
+	else if (ival & TIOCM_RTS)
+	    *val = 11;
+	else
+	    *val = 12;
+	break;
+
+    default:
+	*val = 0;
+	return -1;
+    }
+
+    return 0;
+}
+
+static int devcfg_flush(struct io *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+    int ival;
+
+    switch (*val) {
+    case 1: ival = TCIFLUSH; goto purge_found;
+    case 2: ival = TCOFLUSH; goto purge_found;
+    case 3: ival = TCIOFLUSH; goto purge_found;
+    }
+    *val = 0;
+    return -1;
+ purge_found:
+    tcflush(d->devfd, ival);
+    return 0;
+}
+
+static void devcfg_free(struct io *io)
+{
+    struct devcfg_data *d = io->my_data;
+
+    if (d->devfd != -1)
+	close(d->devfd);
+    io->my_data = NULL;
+    free(d);
+}
+
+static int
+devcfg_reconfig(struct io *io, char *instr, dev_info_t *dinfo)
+{
+    struct devcfg_data *d = io->my_data;
+
+    return devconfig(d, instr, dinfo);
+}
+
+static struct io_f devcfg_io_f = {
+    .setup = devcfg_setup,
+    .shutdown = devcfg_shutdown,
+    .reconfig = devcfg_reconfig,
+    .read = devcfg_read,
+    .write = devcfg_write,
+    .read_handler_enable = devcfg_read_handler_enable,
+    .write_handler_enable = devcfg_write_handler_enable,
+    .except_handler_enable = devcfg_except_handler_enable,
+    .send_break = devcfg_send_break,
+    .get_modem_state = devcfg_get_modem_state,
+    .set_devcontrol = devcfg_set_devcontrol,
+    .show_devcontrol = devcfg_show_devcontrol,
+    .show_devcfg = devcfg_show_devcfg,
+    .baud_rate = devcfg_baud_rate,
+    .data_size = devcfg_data_size,
+    .parity = devcfg_parity,
+    .stop_size = devcfg_stop_size,
+    .control = devcfg_control,
+    .flow_control = devcfg_flow_control,
+    .flush = devcfg_flush,
+    .free = devcfg_free,
+    .serparm_to_str = devcfg_serparm_to_str
+};
+
+int devcfg_init(struct io *io, char *instr, dev_info_t *dinfo)
+{
+    struct devcfg_data *d;
+
+    d = malloc(sizeof(*d));
+    if (!d)
+	return -1;
+    memset(d, 0, sizeof(*d));
+    d->devfd = -1;
+
+    if (devconfig(d, instr, dinfo) == -1) {
+	free(d);
+	return -1;
+    }
+
+    io->my_data = d;
+    io->f = &devcfg_io_f;
+    return 0;
+}
+

@@ -1,3 +1,8 @@
+2014-01-22  Corey Minyard <minyard@acm.org>
+
+	* utils.c, utils.h, controller.h, controller.c: Fix some const
+	correctness issues
+
 2013-08-08  Corey Minyard <minyard@acm.org>
 
 	* utils.c, utils.h, dataxfer.c, controller.c: Rework the handling

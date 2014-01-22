@@ -23,8 +23,7 @@
 #include <termios.h>
 #include "controller.h"
 
-/* Called to initially configure a terminal. */
-void devinit(struct termios *termctl);
+struct io;
 
 typedef struct trace_info_s
 {
@@ -34,14 +33,8 @@ typedef struct trace_info_s
 } trace_info_t;
 
 typedef struct dev_info {
-    /* The termios information to set for the device. */
-    struct termios termctl;
-
     /* Allow RFC 2217 mode */
     int allow_2217;
-
-    /* Disable break-commands */
-    int disablebreak;
 
     /* Banner to display at startup, or NULL if none. */
     char *banner;
@@ -64,20 +57,6 @@ typedef struct dev_info {
     trace_info_t trace_both;
 } dev_info_t;
 
-/* Called to change the configuration of a device based upon the
-   string parameters. */
-int devconfig(char *instr, dev_info_t *info);
-
-/* Prints the configuration of a device to a controller. */
-void show_devcfg(struct controller_info *cntlr, struct termios *termctl);
-
-/* Sets the DTR and RTS lines dynamically. */
-int setdevcontrol(char *instr, int fd);
-
-/* Show the state of the DTR and RTS lines. */
-void show_devcontrol(struct controller_info *cntlr, int fd);
-
-/* Convert the serial parameters to a string. */
-void serparm_to_str(char *str, int strlen, struct termios *termctl);
+int devcfg_init(struct io *io, char *instr, dev_info_t *dinfo);
 
 #endif /* DEVCFG */

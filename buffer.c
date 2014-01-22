@@ -22,8 +22,8 @@
 #include <string.h>
 #include "buffer.h"
 
-int
-buffer_write(int fd, struct sbuf *buf, int *buferr)
+static int
+lbuffer_write(struct io *io, int fd, struct sbuf *buf, int *buferr)
 {
     ssize_t write_count;
     int towrite1;
@@ -36,7 +36,10 @@ buffer_write(int fd, struct sbuf *buf, int *buferr)
 	towrite1 = buf->cursize;
 
     if (towrite1 > 0) {
-	write_count = write(fd, buf->buf + buf->pos, towrite1);
+	if (io)
+	    write_count = io->f->write(io, buf->buf + buf->pos, towrite1);
+	else
+	    write_count = write(fd, buf->buf + buf->pos, towrite1);
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
@@ -56,7 +59,10 @@ buffer_write(int fd, struct sbuf *buf, int *buferr)
     if (towrite2 > 0) {
 	/* We wrapped */
 	buf->pos = 0;
-	write_count = write(fd, buf->buf + buf->pos, towrite2);
+	if (io)
+	    write_count = io->f->write(io, buf->buf + buf->pos, towrite2);
+	else
+	    write_count = write(fd, buf->buf + buf->pos, towrite2);
 	if (write_count == -1) {
 	    if (errno == EINTR) {
 		/* EINTR means we were interrupted, just retry by returning. */
@@ -74,6 +80,18 @@ buffer_write(int fd, struct sbuf *buf, int *buferr)
     }
 
     return 0;
+}
+
+int
+buffer_write(int fd, struct sbuf *buf, int *buferr)
+{
+    return lbuffer_write(NULL, fd, buf, buferr);
+}
+
+int
+buffer_io_write(struct io *io, struct sbuf *buf, int *buferr)
+{
+    return lbuffer_write(io, 0, buf, buferr);
 }
 
 int
