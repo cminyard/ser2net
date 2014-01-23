@@ -33,7 +33,6 @@
 #include <syslog.h>
 
 #include "selector.h"
-#include "devcfg.h"
 #include "utils.h"
 #include "telnet.h"
 #include "dataxfer.h"

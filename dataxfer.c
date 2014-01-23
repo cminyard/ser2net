@@ -38,7 +38,6 @@
 
 #include "dataxfer.h"
 #include "selector.h"
-#include "devcfg.h"
 #include "utils.h"
 #include "telnet.h"
 
@@ -74,12 +73,13 @@ char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
 
 #define PORT_BUFSIZE	64
 
-typedef struct trace_s
+typedef struct trace_info_s
 {
-    int            hexdump;     /* output each block as a hexdump */
-    int            timestamp;   /* preceed each line with a timestamp */
-    int            file;        /* open file.  -1 if not used */
-} trace_t;
+    int  hexdump;     /* output each block as a hexdump */
+    int  timestamp;   /* preceed each line with a timestamp */
+    char *filename;   /* open file.  NULL if not used */
+    int  fd;          /* open file.  -1 if not used */
+} trace_info_t;
 
 typedef struct port_info
 {
@@ -152,12 +152,6 @@ typedef struct port_info
 					    to this controller port. */
     struct sbuf *devstr;		 /* Outgoing string */
 
-    char *closestr;			/* Since the close string is
-					   processed at shutdown, the
-					   conf may have been redone and
-					   the data freed.  So keep a
-					   copy here. */
-
     /* Information use when transferring information from the terminal
        device to the TCP port. */
     int            dev_to_tcp_state;		/* State of transferring
@@ -197,12 +191,37 @@ typedef struct port_info
     unsigned char modemstate_mask;
     unsigned char last_modemstate;
 
-    /* Read and write trace information */
-    trace_t wt;
-    trace_t rt;
-    trace_t bt;
+    /* Allow RFC 2217 mode */
+    int allow_2217;
 
-    dev_info_t dinfo; /* device configuration information */
+    /* Banner to display at startup, or NULL if none. */
+    char *bannerstr;
+
+    /* RFC 2217 signature. */
+    char *signaturestr;
+
+    /* String to send to device at startup, or NULL if none. */
+    char *openstr;
+
+    /* String to send to device at close, or NULL if none. */
+    char *closestr;
+
+    /*
+     * File to read/write trace, NULL if none.  If the same, then
+     * trace information is in the same file, only one open is done.
+     */
+    trace_info_t trace_read;
+    trace_info_t trace_write;
+    trace_info_t trace_both;
+
+    /*
+     * Pointers to the above, that way if two are the same file we can just
+     * set up one and point both to it.
+     */
+    trace_info_t *tr;
+    trace_info_t *tw;
+    trace_info_t *tb;
+
     struct io io; /* For handling I/O operation to the device */
 } port_info_t;
 
@@ -234,7 +253,10 @@ static struct telnet_cmd telnet_cmds[] =
     { 255 }
 };
 
-
+/*
+ * Generic output function for using a controller output for
+ * abstract I/O.
+ */
 static int
 cntrl_absout(struct absout *o, const char *str, ...)
 {
@@ -247,6 +269,10 @@ cntrl_absout(struct absout *o, const char *str, ...)
     return rv;
 }
 
+/*
+ * Like above but does a new line at the end of the output, generally
+ * for error output.
+ */
 static int
 cntrl_abserrout(struct absout *o, const char *str, ...)
 {
@@ -264,40 +290,17 @@ static void
 init_port_data(port_info_t *port)
 {
     port->enabled = PORT_DISABLED;
-    port->acceptfds = NULL;
     port->tcpfd = -1;
-    port->timeout = 0;
-    port->next = NULL;
-    port->new_config = NULL;
-    port->tcp_monitor = NULL;
-    port->is_stdio = 0;
-    port->ai = NULL;
     
-    memset(&(port->remote), 0, sizeof(port->remote));
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     buffer_init(&port->tcp_to_dev, port->tcp_to_devbuf,
 		sizeof(port->tcp_to_devbuf));
-    port->tcp_bytes_received = 0;
-    port->tcp_bytes_sent = 0;
-    port->banner = NULL;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     buffer_init(&port->dev_to_tcp, port->dev_to_tcpbuf,
 		sizeof(port->dev_to_tcpbuf));
-    port->dev_bytes_received = 0;
-    port->dev_bytes_sent = 0;
-    port->devstr = NULL;
-    port->closestr = NULL;
-    port->is_2217 = 0;
-    port->dev_monitor = NULL;
-    port->wt.file = -1;
-    port->wt.timestamp = 0;
-    port->wt.hexdump = 0;
-    port->rt.file = -1;
-    port->rt.timestamp = 0;
-    port->rt.hexdump = 0;
-    port->bt.file = -1;
-    port->bt.timestamp = 0;
-    port->bt.hexdump = 0;
+    port->trace_read.fd = -1;
+    port->trace_write.fd = -1;
+    port->trace_both.fd = -1;
 }
 
 static void
@@ -308,10 +311,10 @@ reset_timer(port_info_t *port)
 
 
 static int
-timestamp(trace_t *tr, char *buf, int size)
+timestamp(trace_info_t *t, char *buf, int size)
 {
     time_t result;
-    if(!tr->timestamp)
+    if (!t->timestamp)
         return 0;
     result = time(NULL);
     return strftime(buf, size, "%Y/%m/%d %H:%M:%S ", localtime(&result));
@@ -334,21 +337,21 @@ trace_write_end(char *out, int size, unsigned char *start, int col)
 }
 
 int
-trace_write(port_info_t *port, trace_t *tr, unsigned char *buf,
+trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
 	    unsigned int buf_len, char *prefix)
 {
-    int rv=0, w, col=0, pos, file = tr->file;
+    int rv = 0, w, col = 0, pos, file = t->fd;
     unsigned int q;
     static char out[1024];
     unsigned char *start;
 
-    if( buf_len == 0 ) 
+    if (buf_len == 0) 
         return 0;
 
-    if(!tr->hexdump)
+    if (!t->hexdump)
         return write(file, buf, buf_len);
 
-    pos = timestamp(tr, out, sizeof(out));    
+    pos = timestamp(t, out, sizeof(out));    
     pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
         
     start = buf;
@@ -360,34 +363,34 @@ trace_write(port_info_t *port, trace_t *tr, unsigned char *buf,
             rv = write(file, out, strlen(out));
             if (rv < 0)
                 return rv;           
-            pos = timestamp(tr, out, sizeof(out));    
+            pos = timestamp(t, out, sizeof(out));    
             pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
             col = 0;
             start = buf + q + 1;
         }
     }
-    if ( col > 0 ) {
+    if (col > 0) {
         for (w = 8; w > col; w--) {
             strncat(out + pos, "   ", sizeof(out) - pos);
             pos += 3;
         }
         pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
         rv = write(file, out, strlen(out));
-        if(rv < 0)
+        if (rv < 0)
             return rv;
     }
     return buf_len;
 }
 
 static void
-do_trace(port_info_t *port, trace_t *tr, unsigned char *buf,
+do_trace(port_info_t *port, trace_info_t *t, unsigned char *buf,
 	 unsigned int buf_len, char *prefix)
 {
     int rv;
 
     while (buf_len > 0) {
     retry_write:
-	rv = trace_write(port, tr, buf, buf_len, prefix);
+	rv = trace_write(port, t, buf, buf_len, prefix);
 	if (rv == -1) {
 	    char errbuf[128];
 	    int err = errno;
@@ -404,8 +407,8 @@ do_trace(port_info_t *port, trace_t *tr, unsigned char *buf,
 		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
 		       port->portname, errbuf);
 	    
-	    close(tr->file);
-	    tr->file = -1;
+	    close(t->fd);
+	    t->fd = -1;
 	    return;
 	}
 
@@ -416,11 +419,27 @@ do_trace(port_info_t *port, trace_t *tr, unsigned char *buf,
 }
 
 static void
+hf_out(port_info_t *port, char *buf, int len)
+{
+    if (port->tr && port->tr->timestamp)
+        write_ignore_fail(port->tr->fd, buf, len);
+
+    /* don't output to write file if it's the same as read file */
+    if (port->tw && port->tw != port->tr && port->tw->timestamp)
+        write_ignore_fail(port->tw->fd, buf, len);
+
+    /* don't output to both file if it's the same as read or write file */
+    if (port->tb && port->tb != port->tr && port->tb != port->tw
+		&& port->tb->timestamp)
+        write_ignore_fail(port->tb->fd, buf, len);    
+}
+
+static void
 header_trace(port_info_t *port)
 {
     static char buf[1024];
-    static trace_t tr = { 1, 1, -1 };
-    int len = 0, doneR=-1, doneW=-1;
+    static trace_info_t tr = { 1, 1, NULL, -1 };
+    int len = 0;
     char portstr[NI_MAXSERV];
 
     len += timestamp(&tr, buf, sizeof(buf));
@@ -437,44 +456,20 @@ header_trace(port_info_t *port)
     len += strlen(buf + len);
     len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
-    if (port->rt.file != -1 && port->rt.timestamp) {
-        write_ignore_fail(port->rt.file, buf, len);
-        doneR = port->rt.file;
-    }
-    /* don't output to wt.file if it's the same as rt.file */
-    if (port->wt.file != doneR && port->wt.timestamp) {
-        write_ignore_fail(port->wt.file, buf, len);
-        doneW = port->wt.file;
-    }
-    /* don't output to bt.file if it's the same as rt.file or wt.file */
-    if (port->bt.file != doneR && port->bt.file != doneW 
-                && port->bt.timestamp)
-        write_ignore_fail(port->bt.file, buf, len);    
+    hf_out(port, buf, len);
 }
 
 static void
 footer_trace(port_info_t *port, char *reason)
 {
     static char buf[1024];
-    static trace_t tr = { 1, 1, -1 };
-    int len=0, doneR=-1, doneW=-1;
+    static trace_info_t tr = { 1, 1, NULL, -1 };
+    int len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf), "CLOSE (%s)\n", reason);
 
-    if (port->rt.file != -1 && port->rt.timestamp) {
-        write_ignore_fail(port->rt.file, buf, len);
-        doneR = port->rt.file;
-    }
-    /* don't output to wt.file if it's the same as rt.file */
-    if (port->wt.file != doneR && port->wt.timestamp) {
-        write_ignore_fail(port->wt.file, buf, len);
-        doneW = port->wt.file;
-    }
-    /* don't output to bt.file if it's the same as rt.file or wt.file */
-    if (port->bt.file != doneR && port->bt.file != doneW 
-                && port->bt.timestamp)
-        write_ignore_fail(port->bt.file, buf, len);
+    hf_out(port, buf, len);
 }
 
 
@@ -513,12 +508,12 @@ handle_dev_fd_read(struct io *io)
 	return;
     }
 
-    if (port->rt.file != -1)
+    if (port->tr)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, &port->rt, port->dev_to_tcp.buf, count, SERIAL);
-    if (port->bt.file != -1)
+	do_trace(port, port->tr, port->dev_to_tcp.buf, count, SERIAL);
+    if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, &port->bt, port->dev_to_tcp.buf, count, SERIAL);
+	do_trace(port, port->tb, port->dev_to_tcp.buf, count, SERIAL);
 
     port->dev_bytes_received += count;
 
@@ -711,13 +706,13 @@ handle_tcp_fd_read(int fd, void *data)
 			 port->tcp_to_dev.cursize);
     }
 
-    if (port->wt.file != -1)
+    if (port->tw)
 	/* Do write tracing, ignore errors. */
-	do_trace(port, &port->wt,
+	do_trace(port, port->tw,
 		 port->tcp_to_dev.buf, port->tcp_to_dev.cursize, NET);
-    if (port->bt.file != -1)
+    if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, &port->bt,
+	do_trace(port, port->tb,
 		 port->tcp_to_dev.buf, port->tcp_to_dev.cursize, NET);
 
  retry_write:
@@ -1279,18 +1274,17 @@ process_str_to_buf(port_info_t *port, const char *str)
 
 static void
 open_trace_file(port_info_t *port, 
-                trace_info_t *in,
-                trace_t *out,
-                struct timeval *tv)
+                trace_info_t *t,
+                struct timeval *tv,
+                trace_info_t **out)
 {
     int rv;
-    const char *trfilename = in->file;
     char *trfile;
 
-    trfile = process_str_to_str(port, trfilename, tv, NULL, 1);
+    trfile = process_str_to_str(port, t->filename, tv, NULL, 1);
     if (!trfile) {
-	syslog(LOG_ERR, "Unable to translate trace file %s", trfilename);
-	out->file = -1;
+	syslog(LOG_ERR, "Unable to translate trace file %s", t->filename);
+	t->fd = -1;
 	return;
     }
 
@@ -1306,13 +1300,10 @@ open_trace_file(port_info_t *port,
 	    syslog(LOG_ERR, "Unable to open trace file %s: %s",
 		   trfile, errbuf);
     }
-    else {
-        out->hexdump = in->hexdump;
-        out->timestamp = in->timestamp;
-    }
 
     free(trfile);
-    out->file = rv;
+    t->fd = rv;
+    *out = t;
 }
 
 static void
@@ -1323,44 +1314,30 @@ setup_trace(port_info_t *port)
     /* Only get the time once so all trace files have consistent times. */
     gettimeofday(&tv, NULL);
 
-    if (port->dinfo.trace_write.file)
-	open_trace_file(port, &port->dinfo.trace_write, &port->wt, &tv);
-    else
-	port->wt.file = -1;
+    port->tw = NULL;
+    if (port->trace_write.filename)
+	open_trace_file(port, &port->trace_write, &tv, &port->tw);
 
-    if (port->dinfo.trace_read.file) {
-	if (port->dinfo.trace_write.file
-	    && (strcmp(port->dinfo.trace_read.file,
-		       port->dinfo.trace_write.file) == 0)) {
-	    port->rt.file = port->wt.file;
-	    port->rt.timestamp = port->wt.timestamp;
-	    port->rt.hexdump   = port->wt.hexdump;
-	    goto try_both;
-	}
-	open_trace_file(port, &port->dinfo.trace_read, &port->rt, &tv);
-    } else
-	port->rt.file = -1;
- try_both:
-    if (port->dinfo.trace_both.file) {
-	if (port->dinfo.trace_write.file
-	    && (strcmp(port->dinfo.trace_both.file,
-		       port->dinfo.trace_write.file) == 0)) {
-	    port->bt.file = port->wt.file;
-	    port->bt.timestamp = port->wt.timestamp;
-	    port->bt.hexdump   = port->wt.hexdump;
-	    goto out;
-	} else if (port->dinfo.trace_read.file
-	    && (strcmp(port->dinfo.trace_both.file,
-		       port->dinfo.trace_read.file) == 0)) {
-	    port->bt.file = port->rt.file;
-	    port->bt.timestamp = port->rt.timestamp;
-	    port->bt.hexdump   = port->rt.hexdump;
-	    goto out;
-	}
-	open_trace_file(port, &port->dinfo.trace_both, &port->bt, &tv);
-    } else
-	port->bt.file = -1;
- out:
+    port->tr = NULL;
+    if (port->trace_read.filename) {
+	trace_info_t *np = &port->trace_read;
+	if (port->tw && (strcmp(np->filename, port->tw->filename) == 0))
+	    port->tr = port->tw;
+	else
+	    open_trace_file(port, np, &tv, &port->tr);
+    }
+
+    port->tb = NULL;
+    if (port->trace_both.filename) {
+	trace_info_t *np = &port->trace_both;
+	if (port->tw && (strcmp(np->filename, port->tw->filename) == 0))
+	    port->tb = port->tw;
+	else if (port->tr && (strcmp(np->filename, port->tr->filename) == 0))
+	    port->tb = port->tr;
+	else
+	    open_trace_file(port, np, &tv, &port->tb);
+    }
+
     return;
 }
 
@@ -1417,22 +1394,17 @@ setup_tcp_port(port_info_t *port)
     }
     port->is_2217 = 0;
 
-    port->banner = process_str_to_buf(port, port->dinfo.banner);
+    port->banner = process_str_to_buf(port, port->bannerstr);
     if (port->banner)
 	tcp_write_handler = handle_tcp_fd_banner_write;
     else
 	tcp_write_handler = handle_tcp_fd_write;
 
-    port->devstr = process_str_to_buf(port, port->dinfo.openstr);
+    port->devstr = process_str_to_buf(port, port->openstr);
     if (port->devstr)
 	dev_write_handler = handle_dev_fd_devstr_write;
     else
 	dev_write_handler = handle_dev_fd_write;
-
-    if (port->dinfo.closestr)
-	port->closestr = strdup(port->dinfo.closestr);
-    else
-	port->closestr = NULL;
 
     port->io.read_handler = (port->enabled == PORT_RAWLP
 			     ? NULL
@@ -1609,6 +1581,12 @@ free_port(port_info_t *port)
     change_port_state(NULL, port, PORT_DISABLED);
     if (port->io.f)
 	port->io.f->free(&port->io);
+    if (port->trace_read.filename)
+	free(port->trace_read.filename);
+    if (port->trace_write.filename)
+	free(port->trace_write.filename);
+    if (port->trace_both.filename)
+	free(port->trace_both.filename);
     if (port->io.devname)
 	free(port->io.devname);
     if (port->portname)
@@ -1619,6 +1597,14 @@ free_port(port_info_t *port)
 	freeaddrinfo(port->ai);
     if (port->acceptfds)
 	free(port->acceptfds);
+    if (port->bannerstr)
+	free(port->bannerstr);
+    if (port->signaturestr)
+	free(port->signaturestr);
+    if (port->openstr)
+	free(port->openstr);
+    if (port->closestr)
+	free(port->closestr);
     free(port);
 }
 
@@ -1639,10 +1625,6 @@ finish_shutdown_port(port_info_t *port)
 	free(port->devstr->buf);
 	free(port->devstr);
 	port->devstr = NULL;
-    }
-    if (port->closestr) {
-	free(port->closestr);
-	port->closestr = NULL;
     }
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     buffer_reset(&port->dev_to_tcp);
@@ -1716,24 +1698,20 @@ shutdown_port(port_info_t *port, char *reason)
 {
     footer_trace(port, reason);
     
-    if (port->wt.file != -1) {
-	close(port->wt.file);
-	if (port->rt.file == port->wt.file)
-	    port->rt.file = -1;
-	if (port->bt.file == port->wt.file)
-	    port->bt.file = -1;
-	port->wt.file = -1;
+    if (port->trace_write.fd != -1) {
+	close(port->trace_write.fd);
+	port->trace_write.fd = -1;
     }
-    if (port->rt.file != -1) {
-	close(port->rt.file);
-	if (port->bt.file == port->rt.file)
-	    port->bt.file = -1;
-	port->rt.file = -1;
+    if (port->trace_read.fd != -1) {
+	close(port->trace_read.fd);
+	port->trace_read.fd = -1;
     }
-    if (port->bt.file != -1) {
-	close(port->bt.file);
-	port->bt.file = -1;
+    if (port->trace_both.fd != -1) {
+	close(port->trace_both.fd);
+	port->trace_both.fd = -1;
     }
+    port->tw = port->tr = port->tb = NULL;
+
     sel_stop_timer(port->timer);
     if (port->tcpfd != -1) {
 	sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
@@ -1802,80 +1780,61 @@ isallzero(char *str)
     return *str == '\0';
 }
 
-static void
-dinfo_init(dev_info_t *dinfo)
-{
-    dinfo->allow_2217 = 0;
-    dinfo->banner = NULL;
-    dinfo->signature = NULL;
-    dinfo->openstr = NULL;
-    dinfo->closestr = NULL;
-    dinfo->trace_read.file = NULL;
-    dinfo->trace_read.hexdump = 0;
-    dinfo->trace_read.timestamp = 0;
-    dinfo->trace_write.file = NULL;
-    dinfo->trace_write.hexdump = 0;
-    dinfo->trace_write.timestamp = 0;
-    dinfo->trace_both.file = NULL;
-    dinfo->trace_both.hexdump = 0;
-    dinfo->trace_both.timestamp = 0;
-}
-
 static int
 myconfig(void *data, struct absout *eout, const char *pos)
 {
     port_info_t *port = data;
-    dev_info_t *dinfo = &port->dinfo;
     enum str_type stype;
-    const char *s;
+    char *s;
 
     if (strcmp(pos, "remctl") == 0) {
-	dinfo->allow_2217 = 1;
+	port->allow_2217 = 1;
     } else if (strcmp(pos, "hexdump") == 0 ||
 	       strcmp(pos, "-hexdump") == 0) {
-	dinfo->trace_read.hexdump = (*pos != '-');
-	dinfo->trace_write.hexdump = (*pos != '-');
-	dinfo->trace_both.hexdump = (*pos != '-');
+	port->trace_read.hexdump = (*pos != '-');
+	port->trace_write.hexdump = (*pos != '-');
+	port->trace_both.hexdump = (*pos != '-');
     } else if (strcmp(pos, "timestamp") == 0 ||
 	       strcmp(pos, "-timestamp") == 0) {
-	dinfo->trace_read.timestamp = (*pos != '-');
-	dinfo->trace_write.timestamp = (*pos != '-');
-	dinfo->trace_both.timestamp = (*pos != '-');
+	port->trace_read.timestamp = (*pos != '-');
+	port->trace_write.timestamp = (*pos != '-');
+	port->trace_both.timestamp = (*pos != '-');
     } else if (strcmp(pos, "tr-hexdump") == 0 ||
 	       strcmp(pos, "-tr-hexdump") == 0) {
-	dinfo->trace_read.hexdump = (*pos != '-');
+	port->trace_read.hexdump = (*pos != '-');
     } else if (strcmp(pos, "tr-timestamp") == 0 ||
 	       strcmp(pos, "-tr-timestamp") == 0) {
-	dinfo->trace_read.timestamp = (*pos != '-');
+	port->trace_read.timestamp = (*pos != '-');
     } else if (strcmp(pos, "tw-hexdump") == 0 ||
 	       strcmp(pos, "-tw-hexdump") == 0) {
-	dinfo->trace_write.hexdump = (*pos != '-');
+	port->trace_write.hexdump = (*pos != '-');
     } else if (strcmp(pos, "tw-timestamp") == 0 ||
 	       strcmp(pos, "-tw-timestamp") == 0) {
-	dinfo->trace_write.timestamp = (*pos != '-');
+	port->trace_write.timestamp = (*pos != '-');
     } else if (strcmp(pos, "tb-hexdump") == 0 ||
 	       strcmp(pos, "-tb-hexdump") == 0) {
-	dinfo->trace_both.hexdump = (*pos != '-');
+	port->trace_both.hexdump = (*pos != '-');
     } else if (strcmp(pos, "tb-timestamp") == 0 ||
 	       strcmp(pos, "-tb-timestamp") == 0) {
-	dinfo->trace_both.timestamp = (*pos != '-');
+	port->trace_both.timestamp = (*pos != '-');
     } else if (strncmp(pos, "tr=", 3) == 0) {
 	/* trace read, data from the port to the socket */
-	dinfo->trace_read.file = find_tracefile(pos + 3);
+	port->trace_read.filename = find_tracefile(pos + 3);
     } else if (strncmp(pos, "tw=", 3) == 0) {
 	/* trace write, data from the socket to the port */
-	dinfo->trace_write.file = find_tracefile(pos + 3);
+	port->trace_write.filename = find_tracefile(pos + 3);
     } else if (strncmp(pos, "tb=", 3) == 0) {
 	/* trace both directions. */
-	dinfo->trace_both.file = find_tracefile(pos + 3);
+	port->trace_both.filename = find_tracefile(pos + 3);
     } else if ((s = find_str(pos, &stype))) {
-	/* It's a startup banner, signature or open/close string,
-	   it's already set. */
+	/* It's a startup banner, signature or open/close string, it's
+	   already set. */
 	switch (stype) {
-	case BANNER: dinfo->banner = s; break;
-	case SIGNATURE: dinfo->signature = s; break;
-	case OPENSTR: dinfo->openstr = s; break;
-	case CLOSESTR: dinfo->closestr = s; break;
+	case BANNER: port->bannerstr = s; break;
+	case SIGNATURE: port->signaturestr = s; break;
+	case OPENSTR: port->openstr = s; break;
+	case CLOSESTR: port->closestr = s; break;
+	default: free(s);
 	}
     } else {
 	eout->out(eout, "Unknown config item: %s", pos);
@@ -1960,22 +1919,10 @@ portconfig(struct absout *eout,
 
     new_port->io.user_data = new_port;
 
-    dinfo_init(&new_port->dinfo);
     if (devcfg_init(&new_port->io, eout, devcfg, myconfig, new_port) == -1) {
 	eout->out(eout, "device configuration invalid");
 	goto errout;
     }
-
-    /* set default signature, if none provided */
-    if (!new_port->dinfo.signature)
-        new_port->dinfo.signature = rfc2217_signature;
-
-    new_port->io.devname = malloc(strlen(devname) + 1);
-    if (new_port->io.devname == NULL) {
-	eout->out(eout, "could not allocate device name");
-	goto errout;
-    }
-    strcpy(new_port->io.devname, devname);
 
     new_port->config_num = config_num;
 
@@ -2458,7 +2405,7 @@ com_port_will(void *cb_data)
     port_info_t *port = cb_data;
     unsigned char data[3];
 
-    if (! port->dinfo.allow_2217)
+    if (! port->allow_2217)
 	return 0;
 
     /* The remote end turned on RFC2217 handling. */
@@ -2494,13 +2441,20 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     case 0: /* SIGNATURE? */
     {
 	/* truncate signature, if it exceeds buffer size */
-	int sign_len = strlen(port->dinfo.signature);
+	char *sig = port->signaturestr;
+	int sign_len;
+
+	if (!sig)
+	    /* If not set, use a default. */
+	    sig = rfc2217_signature;
+
+	sign_len = strlen(sig);
 	if (sign_len > (MAX_TELNET_CMD_XMIT_BUF - 2))
 	    sign_len = MAX_TELNET_CMD_XMIT_BUF - 2;
 	
 	outopt[0] = 44;
 	outopt[1] = 100;
-	strncpy((char *) outopt+2, port->dinfo.signature, sign_len);
+	strncpy((char *) outopt+2, sig, sign_len);
 	telnet_send_option(&port->tn_data, outopt, 2 + sign_len);
 	break;
     }
@@ -2643,12 +2597,13 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 void
 shutdown_ports(void)
 {
-    port_info_t *port = ports;
+    port_info_t *port = ports, *next;
     
     while (port != NULL) {
 	port->config_num = -1;
+	next = port->next;
 	shutdown_port(port, "program shutdown");
-	port = port->next;
+	port = next;
     }
 }
 

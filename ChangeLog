@@ -1,3 +1,12 @@
+2014-01-23  Corey Minyard <minyard@acm.org>
+
+	* utils.h, readconfig.c, dataxfer.c: Rework the find_xxx
+	functions to return a strdup of the string.
+
+	* dataxfer.c, dataxfer.h, devcfg.h: Remove the dinfo structure
+	and move the contents into the port structure, and remove the
+	now empty devcfg.h.
+
 2014-01-22  Corey Minyard <minyard@acm.org>
 
 	* io.h, devcfg.h, devcfg.c, dataxfer.c, buffer.c, buffer.h: Abstract

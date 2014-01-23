@@ -48,12 +48,18 @@ int scan_tcp_port(char *str, struct addrinfo **ai);
 int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 		 void *data, unsigned int *nr_fds);
 
-/* Search for a banner/open/close string by name. */
+/*
+ * Search for a banner/open/close string by name.  Note that the
+ * returned value needs to be free-ed when done.
+ */
 enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE };
-const char *find_str(const char *name, enum str_type *type);
+char *find_str(const char *name, enum str_type *type);
 
-/* Search for a tracefile by name. */
-const char *find_tracefile(const char *name);
+/*
+ * Search for a tracefile by name.  Note that the
+ * returned value needs to be free-ed when done.
+ */
+char *find_tracefile(const char *name);
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 

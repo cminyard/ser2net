@@ -157,7 +157,7 @@ out:
 	finish_longstr();
 }
 
-const char *
+char *
 find_str(const char *name, enum str_type *type)
 {
     struct longstr_s *longstr = longstrs;
@@ -165,7 +165,7 @@ find_str(const char *name, enum str_type *type)
     while (longstr) {
 	if (strcmp(name, longstr->name) == 0) {
 	    *type = longstr->type;
-	    return longstr->str;
+	    return strdup(longstr->str);
 	}
 	longstr = longstr->next;
     }
@@ -237,14 +237,14 @@ handle_tracefile(char *name, char *fname)
     tracefiles = new_tracefile;
 }
 
-const char *
+char *
 find_tracefile(const char *name)
 {
     struct tracefile_s *tracefile = tracefiles;
 
     while (tracefile) {
 	if (strcmp(name, tracefile->name) == 0)
-	    return tracefile->str;
+	    return strdup(tracefile->str);
 	tracefile = tracefile->next;
     }
     syslog(LOG_ERR, "Tracefile %s not found, it will be ignored", name);
