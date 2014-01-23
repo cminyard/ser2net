@@ -1,5 +1,5 @@
-AC_INIT(ser2net.c)
-AM_INIT_AUTOMAKE(ser2net, 2.9.1)
+AC_INIT([ser2net], [2.10.0], [minyard@acm.org])
+AM_INIT_AUTOMAKE([-Wall])
 AC_PROG_CC
 AM_PROG_LIBTOOL
 AC_ARG_WITH(uucp-locking,

@@ -7,6 +7,8 @@
 	and move the contents into the port structure, and remove the
 	now empty devcfg.h.
 
+	* configure.ac: Minor rework.
+
 2014-01-22  Corey Minyard <minyard@acm.org>
 
 	* io.h, devcfg.h, devcfg.c, dataxfer.c, buffer.c, buffer.h: Abstract
