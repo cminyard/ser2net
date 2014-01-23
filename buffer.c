@@ -21,10 +21,10 @@
 #include <errno.h>
 #include <string.h>
 #include "buffer.h"
-#include "io.h"
+#include "devio.h"
 
 static int
-lbuffer_write(struct io *io, int fd, struct sbuf *buf, int *buferr)
+lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr)
 {
     ssize_t write_count;
     int towrite1;
@@ -90,7 +90,7 @@ buffer_write(int fd, struct sbuf *buf, int *buferr)
 }
 
 int
-buffer_io_write(struct io *io, struct sbuf *buf, int *buferr)
+buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr)
 {
     return lbuffer_write(io, 0, buf, buferr);
 }

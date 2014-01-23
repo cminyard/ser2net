@@ -20,8 +20,6 @@
 /* This code handles the actual transfer of data between the serial
    ports and the TCP ports. */
 
-#include <termios.h>
-#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -40,7 +38,7 @@
 #include "selector.h"
 #include "utils.h"
 #include "telnet.h"
-#include "io.h"
+#include "devio.h"
 #include "buffer.h"
 
 extern selector_t *ser2net_sel;
@@ -224,7 +222,7 @@ typedef struct port_info
     trace_info_t *tw;
     trace_info_t *tb;
 
-    struct io io; /* For handling I/O operation to the device */
+    struct devio io; /* For handling I/O operation to the device */
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -478,7 +476,7 @@ footer_trace(port_info_t *port, char *reason)
 
 /* Data is ready to read on the serial port. */
 static void
-handle_dev_fd_read(struct io *io)
+handle_dev_fd_read(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
     int count;
@@ -607,7 +605,7 @@ dev_fd_write(port_info_t *port, struct sbuf *buf)
 }
 
 static void
-handle_dev_fd_write(struct io *io)
+handle_dev_fd_write(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
 
@@ -616,7 +614,7 @@ handle_dev_fd_write(struct io *io)
 
 /* Handle an exception from the serial port. */
 static void
-handle_dev_fd_except(struct io *io)
+handle_dev_fd_except(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
 
@@ -627,7 +625,7 @@ handle_dev_fd_except(struct io *io)
 
 /* Output the devstr buffer */
 static void
-handle_dev_fd_devstr_write(struct io *io)
+handle_dev_fd_devstr_write(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
 
@@ -644,7 +642,7 @@ handle_dev_fd_devstr_write(struct io *io)
 
 /* Output the devstr buffer */
 static void
-handle_dev_fd_close_write(struct io *io)
+handle_dev_fd_close_write(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
     int reterr, buferr;
@@ -1350,7 +1348,7 @@ setup_tcp_port(port_info_t *port)
     int options;
     struct timeval then;
     sel_fd_handler_t tcp_write_handler;
-    void (*dev_write_handler)(struct io *io);
+    void (*dev_write_handler)(struct devio *io);
     const char *errstr;
 
     if (fcntl(port->tcpfd, F_SETFL, O_NONBLOCK) == -1) {

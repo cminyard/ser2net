@@ -36,7 +36,7 @@
 #include "utils.h"
 #include "telnet.h"
 #include "dataxfer.h"
-#include "io.h"
+#include "devio.h"
 
 #include <assert.h>
 
@@ -253,7 +253,7 @@ uucp_mk_lock(char *devname)
 #endif /* USE_UUCP_LOCKING */
 
 #ifdef __CYGWIN__
-void cfmakeraw(struct termios *termios_p) {
+static void cfmakeraw(struct termios *termios_p) {
     termios_p->c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
     termios_p->c_oflag &= ~OPOST;
     termios_p->c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
@@ -511,7 +511,7 @@ baud_string(int speed)
 }
 
 static void
-devcfg_serparm_to_str(struct io *io, char *str, int strlen)
+devcfg_serparm_to_str(struct devio *io, char *str, int strlen)
 {
     struct devcfg_data *d = io->my_data;
     struct termios *termctl = &d->termctl;
@@ -551,7 +551,7 @@ devcfg_serparm_to_str(struct io *io, char *str, int strlen)
 
 /* Send the serial port device configuration to the control port. */
 static void
-devcfg_show_devcfg(struct io *io, struct absout *out)
+devcfg_show_devcfg(struct devio *io, struct absout *out)
 {
     struct devcfg_data *d = io->my_data;
     struct termios *termctl = &d->termctl;
@@ -614,7 +614,7 @@ devcfg_show_devcfg(struct io *io, struct absout *out)
 }
 
 static int
-devcfg_set_devcontrol(struct io *io, const char *instr)
+devcfg_set_devcontrol(struct devio *io, const char *instr)
 {
     struct devcfg_data *d = io->my_data;
     int fd = d->devfd;
@@ -663,7 +663,7 @@ out:
 }
 
 static void
-devcfg_show_devcontrol(struct io *io, struct absout *out)
+devcfg_show_devcontrol(struct devio *io, struct absout *out)
 {
     struct devcfg_data *d = io->my_data;
     char *str;
@@ -689,25 +689,25 @@ devcfg_show_devcontrol(struct io *io, struct absout *out)
 static void
 do_read(int fd, void *data)
 {
-    struct io *io = data;
+    struct devio *io = data;
     io->read_handler(io);
 }
 
 static void
 do_write(int fd, void *data)
 {
-    struct io *io = data;
+    struct devio *io = data;
     io->write_handler(io);
 }
 
 static void
 do_except(int fd, void *data)
 {
-    struct io *io = data;
+    struct devio *io = data;
     io->except_handler(io);
 }
 
-static int devcfg_setup(struct io *io, const char *name, const char **errstr)
+static int devcfg_setup(struct devio *io, const char *name, const char **errstr)
 {
     struct devcfg_data *d = io->my_data;
     int options;
@@ -774,7 +774,7 @@ static int devcfg_setup(struct io *io, const char *name, const char **errstr)
     return 0;
 }
 
-static void devcfg_shutdown(struct io *io)
+static void devcfg_shutdown(struct devio *io)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -791,21 +791,21 @@ static void devcfg_shutdown(struct io *io)
 #endif /* USE_UUCP_LOCKING */
 }
 
-static int devcfg_read(struct io *io, void *buf, size_t size)
+static int devcfg_read(struct devio *io, void *buf, size_t size)
 {
     struct devcfg_data *d = io->my_data;
 
     return read(d->devfd, buf, size);
 }
 
-static int devcfg_write(struct io *io, void *buf, size_t size)
+static int devcfg_write(struct devio *io, void *buf, size_t size)
 {
     struct devcfg_data *d = io->my_data;
 
     return write(d->devfd, buf, size);
 }
 
-static void devcfg_read_handler_enable(struct io *io, int enabled)
+static void devcfg_read_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -814,7 +814,7 @@ static void devcfg_read_handler_enable(struct io *io, int enabled)
 			    SEL_FD_HANDLER_DISABLED);
 }
 
-static void devcfg_write_handler_enable(struct io *io, int enabled)
+static void devcfg_write_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -823,7 +823,7 @@ static void devcfg_write_handler_enable(struct io *io, int enabled)
 			     SEL_FD_HANDLER_DISABLED);
 }
 
-static void devcfg_except_handler_enable(struct io *io, int enabled)
+static void devcfg_except_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -832,7 +832,7 @@ static void devcfg_except_handler_enable(struct io *io, int enabled)
 			      SEL_FD_HANDLER_DISABLED);
 }
 
-static int devcfg_send_break(struct io *io)
+static int devcfg_send_break(struct devio *io)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -840,7 +840,7 @@ static int devcfg_send_break(struct io *io)
     return 0;
 }
 
-static int devcfg_get_modem_state(struct io *io, unsigned char *modemstate)
+static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
 {
     struct devcfg_data *d = io->my_data;
     int val;
@@ -860,7 +860,7 @@ static int devcfg_get_modem_state(struct io *io, unsigned char *modemstate)
     return 0;
 }
 
-static int devcfg_baud_rate(struct io *io, int *val)
+static int devcfg_baud_rate(struct devio *io, int *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -884,7 +884,7 @@ static int devcfg_baud_rate(struct io *io, int *val)
     return 0;
 }
 
-static int devcfg_data_size(struct io *io, unsigned char *val)
+static int devcfg_data_size(struct devio *io, unsigned char *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -916,7 +916,7 @@ static int devcfg_data_size(struct io *io, unsigned char *val)
     return 0;
 }
 
-static int devcfg_parity(struct io *io, unsigned char *val)
+static int devcfg_parity(struct devio *io, unsigned char *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -948,7 +948,7 @@ static int devcfg_parity(struct io *io, unsigned char *val)
     return 0;
 }
 
-static int devcfg_stop_size(struct io *io, unsigned char *val)
+static int devcfg_stop_size(struct devio *io, unsigned char *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -975,7 +975,7 @@ static int devcfg_stop_size(struct io *io, unsigned char *val)
     return 0;
 }
 
-static int devcfg_flow_control(struct io *io, unsigned char val)
+static int devcfg_flow_control(struct devio *io, unsigned char val)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -983,7 +983,7 @@ static int devcfg_flow_control(struct io *io, unsigned char val)
     return 0;
 }
 
-static int devcfg_control(struct io *io, unsigned char *val)
+static int devcfg_control(struct devio *io, unsigned char *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -1136,7 +1136,7 @@ static int devcfg_control(struct io *io, unsigned char *val)
     return 0;
 }
 
-static int devcfg_flush(struct io *io, int *val)
+static int devcfg_flush(struct devio *io, int *val)
 {
     struct devcfg_data *d = io->my_data;
     int ival;
@@ -1153,7 +1153,7 @@ static int devcfg_flush(struct io *io, int *val)
     return 0;
 }
 
-static void devcfg_free(struct io *io)
+static void devcfg_free(struct devio *io)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -1164,7 +1164,7 @@ static void devcfg_free(struct io *io)
 }
 
 static int
-devcfg_reconfig(struct io *io, struct absout *eout, const char *instr,
+devcfg_reconfig(struct devio *io, struct absout *eout, const char *instr,
 		int (*otherconfig)(void *data, struct absout *eout,
 				   const char *item),
 		void *data)
@@ -1174,7 +1174,7 @@ devcfg_reconfig(struct io *io, struct absout *eout, const char *instr,
     return devconfig(d, eout, instr, otherconfig, data);
 }
 
-static struct io_f devcfg_io_f = {
+static struct devio_f devcfg_io_f = {
     .setup = devcfg_setup,
     .shutdown = devcfg_shutdown,
     .reconfig = devcfg_reconfig,
@@ -1200,7 +1200,7 @@ static struct io_f devcfg_io_f = {
 };
 
 int
-devcfg_init(struct io *io, struct absout *eout, const char *instr,
+devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 	    int (*otherconfig)(void *data, struct absout *eout,
 			       const char *item),
 	    void *data)

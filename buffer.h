@@ -20,7 +20,7 @@
 #ifndef _SER2NET_BUFFER_H
 #define _SER2NET_BUFFER_H
 
-struct io;
+struct devio;
 
 struct sbuf {
     unsigned char *buf;
@@ -29,7 +29,7 @@ struct sbuf {
     unsigned int pos;
 };
 
-int buffer_io_write(struct io *io, struct sbuf *buf, int *buferr);
+int buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr);
 
 int buffer_write(int fd, struct sbuf *buf, int *buferr);
 

@@ -100,10 +100,10 @@ void data_monitor_stop(struct controller_info *cntlr,
 void disconnect_port(struct controller_info *cntlr,
 		     char *portspec);
 
-struct io;
+struct devio;
 
 /* Initialization function for device I/O */
-int devcfg_init(struct io *io, struct absout *eout, const char *instr,
+int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 		int (*otherconfig)(void *data, struct absout *eout,
 				   const char *item),
 		void *data);
