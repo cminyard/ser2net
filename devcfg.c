@@ -36,6 +36,7 @@
 #include "utils.h"
 #include "telnet.h"
 #include "dataxfer.h"
+#include "io.h"
 
 #include <assert.h>
 

@@ -20,7 +20,7 @@
 #ifndef _SER2NET_BUFFER_H
 #define _SER2NET_BUFFER_H
 
-#include "io.h"
+struct io;
 
 struct sbuf {
     unsigned char *buf;

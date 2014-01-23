@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <string.h>
 #include "buffer.h"
+#include "io.h"
 
 static int
 lbuffer_write(struct io *io, int fd, struct sbuf *buf, int *buferr)

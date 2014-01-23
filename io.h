@@ -20,8 +20,7 @@
 #ifndef SER2NET_IO_H
 #define SER2NET_IO_H
 
-#include "dataxfer.h"
-
+struct absout;
 struct io_f;
 
 struct io {

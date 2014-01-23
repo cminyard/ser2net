@@ -40,6 +40,8 @@
 #include "selector.h"
 #include "utils.h"
 #include "telnet.h"
+#include "io.h"
+#include "buffer.h"
 
 extern selector_t *ser2net_sel;
 

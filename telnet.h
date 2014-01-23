@@ -2,7 +2,7 @@
 #ifndef _SER2NET_TELNET_H
 #define _SER2NET_TELNET_H
 
-#include <buffer.h>
+#include "buffer.h"
 
 /* Telnet commands */
 #define TN_BREAK 243
