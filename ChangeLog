@@ -1,3 +1,13 @@
+2014-01-24  Corey Minyard <minyard@acm.org>
+
+	* ser2net.h, Makefile.am: Move some things into a new
+	ser2net.h file.
+
+	* devcfg.c, controller.c, dataxfer.c, ser2net.c, utils.c: Add the
+	ser2net.h include file.
+
+	* dataxfer.c: Fix some EAGAIN handling.
+
 2014-01-23  Corey Minyard <minyard@acm.org>
 
 	* utils.h, readconfig.c, dataxfer.c: Rework the find_xxx

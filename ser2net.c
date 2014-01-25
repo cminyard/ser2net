@@ -34,6 +34,7 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
 #include "utils.h"

@@ -32,15 +32,13 @@
 #include <errno.h>
 #include <syslog.h>
 
+#include "ser2net.h"
 #include "selector.h"
 #include "utils.h"
-#include "telnet.h"
 #include "dataxfer.h"
 #include "devio.h"
 
 #include <assert.h>
-
-extern selector_t *ser2net_sel;
 
 struct devcfg_data {
     /* Information about the terminal device. */

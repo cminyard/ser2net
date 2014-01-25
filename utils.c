@@ -26,10 +26,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "ser2net.h"
 #include "utils.h"
 #include "selector.h"
-
-extern selector_t *ser2net_sel;
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid. */

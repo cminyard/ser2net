@@ -27,14 +27,12 @@
 #include <errno.h>
 #include <syslog.h>
 
+#include "ser2net.h"
 #include "controller.h"
 #include "selector.h"
 #include "dataxfer.h"
 #include "utils.h"
 #include "telnet.h"
-
-
-extern selector_t *ser2net_sel;
 
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H

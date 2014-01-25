@@ -34,14 +34,13 @@
 #include <time.h>
 #include <fcntl.h>
 
+#include "ser2net.h"
 #include "dataxfer.h"
 #include "selector.h"
 #include "utils.h"
 #include "telnet.h"
 #include "devio.h"
 #include "buffer.h"
-
-extern selector_t *ser2net_sel;
 
 #define SERIAL "term"
 #define NET    "tcp "
@@ -498,6 +497,11 @@ handle_dev_fd_read(struct devio *io)
     }
 
     if (count < 0) {
+	if (errno == EAGAIN || errno == EWOULDBLOCK) {
+	    /* Nothing to read, just return. */
+	    return;
+	}
+
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
 	shutdown_port(port, "dev read error");
@@ -543,7 +547,7 @@ handle_dev_fd_read(struct devio *io)
 	    goto retry_write;
 	}
 
-	if (errno == EAGAIN) {
+	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
 	    port->io.f->read_handler_enable(&port->io, 0);
@@ -671,6 +675,11 @@ handle_tcp_fd_read(int fd, void *data)
     port->tcp_to_dev.pos = 0;
     count = read(fd, port->tcp_to_dev.buf, port->tcp_to_dev.maxsize);
     if (count < 0) {
+	if (errno == EAGAIN || errno == EWOULDBLOCK) {
+	    /* Nothing to read, just return. */
+	    return;
+	}
+
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
 	shutdown_port(port, "tcp read error");
@@ -724,7 +733,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    goto retry_write;
 	}
 
-	if (errno == EAGAIN) {
+	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
 	    sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
