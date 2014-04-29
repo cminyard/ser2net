@@ -193,6 +193,9 @@ typedef struct port_info
     /* Allow RFC 2217 mode */
     int allow_2217;
 
+    /* kickolduser mode */
+    int kickolduser_mode;
+
     /* Banner to display at startup, or NULL if none. */
     char *bannerstr;
 
@@ -1472,6 +1475,12 @@ handle_accept_port_read(int fd, void *data)
     int optval;
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
+      if (port->kickolduser_mode) {
+	  if (port->tcp_to_dev_state != PORT_CLOSING)
+	    shutdown_port(port, "kicked off, new user is coming\n\r");
+	  /* Wait the port to be unconnected and clean, go back to main loop*/
+	  return;
+      }
 	err = "Port already in use\n\r";
     } else if (is_device_already_inuse(port)) {
 	err = "Port's device already in use\n\r";
@@ -1798,6 +1807,8 @@ myconfig(void *data, struct absout *eout, const char *pos)
 
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = 1;
+    } else if (strcmp(pos, "kickolduser") == 0) {
+        port->kickolduser_mode = 1;
     } else if (strcmp(pos, "hexdump") == 0 ||
 	       strcmp(pos, "-hexdump") == 0) {
 	port->trace_read.hexdump = (*pos != '-');
