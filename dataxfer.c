@@ -2523,7 +2523,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	port->io.f->parity(&port->io, &ucval);
 	outopt[0] = 44;
 	outopt[1] = 103;
-	outopt[2] = 0;
+	outopt[2] = ucval;
 	telnet_send_option(&port->tn_data, outopt, 3);
 	break;
 
