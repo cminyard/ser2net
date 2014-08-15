@@ -180,7 +180,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
 int
 write_full(int fd, char *data, size_t count)
 {
-    size_t written;
+    ssize_t written;
 
  restart:
     while ((written = write(fd, data, count)) > 0) {
