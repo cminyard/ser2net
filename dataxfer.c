@@ -2599,7 +2599,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     case 12: /* PURGE_DATA */
 	if (len < 3)
 	    return;
-
+	val = option[2];
 	port->io.f->flush(&port->io, &val);
 	outopt[0] = 44;
 	outopt[1] = 112;
