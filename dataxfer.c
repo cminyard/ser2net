@@ -2453,6 +2453,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
     int val;
     unsigned char ucval;
+    int cisco_ios_baud_rates = 0;
     
     if (len < 2) 
 	return;
@@ -2480,9 +2481,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     }
 
     case 1: /* SET-BAUDRATE */
-	if (cisco_ios_baud_rates) {
-	    if (len < 3)
-		return;
+	if (len == 3) {
+	    cisco_ios_baud_rates = 1;
 	    val = option[2];
 	} else {
 	    if (len < 6)
@@ -2496,7 +2496,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    val |= option[5];
 	}
 
-	port->io.f->baud_rate(&port->io, &val);
+	port->io.f->baud_rate(&port->io, &val, cisco_ios_baud_rates);
 	outopt[0] = 44;
 	outopt[1] = 101;
 	if (cisco_ios_baud_rates) {

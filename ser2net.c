@@ -50,7 +50,6 @@ static int debug = 0;
 #ifdef USE_UUCP_LOCKING
 int uucp_locking_enabled = 1;
 #endif
-int cisco_ios_baud_rates = 0;
 
 selector_t *ser2net_sel;
 char *rfc2217_signature = "ser2net";
@@ -70,7 +69,7 @@ static char *help_string =
 #ifdef USE_UUCP_LOCKING
 "  -u - Disable UUCP locking\n"
 #endif
-"  -b - Do CISCO IOS baud-rate negotiation, instead of RFC2217\n"
+"  -b - unused (was Do CISCO IOS baud-rate negotiation, instead of RFC2217)\n"
 "  -v - print the program's version and exit\n"
 "  -s - specify a default signature for RFC2217 protocol\n";
 
@@ -187,7 +186,6 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'b':
-	    cisco_ios_baud_rates = 1;
 	    break;
 
 	case 'C':

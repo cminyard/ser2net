@@ -85,12 +85,12 @@ static struct baud_rates_s {
 };
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
-int
-get_baud_rate(int rate, int *val)
+static int
+get_baud_rate(int rate, int *val, int cisco)
 {
     unsigned int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
-	if (cisco_ios_baud_rates) {
+	if (cisco) {
 	    if (rate == baud_rates[i].cisco_ios_val) {
 		*val = baud_rates[i].val;
 		return 1;
@@ -106,13 +106,13 @@ get_baud_rate(int rate, int *val)
     return 0;
 }
 
-void
-get_rate_from_baud_rate(int baud_rate, int *val)
+static void
+get_rate_from_baud_rate(int baud_rate, int *val, int cisco)
 {
     unsigned int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
-	    if (cisco_ios_baud_rates) {
+	    if (cisco) {
 		if (baud_rates[i].cisco_ios_val < 0)
 		    /* We are at a baud rate unsupported by the
 		       enumeration, just return zero. */
@@ -858,7 +858,7 @@ static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     return 0;
 }
 
-static int devcfg_baud_rate(struct devio *io, int *val)
+static int devcfg_baud_rate(struct devio *io, int *val, int cisco)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -868,7 +868,7 @@ static int devcfg_baud_rate(struct devio *io, int *val)
 	return -1;
     }
 
-    if ((val != 0) && (get_baud_rate(*val, val))) {
+    if ((val != 0) && (get_baud_rate(*val, val, cisco))) {
 	/* We have a valid baud rate. */
 	cfsetispeed(&termio, *val);
 	cfsetospeed(&termio, *val);
@@ -877,7 +877,7 @@ static int devcfg_baud_rate(struct devio *io, int *val)
 
     tcgetattr(d->devfd, &termio);
     *val = cfgetispeed(&termio);
-    get_rate_from_baud_rate(*val, val);
+    get_rate_from_baud_rate(*val, val, cisco);
 
     return 0;
 }

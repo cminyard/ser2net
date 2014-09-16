@@ -22,10 +22,6 @@
 
 #include "selector.h"
 
-/* Set to true if we are supposed to do CISCO IOS baud rates instead
-   of RFC2217 ones. */
-extern int cisco_ios_baud_rates;
-
 /* The default rfc2217 signature if none is provided. */
 extern char *rfc2217_signature;
 
