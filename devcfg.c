@@ -883,7 +883,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco)
 	return -1;
     }
 
-    if ((val != 0) && (get_baud_rate(*val, val, cisco))) {
+    if ((*val != 0) && (get_baud_rate(*val, val, cisco))) {
 	/* We have a valid baud rate. */
 	cfsetispeed(&termio, *val);
 	cfsetospeed(&termio, *val);
