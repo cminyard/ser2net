@@ -61,6 +61,9 @@ char *find_str(const char *name, enum str_type *type);
  */
 char *find_tracefile(const char *name);
 
+/* Search for RS485 configuration by name. */
+struct serial_rs485 *find_rs485conf(const char *name);
+
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
 /* Make sure the full contents get written, return an error if it occurs. */

@@ -204,6 +204,13 @@ struct tracefile_s
     struct tracefile_s *next;
 };
 
+struct rs485conf_s
+{
+    char *name;
+    struct serial_rs485 conf;
+    struct rs485conf_s *next;
+};
+
 /* All the tracefiles in the system. */
 struct tracefile_s *tracefiles = NULL;
 
@@ -262,6 +269,91 @@ free_tracefiles(void)
 	free(tracefile->name);
 	free(tracefile->str);
 	free(tracefile);
+    }
+}
+
+/* All the RS485 configs in the system. */
+struct rs485conf_s *rs485confs = NULL;
+
+static void
+handle_rs485conf(char *name, char *str)
+{
+    struct rs485conf_s *new_rs485conf;
+    uint8_t rts_on_send, rx_during_tx;
+
+    new_rs485conf = malloc(sizeof(*new_rs485conf));
+    if (!new_rs485conf) {
+	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
+	return;
+    }
+
+    new_rs485conf->name = strdup(name);
+    if (!new_rs485conf->name) {
+	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
+	free(new_rs485conf);
+	return;
+    }
+
+    if (sscanf(str, "%u:%u:%1hhu:%1hhu",
+               &new_rs485conf->conf.delay_rts_before_send,
+               &new_rs485conf->conf.delay_rts_after_send,
+               &rts_on_send,
+               &rx_during_tx) != 4) {
+	syslog(LOG_ERR, "Couldn't parse RS485 config on %d", lineno);
+	return;
+    }
+
+    /* check, if flags have values 0 or 1 */
+    if (rts_on_send > 1) {
+	syslog(LOG_ERR, "RTS_ON_SEND parameter can be 0 or 1 on %d", lineno);
+	return;
+    }
+
+    if (rx_during_tx > 1) {
+	syslog(LOG_ERR, "RX_DURING_TX parameter can be 0 or 1 on %d", lineno);
+	return;
+    }
+
+    new_rs485conf->conf.flags = SER_RS485_ENABLED;
+
+    if (rts_on_send) {
+        new_rs485conf->conf.flags |= SER_RS485_RTS_ON_SEND;
+    } else {
+        new_rs485conf->conf.flags |= SER_RS485_RTS_AFTER_SEND;
+    }
+
+    if (rx_during_tx) {
+        new_rs485conf->conf.flags |= SER_RS485_RX_DURING_TX;
+    }
+
+    new_rs485conf->next = rs485confs;
+    rs485confs = new_rs485conf;
+}
+
+struct serial_rs485 *
+find_rs485conf(const char *name)
+{
+    struct rs485conf_s *new_rs485conf = rs485confs;
+
+    while (new_rs485conf) {
+        if (strcmp(name, new_rs485conf->name) == 0)
+            return &new_rs485conf->conf;
+        new_rs485conf = new_rs485conf->next;
+    }
+    syslog(LOG_ERR, "RS485 configuration %s not found, it will be ignored", name);
+    return NULL;
+}
+
+static void
+free_rs485confs(void)
+{
+    struct rs485conf_s *rs485conf;
+
+    while (rs485confs) {
+        rs485conf = rs485confs;
+        rs485confs = rs485confs->next;
+        free(rs485conf->name);
+        free(rs485conf);
     }
 }
 
@@ -351,6 +443,21 @@ handle_config_line(char *inbuf)
 	}
 	handle_longstr(name, str, SIGNATURE);
 	return;
+    }
+
+    if (startswith(inbuf, "RS485CONF", &strtok_data)) {
+        char *name = strtok_r(NULL, ":", &strtok_data);
+        char *str = strtok_r(NULL, "\n", &strtok_data);
+        if (name == NULL) {
+            syslog(LOG_ERR, "No signature given on line %d", lineno);
+            return;
+        }
+        if ((str == NULL) || (strlen(str) == 0)) {
+            syslog(LOG_ERR, "No RS485 configuration given on line %d", lineno);
+            return;
+        }
+        handle_rs485conf(name, str);
+        return;
     }
 
     if (startswith(inbuf, "OPENSTR", &strtok_data)) {
@@ -452,6 +559,7 @@ readconfig(char *filename)
 
     free_longstrs();
     free_tracefiles();
+    free_rs485confs();
 
     config_num++;
 

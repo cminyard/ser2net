@@ -20,6 +20,7 @@
 /* This code handles the actual transfer of data between the serial
    ports and the TCP ports. */
 
+
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -225,6 +226,8 @@ typedef struct port_info
     trace_info_t *tb;
 
     struct devio io; /* For handling I/O operation to the device */
+
+    struct serial_rs485 *rs485conf;
 } port_info_t;
 
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -303,6 +306,7 @@ init_port_data(port_info_t *port)
     port->trace_read.fd = -1;
     port->trace_write.fd = -1;
     port->trace_both.fd = -1;
+    port->rs485conf = NULL;
 }
 
 static void
@@ -1846,6 +1850,9 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if (strncmp(pos, "tb=", 3) == 0) {
 	/* trace both directions. */
 	port->trace_both.filename = find_tracefile(pos + 3);
+    } else if (strncmp(pos, "rs485=", 6) == 0) {
+	/* get RS485 configuration. */
+	port->rs485conf = find_rs485conf(pos + 6);
     } else if ((s = find_str(pos, &stype))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
@@ -2341,6 +2348,13 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     }
 
     change_port_state(&eout, port, new_enable);
+}
+
+struct serial_rs485 *get_rs485_conf(void *data)
+{
+    port_info_t *port = data;
+
+    return port->rs485conf;
 }
 
 /* Start data monitoring on the given port, type may be either "tcp" or

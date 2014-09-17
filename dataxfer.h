@@ -20,6 +20,8 @@
 #ifndef DATAXFER
 #define DATAXFER
 
+#include <linux/serial.h>
+
 #include "controller.h"
 
 #ifdef USE_UUCP_LOCKING
@@ -107,5 +109,7 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 		int (*otherconfig)(void *data, struct absout *eout,
 				   const char *item),
 		void *data);
+
+struct serial_rs485 *get_rs485_conf(void *data);
 
 #endif /* DATAXFER */

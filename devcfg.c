@@ -31,6 +31,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <syslog.h>
+#include <linux/serial.h>
 
 #include "ser2net.h"
 #include "selector.h"
@@ -53,6 +54,8 @@ struct devcfg_data {
 
     /* Disable break-commands */
     int disablebreak;
+
+    struct serial_rs485 *conf;
 };
 
 static struct baud_rates_s {
@@ -444,6 +447,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	pos = strtok_r(NULL, ", \t", &strtok_data);
     }
 
+    d->conf = get_rs485_conf(data);
  out:
     free(str);
     return rv;
@@ -764,6 +768,17 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr)
 	syslog(LOG_ERR, "Could not turn off break for device %s port %s: %m",
 	       io->devname,
 	       name);
+    }
+
+    if (d->conf) {
+        if (d->conf->flags & SER_RS485_ENABLED) {
+            if (ioctl(d->devfd , TIOCSRS485, d->conf ) < 0) {
+                syslog(LOG_ERR, "Could not set RS485 config for device %s port %s: %m",
+                       io->devname,
+                       name);
+                return -1;
+            }
+        }
     }
 
     sel_set_fd_handlers(ser2net_sel, d->devfd, io,
