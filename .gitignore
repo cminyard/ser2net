@@ -1,0 +1,14 @@
+config.*
+configure
+Makefile
+Makefile.in
+tags
+ser2net.spec
+missing
+aclocal.m4
+libtool
+ltmain.sh
+depcomp
+install-sh
+/.deps/
+/autom4te.cache/
