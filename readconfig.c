@@ -204,12 +204,14 @@ struct tracefile_s
     struct tracefile_s *next;
 };
 
+#ifdef USE_RS485_FEATURE
 struct rs485conf_s
 {
     char *name;
     struct serial_rs485 conf;
     struct rs485conf_s *next;
 };
+#endif
 
 /* All the tracefiles in the system. */
 struct tracefile_s *tracefiles = NULL;
@@ -272,6 +274,7 @@ free_tracefiles(void)
     }
 }
 
+#ifdef USE_RS485_FEATURE
 /* All the RS485 configs in the system. */
 struct rs485conf_s *rs485confs = NULL;
 
@@ -356,6 +359,7 @@ free_rs485confs(void)
         free(rs485conf);
     }
 }
+#endif
 
 static int
 startswith(char *str, const char *test, char **strtok_data)
@@ -445,6 +449,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
+#ifdef USE_RS485_FEATURE
     if (startswith(inbuf, "RS485CONF", &strtok_data)) {
         char *name = strtok_r(NULL, ":", &strtok_data);
         char *str = strtok_r(NULL, "\n", &strtok_data);
@@ -459,6 +464,7 @@ handle_config_line(char *inbuf)
         handle_rs485conf(name, str);
         return;
     }
+#endif
 
     if (startswith(inbuf, "OPENSTR", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
@@ -559,7 +565,9 @@ readconfig(char *filename)
 
     free_longstrs();
     free_tracefiles();
+#ifdef USE_RS485_FEATURE
     free_rs485confs();
+#endif
 
     config_num++;
 
