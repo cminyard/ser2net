@@ -12,3 +12,5 @@ depcomp
 install-sh
 /.deps/
 /autom4te.cache/
+*.o
+ser2net
