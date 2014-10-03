@@ -229,12 +229,13 @@ uucp_mk_lock(char *devname)
 
 	if (pid == 0) {
 	    int mask;
-	    size_t rv;
 
 	    mask = umask(022);
 	    fd = open(lck_file, O_WRONLY | O_CREAT | O_EXCL, 0666);
 	    umask(mask);
 	    if (fd >= 0) {
+	        ssize_t rv;
+
 		snprintf(buf.str, sizeof(buf), "%10ld\n",
 			 (long)getpid());
 		rv = write_full(fd, buf.str, strlen(buf.str));
