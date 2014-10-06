@@ -18,7 +18,6 @@
  */
 
 /* This code handles generating the configuration for the serial port. */
-
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -31,7 +30,6 @@
 #include <signal.h>
 #include <errno.h>
 #include <syslog.h>
-#include <linux/serial.h>
 
 #include "ser2net.h"
 #include "selector.h"

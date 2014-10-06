@@ -20,8 +20,6 @@
 #ifndef DATAXFER
 #define DATAXFER
 
-#include <linux/serial.h>
-
 #include "controller.h"
 
 #ifdef USE_UUCP_LOCKING
@@ -29,6 +27,9 @@ extern int uucp_locking_enabled;
 #endif
 
 #ifdef linux
+
+#include <linux/serial.h>
+#include <asm-generic/ioctls.h>
 
 #define USE_RS485_FEATURE
 
