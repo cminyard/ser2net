@@ -5,6 +5,7 @@
 #include "buffer.h"
 
 /* Telnet commands */
+#define TN_DATA_MARK 242
 #define TN_BREAK 243
 #define TN_WILL	251
 #define TN_WONT	252

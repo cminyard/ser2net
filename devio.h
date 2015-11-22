@@ -60,6 +60,9 @@ struct devio_f {
     int (*stop_size)(struct devio *io, unsigned char *val);
     int (*control)(struct devio *io, unsigned char *val);
     int (*flow_control)(struct devio *io, unsigned char val);
+
+#define DEVIO_FLUSH_INPUT  (1 << 0)
+#define DEVIO_FLUSH_OUTPUT (1 << 1)
     int (*flush)(struct devio *io, int *val);
     void (*serparm_to_str)(struct devio *io, char *str, int strlen);
     void (*free)(struct devio *io);

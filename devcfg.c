@@ -1160,9 +1160,10 @@ static int devcfg_flush(struct devio *io, int *val)
     int ival;
 
     switch (*val) {
-    case 1: ival = TCIFLUSH; goto purge_found;
-    case 2: ival = TCOFLUSH; goto purge_found;
-    case 3: ival = TCIOFLUSH; goto purge_found;
+    case DEVIO_FLUSH_INPUT: ival = TCIFLUSH; goto purge_found;
+    case DEVIO_FLUSH_OUTPUT: ival = TCOFLUSH; goto purge_found;
+    case DEVIO_FLUSH_INPUT | DEVIO_FLUSH_OUTPUT:
+	ival = TCIOFLUSH; goto purge_found;
     }
     *val = 0;
     return -1;

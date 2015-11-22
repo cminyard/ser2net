@@ -194,6 +194,9 @@ typedef struct port_info
     /* Allow RFC 2217 mode */
     int allow_2217;
 
+    /* Send a break if we get a sync command? */
+    int telnet_brk_on_sync;
+
     /* kickolduser mode */
     int kickolduser_mode;
 
@@ -842,9 +845,47 @@ static void
 handle_tcp_fd_except(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
+    int rv, val;
+    unsigned char c;
+    int cmd_pos;
 
-    syslog(LOG_ERR, "Select exception on port %s", port->portname);
-    shutdown_port(port, "tcp fd exception");
+    /* We should have urgent data, a DATA MARK in the stream.  Read
+       then urgent data (whose contents are irrelevant) then discard
+       user data until we find the DATA_MARK command. */
+
+    while ((rv = recv(fd, &c, 1, MSG_OOB)) > 0)
+	;
+    /* Ignore any errors, they are irrelevant. */
+
+    if (port->enabled != PORT_TELNET)
+	return;
+
+    /* Flush the data in the local and device queue. */
+    port->tcp_to_dev.cursize = 0;
+    val = 0;
+    port->io.f->flush(&port->io, &val);
+
+    /* Store it if we last got an IAC, and abort any current
+       telnet processing. */
+    cmd_pos = port->tn_data.telnet_cmd_pos;
+    if (cmd_pos != 1)
+	cmd_pos = 0;
+    port->tn_data.telnet_cmd_pos = 0;
+    port->tn_data.suboption_iac = 0;
+
+    while ((rv = read(fd, &c, 1)) > 0) {
+	if (cmd_pos == 1) {
+	    if (c == TN_DATA_MARK) {
+		/* Found it. */
+		if (port->telnet_brk_on_sync)
+		    port->io.f->send_break(&port->io);
+		break;
+	    }
+	    cmd_pos = 0;
+	} else if (c == TN_IAC) {
+	    cmd_pos = 1;
+	}
+    }
 }
 
 static void
@@ -871,7 +912,7 @@ telnet_cmd_handler(void *cb_data, unsigned char cmd)
 {
     port_info_t *port = cb_data;
 
-    if (cmd == TN_BREAK)
+    if ((cmd == TN_BREAK) || (port->telnet_brk_on_sync && cmd == TN_DATA_MARK))
 	port->io.f->send_break(&port->io);
 }
 
@@ -1859,6 +1900,8 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	/* get RS485 configuration. */
 	port->rs485conf = find_rs485conf(pos + 6);
 #endif
+    } else if (strncmp(pos, "telnet_brk_on_sync", 3) == 0) {
+	port->telnet_brk_on_sync = 1;
     } else if ((s = find_str(pos, &stype))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
