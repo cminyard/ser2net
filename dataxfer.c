@@ -24,6 +24,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <netinet/in.h>
@@ -211,6 +212,20 @@ typedef struct port_info
 
     /* String to send to device at close, or NULL if none. */
     char *closestr;
+
+    /*
+     * Close on string to shutdown connection when received from
+     * serial side, or NULL if none.
+     */
+    char *closeon;
+    unsigned int closeon_pos;
+    unsigned int closeon_len;
+
+    /*
+     * Close the session when all the output has been written to the
+     * TCP port.
+     */
+    bool close_on_output_done;
 
     /*
      * File to read/write trace, NULL if none.  If the same, then
@@ -504,12 +519,6 @@ handle_dev_fd_read(struct devio *io)
 				 port->tcp_to_dev.maxsize);
     }
 
-    if (port->dev_monitor != NULL) {
-	controller_write(port->dev_monitor,
-			 (char *) port->dev_to_tcp.buf,
-			 count);
-    }
-
     if (count < 0) {
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* Nothing to read, just return. */
@@ -524,6 +533,30 @@ handle_dev_fd_read(struct devio *io)
 	/* The port got closed somehow, shut it down. */
 	shutdown_port(port, "closed port");
 	return;
+    }
+
+    if (port->dev_monitor != NULL) {
+	controller_write(port->dev_monitor,
+			 (char *) port->dev_to_tcp.buf,
+			 count);
+    }
+
+    if (port->closeon) {
+	int i;
+
+	for (i = 0; i < count; i++) {
+	    if (port->dev_to_tcp.buf[i] == port->closeon[port->closeon_pos]) {
+		port->closeon_pos++;
+		if (port->closeon_pos >= port->closeon_len) {
+		    port->close_on_output_done = true;
+		    /* Ignore everything after the closeon string */
+		    count = i + 1;
+		    break;
+		}
+	    } else {
+		port->closeon_pos = 0;
+	    }
+	}
     }
 
     if (port->tr)
@@ -589,6 +622,9 @@ handle_dev_fd_read(struct devio *io)
 	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
 				     SEL_FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
+	} else if (port->close_on_output_done) {
+	    shutdown_port(port, "closeon sequence found");
+	    port->close_on_output_done = false;
 	}
     }
 
@@ -825,6 +861,11 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
 				 SEL_FD_HANDLER_DISABLED);
 	port->dev_to_tcp_state = PORT_WAITING_INPUT;
+
+	if (port->close_on_output_done) {
+	    shutdown_port(port, "closeon sequence found");
+	    port->close_on_output_done = false;
+	}
     }
 
     reset_timer(port);
@@ -1672,6 +1713,8 @@ free_port(port_info_t *port)
 	free(port->openstr);
     if (port->closestr)
 	free(port->closestr);
+    if (port->closeon)
+	free(port->closeon);
     free(port);
 }
 
@@ -1853,6 +1896,7 @@ myconfig(void *data, struct absout *eout, const char *pos)
     port_info_t *port = data;
     enum str_type stype;
     char *s;
+    unsigned int len;
 
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = 1;
@@ -1902,7 +1946,7 @@ myconfig(void *data, struct absout *eout, const char *pos)
 #endif
     } else if (strncmp(pos, "telnet_brk_on_sync", 3) == 0) {
 	port->telnet_brk_on_sync = 1;
-    } else if ((s = find_str(pos, &stype))) {
+    } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
 	switch (stype) {
@@ -1910,6 +1954,7 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	case SIGNATURE: port->signaturestr = s; break;
 	case OPENSTR: port->openstr = s; break;
 	case CLOSESTR: port->closestr = s; break;
+	case CLOSEON: port->closeon = s; port->closeon_len = len; break;
 	default: free(s);
 	}
     } else {

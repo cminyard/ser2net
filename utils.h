@@ -52,8 +52,8 @@ int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
  * Search for a banner/open/close string by name.  Note that the
  * returned value needs to be free-ed when done.
  */
-enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE };
-char *find_str(const char *name, enum str_type *type);
+enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE, CLOSEON };
+char *find_str(const char *name, enum str_type *type, unsigned int *len);
 
 /*
  * Search for a tracefile by name.  Note that the

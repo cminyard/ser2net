@@ -23,6 +23,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <syslog.h>
 #include <stdarg.h>
@@ -44,6 +45,7 @@ struct longstr_s
 {
     char *name;
     char *str;
+    unsigned int length;
     enum str_type type;
     struct longstr_s *next;
 };
@@ -55,6 +57,104 @@ static int working_longstr_len = 0;
 /* All the strings in the system. */
 struct longstr_s *longstrs = NULL;
 
+static int isoctdigit(char c)
+{
+    return ((c >= '0') && (c <= '7'));
+}
+
+/* Assumes the value is pre-checked */
+static int hexchar_to_val(char c)
+{
+    if ((c >= '0') && (c <= '9'))
+	return c - '0';
+    if (isupper(c))
+	return c - 'A' + 10;
+    return c - 'a' + 10;
+}
+
+/*
+ * Convert \004 and other ESC sequences in place, inspired from
+ * http://stackoverflow.com/questions/17015970/how-does-c-compiler-convert-escape-sequence-to-actual-bytes
+ */
+static void
+translateescapes(char *string, unsigned int *outlen,
+		 char **err, char **errpos)
+{
+    char *ip = string, *op = string;
+    unsigned int cleft = strlen(string);
+    unsigned int iplen;
+
+    *err = NULL;
+    while (*ip) {
+	cleft--;
+	if (*ip != '\\') {
+	    *op++ = *ip++;
+	    continue;
+	}
+
+	if (cleft == 0)
+	    goto out_str_in_bslash;
+
+	iplen = 2;
+	switch (ip[1]) {
+	case '\\': *op = '\\'; break;
+	case 'r': *op = '\r'; break;
+	case 'n': *op = '\n'; break;
+	case 't': *op = '\t'; break;
+	case 'v': *op = '\v'; break;
+	case 'a': *op = '\a'; break;
+	case '0': case '1': case '2': case '3':
+	case '4': case '5': case '6': case '7':
+	    if (cleft < 3)
+		goto out_str_in_bslash;
+	    if (!isoctdigit(ip[2]) || !isoctdigit(ip[3])) {
+		*err = "Invalid octal sequence";
+		*errpos = ip - 1;
+	    }
+	    iplen = 4;
+	    *op = (ip[1] -'0') * 64 + (ip[2] - '0') * 8 + (ip[3] - '0');
+	    break;
+	case 'x':
+	    if (cleft < 3)
+		goto out_str_in_bslash;
+	    if (!isxdigit(ip[2]) || !isxdigit(ip[3])) {
+		*err = "Invalid octal sequence";
+		*errpos = ip - 1;
+	    }
+	    iplen = 4;
+	    *op = 16 * hexchar_to_val(ip[2]) + hexchar_to_val(ip[3]);
+	    break;
+	default:
+	    *err = "Unknown escape sequence";
+	    *errpos = ip - 1;
+	    return;
+	}
+
+	ip += iplen;
+	cleft -= iplen;
+	op++;
+    }
+
+    *outlen = op - string;
+    *op = '\0';
+    return;
+
+ out_str_in_bslash:
+    *err = "end of string right after a \\";
+    *errpos = "";
+}
+
+static void
+free_working_longstr(void)
+{
+    if (working_longstr->name)
+	free(working_longstr->name);
+    if (working_longstr->str)
+	free(working_longstr->str);
+    free(working_longstr);
+    working_longstr = NULL;
+}
+
 static void
 finish_longstr(void)
 {
@@ -65,6 +165,21 @@ finish_longstr(void)
     /* On the final alloc an extra byte will be added for the nil char */
     working_longstr->str[working_longstr_len] = '\0';
     
+    if (working_longstr->type == CLOSEON) {
+	char *err = NULL, *errpos = NULL;
+
+	translateescapes(working_longstr->str, &working_longstr->length,
+			 &err, &errpos);
+	if (err) {
+	    syslog(LOG_ERR, "%s (starting at %s) on line %d", err, errpos,
+		   lineno);
+	    free_working_longstr();
+	    goto out;
+	}
+    } else {
+	working_longstr->length = working_longstr_len;
+    }
+
     working_longstr->next = longstrs;
     longstrs = working_longstr;
     working_longstr = NULL;
@@ -92,12 +207,12 @@ handle_longstr(char *name, char *line, enum str_type type)
 	syslog(LOG_ERR, "Out of memory handling string on %d", lineno);
 	return;
     }
+    memset(working_longstr, 0, sizeof(*working_longstr));
     working_longstr->type = type;
 
     working_longstr->name = strdup(name);
     if (!working_longstr->name) {
-	free(working_longstr);
-	working_longstr = NULL;
+	free_working_longstr();
 	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
 	return;
     }
@@ -108,9 +223,7 @@ handle_longstr(char *name, char *line, enum str_type type)
     /* Add 1 if it's not continued and thus needs the '\0' */
     working_longstr->str = malloc(line_len + !working_longstr_continued);
     if (!working_longstr->str) {
-	free(working_longstr->name);
-	free(working_longstr);
-	working_longstr = NULL;
+	free_working_longstr();
 	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
 	return;
     }
@@ -158,14 +271,22 @@ out:
 }
 
 char *
-find_str(const char *name, enum str_type *type)
+find_str(const char *name, enum str_type *type, unsigned int *len)
 {
     struct longstr_s *longstr = longstrs;
 
     while (longstr) {
 	if (strcmp(name, longstr->name) == 0) {
+	    char *rv;
+
+	    /* Note that longstrs can contain \0, so be careful in handling */
 	    *type = longstr->type;
-	    return strdup(longstr->str);
+	    *len = longstr->length;
+	    rv = malloc(longstr->length + 1);
+	    if (!rv)
+		return NULL;
+	    memcpy(rv, longstr->str, longstr->length + 1);
+	    return rv;
 	}
 	longstr = longstr->next;
     }
@@ -485,6 +606,17 @@ handle_config_line(char *inbuf)
 	    return;
 	}
 	handle_longstr(name, str, CLOSESTR);
+	return;
+    }
+
+    if (startswith(inbuf, "CLOSEON", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
+	    return;
+	}
+	handle_longstr(name, str, CLOSEON);
 	return;
     }
 
