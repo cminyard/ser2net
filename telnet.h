@@ -90,7 +90,7 @@ void telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len);
 int process_telnet_data(unsigned char *data, int len, telnet_data_t *td);
 
 /* Used to send an option.  The option should *not* contain the inital
-   "255 250" nor the tailing "255 240" and shoudl *not* double
+   "255 250" nor the tailing "255 240" and should *not* double
    internal 255 values. */
 void telnet_send_option(telnet_data_t *td, unsigned char *option, int len);
 
