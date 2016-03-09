@@ -18,6 +18,10 @@ then
   AC_HAVE_HEADERS(tcpd.h)
   AC_CHECK_LIB(wrap,main)
 fi
+
+# enable silent build
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+
 AC_CONFIG_MACRO_DIR([m4])
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
