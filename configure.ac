@@ -1,4 +1,4 @@
-AC_INIT([ser2net], [2.10.0], [minyard@acm.org])
+AC_INIT([ser2net], [2.10.1], [minyard@acm.org])
 AM_INIT_AUTOMAKE([-Wall])
 AC_PROG_CC
 AM_PROG_LIBTOOL
