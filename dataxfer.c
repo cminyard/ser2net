@@ -273,7 +273,7 @@ static struct telnet_cmd telnet_cmds[] =
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
     { TN_OPT_ECHO,		   0,     1,          1,       1, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
-    { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
+    { TN_OPT_COM_PORT,		   1,     1,          0,       0, 0, 0,
       com_port_handler, com_port_will },
     { 255 }
 };
