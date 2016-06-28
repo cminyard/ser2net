@@ -863,7 +863,7 @@ static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     struct devcfg_data *d = io->my_data;
     int val;
 
-    if (ioctl(d->devfd, TIOCMGET, &val) != -1)
+    if (ioctl(d->devfd, TIOCMGET, &val) != 0)
 	return -1;
 
     *modemstate = 0;
