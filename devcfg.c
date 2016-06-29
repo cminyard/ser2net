@@ -758,6 +758,12 @@ do_except(int fd, void *data)
     io->except_handler(io);
 }
 
+static int calc_bpc(struct devcfg_data *d)
+{
+    return d->current_data_size + d->current_stop_bits +
+	d->current_parity_on + 1;
+}
+
 static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 			int *bps, int *bpc)
 {
@@ -779,13 +785,11 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
     }
 #endif /* USE_UUCP_LOCKING */
 
-    *bps = d->default_bps;
-    d->current_bps = d->default_bps;
-    *bpc = d->default_data_size + d->default_stop_bits +
-	d->default_parity_on + 1;
+    *bps = d->current_bps = d->default_bps;
     d->current_data_size = d->default_data_size;
     d->current_stop_bits = d->default_stop_bits;
     d->current_parity_on = d->default_parity_on;
+    *bpc = calc_bpc(d);
 
     /* Oct 05 2001 druzus: NOCTTY - don't make 
        device control tty for our process */
@@ -986,8 +990,7 @@ static int devcfg_data_size(struct devio *io, unsigned char *val, int *bpc)
     default:  *val = 0;
     }
 
-    *bpc = d->current_data_size + d->current_stop_bits +
-	d->current_parity_on + 1;
+    *bpc = calc_bpc(d);
 
     return 0;
 }
@@ -1025,8 +1028,7 @@ static int devcfg_parity(struct devio *io, unsigned char *val, int *bpc)
     } else
 	*val = 1; /* NONE */
 
-    *bpc = d->current_data_size + d->current_stop_bits +
-	d->current_parity_on + 1;
+    *bpc = calc_bpc(d);
 
     return 0;
 }
@@ -1057,8 +1059,7 @@ static int devcfg_stop_size(struct devio *io, unsigned char *val, int *bpc)
     else
 	*val = 1; /* 1 stop bit. */
 
-    *bpc = d->current_data_size + d->current_stop_bits +
-	d->current_parity_on + 1;
+    *bpc = calc_bpc(d);
 
     return 0;
 }
