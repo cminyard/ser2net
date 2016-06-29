@@ -2031,9 +2031,10 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	case OPENSTR: port->openstr = s; break;
 	case CLOSESTR: port->closestr = s; break;
 	case CLOSEON: port->closeon = s; port->closeon_len = len; break;
-	default: free(s);
+	default: free(s); goto unknown;
 	}
     } else {
+    unknown:
 	eout->out(eout, "Unknown config item: %s", pos);
 	return -1;
     }
@@ -2052,6 +2053,7 @@ portconfig(struct absout *eout,
 	   int  config_num)
 {
     port_info_t *new_port, *curr, *prev;
+    enum str_type str_type;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -2088,13 +2090,21 @@ portconfig(struct absout *eout,
 	return -1;
     }
 
-    new_port->io.devname = strdup(devname);
+    new_port->io.devname = find_str(devname, &str_type, NULL);
+    if (new_port->io.devname) {
+	if (str_type != DEVNAME) {
+	    free(new_port->io.devname);
+	    new_port->io.devname = NULL;
+	}
+    }
+    if (!new_port->io.devname)
+	new_port->io.devname = strdup(devname);
     if (!new_port->io.devname) {
 	sel_free_timer(new_port->timer);
 	sel_free_timer(new_port->send_timer);
 	free(new_port->portname);
 	free(new_port);
-	eout->out(eout, "unable to device name");
+	eout->out(eout, "unable to allocate device name");
 	return -1;
     }
 

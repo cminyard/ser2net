@@ -280,8 +280,10 @@ find_str(const char *name, enum str_type *type, unsigned int *len)
 	    char *rv;
 
 	    /* Note that longstrs can contain \0, so be careful in handling */
-	    *type = longstr->type;
-	    *len = longstr->length;
+	    if (type)
+		*type = longstr->type;
+	    if (len)
+		*len = longstr->length;
 	    rv = malloc(longstr->length + 1);
 	    if (!rv)
 		return NULL;
@@ -632,6 +634,17 @@ handle_config_line(char *inbuf)
 	    return;
 	}
 	handle_tracefile(name, str);
+	return;
+    }
+
+    if (startswith(inbuf, "DEVICE", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
+	    return;
+	}
+	handle_longstr(name, str, DEVNAME);
 	return;
     }
 

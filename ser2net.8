@@ -204,6 +204,10 @@ or
 .IP
 CONTROLPORT:<port spec>
 .PP
+or
+.IP
+DEVICE:<name>:<device>
+.PP
 
 .SS FIELDS
 .TP
@@ -245,6 +249,11 @@ no activity on it.  A zero value disables this function.
 .I device
 The  name  of  the  device  to connect to. This must be in the form of
 .BR /dev/<device> .
+This may be specified in a DEVICE directive, then
+you can use the name in the DEVICE directive to specify the device
+in the DEVICE directive.  This can be used to give shorter and/or
+meaningful names for devices, or to allow special characters (like a
+colon) in the device name.
 .TP
 .I "device configuration options"
 Sets operational parameters for the serial port.  Values may be
