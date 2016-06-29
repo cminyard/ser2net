@@ -111,6 +111,19 @@ typedef struct port_info
 					   I/O has been seen for a
 					   certain period of time. */
 
+    sel_timer_t *send_timer;		/* Used to delay a bit when
+					   waiting for characters to
+					   batch up as many characters
+					   as possible. */
+
+    int chardelay;                      /* The amount of time to wait after
+					   receiving a character before
+					   sending it, unless we receive
+					   another character.  Based on
+					   bit rate. */
+
+    int bps;				/* Bits per second rate. */
+    int bpc;				/* Bits per character. */
 
     /* Information about the TCP port. */
     char               *portname;       /* The name given for the port. */
@@ -277,6 +290,16 @@ static struct telnet_cmd telnet_cmds[] =
       com_port_handler, com_port_will },
     { 255 }
 };
+
+static void
+add_usec_to_timeval(struct timeval *tv, int usec)
+{
+    tv->tv_usec += usec;
+    while (usec >= 1000000) {
+	usec -= 1000000;
+	tv->tv_sec += 1;
+    }
+}
 
 /*
  * Generic output function for using a controller output for
@@ -500,7 +523,66 @@ footer_trace(port_info_t *port, char *reason)
     hf_out(port, buf, len);
 }
 
+static int
+handle_tcp_send(port_info_t *port)
+{
+    int count;
 
+ retry_write:
+    count = write(port->tcpfd, port->dev_to_tcp.buf, port->dev_to_tcp.cursize);
+    if (count == -1) {
+	if (errno == EINTR) {
+	    /* EINTR means we were interrupted, just retry. */
+	    goto retry_write;
+	}
+
+	if (errno == EAGAIN || errno == EWOULDBLOCK) {
+	    /* This was due to O_NONBLOCK, we need to shut off the reader
+	       and start the writer monitor. */
+	    port->io.f->read_handler_enable(&port->io, 0);
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_ENABLED);
+	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
+	} else if (errno == EPIPE) {
+	    shutdown_port(port, "EPIPE");
+	    return -1;
+	} else {
+	    /* Some other bad error. */
+	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
+		   port->portname);
+	    shutdown_port(port, "tcp write error");
+	    return -1;
+	}
+    } else {
+	port->tcp_bytes_sent += count;
+	port->dev_to_tcp.cursize -= count;
+	if (port->dev_to_tcp.cursize != 0) {
+	    /* We didn't write all the data, shut off the reader and
+               start the write monitor. */
+	    port->dev_to_tcp.pos = count;
+	    port->io.f->read_handler_enable(&port->io, 0);
+	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				     SEL_FD_HANDLER_ENABLED);
+	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
+	} else if (port->close_on_output_done) {
+	    shutdown_port(port, "closeon sequence found");
+	    port->close_on_output_done = false;
+	}
+    }
+
+    return 0;
+}
+
+void
+send_timeout(selector_t  *sel,
+	     sel_timer_t *timer,
+	     void        *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    if (port->dev_to_tcp.cursize > 0)
+	handle_tcp_send(port);
+}
 
 /* Data is ready to read on the serial port. */
 static void
@@ -508,33 +590,43 @@ handle_dev_fd_read(struct devio *io)
 {
     port_info_t *port = (port_info_t *) io->user_data;
     int count;
+    int curend = port->dev_to_tcp.cursize;
+    bool send_now = false;
 
     port->dev_to_tcp.pos = 0;
     if (port->enabled == PORT_TELNET) {
 	/* Leave room for IACs. */
-	count = port->io.f->read(&port->io, port->dev_to_tcp.buf,
-				 port->tcp_to_dev.maxsize/2);
+	count = port->io.f->read(&port->io, port->dev_to_tcp.buf + curend,
+				 (port->dev_to_tcp.maxsize - curend) / 2);
     } else {
-	count = port->io.f->read(&port->io, port->dev_to_tcp.buf,
-				 port->tcp_to_dev.maxsize);
+	count = port->io.f->read(&port->io, port->dev_to_tcp.buf + curend,
+				 port->dev_to_tcp.maxsize - curend);
     }
 
-    if (count < 0) {
-	if (errno == EAGAIN || errno == EWOULDBLOCK) {
-	    /* Nothing to read, just return. */
-	    return;
+    if (count <= 0) {
+	if (curend != 0) {
+	    /* We still have data to send. */
+	    send_now = true;
+	    goto do_send;
 	}
 
-	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
-	shutdown_port(port, "dev read error");
-	return;
-    } else if (count == 0) {
-	/* The port got closed somehow, shut it down. */
-	shutdown_port(port, "closed port");
+	if (count < 0) {
+	    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+		/* Nothing to read, just return. */
+		return;
+	    }
+
+	    /* Got an error on the read, shut down the port. */
+	    syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
+	    shutdown_port(port, "dev read error");
+	} else if (count == 0) {
+	    /* The port got closed somehow, shut it down. */
+	    shutdown_port(port, "closed port");
+	}
 	return;
     }
 
+ do_send:
     if (port->dev_monitor != NULL) {
 	controller_write(port->dev_monitor,
 			 (char *) port->dev_to_tcp.buf,
@@ -584,51 +676,20 @@ handle_dev_fd_read(struct devio *io)
 	}
     }
 
-    port->dev_to_tcp.cursize = count;
+    port->dev_to_tcp.cursize += count;
 
- retry_write:
-    count = write(port->tcpfd, port->dev_to_tcp.buf, port->dev_to_tcp.cursize);
-    if (count == -1) {
-	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry. */
-	    goto retry_write;
-	}
-
-	if (errno == EAGAIN || errno == EWOULDBLOCK) {
-	    /* This was due to O_NONBLOCK, we need to shut off the reader
-	       and start the writer monitor. */
-	    port->io.f->read_handler_enable(&port->io, 0);
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-				     SEL_FD_HANDLER_ENABLED);
-	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
-	} else if (errno == EPIPE) {
-	    shutdown_port(port, "EPIPE");
-	    return;
-	} else {
-	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
-		   port->portname);
-	    shutdown_port(port, "tcp write error");
-	    return;
-	}
+    if (send_now || port->dev_to_tcp.cursize == port->dev_to_tcp.maxsize ||
+	port->chardelay == 0) {
+	if (handle_tcp_send(port) == 0)
+	    reset_timer(port);
     } else {
-	port->tcp_bytes_sent += count;
-	port->dev_to_tcp.cursize -= count;
-	if (port->dev_to_tcp.cursize != 0) {
-	    /* We didn't write all the data, shut off the reader and
-               start the write monitor. */
-	    port->dev_to_tcp.pos = count;
-	    port->io.f->read_handler_enable(&port->io, 0);
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
-				     SEL_FD_HANDLER_ENABLED);
-	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
-	} else if (port->close_on_output_done) {
-	    shutdown_port(port, "closeon sequence found");
-	    port->close_on_output_done = false;
-	}
-    }
+	struct timeval then;
 
-    reset_timer(port);
+	sel_stop_timer(port->send_timer);
+	gettimeofday(&then, NULL);
+	add_usec_to_timeval(&then, port->chardelay);
+	sel_start_timer(port->send_timer, &then);
+    }
 }
 
 /* The serial port has room to write some data.  This is only activated
@@ -1443,6 +1504,17 @@ setup_trace(port_info_t *port)
     return;
 }
 
+static void
+recalc_port_chardelay(port_info_t *port)
+{
+    /* delay is ((1 / bps) * bpc) * 2.0 seconds */
+
+    /* We are working in microseconds here. */
+    port->chardelay = (port->bpc * 2000000) / port->bps;
+    if (port->chardelay < 1000)
+	port->chardelay = 1000;
+}
+
 /* Called to set up a new connection's file descriptor. */
 static int
 setup_tcp_port(port_info_t *port)
@@ -1487,13 +1559,15 @@ setup_tcp_port(port_info_t *port)
 #endif /* HAVE_TCPD_H */
 
     errstr = NULL;
-    if (port->io.f->setup(&port->io, port->portname, &errstr) == -1) {
+    if (port->io.f->setup(&port->io, port->portname, &errstr,
+			  &port->bps, &port->bpc) == -1) {
 	if (errstr)
 	    write_ignore_fail(port->tcpfd, errstr, strlen(errstr));
 	close(port->tcpfd);
 	port->tcpfd = -1;
 	return -1;
     }
+    recalc_port_chardelay(port);
     port->is_2217 = 0;
 
     port->banner = process_str_to_buf(port, port->bannerstr);
@@ -1686,6 +1760,7 @@ static void
 free_port(port_info_t *port)
 {
     sel_free_timer(port->timer);
+    sel_free_timer(port->send_timer);
     change_port_state(NULL, port, PORT_DISABLED);
     if (port->io.f)
 	port->io.f->free(&port->io);
@@ -1823,6 +1898,7 @@ shutdown_port(port_info_t *port, char *reason)
     port->tw = port->tr = port->tb = NULL;
 
     sel_stop_timer(port->timer);
+    sel_stop_timer(port->send_timer);
     if (port->tcpfd != -1) {
 	sel_clear_fd_handlers(ser2net_sel, port->tcpfd);
 	close(port->tcpfd);
@@ -1993,8 +2069,20 @@ portconfig(struct absout *eout,
 	return -1;
     }
 
+    if (sel_alloc_timer(ser2net_sel,
+			send_timeout, new_port,
+			&new_port->send_timer))
+    {
+	sel_free_timer(new_port->timer);
+	free(new_port);
+	eout->out(eout, "Could not allocate timer data");
+	return -1;
+    }
+
     new_port->portname = strdup(portnum);
     if (!new_port->portname) {
+	sel_free_timer(new_port->timer);
+	sel_free_timer(new_port->send_timer);
 	free(new_port);
 	eout->out(eout, "unable to allocate port name");
 	return -1;
@@ -2002,6 +2090,8 @@ portconfig(struct absout *eout,
 
     new_port->io.devname = strdup(devname);
     if (!new_port->io.devname) {
+	sel_free_timer(new_port->timer);
+	sel_free_timer(new_port->send_timer);
 	free(new_port->portname);
 	free(new_port);
 	eout->out(eout, "unable to device name");
@@ -2606,7 +2696,9 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    val |= option[5];
 	}
 
-	port->io.f->baud_rate(&port->io, &val, cisco_ios_baud_rates);
+	port->io.f->baud_rate(&port->io, &val, cisco_ios_baud_rates,
+			      &port->bps);
+	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 101;
 	if (cisco_ios_baud_rates) {
@@ -2629,7 +2721,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    return;
 
 	ucval = option[2];
-	port->io.f->data_size(&port->io, &ucval);
+	port->io.f->data_size(&port->io, &ucval, &port->bpc);
+	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 102;
 	outopt[2] = ucval;
@@ -2641,7 +2734,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    return;
 
 	ucval = option[2];
-	port->io.f->parity(&port->io, &ucval);
+	port->io.f->parity(&port->io, &ucval, &port->bpc);
+	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 103;
 	outopt[2] = ucval;
@@ -2653,7 +2747,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    return;
 
 	ucval = option[2];
-	port->io.f->stop_size(&port->io, &ucval);
+	port->io.f->stop_size(&port->io, &ucval, &port->bpc);
+	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 104;
 	outopt[2] = ucval;

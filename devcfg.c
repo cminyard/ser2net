@@ -47,6 +47,15 @@ struct devcfg_data {
                                            TCP port is open. */
     struct termios termctl;
 
+    int default_bps;
+    int default_data_size;
+    int default_stop_bits;
+    int default_parity_on;
+    int current_bps;
+    int current_data_size;
+    int current_stop_bits;
+    int current_parity_on;
+
     /* Holds whether break is on or not. */
     int break_set;
 
@@ -89,18 +98,20 @@ static struct baud_rates_s {
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
 static int
-get_baud_rate(int rate, int *val, int cisco)
+get_baud_rate(int rate, int *val, int cisco, int *bps)
 {
     unsigned int i;
     for (i=0; i<BAUD_RATES_LEN; i++) {
 	if (cisco) {
 	    if (rate == baud_rates[i].cisco_ios_val) {
 		*val = baud_rates[i].val;
+		*bps = baud_rates[i].real_rate;
 		return 1;
 	    }
 	} else {
 	    if (rate == baud_rates[i].real_rate) {
 		*val = baud_rates[i].val;
+		*bps = baud_rates[i].real_rate;
 		return 1;
 	    }
 	}
@@ -306,120 +317,155 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	return -1;
     }
 
+    /* n81, 8 bits, one start, one stop bit. */
+    d->default_data_size = 8;
+    d->default_stop_bits = 1;
+    d->default_parity_on = 0;
+
     pos = strtok_r(str, ", \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "300") == 0) {
 	    cfsetospeed(termctl, B300);
 	    cfsetispeed(termctl, B300);
+	    d->default_bps = 300;
 	} else if (strcmp(pos, "600") == 0) {
 	    cfsetospeed(termctl, B600);
 	    cfsetispeed(termctl, B600);
+	    d->default_bps = 600;
 	} else if (strcmp(pos, "1200") == 0) {
 	    cfsetospeed(termctl, B1200);
 	    cfsetispeed(termctl, B1200);
+	    d->default_bps = 1200;
 	} else if (strcmp(pos, "2400") == 0) {
 	    cfsetospeed(termctl, B2400);
 	    cfsetispeed(termctl, B2400);
+	    d->default_bps = 2400;
 	} else if (strcmp(pos, "4800") == 0) {
 	    cfsetospeed(termctl, B4800);
 	    cfsetispeed(termctl, B4800);
+	    d->default_bps = 4800;
 	} else if (strcmp(pos, "9600") == 0) {
 	    cfsetospeed(termctl, B9600);
 	    cfsetispeed(termctl, B9600);
+	    d->default_bps = 9600;
 	} else if (strcmp(pos, "19200") == 0) {
 	    cfsetospeed(termctl, B19200);
 	    cfsetispeed(termctl, B19200);
+	    d->default_bps = 19200;
 	} else if (strcmp(pos, "38400") == 0) {
 	    cfsetospeed(termctl, B38400);
 	    cfsetispeed(termctl, B38400);
+	    d->default_bps = 38400;
 	} else if (strcmp(pos, "57600") == 0) {
 	    cfsetospeed(termctl, B57600);
 	    cfsetispeed(termctl, B57600);
+	    d->default_bps = 57600;
 	} else if (strcmp(pos, "115200") == 0) {
 	    cfsetospeed(termctl, B115200);
 	    cfsetispeed(termctl, B115200);
+	    d->default_bps = 115200;
 #ifdef B230400
 	} else if (strcmp(pos, "230400") == 0) {
 	    cfsetospeed(termctl, B230400);
 	    cfsetispeed(termctl, B230400);
+	    d->default_bps = 230400;
 #endif
 #ifdef B460800
 	} else if (strcmp(pos, "460800") == 0) {
 	    cfsetospeed(termctl, B460800);
 	    cfsetispeed(termctl, B460800);
+	    d->default_bps = 460800;
 #endif
 #ifdef B500000
 	} else if (strcmp(pos, "500000") == 0) {
 	    cfsetospeed(termctl, B500000);
 	    cfsetispeed(termctl, B500000);
+	    d->default_bps = 500000;
 #endif
 #ifdef B576000
 	} else if (strcmp(pos, "576000") == 0) {
 	    cfsetospeed(termctl, B576000);
 	    cfsetispeed(termctl, B576000);
+	    d->default_bps = 576000;
 #endif
 #ifdef B921600
 	} else if (strcmp(pos, "921600") == 0) {
 	    cfsetospeed(termctl, B921600);
 	    cfsetispeed(termctl, B921600);
+	    d->default_bps = 921600;
 #endif
 #ifdef B1000000
 	} else if (strcmp(pos, "1000000") == 0) {
 	    cfsetospeed(termctl, B1000000);
 	    cfsetispeed(termctl, B1000000);
+	    d->default_bps = 10000000;
 #endif
 #ifdef B1152000
 	} else if (strcmp(pos, "1152000") == 0) {
 	    cfsetospeed(termctl, B1152000);
 	    cfsetispeed(termctl, B1152000);
+	    d->default_bps = 1152000;
 #endif
 #ifdef B1500000
 	} else if (strcmp(pos, "1500000") == 0) {
 	    cfsetospeed(termctl, B1500000);
 	    cfsetispeed(termctl, B1500000);
+	    d->default_bps = 1500000;
 #endif
 #ifdef B2000000
 	} else if (strcmp(pos, "2000000") == 0) {
 	    cfsetospeed(termctl, B2000000);
 	    cfsetispeed(termctl, B2000000);
+	    d->default_bps = 2000000;
 #endif
 #ifdef B2500000
 	} else if (strcmp(pos, "2500000") == 0) {
 	    cfsetospeed(termctl, B2500000);
 	    cfsetispeed(termctl, B2500000);
+	    d->default_bps = 2500000;
 #endif
 #ifdef B3000000
 	} else if (strcmp(pos, "3000000") == 0) {
 	    cfsetospeed(termctl, B3000000);
 	    cfsetispeed(termctl, B3000000);
+	    d->default_bps = 3000000;
 #endif
 #ifdef B3500000
 	} else if (strcmp(pos, "3500000") == 0) {
 	    cfsetospeed(termctl, B3500000);
 	    cfsetispeed(termctl, B3500000);
+	    d->default_bps = 3500000;
 #endif
 #ifdef B4000000
 	} else if (strcmp(pos, "4000000") == 0) {
 	    cfsetospeed(termctl, B4000000);
 	    cfsetispeed(termctl, B4000000);	    
+	    d->default_bps = 4000000;
 #endif
 	} else if (strcmp(pos, "1STOPBIT") == 0) {
 	    termctl->c_cflag &= ~(CSTOPB);
+	    d->default_stop_bits = 1;
 	} else if (strcmp(pos, "2STOPBITS") == 0) {
 	    termctl->c_cflag |= CSTOPB;
+	    d->default_stop_bits = 2;
 	} else if (strcmp(pos, "7DATABITS") == 0) {
 	    termctl->c_cflag &= ~(CSIZE);
 	    termctl->c_cflag |= CS7;
+	    d->default_data_size = 7;
 	} else if (strcmp(pos, "8DATABITS") == 0) {
 	    termctl->c_cflag &= ~(CSIZE);
 	    termctl->c_cflag |= CS8;
+	    d->default_data_size = 8;
 	} else if (strcmp(pos, "NONE") == 0) {
 	    termctl->c_cflag &= ~(PARENB);
+	    d->default_parity_on = 0;
 	} else if (strcmp(pos, "EVEN") == 0) {
 	    termctl->c_cflag |= PARENB;
 	    termctl->c_cflag &= ~(PARODD);
+	    d->default_parity_on = 1;
 	} else if (strcmp(pos, "ODD") == 0) {
 	    termctl->c_cflag |= PARENB | PARODD;
+	    d->default_parity_on = 1;
         } else if (strcmp(pos, "XONXOFF") == 0) {
             termctl->c_iflag |= (IXON | IXOFF | IXANY);
             termctl->c_cc[VSTART] = 17;
@@ -712,7 +758,8 @@ do_except(int fd, void *data)
     io->except_handler(io);
 }
 
-static int devcfg_setup(struct devio *io, const char *name, const char **errstr)
+static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
+			int *bps, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     int options;
@@ -731,6 +778,14 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr)
 	}
     }
 #endif /* USE_UUCP_LOCKING */
+
+    *bps = d->default_bps;
+    d->current_bps = d->default_bps;
+    *bpc = d->default_data_size + d->default_stop_bits +
+	d->default_parity_on + 1;
+    d->current_data_size = d->default_data_size;
+    d->current_stop_bits = d->default_stop_bits;
+    d->current_parity_on = d->default_parity_on;
 
     /* Oct 05 2001 druzus: NOCTTY - don't make 
        device control tty for our process */
@@ -878,7 +933,7 @@ static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     return 0;
 }
 
-static int devcfg_baud_rate(struct devio *io, int *val, int cisco)
+static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -888,7 +943,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco)
 	return -1;
     }
 
-    if ((*val != 0) && (get_baud_rate(*val, val, cisco))) {
+    if ((*val != 0) && (get_baud_rate(*val, val, cisco, bps))) {
 	/* We have a valid baud rate. */
 	cfsetispeed(&termio, *val);
 	cfsetospeed(&termio, *val);
@@ -902,7 +957,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco)
     return 0;
 }
 
-static int devcfg_data_size(struct devio *io, unsigned char *val)
+static int devcfg_data_size(struct devio *io, unsigned char *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -915,10 +970,10 @@ static int devcfg_data_size(struct devio *io, unsigned char *val)
     if ((*val >= 5) && (*val <= 8)) {
 	termio.c_cflag &= ~CSIZE;
 	switch (*val) {
-	case 5: termio.c_cflag |= CS5; break;
-	case 6: termio.c_cflag |= CS6; break;
-	case 7: termio.c_cflag |= CS7; break;
-	case 8: termio.c_cflag |= CS8; break;
+	case 5: termio.c_cflag |= CS5; d->current_data_size = 5; break;
+	case 6: termio.c_cflag |= CS6; d->current_data_size = 6; break;
+	case 7: termio.c_cflag |= CS7; d->current_data_size = 7; break;
+	case 8: termio.c_cflag |= CS8; d->current_data_size = 8; break;
 	}
 	tcsetattr(d->devfd, TCSANOW, &termio);
     }
@@ -931,10 +986,13 @@ static int devcfg_data_size(struct devio *io, unsigned char *val)
     default:  *val = 0;
     }
 
+    *bpc = d->current_data_size + d->current_stop_bits +
+	d->current_parity_on + 1;
+
     return 0;
 }
 
-static int devcfg_parity(struct devio *io, unsigned char *val)
+static int devcfg_parity(struct devio *io, unsigned char *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -948,9 +1006,13 @@ static int devcfg_parity(struct devio *io, unsigned char *val)
     if ((*val >= 1) && (*val <= 3)) {
 	termio.c_cflag &= ~(PARENB | PARODD);
 	switch (*val) {
-	case 1: break; /* NONE */
-	case 2: termio.c_cflag |= PARENB | PARODD; break; /* ODD */
-	case 3: termio.c_cflag |= PARENB; break; /* EVEN */
+	case 1: d->current_parity_on = 0; break; /* NONE */
+	case 2: termio.c_cflag |= PARENB | PARODD; /* ODD */
+	    d->current_parity_on = 1;
+	    break;
+	case 3: termio.c_cflag |= PARENB; /* EVEN */
+	    d->current_parity_on = 1;
+	    break;
 	}
 	tcsetattr(d->devfd, TCSANOW, &termio);
     }
@@ -963,10 +1025,13 @@ static int devcfg_parity(struct devio *io, unsigned char *val)
     } else
 	*val = 1; /* NONE */
 
+    *bpc = d->current_data_size + d->current_stop_bits +
+	d->current_parity_on + 1;
+
     return 0;
 }
 
-static int devcfg_stop_size(struct devio *io, unsigned char *val)
+static int devcfg_stop_size(struct devio *io, unsigned char *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -979,8 +1044,10 @@ static int devcfg_stop_size(struct devio *io, unsigned char *val)
     if ((*val >= 1) && (*val <= 2)) {
 	termio.c_cflag &= ~CSTOPB;
 	switch (*val) {
-	case 1: break; /* 1 stop bit */
-	case 2: termio.c_cflag |= CSTOPB; break; /* 2 stop bits */
+	case 1: d->current_stop_bits = 1; break; /* 1 stop bit */
+	case 2: d->current_stop_bits = 2; /* 2 stop bits */
+	    termio.c_cflag |= CSTOPB;
+	    break;
 	}
 	tcsetattr(d->devfd, TCSANOW, &termio);
     }
@@ -989,6 +1056,9 @@ static int devcfg_stop_size(struct devio *io, unsigned char *val)
 	*val = 2; /* 2 stop bits. */
     else
 	*val = 1; /* 1 stop bit. */
+
+    *bpc = d->current_data_size + d->current_stop_bits +
+	d->current_parity_on + 1;
 
     return 0;
 }

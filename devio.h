@@ -38,7 +38,8 @@ struct devio {
 };
 
 struct devio_f {
-    int (*setup)(struct devio *io, const char *name, const char **errstr);
+    int (*setup)(struct devio *io, const char *name, const char **errstr,
+		 int *bps, int *bpc);
     void (*shutdown)(struct devio *io);
     int (*reconfig)(struct devio *io, struct absout *eout, const char *instr,
 	    int (*otherconfig)(void *data, struct absout *eout,
@@ -54,10 +55,10 @@ struct devio_f {
     int (*set_devcontrol)(struct devio *io, const char *controls);
     void (*show_devcontrol)(struct devio *io, struct absout *out);
     void (*show_devcfg)(struct devio *io, struct absout *out);
-    int (*baud_rate)(struct devio *io, int *val, int cisco);
-    int (*data_size)(struct devio *io, unsigned char *val);
-    int (*parity)(struct devio *io, unsigned char *val);
-    int (*stop_size)(struct devio *io, unsigned char *val);
+    int (*baud_rate)(struct devio *io, int *val, int cisco, int *bps);
+    int (*data_size)(struct devio *io, unsigned char *val, int *bpc);
+    int (*parity)(struct devio *io, unsigned char *val, int *bpc);
+    int (*stop_size)(struct devio *io, unsigned char *val, int *bpc);
     int (*control)(struct devio *io, unsigned char *val);
     int (*flow_control)(struct devio *io, unsigned char val);
 
