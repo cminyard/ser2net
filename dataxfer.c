@@ -125,6 +125,15 @@ typedef struct port_info
     int bps;				/* Bits per second rate. */
     int bpc;				/* Bits per character. */
 
+    bool enable_chardelay;
+
+    int  chardelay_scale;		/* The number of character
+					   periods to wait for the
+					   next character, in tenths of
+					   a character period. */
+    int  chardelay_min;			/* The minimum chardelay, in
+					   microseconds. */
+
     /* Information about the TCP port. */
     char               *portname;       /* The name given for the port. */
     int                is_stdio;	/* Do stdio on the port? */
@@ -1507,12 +1516,16 @@ setup_trace(port_info_t *port)
 static void
 recalc_port_chardelay(port_info_t *port)
 {
-    /* delay is ((1 / bps) * bpc) * 2.0 seconds */
+    /* delay is (((1 / bps) * bpc) * scale) seconds */
+    if (!port->enable_chardelay) {
+	port->chardelay = 0;
+	return;
+    }
 
     /* We are working in microseconds here. */
-    port->chardelay = (port->bpc * 2000000) / port->bps;
-    if (port->chardelay < 1000)
-	port->chardelay = 1000;
+    port->chardelay = (port->bpc * 100000 * port->chardelay_scale) / port->bps;
+    if (port->chardelay < port->chardelay_min)
+	port->chardelay = port->chardelay_min;
 }
 
 /* Called to set up a new connection's file descriptor. */
@@ -1971,7 +1984,7 @@ myconfig(void *data, struct absout *eout, const char *pos)
 {
     port_info_t *port = data;
     enum str_type stype;
-    char *s;
+    char *s, *endpos;
     unsigned int len;
 
     if (strcmp(pos, "remctl") == 0) {
@@ -2020,8 +2033,24 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	/* get RS485 configuration. */
 	port->rs485conf = find_rs485conf(pos + 6);
 #endif
-    } else if (strncmp(pos, "telnet_brk_on_sync", 3) == 0) {
+    } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
+    } else if (strcmp(pos, "disable-chardelay") == 0) {
+	port->enable_chardelay = false;
+    } else if (strncmp(pos, "chardelay-scale=", 16) == 0) {
+	port->chardelay_scale = strtoul(pos + 16, &endpos, 0);
+	if (endpos == pos + 16 || *endpos != '\0') {
+	    eout->out(eout, "Invalid number for chardelay-scale: %s\n",
+		      pos + 16);
+	    return -1;
+	}
+    } else if (strncmp(pos, "chardelay-min=", 14) == 0) {
+	port->chardelay_min = strtoul(pos + 14, &endpos, 0);
+	if (endpos == pos + 14 || *endpos != '\0') {
+	    eout->out(eout, "Invalid number for chardelay-min: %s\n",
+		      pos + 14);
+	    return -1;
+	}
     } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
@@ -2061,6 +2090,10 @@ portconfig(struct absout *eout,
 	return -1;
     }
     memset(new_port, 0, sizeof(*new_port));
+
+    new_port->enable_chardelay = true;
+    new_port->chardelay_scale = 20;
+    new_port->chardelay_min = 1000;
 
     if (sel_alloc_timer(ser2net_sel,
 			got_timeout, new_port,

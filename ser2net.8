@@ -333,6 +333,27 @@ May be combined with [-]timestamp.  Order is important.
 causes a telnet sync operation to send a break.  By default data is
 flushed until the data mark, but no break is sent.
 
+.I disable-chardelay
+disables the small wait after each character received on the serial
+port before sending data on the TCP port.  Normally ser2net will wait
+the time it takes to receive 2 serial port characters, or at least
+1000us, before sending on the TCP port.  This allows more efficient
+use of network resources when receiving large amounts of data, but
+gives reasonable interactivity.
+
+.I chardelay-scale=<number>
+sets the number of serial port characters, in tenths of a character,
+to wait after receiving from the serial port and sending to the TCP
+port.  So setting this to 25 will cause ser2net to wait the amount
+of time it takes to recieve 2.5 serial port characters before sending
+the data on to the TCP port.  The default value is 20.
+
+.I chardelay-min=<number>
+sets the minimum delay that ser2net will wait, in microseconds.  If
+the calculation for chardelay-scale results in a value smaller than
+this number, this number will be used instead.  The default value
+is 1000.
+
 .TP
 .I "banner name"
 A name for the banner; this may be used in the options of a port.
