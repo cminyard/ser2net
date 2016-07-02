@@ -594,29 +594,44 @@ struct default_data
     union {
 	int intval;
     } val;
+    union {
+	int intval;
+    } def;
 };
 
 struct default_data defaults[] = {
     { "speed",		DEFAULT_ENUM,	.enums = speed_enums,
-					.val.intval = 9600 },
-    { "stopbits",	DEFAULT_INT,	.min = 1, .max = 2, .val.intval = 1 },
-    { "databits",	DEFAULT_INT,	.min = 5, .max = 8, .val.intval = 8 },
+					.def.intval = 9600 },
+    { "stopbits",	DEFAULT_INT,	.min = 1, .max = 2, .def.intval = 1 },
+    { "databits",	DEFAULT_INT,	.min = 5, .max = 8, .def.intval = 8 },
     { "parity",		DEFAULT_ENUM,	.enums = parity_enums,
-					.val.intval = PARITY_NONE },
-    { "xonxoff",	DEFAULT_BOOL,	.val.intval = 0 },
-    { "rtscts",		DEFAULT_BOOL,	.val.intval = 0 },
-    { "local",		DEFAULT_BOOL,	.val.intval = 0 },
-    { "hangup_when_done", DEFAULT_BOOL,	.val.intval = 0 },
-    { "nobreak",	DEFAULT_BOOL,	.val.intval = 0 },
-    { "remctl",		DEFAULT_BOOL,	.val.intval = 0 },
-    { "telnet_brk_on_sync",DEFAULT_BOOL,.val.intval = 0 },
-    { "kickolduser",	DEFAULT_BOOL,	.val.intval = 0 },
-    { "chardelay",	DEFAULT_BOOL,	.val.intval = 1 },
-    { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .val.intval = 20 },
+					.def.intval = PARITY_NONE },
+    { "xonxoff",	DEFAULT_BOOL,	.def.intval = 0 },
+    { "rtscts",		DEFAULT_BOOL,	.def.intval = 0 },
+    { "local",		DEFAULT_BOOL,	.def.intval = 0 },
+    { "hangup_when_done", DEFAULT_BOOL,	.def.intval = 0 },
+    { "nobreak",	DEFAULT_BOOL,	.def.intval = 0 },
+    { "remctl",		DEFAULT_BOOL,	.def.intval = 0 },
+    { "telnet_brk_on_sync",DEFAULT_BOOL,.def.intval = 0 },
+    { "kickolduser",	DEFAULT_BOOL,	.def.intval = 0 },
+    { "chardelay",	DEFAULT_BOOL,	.def.intval = 1 },
+    { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .def.intval = 20 },
     { "chardelay-min",	DEFAULT_INT,	.min=1, .max=100000,
-					.val.intval = 1000 },
+					.def.intval = 1000 },
     { NULL }
 };
+
+
+static void
+setup_defaults(void)
+{
+    int i;
+
+    for (i = 0; defaults[i].name; i++) {
+	defaults[i].val.intval = defaults[i].def.intval;
+    }
+    abort();
+}
 
 int
 find_default_int(const char *name)
@@ -900,6 +915,7 @@ readconfig(char *filename)
 	return -1;
     }
 
+    setup_defaults();
     free_longstrs();
     free_tracefiles();
 #ifdef USE_RS485_FEATURE
