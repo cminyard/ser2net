@@ -72,4 +72,14 @@ int write_full(int fd, char *data, size_t count);
 /* Write the data completely out, return without comment on error. */
 void write_ignore_fail(int fd, const char *data, size_t count);
 
+/* Convert a string holding a baud rate into the numeric baud rate.
+   Returns -1 on an invalid value. */
+int speedstr_to_speed(const char *speed);
+
+enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD };
+enum parity_vals lookup_parity(const char *str);
+
+/* Return the default int value for the given name. */
+int find_default_int(const char *name);
+
 #endif /* UTILS */

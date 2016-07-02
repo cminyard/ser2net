@@ -208,6 +208,10 @@ or
 .IP
 DEVICE:<name>:<device>
 .PP
+or
+.IP
+DEFAULT:<parm>:<defaultval>
+.PP
 
 .SS FIELDS
 .TP
@@ -267,7 +271,7 @@ it: 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000,
 set the parity.
 .I 1STOPBIT, 2STOPBITS
 set the number of stop bits.
-.I 7DATABITS, 8DATABITS
+.I 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS
 set the number of data bits.
 .I [-]XONXOFF
 turns on (- off) XON/XOFF support.
@@ -278,12 +282,12 @@ ignores (- checks) the modem control lines (DCD, DTR, etc.)
 .I [-]HANGUP_WHEN_DONE
 lowers (- does not lower) the modem control lines (DCD, DTR, etc.) when
 the connection closes.
-.I NOBREAK
+.I [-]NOBREAK
 disables automatic clearing of the break setting of the port.
-.I remctl
+.I [-]remctl
 allows remote control of the serial port parameters via RFC 2217.  See
 the README for more info.
-.I kickolduser
+.I [-]kickolduser
 sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
 .I <banner name>
@@ -329,11 +333,11 @@ May be combined with [-]hexdump.  Order is important.
 adds (- removes) a timestamp to only one the trace files
 May be combined with [-]timestamp.  Order is important.
 
-.I telnet_brk_on_sync
+.I [-]telnet_brk_on_sync
 causes a telnet sync operation to send a break.  By default data is
 flushed until the data mark, but no break is sent.
 
-.I disable-chardelay
+.I [-]disable-chardelay
 disables the small wait after each character received on the serial
 port before sending data on the TCP port.  Normally ser2net will wait
 the time it takes to receive 2 serial port characters, or at least
@@ -353,6 +357,16 @@ sets the minimum delay that ser2net will wait, in microseconds.  If
 the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.
+
+.I <parm>
+is a parameter to set a default for.  When you set a default, it sets
+the default value for all following config lines.  Available parameters are:
+speed, databits, stopbits, parity, xonxoff, rtscts, local, hangup_when_done,
+nobreak, remctl, telnet_brk_on_sync, kickolduser, chardelay, chardelay-scale,
+and chardelay-min.  See ser2net.conf for details.
+
+.I <defaultval>
+The default value to set the parameter.
 
 .TP
 .I "banner name"

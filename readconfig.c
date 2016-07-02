@@ -190,7 +190,7 @@ finish_longstr(void)
 
 /* Parse the incoming string, it may be on multiple lines. */
 static void
-handle_longstr(char *name, char *line, enum str_type type)
+handle_longstr(const char *name, const char *line, enum str_type type)
 {
     int line_len;
 
@@ -514,6 +514,187 @@ static struct absout syslog_eout = {
     .data = &lineno
 };
 
+struct enum_val
+{
+    char *str;
+    int val;
+};
+
+static int
+lookup_enum(struct enum_val *enums, const char *str, int len)
+{
+    while (enums->str != NULL) {
+	if (len == -1 && strcmp(enums->str, str) == 0)
+	    return enums->val;
+	if (strlen(enums->str) == len && strncmp(enums->str, str, len) == 0)
+	    return enums->val;
+	enums++;
+    }
+    return -1;
+}
+
+static struct enum_val speed_enums[] = {
+    { "300",	300 },
+    { "600",	600 },
+    { "1200",	1200 },
+    { "2400",	2400 },
+    { "4800",	4800 },
+    { "9600",	9600 },
+    { "19200",	19200 },
+    { "38400",	38400 },
+    { "57600",	57600 },
+    { "115200",	115200 },
+    { "230400",	230400 },
+    { "460800",	460800 },
+    { "500000",	500000 },
+    { "576000",	576000 },
+    { "921600",	921600 },
+    { "1000000",1000000 },
+    { "1152000",1152000 },
+    { "1500000",1500000 },
+    { "2000000",2000000 },
+    { "2500000",2500000 },
+    { "3000000",3000000 },
+    { "3500000",3500000 },
+    { "4000000",4000000 },
+    { NULL },
+};
+
+int
+speedstr_to_speed(const char *speed)
+{
+    return lookup_enum(speed_enums, speed, -1);
+}
+
+struct enum_val parity_enums[] = {
+    { "NONE", PARITY_NONE },
+    { "EVEN", PARITY_EVEN },
+    { "ODD", PARITY_ODD },
+    { "none", PARITY_NONE },
+    { "even", PARITY_EVEN },
+    { "odd", PARITY_ODD },
+    { NULL }
+};
+
+enum parity_vals
+lookup_parity(const char *str)
+{
+    return lookup_enum(parity_enums, str, -1);
+}
+
+enum default_type { DEFAULT_INT, DEFAULT_BOOL, DEFAULT_ENUM };
+
+struct default_data
+{
+    const char *name;
+    enum default_type type;
+    int min;
+    int max;
+    struct enum_val *enums;
+    union {
+	int intval;
+    } val;
+};
+
+struct default_data defaults[] = {
+    { "speed",		DEFAULT_ENUM,	.enums = speed_enums,
+					.val.intval = 9600 },
+    { "stopbits",	DEFAULT_INT,	.min = 1, .max = 2, .val.intval = 1 },
+    { "databits",	DEFAULT_INT,	.min = 5, .max = 8, .val.intval = 8 },
+    { "parity",		DEFAULT_ENUM,	.enums = parity_enums,
+					.val.intval = PARITY_NONE },
+    { "xonxoff",	DEFAULT_BOOL,	.val.intval = 0 },
+    { "rtscts",		DEFAULT_BOOL,	.val.intval = 0 },
+    { "local",		DEFAULT_BOOL,	.val.intval = 0 },
+    { "hangup_when_done", DEFAULT_BOOL,	.val.intval = 0 },
+    { "nobreak",	DEFAULT_BOOL,	.val.intval = 0 },
+    { "remctl",		DEFAULT_BOOL,	.val.intval = 0 },
+    { "telnet_brk_on_sync",DEFAULT_BOOL,.val.intval = 0 },
+    { "kickolduser",	DEFAULT_BOOL,	.val.intval = 0 },
+    { "chardelay",	DEFAULT_BOOL,	.val.intval = 1 },
+    { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .val.intval = 20 },
+    { "chardelay-min",	DEFAULT_INT,	.min=1, .max=100000,
+					.val.intval = 1000 },
+    { NULL }
+};
+
+int
+find_default_int(const char *name)
+{
+    int i;
+
+    for (i = 0; defaults[i].name; i++) {
+	if (strcmp(defaults[i].name, name) == 0)
+	    return defaults[i].val.intval;
+    }
+    abort();
+}
+
+static void
+handle_new_default(const char *name, const char *str)
+{
+    int i, val, len;
+    char *end;
+    const char *s;
+
+    while (isspace(*str))
+	str++;
+    s = str;
+    while (!isspace(*s) && *s != '\0')
+	s++;
+    if (s == str) {
+	syslog(LOG_ERR, "No default value on %d", lineno);
+	return;
+    }
+    len = s - str;
+
+    for (i = 0; defaults[i].name; i++) {
+	if (strcmp(defaults[i].name, name) != 0)
+	    continue;
+
+	switch (defaults[i].type) {
+	case DEFAULT_INT:
+	    val = strtoul(str, &end, 10);
+	    if (end != s) {
+		syslog(LOG_ERR, "Invalid integer value on %d", lineno);
+		return;
+	    }
+	    if (val < defaults[i].min || val > defaults[i].max) {
+		syslog(LOG_ERR, "Integer value out of range on %d, "
+		       "min is %d, max is %d",
+		       lineno, defaults[i].min, defaults[i].max);
+		return;
+	    }
+	    defaults[i].val.intval = val;
+	    break;
+
+	case DEFAULT_BOOL:
+	    val = strtoul(str, &end, 10);
+	    if (end == s)
+		defaults[i].val.intval = !!val;
+	    else if (len == 4 && ((strncmp(str, "true", 4) == 0) ||
+				  (strncmp(str, "TRUE", 4) == 0)))
+		defaults[i].val.intval = 1;
+	    else if (len == 5 && ((strncmp(str, "false", 5) == 0) ||
+				  (strncmp(str, "FALSE", 5) == 0)))
+		defaults[i].val.intval = 0;
+	    else
+		syslog(LOG_ERR, "Invalid integer value on %d", lineno);
+	    break;
+
+	case DEFAULT_ENUM:
+	    val = lookup_enum(defaults[i].enums, str, len);
+	    if (val == -1) {
+		syslog(LOG_ERR, "Invalid enumeration value on %d", lineno);
+		return;
+	    }
+	    defaults[i].val.intval = val;
+	    break;
+	}
+	return;
+    }
+}
+
 void
 handle_config_line(char *inbuf)
 {
@@ -641,10 +822,21 @@ handle_config_line(char *inbuf)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
+	    syslog(LOG_ERR, "No device name given on line %d", lineno);
 	    return;
 	}
 	handle_longstr(name, str, DEVNAME);
+	return;
+    }
+
+    if (startswith(inbuf, "DEFAULT", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No default name given on line %d", lineno);
+	    return;
+	}
+	handle_new_default(name, str);
 	return;
     }
 

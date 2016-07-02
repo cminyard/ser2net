@@ -1987,10 +1987,21 @@ myconfig(void *data, struct absout *eout, const char *pos)
     char *s, *endpos;
     unsigned int len;
 
+    port->allow_2217 = find_default_int("remctl");
+    port->telnet_brk_on_sync = find_default_int("telnet_brk_on_sync");
+    port->kickolduser_mode = find_default_int("kickolduser");
+    port->enable_chardelay = find_default_int("chardelay");
+    port->chardelay_scale = find_default_int("chardelay-scale");
+    port->chardelay_min = find_default_int("chardelay-min");
+
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = 1;
+    } else if (strcmp(pos, "-remctl") == 0) {
+	port->allow_2217 = 0;
     } else if (strcmp(pos, "kickolduser") == 0) {
         port->kickolduser_mode = 1;
+    } else if (strcmp(pos, "-kickolduser") == 0) {
+        port->kickolduser_mode = 0;
     } else if (strcmp(pos, "hexdump") == 0 ||
 	       strcmp(pos, "-hexdump") == 0) {
 	port->trace_read.hexdump = (*pos != '-');
@@ -2035,17 +2046,21 @@ myconfig(void *data, struct absout *eout, const char *pos)
 #endif
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
-    } else if (strcmp(pos, "disable-chardelay") == 0) {
+    } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
+	port->telnet_brk_on_sync = 0;
+    } else if (strcmp(pos, "chardelay") == 0) {
+	port->enable_chardelay = true;
+    } else if (strcmp(pos, "-chardelay") == 0) {
 	port->enable_chardelay = false;
     } else if (strncmp(pos, "chardelay-scale=", 16) == 0) {
-	port->chardelay_scale = strtoul(pos + 16, &endpos, 0);
+	port->chardelay_scale = strtoul(pos + 16, &endpos, 10);
 	if (endpos == pos + 16 || *endpos != '\0') {
 	    eout->out(eout, "Invalid number for chardelay-scale: %s\n",
 		      pos + 16);
 	    return -1;
 	}
     } else if (strncmp(pos, "chardelay-min=", 14) == 0) {
-	port->chardelay_min = strtoul(pos + 14, &endpos, 0);
+	port->chardelay_min = strtoul(pos + 14, &endpos, 10);
 	if (endpos == pos + 14 || *endpos != '\0') {
 	    eout->out(eout, "Invalid number for chardelay-min: %s\n",
 		      pos + 14);
@@ -2090,10 +2105,6 @@ portconfig(struct absout *eout,
 	return -1;
     }
     memset(new_port, 0, sizeof(*new_port));
-
-    new_port->enable_chardelay = true;
-    new_port->chardelay_scale = 20;
-    new_port->chardelay_min = 1000;
 
     if (sel_alloc_timer(ser2net_sel,
 			got_timeout, new_port,
