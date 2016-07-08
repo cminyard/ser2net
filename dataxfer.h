@@ -143,6 +143,13 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 				   const char *item),
 		void *data);
 
+int sol_init(void);
+
+int solcfg_init(struct devio *io, struct absout *eout, const char *instr,
+		int (*otherconfig)(void *data, struct absout *eout,
+				   const char *item),
+		void *data);
+
 struct serial_rs485 *get_rs485_conf(void *data);
 
 #endif /* DATAXFER */

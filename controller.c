@@ -696,7 +696,8 @@ handle_accept_port_read(int fd, void *data)
 			cntlr,
 			handle_tcp_fd_read,
 			handle_tcp_fd_write,
-			handle_tcp_fd_except);
+			handle_tcp_fd_except,
+			NULL);
 
     cntlr->next = controllers;
     controllers = cntlr;

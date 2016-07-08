@@ -930,7 +930,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 
     sel_set_fd_handlers(ser2net_sel, d->devfd, io,
 			io->read_disabled ? NULL : do_read,
-			do_write, do_except);
+			do_write, do_except, NULL);
     return 0;
 }
 

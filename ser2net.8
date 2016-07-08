@@ -12,7 +12,7 @@ ser2net \- Serial to network proxy
 The
 .BR ser2net
 daemon allows telnet and tcp sessions to be established with a unit's
-serial ports.
+serial ports or with an IPMI Serial Over LAN (SOL) interface.
 .PP
 The program comes up normally as a daemon, opens the TCP ports
 specified in the configuration file, and waits for connections.  Once
@@ -252,7 +252,10 @@ no activity on it.  A zero value disables this function.
 .TP
 .I device
 The  name  of  the  device  to connect to. This must be in the form of
-.BR /dev/<device> .
+.BR /dev/<device>
+or
+.BR sol.<solparms> .
+For SOL parameters, see the solterm man page that is part of openipmi.
 This may be specified in a DEVICE directive, then
 you can use the name in the DEVICE directive to specify the device
 in the DEVICE directive.  This can be used to give shorter and/or
@@ -263,27 +266,31 @@ colon) in the device name.
 Sets operational parameters for the serial port.  Values may be
 separated by spaces or commas.  Options
 .I 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200
-set the various baud rates.  The following speed may be available
+set the various baud rates for serial device and SOL ports.  The
+following speed may be available
 if your system has the values defined and your hardware supports
 it: 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000,
-2000000, 2500000, 3000000, 3500000, 4000000.
+2000000, 2500000, 3000000, 3500000, 4000000.  Note that only a limited
+set are available on SOL.
+.I [-]NOBREAK
+disables automatic clearing of the break setting of the port.  Available
+on serial device and SOL ports.
+
 .I EVEN, ODD, NONE
-set the parity.
+set the parity. (serial device only)
 .I 1STOPBIT, 2STOPBITS
-set the number of stop bits.
+set the number of stop bits. (serial device only)
 .I 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS
-set the number of data bits.
+set the number of data bits. (serial device only)
 .I [-]XONXOFF
-turns on (- off) XON/XOFF support.
+turns on (- off) XON/XOFF support. (serial device only)
 .I [-]RTSCTS
-turns on (- off) hardware flow control.
+turns on (- off) hardware flow control. (serial device only)
 .I [-]LOCAL
-ignores (- checks) the modem control lines (DCD, DTR, etc.)
+ignores (- checks) the modem control lines (DCD, DTR, etc.) (serial device only)
 .I [-]HANGUP_WHEN_DONE
 lowers (- does not lower) the modem control lines (DCD, DTR, etc.) when
-the connection closes.
-.I [-]NOBREAK
-disables automatic clearing of the break setting of the port.
+the connection closes. (serial device only)
 .I [-]remctl
 allows remote control of the serial port parameters via RFC 2217.  See
 the README for more info.
@@ -357,6 +364,34 @@ sets the minimum delay that ser2net will wait, in microseconds.  If
 the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.
+
+.I [-]authenticated
+enable (-disable) authentication on the link. (SOL only)
+
+.I [-]encrypted
+enable (-disable) encryption on the link. (SOL only)
+
+.I shared_serial_alert_fail
+fail the connection if the serial port is in use through
+hardware. (SOL only)
+
+.I shared_serial_alert_deferred
+if the serial port is already in use through hardware, wait until
+it is released. (SOL only)
+
+.I shared_serial_alert_deferred
+if the serial port is already in use via hardware, take over the connection.
+(SOL only)
+
+.I [-]deassert_CTS_DCD_DSR_on_connect
+deassert (- do not deassert) the given serial signals on a SOL connection.
+(SOL only)
+
+.I ack-timeout=n
+set the timeout for resending to n microseconds. (SOL only)
+
+.I ack-retries=n
+set the number of retries before failure to n times. (SOL only)
 
 .I <parm>
 is a parameter to set a default for.  When you set a default, it sets

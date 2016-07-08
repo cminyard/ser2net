@@ -27,4 +27,7 @@ extern char *rfc2217_signature;
 
 extern selector_t *ser2net_sel;
 
+extern int ser2net_debug;
+extern int ser2net_debug_level;
+
 #endif /* SER2NET_H */

@@ -1011,7 +1011,8 @@ handle_tcp_fd_banner_write(int fd, void *data)
 			    port,
 			    handle_tcp_fd_read,
 			    handle_tcp_fd_write,
-			    handle_tcp_fd_except);
+			    handle_tcp_fd_except,
+			    NULL);
 	free(port->banner->buf);
 	free(port->banner);
 	port->banner = NULL;
@@ -1611,7 +1612,8 @@ setup_tcp_port(port_info_t *port)
 			port,
 			handle_tcp_fd_read,
 			tcp_write_handler,
-			handle_tcp_fd_except);
+			handle_tcp_fd_except,
+			NULL);
     sel_set_fd_read_handler(ser2net_sel, port->tcpfd,
 			    SEL_FD_HANDLER_ENABLED);
     sel_set_fd_except_handler(ser2net_sel, port->tcpfd,
@@ -1731,7 +1733,7 @@ redo_port_handlers(port_info_t *port)
 
     for (i = 0; i < port->nr_acceptfds; i++)
 	sel_set_fd_handlers(ser2net_sel, port->acceptfds[i], port,
-			    handle_accept_port_read, NULL, NULL);
+			    handle_accept_port_read, NULL, NULL, NULL);
 }
 
 int
@@ -2184,9 +2186,18 @@ portconfig(struct absout *eout,
 
     new_port->io.user_data = new_port;
 
-    if (devcfg_init(&new_port->io, eout, devcfg, myconfig, new_port) == -1) {
-	eout->out(eout, "device configuration invalid");
-	goto errout;
+    if (strncmp(new_port->io.devname, "sol.", 4) == 0) {
+	if (solcfg_init(&new_port->io, eout, devcfg, myconfig,
+			new_port) == -1) {
+	    eout->out(eout, "device configuration invalid");
+	    goto errout;
+	}
+    } else {
+	if (devcfg_init(&new_port->io, eout, devcfg, myconfig,
+			new_port) == -1) {
+	    eout->out(eout, "device configuration invalid");
+	    goto errout;
+	}
     }
 
     new_port->config_num = config_num;

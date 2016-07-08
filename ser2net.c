@@ -46,7 +46,8 @@ int config_port_from_cmdline = 0;
 char *config_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
 static int detach = 1;
-static int debug = 0;
+int ser2net_debug = 0;
+int ser2net_debug_level = 0;
 #ifdef USE_UUCP_LOCKING
 int uucp_locking_enabled = 1;
 #endif
@@ -66,6 +67,7 @@ static char *help_string =
 "  -P <file> - set location of pid file\n"
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
+"  -l - Increate the debugging level\n"
 #ifdef USE_UUCP_LOCKING
 "  -u - Disable UUCP locking\n"
 #endif
@@ -147,11 +149,15 @@ make_pidfile(char *pidfile)
 void
 shutdown_cleanly(void)
 {
+    struct timeval tv;
+
     shutdown_ports();
     do {
 	if (check_ports_shutdown())
 	    exit(1);
-	sel_select_once(ser2net_sel);
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
     } while(1);
 }
 
@@ -169,6 +175,14 @@ main(int argc, char *argv[])
 	return -1;
     }
 
+    err = sol_init();
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize IPMI SOL: '%s'\n",
+		strerror(-err));
+	return -1;
+    }
+
     for (i=1; i<argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
 	    fprintf(stderr, "Invalid argument: '%s'\n", argv[i]);
@@ -182,7 +196,11 @@ main(int argc, char *argv[])
 
 	case 'd':
 	    detach = 0;
-	    debug = 1;
+	    ser2net_debug = 1;
+	    break;
+
+	case 'l':
+	    ser2net_debug_level++;
 	    break;
 
 	case 'b':
@@ -260,7 +278,7 @@ main(int argc, char *argv[])
 
     setup_signals();
 
-    if (debug && !detach)
+    if (ser2net_debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
 
     if (config_file) {
@@ -327,7 +345,7 @@ main(int argc, char *argv[])
     set_signal_handler(SIGHUP, reread_config);
     set_signal_handler(SIGINT, shutdown_cleanly);
 
-    sel_select_loop(ser2net_sel);
+    sel_select_loop(ser2net_sel, NULL, 0, NULL);
 
     return 0;
 }

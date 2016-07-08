@@ -82,4 +82,15 @@ enum parity_vals lookup_parity(const char *str);
 /* Return the default int value for the given name. */
 int find_default_int(const char *name);
 
+/* Separate out a string into an argv array, returning the argc/argv
+   values given.  Returns -ENOMEM when out of memory or -EINVAL if
+   there is something wrong with the string.  seps is a list of
+   separators, parameters will be separated by that vlaue.  If seps is
+   NULL it will default to the equivalent of isspace().  The argv
+   array must be freed with str_to_argv_free(). */
+int str_to_argv(const char *s, int *argc, char ***argv, char *seps);
+
+/* Free the return of str_to_argv */
+void str_to_argv_free(int argc, char **argv);
+
 #endif /* UTILS */

@@ -7,7 +7,7 @@
  *         Corey Minyard <minyard@mvista.com>
  *         source@mvista.com
  *
- * Copyright 2002 MontaVista Software Inc.
+ * Copyright 2002,2003 MontaVista Software Inc.
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public License
@@ -41,26 +41,37 @@
 #include "selector.h"
 
 #include <sys/time.h>
+#include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdio.h>
 #include <syslog.h>
 #include <signal.h>
 #include <string.h>
-#include <stdio.h>
+
+typedef struct fd_state_s
+{
+    int               deleted;
+    unsigned int      use_count;
+    sel_fd_cleared_cb done;
+} fd_state_t;
 
 /* The control structure for each file descriptor. */
 typedef struct fd_control_s
 {
-    int              in_use;
+    /* This structure is allocated when an FD is set and it holds
+       whether the FD has been deleted and information to handle the
+       deletion. */
+    fd_state_t       *state;
     void             *data;		/* Operation-specific data */
     sel_fd_handler_t handle_read;
     sel_fd_handler_t handle_write;
     sel_fd_handler_t handle_except;
 } fd_control_t;
 
-struct sel_timer_s
+typedef struct heap_val_s
 {
     /* Set this to the function to call when the timeout occurs. */
     sel_timeout_handler_t handler;
@@ -77,128 +88,18 @@ struct sel_timer_s
 
     /* Am I currently running? */
     int in_heap;
+} heap_val_t;
 
-    /* Links for the heap. */
-    sel_timer_t *left, *right, *up;
-};
-
-struct selector_s
-{
-    /* This is an array of all the file descriptors possible.  This is
-       moderately wasteful of space, but easy to do.  Hey, memory is
-       cheap. */
-    fd_control_t fds[FD_SETSIZE];
-    
-    /* These are the offical fd_sets used to track what file descriptors
-       need to be monitored. */
-    fd_set read_set;
-    fd_set write_set;
-    fd_set except_set;
-
-    int maxfd; /* The largest file descriptor registered with this
-		  code. */
-
-    /* The timer heap. */
-    sel_timer_t *timer_top, *timer_last;
-};
-
-static t_signal_handler user_sighup_handler = NULL;
-static t_signal_handler user_sigint_handler = NULL;
-static int got_sighup = 0; /* Did I get a HUP signal? */
-static int got_sigint = 0; /* Did I get an INT signal? */
-
-/* Initialize a single file descriptor. */
-static void
-init_fd(fd_control_t *fd)
-{
-    fd->in_use = 0;
-    fd->data = NULL;
-    fd->handle_read = NULL;
-    fd->handle_write = NULL;
-    fd->handle_except = NULL;
-}
-
-/* Set the handlers for a file descriptor. */
-void
-sel_set_fd_handlers(selector_t       *sel,
-		    int              fd,
-		    void             *data,
-		    sel_fd_handler_t read_handler,
-		    sel_fd_handler_t write_handler,
-		    sel_fd_handler_t except_handler)
-{
-    sel->fds[fd].in_use = 1;
-    sel->fds[fd].data = data;
-    sel->fds[fd].handle_read = read_handler;
-    sel->fds[fd].handle_write = write_handler;
-    sel->fds[fd].handle_except = except_handler;
-
-    /* Move maxfd up if necessary. */
-    if (fd > sel->maxfd) {
-	sel->maxfd = fd;
-    }
-}
-
-/* Clear the handlers for a file descriptor and remove it from
-   select's monitoring. */
-void
-sel_clear_fd_handlers(selector_t   *sel,
-		      int          fd)
-{
-    init_fd(&(sel->fds[fd]));
-    FD_CLR(fd, &sel->read_set);
-    FD_CLR(fd, &sel->write_set);
-    FD_CLR(fd, &sel->except_set);
-
-    /* Move maxfd down if necessary. */
-    if (fd == sel->maxfd) {
-	while ((sel->maxfd >= 0) && (! sel->fds[sel->maxfd].in_use)) {
-	    sel->maxfd--;
-	}
-    }
-}
-
-/* Set whether the file descriptor will be monitored for data ready to
-   read on the file descriptor. */
-void
-sel_set_fd_read_handler(selector_t *sel, int fd, int state)
-{
-    if (state == SEL_FD_HANDLER_ENABLED) {
-	FD_SET(fd, &sel->read_set);
-    } else if (state == SEL_FD_HANDLER_DISABLED) {
-	FD_CLR(fd, &sel->read_set);
-    }
-    /* FIXME - what to do on errors? */
-}
-
-/* Set whether the file descriptor will be monitored for when the file
-   descriptor can be written to. */
-void
-sel_set_fd_write_handler(selector_t *sel, int fd, int state)
-{
-    if (state == SEL_FD_HANDLER_ENABLED) {
-	FD_SET(fd, &sel->write_set);
-    } else if (state == SEL_FD_HANDLER_DISABLED) {
-	FD_CLR(fd, &sel->write_set);
-    }
-    /* FIXME - what to do on errors? */
-}
-
-/* Set whether the file descriptor will be monitored for exceptions
-   on the file descriptor. */
-void
-sel_set_fd_except_handler(selector_t *sel, int fd, int state)
-{
-    if (state == SEL_FD_HANDLER_ENABLED) {
-	FD_SET(fd, &sel->except_set);
-    } else if (state == SEL_FD_HANDLER_DISABLED) {
-	FD_CLR(fd, &sel->except_set);
-    }
-    /* FIXME - what to do on errors? */
-}
+typedef struct theap_s theap_t;
+#define heap_s theap_s
+#define heap_node_s sel_timer_s
+#define HEAP_EXPORT_NAME(s) theap_ ## s
+#define HEAP_NAMES_LOCAL static
+#define HEAP_OUTPUT_PRINTF "(%ld.%7.7ld)"
+#define HEAP_OUTPUT_DATA pos->timeout.tv_sec, pos->timeout.tv_usec
 
 static int
-cmp_timeval(struct timeval *tv1, struct timeval *tv2)
+cmp_timeval(const struct timeval *tv1, const struct timeval *tv2)
 {
     if (tv1->tv_sec < tv2->tv_sec)
 	return -1;
@@ -213,6 +114,243 @@ cmp_timeval(struct timeval *tv1, struct timeval *tv2)
 	return 1;
 
     return 0;
+}
+
+static int
+heap_cmp_key(heap_val_t *v1, heap_val_t *v2)
+{
+    return cmp_timeval(&v1->timeout, &v2->timeout);
+}
+
+#include "heap.h"
+
+/* Used to build a list of threads that may need to be woken if a
+   timer on the top of the heap changes, or an FD is added/removed.
+   See wake_sel_thread() for more info. */
+typedef struct sel_wait_list_s
+{
+    /* The thread to wake up. */
+    long            thread_id;
+
+    /* How to wake it. */
+    sel_send_sig_cb send_sig;
+    void            *send_sig_cb_data;
+
+    /* This is the memory used to hold the timeout for select
+       operation. */
+    volatile struct timeval *timeout;
+
+    struct sel_wait_list_s *next, *prev;
+} sel_wait_list_t;
+
+struct selector_s
+{
+    /* This is an array of all the file descriptors possible.  This is
+       moderately wasteful of space, but easy to do.  Hey, memory is
+       cheap. */
+    volatile fd_control_t fds[FD_SETSIZE];
+    
+    /* These are the offical fd_sets used to track what file descriptors
+       need to be monitored. */
+    volatile fd_set read_set;
+    volatile fd_set write_set;
+    volatile fd_set except_set;
+
+    volatile int maxfd; /* The largest file descriptor registered with
+			   this code. */
+
+    /* The timer heap. */
+    theap_t timer_heap;
+
+    /* This is a list of items waiting to be woken up because they are
+       sitting in a select.  See wake_sel_thread() for more info. */
+    sel_wait_list_t wait_list;
+};
+
+/* This function will wake the SEL thread.  It must be called with the
+   timer lock held, because it messes with timeout.
+
+   The operation is is subtle, but it does work.  The timeout in the
+   selector is the data passed in (must be the actual data) as the
+   timeout to select.  When we want to wake the select, we set the
+   timeout to zero first.  That way, if the select has calculated the
+   timeout but has not yet called select, then this will set it to
+   zero (causing it to wait zero time).  If select has already been
+   called, then the signal send should wake it up.  We only need to do
+   this after we have calculated the timeout, but before we have
+   called select, thus only things in the wait list matter. */
+static void
+wake_sel_thread(selector_t *sel)
+{
+    sel_wait_list_t *item;
+
+    item = sel->wait_list.next;
+    while (item != &sel->wait_list) {
+	item->timeout->tv_sec = 0;
+	item->timeout->tv_usec = 0;
+	if (item->send_sig)
+	    item->send_sig(item->thread_id, item->send_sig_cb_data);
+	item = item->next;
+    }
+}
+
+/* Wait list management.  These *must* be called with the timer list
+   locked, and the values in the item *must not* change while in the
+   list. */
+static void
+add_sel_wait_list(selector_t *sel, sel_wait_list_t *item,
+		  sel_send_sig_cb send_sig,
+		  void            *cb_data,
+		  long thread_id, volatile struct timeval *timeout)
+{
+    item->thread_id = thread_id;
+    item->timeout = timeout;
+    item->send_sig = send_sig;
+    item->send_sig_cb_data = cb_data;
+    item->next = sel->wait_list.next;
+    item->prev = &sel->wait_list;
+    sel->wait_list.next->prev = item;
+    sel->wait_list.next = item;
+}
+static void
+remove_sel_wait_list(selector_t *sel, sel_wait_list_t *item)
+{
+    item->next->prev = item->prev;
+    item->prev->next = item->next;
+}
+
+static void
+wake_sel_thread_lock(selector_t *sel)
+{
+    wake_sel_thread(sel);
+}
+
+/* Initialize a single file descriptor. */
+static void
+init_fd(fd_control_t *fd)
+{
+    fd->state = NULL;
+    fd->data = NULL;
+    fd->handle_read = NULL;
+    fd->handle_write = NULL;
+    fd->handle_except = NULL;
+}
+
+/* Set the handlers for a file descriptor. */
+int
+sel_set_fd_handlers(selector_t        *sel,
+		    int               fd,
+		    void              *data,
+		    sel_fd_handler_t  read_handler,
+		    sel_fd_handler_t  write_handler,
+		    sel_fd_handler_t  except_handler,
+		    sel_fd_cleared_cb done)
+{
+    fd_control_t *fdc;
+    fd_state_t   *state;
+
+    state = malloc(sizeof(*state));
+    if (!state)
+	return ENOMEM;
+    state->deleted = 0;
+    state->use_count = 0;
+    state->done = done;
+
+    fdc = (fd_control_t *) &(sel->fds[fd]);
+    if (fdc->state) {
+	fdc->state->deleted = 1;
+	if (fdc->state->use_count == 0) {
+	    if (fdc->state->done)
+		fdc->state->done(fd, fdc->data);
+	    free(fdc->state);
+	}
+    }
+    fdc->state = state;
+    fdc->data = data;
+    fdc->handle_read = read_handler;
+    fdc->handle_write = write_handler;
+    fdc->handle_except = except_handler;
+
+    /* Move maxfd up if necessary. */
+    if (fd > sel->maxfd) {
+	sel->maxfd = fd;
+    }
+
+    wake_sel_thread_lock(sel);
+    return 0;
+}
+
+/* Clear the handlers for a file descriptor and remove it from
+   select's monitoring. */
+void
+sel_clear_fd_handlers(selector_t *sel,
+		      int        fd)
+{
+    fd_control_t *fdc;
+    fdc = (fd_control_t *) &(sel->fds[fd]);
+
+    if (fdc->state) {
+	fdc->state->deleted = 1;
+	if (fdc->state->use_count == 0) {
+	    if (fdc->state->done)
+		fdc->state->done(fd, fdc->data);
+	    free(fdc->state);
+	}
+	fdc->state = NULL;
+    }
+
+    init_fd(fdc);
+    FD_CLR(fd, &sel->read_set);
+    FD_CLR(fd, &sel->write_set);
+    FD_CLR(fd, &sel->except_set);
+
+    /* Move maxfd down if necessary. */
+    if (fd == sel->maxfd) {
+	while ((sel->maxfd >= 0) && (! sel->fds[sel->maxfd].state)) {
+	    sel->maxfd--;
+	}
+    }
+
+    wake_sel_thread_lock(sel);
+}
+
+/* Set whether the file descriptor will be monitored for data ready to
+   read on the file descriptor. */
+void
+sel_set_fd_read_handler(selector_t *sel, int fd, int state)
+{
+    if (state == SEL_FD_HANDLER_ENABLED) {
+	FD_SET(fd, &sel->read_set);
+    } else if (state == SEL_FD_HANDLER_DISABLED) {
+	FD_CLR(fd, &sel->read_set);
+    }
+    wake_sel_thread_lock(sel);
+}
+
+/* Set whether the file descriptor will be monitored for when the file
+   descriptor can be written to. */
+void
+sel_set_fd_write_handler(selector_t *sel, int fd, int state)
+{
+    if (state == SEL_FD_HANDLER_ENABLED) {
+	FD_SET(fd, &sel->write_set);
+    } else if (state == SEL_FD_HANDLER_DISABLED) {
+	FD_CLR(fd, &sel->write_set);
+    }
+    wake_sel_thread_lock(sel);
+}
+
+/* Set whether the file descriptor will be monitored for exceptions
+   on the file descriptor. */
+void
+sel_set_fd_except_handler(selector_t *sel, int fd, int state)
+{
+    if (state == SEL_FD_HANDLER_ENABLED) {
+	FD_SET(fd, &sel->except_set);
+    } else if (state == SEL_FD_HANDLER_DISABLED) {
+	FD_CLR(fd, &sel->except_set);
+    }
+    wake_sel_thread_lock(sel);
 }
 
 static void
@@ -239,436 +377,6 @@ diff_timeval(struct timeval *dest,
     }
 }
 
-#undef MASSIVE_DEBUG
-#ifdef MASSIVE_DEBUG
-FILE **debug_out = &stderr;
-static void
-print_tree_item(sel_timer_t *pos, int indent)
-{
-    int i;
-    for (i=0; i<indent; i++)
-	fprintf(*debug_out, " ");
-    fprintf(*debug_out, "  %p: %p %p %p (%ld.%7.7ld)\n", pos, pos->left, pos->right,
-	   pos->up, pos->timeout.tv_sec, pos->timeout.tv_usec);
-    if (pos->left)
-	print_tree_item(pos->left, indent+1);
-    if (pos->right)
-	print_tree_item(pos->right, indent+1);
-}
-
-static void
-print_tree(sel_timer_t *top, sel_timer_t *last)
-{
-    fprintf(*debug_out, "top=%p\n", top);
-    if (top)
-	print_tree_item(top, 0);
-    fprintf(*debug_out, "last=%p\n", last);
-    fflush(*debug_out);
-}
-
-static void
-check_tree_item(sel_timer_t *curr,
-		int         *depth,
-		int         max_depth,
-		sel_timer_t **real_last,
-		int         *found_last)
-{
-    if (! curr->left) {
-	if (curr->right) {
-	    fprintf(*debug_out, "Tree corrupt B\n");
-	    *((int *) NULL) = 0;
-	} else if (*depth > max_depth) {
-	    fprintf(*debug_out, "Tree corrupt C\n");
-	    *((int *) NULL) = 0;
-	} else if (*depth < (max_depth - 1)) {
-	    fprintf(*debug_out, "Tree corrupt D\n");
-	    *((int *) NULL) = 0;
-	} else if ((*found_last) && (*depth == max_depth)) {
-	    fprintf(*debug_out, "Tree corrupt E\n");
-	    *((int *) NULL) = 0;
-	} else if (*depth == max_depth) {
-	    *real_last = curr;
-	} else {
-	    *found_last = 1;
-	}
-    } else {
-	if (curr->left->up != curr) {
-	    fprintf(*debug_out, "Tree corrupt I\n");
-	    *((int *) NULL) = 0;
-	}
-	if (cmp_timeval(&(curr->left->timeout), &(curr->timeout)) < 0) {
-	    fprintf(*debug_out, "Tree corrupt K\n");
-	    *((int *) NULL) = 0;
-	}
-	(*depth)++;
-	check_tree_item(curr->left, depth, max_depth, real_last, found_last);
-	(*depth)--;
-
-	if (! curr->right) {
-	    if (*depth != (max_depth - 1)) {
-		fprintf(*debug_out, "Tree corrupt F\n");
-		*((int *) NULL) = 0;
-	    }
-	    if (*found_last) {
-		fprintf(*debug_out, "Tree corrupt G\n");
-		*((int *) NULL) = 0;
-	    }
-	    *found_last = 1;
-	} else {
-	    if (curr->right->up != curr) {
-		fprintf(*debug_out, "Tree corrupt H\n");
-		*((int *) NULL) = 0;
-	    }
-	    if (cmp_timeval(&(curr->right->timeout), &(curr->timeout)) < 0) {
-		fprintf(*debug_out, "Tree corrupt L\n");
-		*((int *) NULL) = 0;
-	    }
-	    (*depth)++;
-	    check_tree_item(curr->right, depth, max_depth, real_last, found_last);
-	    (*depth)--;
-	}
-    }
-}
-
-static void
-check_tree(sel_timer_t *top, sel_timer_t *last)
-{
-    unsigned int depth = 0, max_depth = 0;
-    int          found_last = 0;
-    sel_timer_t  *real_last;
-
-    if (!top) {
-	if (last) {
-	    fprintf(*debug_out, "Tree corrupt A\n");
-	    *((int *) NULL) = 0;
-	}
-	return;
-    }
-
-    real_last = top;
-    while (real_last->left) {
-	real_last = real_last->left;
-	max_depth++;
-    }
-
-    real_last = NULL;
-    check_tree_item(top, &depth, max_depth, &real_last, &found_last);
-
-    if (real_last != last) {
-	fprintf(*debug_out, "Tree corrupt J\n");
-	*((int *) NULL) = 0;
-    }
-    fflush(*debug_out);
-}
-#endif
-
-static void
-find_next_pos(sel_timer_t *curr, sel_timer_t ***next, sel_timer_t **parent)
-{
-    unsigned int upcount = 0;
-
-    if (curr->up && (curr->up->left == curr)) {
-	/* We are a left node, the next node is just my right partner. */
-	*next = &(curr->up->right);
-	*parent = curr->up;
-	return;
-    }
-
-    /* While we are a right node, go up. */
-    while (curr->up && (curr->up->right == curr)) {
-	upcount++;
-	curr = curr->up;
-    }
-
-    if (curr->up) {
-	/* Now we are a left node, trace up then back down. */
-	curr = curr->up->right;
-	upcount--;
-    }
-    while (upcount) {
-	curr = curr->left;
-	upcount--;
-    }
-    *next = &(curr->left);
-    *parent = curr;
-}
-
-static void
-find_prev_elem(sel_timer_t *curr, sel_timer_t **prev)
-{
-    unsigned int upcount = 0;
-
-    if (curr->up && (curr->up->right == curr)) {
-	/* We are a right node, the previous node is just my left partner. */
-	*prev = curr->up->left;
-	return;
-    }
-
-    /* While we are a left node, go up. */
-    while (curr->up && (curr->up->left == curr)) {
-	upcount++;
-	curr = curr->up;
-    }
-
-    if (curr->up) {
-	/* Now we are a right node, trace up then back down. */
-	curr = curr->up->left;
-    } else {
-	/* We are going to the previous "row". */
-	upcount--;
-    }
-    while (upcount) {
-	curr = curr->right;
-	upcount--;
-    }
-    *prev = curr;
-}
-
-static void
-send_up(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
-{
-    sel_timer_t *tmp1, *tmp2, *parent;
-
-    parent = elem->up;
-    while (parent && (cmp_timeval(&elem->timeout, &parent->timeout) < 0)) {
-	tmp1 = elem->left;
-	tmp2 = elem->right;
-	if (parent->left == elem) {
-	    elem->left = parent;
-	    elem->right = parent->right;
-	    if (elem->right)
-		elem->right->up = elem;
-	} else {
-	    elem->right = parent;
-	    elem->left = parent->left;
-	    if (elem->left)
-		elem->left->up = elem;
-	}
-	elem->up = parent->up;
-
-	if (parent->up) {
-	    if (parent->up->left == parent) {
-		parent->up->left = elem;
-	    } else {
-		parent->up->right = elem;
-	    }
-	} else {
-	    *top = elem;
-	}
-
-	parent->up = elem;
-	parent->left = tmp1;
-	if (parent->left)
-	    parent->left->up = parent;
-	parent->right = tmp2;
-	if (parent->right)
-	    parent->right->up = parent;
-
-	if (*last == elem)
-	    *last = parent;
-
-	parent = elem->up;
-    }
-}
-
-static void
-send_down(sel_timer_t *elem, sel_timer_t **top, sel_timer_t **last)
-{
-    sel_timer_t *tmp1, *tmp2, *left, *right;
-
-    left = elem->left;
-    while (left) {
-	right = elem->right;
-	/* Choose the smaller of the two below me to swap with. */
-	if ((right) && (cmp_timeval(&left->timeout, &right->timeout) > 0)) {
-
-	    if (cmp_timeval(&elem->timeout, &right->timeout) > 0) {
-		/* Swap with the right element. */
-		tmp1 = right->left;
-		tmp2 = right->right;
-		if (elem->up) {
-		    if (elem->up->left == elem) {
-			elem->up->left = right;
-		    } else {
-			elem->up->right = right;
-		    }
-		} else {
-		    *top = right;
-		}
-		right->up = elem->up;
-		elem->up = right;
-
-		right->left = elem->left;
-		right->right = elem;
-		elem->left = tmp1;
-		elem->right = tmp2;
-		if (right->left)
-		    right->left->up = right;
-		if (elem->left)
-		    elem->left->up = elem;
-		if (elem->right)
-		    elem->right->up = elem;
-
-		if (*last == right)
-		    *last = elem;
-	    } else
-		goto done;
-	} else {
-	    /* The left element is smaller, or the right doesn't exist. */
-	    if (cmp_timeval(&elem->timeout, &left->timeout) > 0) {
-		/* Swap with the left element. */
-		tmp1 = left->left;
-		tmp2 = left->right;
-		if (elem->up) {
-		    if (elem->up->left == elem) {
-			elem->up->left = left;
-		    } else {
-			elem->up->right = left;
-		    }
-		} else {
-		    *top = left;
-		}
-		left->up = elem->up;
-		elem->up = left;
-
-		left->left = elem;
-		left->right = elem->right;
-		elem->left = tmp1;
-		elem->right = tmp2;
-		if (left->right)
-		    left->right->up = left;
-		if (elem->left)
-		    elem->left->up = elem;
-		if (elem->right)
-		    elem->right->up = elem;
-
-		if (*last == left)
-		    *last = elem;
-	    } else
-		goto done;
-	}
-	left = elem->left;
-    }
-done:
-    return;
-}
-
-static void
-add_to_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
-{
-    sel_timer_t **next;
-    sel_timer_t *parent;
-
-#ifdef MASSIVE_DEBUG
-    fprintf(*debug_out, "add_to_heap entry\n");
-    print_tree(*top, *last);
-    check_tree(*top, *last);
-#endif
-
-    elem->left = NULL;
-    elem->right = NULL;
-    elem->up = NULL;
-
-    if (*top == NULL) {
-	*top = elem;
-	*last = elem;
-	goto out;
-    }
-
-    find_next_pos(*last, &next, &parent);
-    *next = elem;
-    elem->up = parent;
-    *last = elem;
-    if (cmp_timeval(&elem->timeout, &parent->timeout) < 0) {
-	send_up(elem, top, last);
-    }
-
- out:
-#ifdef MASSIVE_DEBUG
-    fprintf(*debug_out, "add_to_heap exit\n");
-    print_tree(*top, *last);
-    check_tree(*top, *last);
-#endif
-    return;
-}
-
-static void
-remove_from_heap(sel_timer_t **top, sel_timer_t **last, sel_timer_t *elem)
-{
-    sel_timer_t *to_insert;
-
-#ifdef MASSIVE_DEBUG
-    fprintf(*debug_out, "remove_from_head entry\n");
-    print_tree(*top, *last);
-    check_tree(*top, *last);
-#endif
-
-    /* First remove the last element from the tree, if it's not what's
-       being removed, we will use it for insertion into the removal
-       place. */
-    to_insert = *last;
-    if (! to_insert->up) {
-	/* This is the only element in the heap. */
-	*top = NULL;
-	*last = NULL;
-	goto out;
-    } else {
-	/* Set the new last position, and remove the item we will
-           insert. */
-	find_prev_elem(to_insert, last);
-	if (to_insert->up->left == to_insert) {
-	    to_insert->up->left = NULL;
-	} else {
-	    to_insert->up->right = NULL;
-	}
-    }
-
-    if (elem == to_insert) {
-	/* We got lucky and removed the last element.  We are done. */
-	goto out;
-    }
-
-    /* Now stick the formerly last element into the removed element's
-       position. */
-    if (elem->up) {
-	if (elem->up->left == elem) {
-	    elem->up->left = to_insert;
-	} else {
-	    elem->up->right = to_insert;
-	}
-    } else {
-	/* The head of the tree is being replaced. */
-	*top = to_insert;
-    }
-    to_insert->up = elem->up;
-    if (elem->left)
-	elem->left->up = to_insert;
-    if (elem->right)
-	elem->right->up = to_insert;
-    to_insert->left = elem->left;
-    to_insert->right = elem->right;
-
-    if (*last == elem)
-	*last = to_insert;
-
-    elem = to_insert;
-
-    /* Now propigate it to the right place in the tree. */
-    if (elem->up && cmp_timeval(&elem->timeout, &elem->up->timeout) < 0) {
-	send_up(elem, top, last);
-    } else {
-	send_down(elem, top, last);
-    }
-
- out:
-#ifdef MASSIVE_DEBUG
-    fprintf(*debug_out, "remove_from_head exit\n");
-    print_tree(*top, *last);
-    check_tree(*top, *last);
-#endif
-    return;
-}
-
 int
 sel_alloc_timer(selector_t            *sel,
 		sel_timeout_handler_t handler,
@@ -681,10 +389,10 @@ sel_alloc_timer(selector_t            *sel,
     if (!timer)
 	return ENOMEM;
 
-    timer->handler = handler;
-    timer->user_data = user_data;
-    timer->in_heap = 0;
-    timer->sel = sel;
+    timer->val.handler = handler;
+    timer->val.user_data = user_data;
+    timer->val.in_heap = 0;
+    timer->val.sel = sel;
     *new_timer = timer;
 
     return 0;
@@ -693,7 +401,7 @@ sel_alloc_timer(selector_t            *sel,
 int
 sel_free_timer(sel_timer_t *timer)
 {
-    if (timer->in_heap) {
+    if (timer->val.in_heap) {
 	sel_stop_timer(timer);
     }
     free(timer);
@@ -705,142 +413,275 @@ int
 sel_start_timer(sel_timer_t    *timer,
 		struct timeval *timeout)
 {
-    if (timer->in_heap)
-	return EBUSY;
+    volatile sel_timer_t *top;
 
-    timer->timeout = *timeout;
-    add_to_heap(&(timer->sel->timer_top), &(timer->sel->timer_last), timer);
-    timer->in_heap = 1;
+    if (timer->val.in_heap) {
+	return EBUSY;
+    }
+
+    top = theap_get_top(&timer->val.sel->timer_heap);
+
+    timer->val.timeout = *timeout;
+    theap_add(&timer->val.sel->timer_heap, timer);
+    timer->val.in_heap = 1;
+
+    if (top != theap_get_top(&timer->val.sel->timer_heap))
+	/* If the top value changed, restart the waiting thread. */
+	wake_sel_thread(timer->val.sel);
+
     return 0;
 }
 
 int
 sel_stop_timer(sel_timer_t *timer)
 {
-    if (!timer->in_heap)
-	return ETIMEDOUT;
+    volatile sel_timer_t *top;
 
-    remove_from_heap(&(timer->sel->timer_top),
-		     &(timer->sel->timer_last),
-		     timer);
-    timer->in_heap = 0;
+    if (!timer->val.in_heap) {
+	return ETIMEDOUT;
+    }
+
+    top = theap_get_top(&timer->val.sel->timer_heap);
+
+    theap_remove(&timer->val.sel->timer_heap, timer);
+    timer->val.in_heap = 0;
+
+    if (top != theap_get_top(&timer->val.sel->timer_heap))
+	/* If the top value changed, restart the waiting thread. */
+	wake_sel_thread(timer->val.sel);
+
     return 0;
 }
 
-void
-sel_select_once(selector_t *sel)
+static void
+get_monotonic_time(struct timeval *tv)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    tv->tv_sec = ts.tv_sec;
+    tv->tv_usec = (ts.tv_nsec + 500) / 1000;
+}
+
+/*
+ * Process timers on selector.  The timeout is always set, to a very
+ * long value if no timers are waiting.  Note that this *must* be
+ * called with sel->timer_lock held.  Note that if this processes
+ * any timers, the timeout will be set to { 0,0 }.
+ */
+static void
+process_timers(selector_t	       *sel,
+	       volatile struct timeval *timeout)
+{
+    struct timeval now;
+    sel_timer_t    *timer;
+    int            called = 0;
+
+    timer = theap_get_top(&sel->timer_heap);
+    get_monotonic_time(&now);
+    while (timer && cmp_timeval(&now, &timer->val.timeout) >= 0) {
+	called = 1;
+	theap_remove(&(sel->timer_heap), timer);
+	timer->val.in_heap = 0;
+
+	timer->val.handler(sel, timer, timer->val.user_data);
+
+	timer = theap_get_top(&sel->timer_heap);
+    }
+
+    if (called) {
+	/* If called, set the timeout to zero. */
+	timeout->tv_sec = 0;
+	timeout->tv_usec = 0;
+    } else if (timer) {
+	get_monotonic_time(&now);
+	diff_timeval((struct timeval *) timeout,
+		     (struct timeval *) &timer->val.timeout,
+		     &now);
+    } else {
+	/* No timers, just set a long time. */
+	timeout->tv_sec = 100000;
+	timeout->tv_usec = 0;
+    }
+}
+
+/*
+ * return == 0  when timeout
+ * 	  >  0  when successful
+ * 	  <  0  when error
+ */
+static int
+process_fds(selector_t	            *sel,
+	    sel_send_sig_cb         send_sig,
+	    long                    thread_id,
+	    void                    *cb_data,
+	    volatile struct timeval *timeout)
 {
     fd_set      tmp_read_set;
     fd_set      tmp_write_set;
     fd_set      tmp_except_set;
-    int         i;
-    int         err;
-    sel_timer_t *timer;
-    struct timeval timeout, *to_time;
+    int i;
+    int err;
+    int num_fds;
 
-    if (sel->timer_top) {
-	struct timeval now;
+    memcpy(&tmp_read_set, (void *) &sel->read_set, sizeof(tmp_read_set));
+    memcpy(&tmp_write_set, (void *) &sel->write_set, sizeof(tmp_write_set));
+    memcpy(&tmp_except_set, (void *) &sel->except_set, sizeof(tmp_except_set));
+    num_fds = sel->maxfd+1;
 
-	/* Check for timers to time out. */
-	gettimeofday(&now, NULL);
-	timer = sel->timer_top;
-	while (cmp_timeval(&now, &timer->timeout) >= 0) {
-	    remove_from_heap(&(sel->timer_top),
-			     &(sel->timer_last),
-			     timer);
-
-	    timer->in_heap = 0;
-	    timer->handler(sel, timer, timer->user_data);
-
-	    timer = sel->timer_top;
-	    gettimeofday(&now, NULL);
-	    if (!timer)
-		goto no_timers;
-	}
-
-	/* Calculate how long to wait now. */
-	diff_timeval(&timeout, &sel->timer_top->timeout, &now);
-	to_time = &timeout;
-    } else {
-      no_timers:
-	to_time = NULL;
-    }
-    memcpy(&tmp_read_set, &sel->read_set, sizeof(tmp_read_set));
-    memcpy(&tmp_write_set, &sel->write_set, sizeof(tmp_write_set));
-    memcpy(&tmp_except_set, &sel->except_set, sizeof(tmp_except_set));
-    err = select(sel->maxfd+1,
+    err = select(num_fds,
 		 &tmp_read_set,
 		 &tmp_write_set,
 		 &tmp_except_set,
-		 to_time);
-    if (err == 0) {
-	/* A timeout occurred. */
-    } else if (err < 0) {
-	/* An error occurred. */
-	if (errno == EINTR) {
-	    /* EINTR is ok, just restart the operation. */
-	    timeout.tv_sec = 1;
-	    timeout.tv_usec = 0;
-	} else {
-	    /* An error is bad, we need to abort. */
-	    syslog(LOG_ERR, "select_loop() - select: %m");
-	    exit(1);
+		 (struct timeval *) timeout);
+    if (err <= 0)
+	goto out;
+
+    /* We got some I/O. */
+    for (i=0; i<=sel->maxfd; i++) {
+	if (FD_ISSET(i, &tmp_read_set)) {
+	    sel_fd_handler_t handle_read;
+	    void             *data;
+	    fd_state_t       *state;
+
+	    if (sel->fds[i].handle_read == NULL) {
+		/* Somehow we don't have a handler for this.
+		   Just shut it down. */
+		sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+	    } else {
+		handle_read = sel->fds[i].handle_read;
+		data = sel->fds[i].data;
+		state = sel->fds[i].state;
+		state->use_count++;
+		handle_read(i, data);
+		state->use_count--;
+		if (state->deleted && state->use_count == 0) {
+		    if (state->done)
+			state->done(i, data);
+		    free(state);
+		}
+	    }
 	}
-    } else {
-	/* We got some I/O. */
-	for (i=0; i<=sel->maxfd; i++) {
-	    if (FD_ISSET(i, &tmp_read_set)) {
-		if (sel->fds[i].handle_read == NULL) {
-		    /* Somehow we don't have a handler for this.
-		       Just shut it down. */
-		    sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		} else {
-		    sel->fds[i].handle_read(i, sel->fds[i].data);
+	if (FD_ISSET(i, &tmp_write_set)) {
+	    sel_fd_handler_t handle_write;
+	    void             *data;
+	    fd_state_t       *state;
+
+	    if (sel->fds[i].handle_write == NULL) {
+		/* Somehow we don't have a handler for this.
+                   Just shut it down. */
+		sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+	    } else {
+		handle_write = sel->fds[i].handle_write;
+		data = sel->fds[i].data;
+		state = sel->fds[i].state;
+		state->use_count++;
+		handle_write(i, data);
+		state->use_count--;
+		if (state->deleted && state->use_count == 0) {
+		    if (state->done)
+			state->done(i, data);
+		    free(state);
 		}
 	    }
-	    if (FD_ISSET(i, &tmp_write_set)) {
-		if (sel->fds[i].handle_write == NULL) {
-		    /* Somehow we don't have a handler for this.
-		       Just shut it down. */
-		    sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		} else {
-		    sel->fds[i].handle_write(i, sel->fds[i].data);
-		}
-	    }
-	    if (FD_ISSET(i, &tmp_except_set)) {
-		if (sel->fds[i].handle_except == NULL) {
-		    /* Somehow we don't have a handler for this.
-		       Just shut it down. */
-		    sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-		} else {
-		    sel->fds[i].handle_except(i, sel->fds[i].data);
+	}
+	if (FD_ISSET(i, &tmp_except_set)) {
+	    sel_fd_handler_t handle_except;
+	    void             *data;
+	    fd_state_t       *state;
+
+	    if (sel->fds[i].handle_except == NULL) {
+		/* Somehow we don't have a handler for this.
+                   Just shut it down. */
+		sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
+	    } else {
+	        handle_except = sel->fds[i].handle_except;
+		data = sel->fds[i].data;
+		state = sel->fds[i].state;
+		state->use_count++;
+	        handle_except(i, data);
+		state->use_count--;
+		if (state->deleted && state->use_count == 0) {
+		    if (state->done)
+			state->done(i, data);
+		    free(state);
 		}
 	    }
 	}
     }
+out:
+    return err;
+}
+
+static t_signal_handler user_sighup_handler = NULL;
+static t_signal_handler user_sigint_handler = NULL;
+static int got_sighup = 0; /* Did I get a HUP signal? */
+static int got_sigint = 0; /* Did I get an INT signal? */
+
+int
+sel_select(selector_t      *sel,
+	   sel_send_sig_cb send_sig,
+	   long            thread_id,
+	   void            *cb_data,
+	   struct timeval  *timeout)
+{
+    int             err;
+    struct timeval  loc_timeout;
+    sel_wait_list_t wait_entry;
+
+    process_timers(sel, (struct timeval *)(&loc_timeout));
+    if (timeout) {
+	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
+	    memcpy(&loc_timeout, timeout, sizeof(loc_timeout));
+    }
+    add_sel_wait_list(sel, &wait_entry, send_sig, cb_data, thread_id,
+		      &loc_timeout);
+
+    err = process_fds(sel, send_sig, thread_id, cb_data, &loc_timeout);
+
+    remove_sel_wait_list(sel, &wait_entry);
 
     if (got_sighup) {
 	got_sighup = 0;
 	if (user_sighup_handler != NULL) {
+	    int old_errno = errno;
 	    user_sighup_handler();
+	    errno = old_errno;
 	}
     }
     if (got_sigint) {
 	got_sigint = 0;
 	if (user_sigint_handler != NULL) {
+	    int old_errno = errno;
 	    user_sigint_handler();
+	    errno = old_errno;
 	}
     }
+
+    return err;
 }
 
 /* The main loop for the program.  This will select on the various
    sets, then scan for any available I/O to process.  It also monitors
    the time and call the timeout handlers periodically. */
-void
-sel_select_loop(selector_t *sel)
+int
+sel_select_loop(selector_t      *sel,
+		sel_send_sig_cb send_sig,
+		long            thread_id,
+		void            *cb_data)
 {
-    for (;;)
-	sel_select_once(sel);
+    int             err;
+
+    for (;;) {
+	err = sel_select(sel, send_sig, thread_id, cb_data, NULL);
+	if ((err < 0) && (errno != EINTR)) {
+	    err = errno;
+	    /* An error occurred. */
+	    /* An error is bad, we need to abort. */
+	    syslog(LOG_ERR, "select_loop() - select: %m");
+	    return err;
+	}
+    }
 }
 
 /* Initialize the select code. */
@@ -848,49 +689,44 @@ int
 sel_alloc_selector(selector_t **new_selector)
 {
     selector_t *sel;
-    int        i;
+    unsigned int i;
 
     sel = malloc(sizeof(*sel));
     if (!sel)
 	return ENOMEM;
+    memset(sel, 0, sizeof(*sel));
 
-    FD_ZERO(&sel->read_set);
-    FD_ZERO(&sel->write_set);
-    FD_ZERO(&sel->except_set);
+    /* The list is initially empty. */
+    sel->wait_list.next = &sel->wait_list;
+    sel->wait_list.prev = &sel->wait_list;
+
+    FD_ZERO((fd_set *) &sel->read_set);
+    FD_ZERO((fd_set *) &sel->write_set);
+    FD_ZERO((fd_set *) &sel->except_set);
 
     for (i=0; i<FD_SETSIZE; i++) {
-	init_fd(&(sel->fds[i]));
+	init_fd((fd_control_t *) &(sel->fds[i]));
     }
 
-    sel->maxfd = 0;
-    sel->timer_top = NULL;
-    sel->timer_last = NULL;
+    theap_init(&sel->timer_heap);
 
     *new_selector = sel;
 
     return 0;
 }
 
-static void
-free_heap_element(sel_timer_t *elem)
-{
-    if (!elem)
-	return;
-
-    free_heap_element(elem->left);
-    free_heap_element(elem->right);
-    free(elem);
-}
-
 int
 sel_free_selector(selector_t *sel)
 {
-    sel_timer_t *heap;
+    sel_timer_t *elem;
 
-    heap = sel->timer_top;
-
+    elem = theap_get_top(&(sel->timer_heap));
+    while (elem) {
+	theap_remove(&(sel->timer_heap), elem);
+	free(elem);
+	elem = theap_get_top(&(sel->timer_heap));
+    }
     free(sel);
-    free_heap_element(heap);
 
     return 0;
 }

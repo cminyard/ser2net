@@ -20,6 +20,8 @@
 #ifndef SER2NET_IO_H
 #define SER2NET_IO_H
 
+#include <sys/types.h>
+
 struct absout;
 struct devio_f;
 

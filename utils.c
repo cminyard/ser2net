@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #include "ser2net.h"
 #include "utils.h"
@@ -155,7 +156,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
 	    goto next;
 
 	sel_set_fd_handlers(ser2net_sel, fds[curr_fd], data,
-			    readhndlr, NULL, NULL);
+			    readhndlr, NULL, NULL, NULL);
 	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd],
 				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
@@ -204,4 +205,246 @@ write_ignore_fail(int fd, const char *data, size_t count)
 	data += written;
 	count -= written;
     }
+}
+
+void str_to_argv_free(int argc, char **argv)
+{
+    int i;
+
+    for (i = 0; i < argc; i++) {
+	if (argv[i])
+	    free(argv[i]);
+    }
+    free(argv);
+}
+
+enum state {
+    in_space,
+    in_parm,
+    in_squote,
+    in_dquote,
+    in_bs, in_bs_hex, in_bs_hex2, in_bs_oct2, in_bs_oct3
+};
+
+static int add_to_parm(char **parm, size_t *parmlen, size_t *parmpos, char c)
+{
+    if (parmpos >= parmlen) {
+	char *new_parm = realloc(*parm, *parmlen + 10);
+	if (!new_parm)
+	    return -ENOMEM;
+	*parmlen += 10;
+	*parm = new_parm;
+    }
+
+    (*parm)[*parmpos] = c;
+    (*parmpos)++;
+    return 0;
+}
+
+static int add_parm(int *argc, int *argc_max, char ***argv,
+		    char *parm, size_t len)
+{
+    char *s;
+
+    if (*argc >= *argc_max) {
+	char **new_argv = realloc(*argv, *argc_max + (10 * sizeof(char *)));
+	if (!new_argv)
+	    return -ENOMEM;
+	*argv = new_argv;
+	*argc_max += 10;
+    }
+
+    s = malloc(len + 1);
+    if (!s)
+	return -ENOMEM;
+    memcpy(s, parm, len);
+    s[len] = '\0';
+    (*argv)[*argc] = s;
+    (*argc)++;
+    return 0;
+}
+
+int fromxdigit(char c)
+{
+    if (c >= '0' && c <= '9')
+	return c - '0';
+    else if (c >= 'a' && c <= 'f')
+	return c - 'a' + 10;
+    else
+	return c - 'A' + 10;
+}
+
+int str_to_argv(const char *s, int *r_argc, char ***r_argv, char *seps)
+{
+    int argc = 0;
+    int argc_max = 0;
+    char **argv = NULL;
+    enum state state, prev_state = in_parm, prev_bs_state = in_parm;
+    char *parm = NULL;
+    size_t parmlen = 0;
+    size_t parmpos = 0;
+    int rv;
+    int c = 0;
+
+    if (!seps)
+	seps = " \f\n\r\t\v";
+
+    state = in_space;
+    for (; *s; s++) {
+	switch (state) {
+	case in_space:
+	    if (strchr(seps, *s))
+		break;
+	    parmpos = 0;
+	    if (*s == '\'') {
+		prev_state = state;
+		state = in_squote;
+	    } else if (*s == '"') {
+		prev_state = state;
+		state = in_dquote;
+	    } else if (*s == '\\') {
+		prev_bs_state = state;
+		state = in_bs;
+	    } else {
+		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
+		if (rv)
+		    goto err;
+		state = in_parm;
+	    }
+	    break;
+
+	case in_parm:
+	    if (strchr(seps, *s)) {
+		rv = add_parm(&argc, &argc_max, &argv, parm, parmpos);
+		if (rv)
+		    goto err;
+		state = in_space;
+	    } else if (*s == '\'') {
+		prev_state = state;
+		state = in_squote;
+	    } else if (*s == '"') {
+		prev_state = state;
+		state = in_dquote;
+	    } else if (*s == '\\') {
+		prev_bs_state = state;
+		state = in_bs;
+	    } else {
+		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
+		if (rv)
+		    goto err;
+	    }
+	    break;
+
+	case in_squote:
+	    if (*s == '\'') {
+		state = prev_state;
+	    } else if (*s == '\\') {
+		prev_bs_state = state;
+		state = in_bs;
+	    } else {
+		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
+		if (rv)
+		    goto err;
+	    }
+	    break;
+
+	case in_dquote:
+	    if (*s == '"') {
+		state = prev_state;
+	    } else if (*s == '\\') {
+		prev_bs_state = state;
+		state = in_bs;
+	    } else {
+		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
+		if (rv)
+		    goto err;
+	    }
+	    break;
+
+	case in_bs:
+	    switch (*s) {
+	    case '\\': c = '\\'; break;
+	    case 'a': c = '\a'; break;
+	    case 'b': c = '\b'; break;
+	    case 'e': c = '\e'; break;
+	    case 'f': c = '\f'; break;
+	    case 'n': c = '\n'; break;
+	    case 'r': c = '\r'; break;
+	    case 't': c = '\t'; break;
+	    case 'v': c = '\v'; break;
+	    case 'x':
+		c = 0;
+		state = in_bs_hex;
+		break;
+	    case '0': case '1': case '2': case '3': case '4':
+	    case '5': case '6': case '7': case '8': case '9':
+		c = *s - '0';
+		if (*(s + 1) >= '0' && *(s + 1) <= '7')
+		    state = in_bs_oct2;
+		else
+		    goto add_parm_c;
+		break;
+	    }
+	    if (state == in_bs)
+		goto add_parm_c;
+	    break;
+
+	case in_bs_hex:
+	    if (!isxdigit(*s)) {
+		rv = -EINVAL;
+		goto err;
+	    }
+	    c = fromxdigit(*s);
+	    if (isxdigit(*(s + 1)))
+		state = in_bs_hex2;
+	    else
+		goto add_parm_c;
+	    break;
+
+	case in_bs_hex2:
+	    c = (c * 16) + fromxdigit(*s);
+	    goto add_parm_c;
+
+	case in_bs_oct2:
+	    c = (c * 8) + (*s - '0');
+	    if (*(s + 1) >= '0' && *(s + 1) <= '7')
+		state = in_bs_oct3;
+	    else
+		goto add_parm_c;
+	    break;
+
+	case in_bs_oct3:
+	    c = (c * 8) + (*s - '0');
+	    goto add_parm_c;
+	}
+	continue;
+
+    add_parm_c:
+	rv = add_to_parm(&parm, &parmlen, &parmpos, c);
+	if (rv)
+	    goto err;
+	state = prev_bs_state;
+    }
+
+    switch (state) {
+    case in_space:
+	break;
+
+    case in_parm:
+	rv = add_parm(&argc, &argc_max, &argv, parm, parmpos);
+	break;
+
+    default:
+	rv = -EINVAL;
+    }
+
+ err:
+    free(parm);
+    if (rv) {
+	str_to_argv_free(argc, argv);
+    } else {
+	*r_argc = argc;
+	*r_argv = argv;
+    }
+    return rv;
 }

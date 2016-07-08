@@ -27,11 +27,17 @@
 #include <stdio.h>
 #include <syslog.h>
 #include <stdarg.h>
+#include <values.h>
 
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "utils.h"
 #include "telnet.h"
+
+#ifdef HAVE_OPENIPMI
+#include <OpenIPMI/ipmi_conn.h>
+#include <OpenIPMI/ipmi_sol.h>
+#endif
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
 
@@ -576,6 +582,13 @@ struct enum_val parity_enums[] = {
     { NULL }
 };
 
+struct enum_val shared_serial_alert_enums[] = {
+    { "fail",		ipmi_sol_serial_alerts_fail },
+    { "deferred", 	ipmi_sol_serial_alerts_deferred },
+    { "succeed", 	ipmi_sol_serial_alerts_succeed },
+    { NULL }
+};
+
 enum parity_vals
 lookup_parity(const char *str)
 {
@@ -600,8 +613,7 @@ struct default_data
 };
 
 struct default_data defaults[] = {
-    { "speed",		DEFAULT_ENUM,	.enums = speed_enums,
-					.def.intval = 9600 },
+    /* serial device only */
     { "stopbits",	DEFAULT_INT,	.min = 1, .max = 2, .def.intval = 1 },
     { "databits",	DEFAULT_INT,	.min = 5, .max = 8, .def.intval = 8 },
     { "parity",		DEFAULT_ENUM,	.enums = parity_enums,
@@ -610,7 +622,11 @@ struct default_data defaults[] = {
     { "rtscts",		DEFAULT_BOOL,	.def.intval = 0 },
     { "local",		DEFAULT_BOOL,	.def.intval = 0 },
     { "hangup_when_done", DEFAULT_BOOL,	.def.intval = 0 },
+    /* Serial port and SOL */
+    { "speed",		DEFAULT_ENUM,	.enums = speed_enums,
+					.def.intval = 9600 },
     { "nobreak",	DEFAULT_BOOL,	.def.intval = 0 },
+    /* All port types */
     { "remctl",		DEFAULT_BOOL,	.def.intval = 0 },
     { "telnet_brk_on_sync",DEFAULT_BOOL,.def.intval = 0 },
     { "kickolduser",	DEFAULT_BOOL,	.def.intval = 0 },
@@ -618,6 +634,18 @@ struct default_data defaults[] = {
     { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .def.intval = 20 },
     { "chardelay-min",	DEFAULT_INT,	.min=1, .max=100000,
 					.def.intval = 1000 },
+#ifdef HAVE_OPENIPMI
+    /* SOL only */
+    { "authenticated",	DEFAULT_BOOL,	.def.intval = 1 },
+    { "encrypted",	DEFAULT_BOOL,	.def.intval = 1 },
+    { "ack-timeout",	DEFAULT_INT,	.min=1, .max=INT_MAX,
+					.def.intval = 1000000 },
+    { "ack-retries",	DEFAULT_INT,	.min=1, .max=INT_MAX,
+					.def.intval = 10 },
+    { "shared-serial-alert", DEFAULT_ENUM, .enums = shared_serial_alert_enums,
+				   .def.intval = ipmi_sol_serial_alerts_fail },
+    { "deassert_CTS_DCD_DSR_on_connect", DEFAULT_BOOL, .def.intval = 0 },
+#endif
     { NULL }
 };
 
@@ -630,7 +658,6 @@ setup_defaults(void)
     for (i = 0; defaults[i].name; i++) {
 	defaults[i].val.intval = defaults[i].def.intval;
     }
-    abort();
 }
 
 int
