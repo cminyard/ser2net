@@ -1644,14 +1644,185 @@ setup_tcp_port(port_info_t *port)
     return 0;
 }
 
+static port_info_t *
+is_port_free(char *portname)
+{
+    port_info_t *port = ports;
+
+    while (port) {
+	if (strcmp(port->portname, portname) == 0)
+	    if (port->tcp_to_dev_state == PORT_UNCONNECTED)
+		return port;
+	port = port->next;
+    }
+
+    return NULL;
+}
+
+static void
+handle_port_accept(port_info_t *port, int fd)
+{
+    socklen_t len;
+    int optval;
+
+    len = sizeof(port->remote);
+
+    port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
+    if (port->tcpfd == -1) {
+	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
+	return;
+    }
+
+    optval = 1;
+    if (setsockopt(port->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
+		   sizeof(optval)) == -1) {
+	close(port->tcpfd);
+	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on tcp port %s: %m",
+	       port->portname);
+	return;
+    }
+
+    /* XXX log port->remote */
+    setup_tcp_port(port);
+}
+
+typedef struct rotator
+{
+    int curr_port;
+    char **portv;
+    int portc;
+
+    char *portname;
+
+    struct addrinfo    *ai;		/* The address list for the portname. */
+    int            *acceptfds;		/* The file descriptor used to
+					   accept connections on the
+					   TCP port. */
+    unsigned int   nr_acceptfds;
+
+    struct rotator *next;
+} rotator_t;
+
+rotator_t *rotators = NULL;
+
+/* A connection request has come in on a port. */
+static void
+handle_rot_port_read(int fd, void *data)
+{
+    rotator_t *rot = (rotator_t *) data;
+    port_info_t *port;
+    struct sockaddr_storage dummy_sockaddr;
+    socklen_t len = sizeof(dummy_sockaddr);
+    int i, new_fd;
+    char *err;
+
+    i = rot->curr_port;
+    do {
+	port = is_port_free(rot->portv[i]);
+	if (++i >= rot->portc)
+	    i = 0;
+	if (port) {
+	    rot->curr_port = i;
+	    handle_port_accept(port, fd);
+	    return;
+	}
+    } while (i != rot->curr_port);
+
+    new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
+    if (new_fd != -1) {
+	err = "No free port found\r\n";
+	write_ignore_fail(new_fd, err, strlen(err));
+	close(new_fd);
+    }
+}
+
+static void
+free_rotator(rotator_t *rot)
+{
+    int i;
+
+    for (i = 0; i < rot->nr_acceptfds; i++) {
+	sel_set_fd_read_handler(ser2net_sel,
+				rot->acceptfds[i],
+				SEL_FD_HANDLER_DISABLED);
+	sel_clear_fd_handlers(ser2net_sel, rot->acceptfds[i]);
+	close(rot->acceptfds[i]);
+    }
+    if (rot->portname)
+	free(rot->portname);
+    if (rot->ai)
+	freeaddrinfo(rot->ai);
+    if (rot->acceptfds)
+	free(rot->acceptfds);
+    if (rot->portv)
+	str_to_argv_free(rot->portc, rot->portv);
+    free(rot);
+}
+
+void
+free_rotators(void)
+{
+    rotator_t *rot, *next;
+
+    rot = rotators;
+    while (rot) {
+	next = rot->next;
+	free_rotator(rot);
+	rot = next;
+    }
+    rotators = NULL;
+}
+
+int
+add_rotator(char *portname, char *ports, int lineno)
+{
+    rotator_t *rot;
+    int rv;
+
+    rot = malloc(sizeof(*rot));
+    if (!rot)
+	return ENOMEM;
+    memset(rot, 0, sizeof(*rot));
+
+    rot->portname = strdup(portname);
+    if (!rot->portname) {
+	free_rotator(rot);
+	return ENOMEM;
+    }
+
+    rv = str_to_argv(ports, &rot->portc, &rot->portv, NULL);
+    if (rv)
+	goto out;
+
+    rv = scan_tcp_port(rot->portname, &rot->ai);
+    if (rv) {
+	syslog(LOG_ERR, "port number was invalid on line %d", lineno);
+	goto out;
+    }
+
+    rot->acceptfds = open_socket(rot->ai, handle_rot_port_read, rot,
+				 &rot->nr_acceptfds);
+    if (rot->acceptfds == NULL) {
+	syslog(LOG_ERR, "Unable to create TCP socket on line %d", lineno);
+	rv = ENOMEM;
+	goto out;
+    }
+
+    rot->next = rotators;
+    rotators = rot;
+
+ out:
+    if (rv)
+	free_rotator(rot);
+    return rv;
+}
+
 /* A connection request has come in on a port. */
 static void
 handle_accept_port_read(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    socklen_t len;
     char *err = NULL;
-    int optval;
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
       if (port->kickolduser_mode) {
@@ -1677,25 +1848,7 @@ handle_accept_port_read(int fd, void *data)
 	return;
     }
 
-    len = sizeof(port->remote);
-
-    port->tcpfd = accept(fd, (struct sockaddr *) &(port->remote), &len);
-    if (port->tcpfd == -1) {
-	syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
-	return;
-    }
-
-    optval = 1;
-    if (setsockopt(port->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
-		   sizeof(optval)) == -1) {
-	close(port->tcpfd);
-	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on tcp port %s: %m",
-	       port->portname);
-	return;
-    }
-
-    /* XXX log port->remote */
-    setup_tcp_port(port);
+    handle_port_accept(port, fd);
 }
 
 /* Start monitoring for connections on a specific port. */
@@ -1811,7 +1964,8 @@ free_port(port_info_t *port)
 static void
 finish_shutdown_port(port_info_t *port)
 {
-    port->io.f->shutdown(&port->io);
+    if (port->io.f)
+	port->io.f->shutdown(&port->io);
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     buffer_reset(&port->tcp_to_dev);
     port->tcp_bytes_received = 0;

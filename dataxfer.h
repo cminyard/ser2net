@@ -152,4 +152,7 @@ int solcfg_init(struct devio *io, struct absout *eout, const char *instr,
 
 struct serial_rs485 *get_rs485_conf(void *data);
 
+int add_rotator(char *portname, char *ports, int lineno);
+void free_rotators(void);
+
 #endif /* DATAXFER */

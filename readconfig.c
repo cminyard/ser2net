@@ -884,6 +884,17 @@ handle_config_line(char *inbuf)
 	return;
     }
 
+    if (startswith(inbuf, "ROTATOR", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No rotator name given on line %d", lineno);
+	    return;
+	}
+	add_rotator(name, str, lineno);
+	return;
+    }
+
     comma = strchr(inbuf, ',');
     if (comma) {
 	if (!strtok_r(comma, ":", &strtok_data)) {
@@ -952,6 +963,7 @@ readconfig(char *filename)
 #endif
 
     config_num++;
+    free_rotators();
 
     while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
 	int len = strlen(inbuf);

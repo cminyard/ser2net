@@ -231,7 +231,7 @@ static int add_to_parm(char **parm, size_t *parmlen, size_t *parmpos, char c)
     if (parmpos >= parmlen) {
 	char *new_parm = realloc(*parm, *parmlen + 10);
 	if (!new_parm)
-	    return -ENOMEM;
+	    return ENOMEM;
 	*parmlen += 10;
 	*parm = new_parm;
     }
@@ -249,14 +249,14 @@ static int add_parm(int *argc, int *argc_max, char ***argv,
     if (*argc >= *argc_max) {
 	char **new_argv = realloc(*argv, *argc_max + (10 * sizeof(char *)));
 	if (!new_argv)
-	    return -ENOMEM;
+	    return ENOMEM;
 	*argv = new_argv;
 	*argc_max += 10;
     }
 
     s = malloc(len + 1);
     if (!s)
-	return -ENOMEM;
+	return ENOMEM;
     memcpy(s, parm, len);
     s[len] = '\0';
     (*argv)[*argc] = s;

@@ -212,6 +212,10 @@ or
 .IP
 DEFAULT:<parm>:<defaultval>
 .PP
+or
+.IP
+ROTATOR:<TCP port>:<port list>
+.PP
 
 .SS FIELDS
 .TP
@@ -402,6 +406,11 @@ and chardelay-min.  See ser2net.conf for details.
 
 .I <defaultval>
 The default value to set the parameter.
+
+.I <port list>
+A space separated list of ports.  When connecting to the given TCP
+port, ser2net will go through the port list until it finds a free one
+and attempt to connect to that port.
 
 .TP
 .I "banner name"

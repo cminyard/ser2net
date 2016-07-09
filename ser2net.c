@@ -151,6 +151,7 @@ shutdown_cleanly(void)
 {
     struct timeval tv;
 
+    free_rotators();
     shutdown_ports();
     do {
 	if (check_ports_shutdown())
