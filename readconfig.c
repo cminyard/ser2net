@@ -582,12 +582,14 @@ struct enum_val parity_enums[] = {
     { NULL }
 };
 
+#ifdef HAVE_OPENIPMI
 struct enum_val shared_serial_alert_enums[] = {
     { "fail",		ipmi_sol_serial_alerts_fail },
     { "deferred", 	ipmi_sol_serial_alerts_deferred },
     { "succeed", 	ipmi_sol_serial_alerts_succeed },
     { NULL }
 };
+#endif
 
 enum parity_vals
 lookup_parity(const char *str)
