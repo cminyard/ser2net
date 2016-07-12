@@ -130,16 +130,17 @@ arg_error(char *name)
 }
 
 void
-make_pidfile(char *pidfile)
+make_pidfile(void)
 {
     FILE *fpidfile;
-    if (!pidfile)
+    if (!pid_file)
 	return;
-    fpidfile = fopen(pidfile, "w");
+    fpidfile = fopen(pid_file, "w");
     if (!fpidfile) {
 	syslog(LOG_WARNING,
 	       "Error opening pidfile '%s': %m, pidfile not created",
-	       pidfile);
+	       pid_file);
+	pid_file = NULL;
 	return;
     }
     fprintf(fpidfile, "%d\n", getpid());
@@ -155,11 +156,15 @@ shutdown_cleanly(void)
     shutdown_ports();
     do {
 	if (check_ports_shutdown())
-	    exit(1);
+	    break;
 	tv.tv_sec = 1;
 	tv.tv_usec = 0;
 	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
     } while(1);
+
+    if (pid_file)
+	unlink(pid_file);
+    exit(1);
 }
 
 int
@@ -338,13 +343,15 @@ main(int argc, char *argv[])
     }
 
     /* write pid file */
-    make_pidfile(pid_file);
+    make_pidfile();
 
     /* Ignore SIGPIPEs so they don't kill us. */
     signal(SIGPIPE, SIG_IGN);
 
     set_signal_handler(SIGHUP, reread_config);
     set_signal_handler(SIGINT, shutdown_cleanly);
+    set_signal_handler(SIGQUIT, shutdown_cleanly);
+    set_signal_handler(SIGTERM, shutdown_cleanly);
 
     sel_select_loop(ser2net_sel, NULL, 0, NULL);
 
