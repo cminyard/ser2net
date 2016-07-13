@@ -369,6 +369,11 @@ the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.
 
+.I chardelay-max=<number>
+sets the maximum delay that ser2net will wait, in microseconds, before
+sending the data.  The default value is 20000.  This keeps the connection
+working smoothly at slow speeds.
+
 .I [-]authenticated
 enable (-disable) authentication on the link. (SOL only)
 
@@ -402,7 +407,7 @@ is a parameter to set a default for.  When you set a default, it sets
 the default value for all following config lines.  Available parameters are:
 speed, databits, stopbits, parity, xonxoff, rtscts, local, hangup_when_done,
 nobreak, remctl, telnet_brk_on_sync, kickolduser, chardelay, chardelay-scale,
-and chardelay-min.  See ser2net.conf for details.
+chardelay-min, and chardelay-max.  See ser2net.conf for details.
 
 .I <defaultval>
 The default value to set the parameter.

@@ -115,6 +115,7 @@ typedef struct port_info
 					   waiting for characters to
 					   batch up as many characters
 					   as possible. */
+    bool send_timer_running;
 
     int chardelay;                      /* The amount of time to wait after
 					   receiving a character before
@@ -133,6 +134,12 @@ typedef struct port_info
 					   a character period. */
     int  chardelay_min;			/* The minimum chardelay, in
 					   microseconds. */
+    int  chardelay_max;			/* Maximum amount of time to
+					   wait before sending the data. */
+    struct timeval send_time;		/* When using chardelay, the
+					   time when we will send the
+					   data, no matter what, set
+					   by chardelay_max. */
 
     /* Information about the TCP port. */
     char               *portname;       /* The name given for the port. */
@@ -310,6 +317,23 @@ add_usec_to_timeval(struct timeval *tv, int usec)
     }
 }
 
+static int
+sub_timeval_us(struct timeval *left,
+	       struct timeval *right)
+{
+    struct timeval dest;
+
+    dest.tv_sec = left->tv_sec - right->tv_sec;
+    dest.tv_usec = left->tv_usec - right->tv_usec;
+    while (dest.tv_usec < 0) {
+	dest.tv_usec += 1000000;
+	dest.tv_sec--;
+    }
+
+    return (dest.tv_sec * 1000000) + dest.tv_usec;
+}
+
+
 /*
  * Generic output function for using a controller output for
  * abstract I/O.
@@ -361,6 +385,14 @@ init_port_data(port_info_t *port)
 #ifdef USE_RS485_FEATURE
     port->rs485conf = NULL;
 #endif
+
+    port->allow_2217 = find_default_int("remctl");
+    port->telnet_brk_on_sync = find_default_int("telnet_brk_on_sync");
+    port->kickolduser_mode = find_default_int("kickolduser");
+    port->enable_chardelay = find_default_int("chardelay");
+    port->chardelay_scale = find_default_int("chardelay-scale");
+    port->chardelay_min = find_default_int("chardelay-min");
+    port->chardelay_max = find_default_int("chardelay-max");
 }
 
 static void
@@ -589,6 +621,7 @@ send_timeout(selector_t  *sel,
 {
     port_info_t *port = (port_info_t *) data;
 
+    port->send_timer_running = false;
     if (port->dev_to_tcp.cursize > 0)
 	handle_tcp_send(port);
 }
@@ -689,15 +722,30 @@ handle_dev_fd_read(struct devio *io)
 
     if (send_now || port->dev_to_tcp.cursize == port->dev_to_tcp.maxsize ||
 	port->chardelay == 0) {
+    send_it:
 	if (handle_tcp_send(port) == 0)
 	    reset_timer(port);
     } else {
 	struct timeval then;
+	int delay;
 
-	sel_stop_timer(port->send_timer);
 	sel_get_monotonic_time(&then);
-	add_usec_to_timeval(&then, port->chardelay);
+	if (port->send_timer_running) {
+	    sel_stop_timer(port->send_timer);
+	} else {
+	    port->send_time = then;
+	    add_usec_to_timeval(&port->send_time, port->chardelay_max);
+	}
+	delay = sub_timeval_us(&port->send_time, &then);
+	if (delay > port->chardelay)
+	    delay = port->chardelay;
+	else if (delay < 0) {
+	    port->send_timer_running = false;
+	    goto send_it;
+	}
+	add_usec_to_timeval(&then, delay);
 	sel_start_timer(port->send_timer, &then);
+	port->send_timer_running = true;
     }
 }
 
@@ -2143,13 +2191,6 @@ myconfig(void *data, struct absout *eout, const char *pos)
     char *s, *endpos;
     unsigned int len;
 
-    port->allow_2217 = find_default_int("remctl");
-    port->telnet_brk_on_sync = find_default_int("telnet_brk_on_sync");
-    port->kickolduser_mode = find_default_int("kickolduser");
-    port->enable_chardelay = find_default_int("chardelay");
-    port->chardelay_scale = find_default_int("chardelay-scale");
-    port->chardelay_min = find_default_int("chardelay-min");
-
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = 1;
     } else if (strcmp(pos, "-remctl") == 0) {
@@ -2219,6 +2260,13 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	port->chardelay_min = strtoul(pos + 14, &endpos, 10);
 	if (endpos == pos + 14 || *endpos != '\0') {
 	    eout->out(eout, "Invalid number for chardelay-min: %s\n",
+		      pos + 14);
+	    return -1;
+	}
+    } else if (strncmp(pos, "chardelay-max=", 14) == 0) {
+	port->chardelay_max = strtoul(pos + 14, &endpos, 10);
+	if (endpos == pos + 14 || *endpos != '\0') {
+	    eout->out(eout, "Invalid number for chardelay-max: %s\n",
 		      pos + 14);
 	    return -1;
 	}
