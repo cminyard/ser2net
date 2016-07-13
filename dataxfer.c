@@ -695,7 +695,7 @@ handle_dev_fd_read(struct devio *io)
 	struct timeval then;
 
 	sel_stop_timer(port->send_timer);
-	gettimeofday(&then, NULL);
+	sel_get_monotonic_time(&then);
 	add_usec_to_timeval(&then, port->chardelay);
 	sel_start_timer(port->send_timer, &then);
     }
@@ -1636,7 +1636,7 @@ setup_tcp_port(port_info_t *port)
     setup_trace(port);
     header_trace(port);
 
-    gettimeofday(&then, NULL);
+    sel_get_monotonic_time(&then);
     then.tv_sec += 1;
     sel_start_timer(port->timer, &then);
 
@@ -2119,7 +2119,7 @@ got_timeout(selector_t  *sel,
 	}
     }
     
-    gettimeofday(&then, NULL);
+    sel_get_monotonic_time(&then);
     then.tv_sec += 1;
     sel_start_timer(port->timer, &then);
 }

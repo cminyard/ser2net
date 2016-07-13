@@ -102,6 +102,9 @@ int sel_start_timer(sel_timer_t    *timer,
 
 int sel_stop_timer(sel_timer_t *timer);
 
+/* Use this for times provided to sel_start_time() */
+void sel_get_monotonic_time(struct timeval *tv);
+
 /* For multi-threaded programs, you will need to wake the selector
    thread if you add a timer to the top of the heap or change the fd
    mask.  This code should send a signal to the thread that calls

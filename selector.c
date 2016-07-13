@@ -453,8 +453,8 @@ sel_stop_timer(sel_timer_t *timer)
     return 0;
 }
 
-static void
-get_monotonic_time(struct timeval *tv)
+void
+sel_get_monotonic_time(struct timeval *tv)
 {
     struct timespec ts;
 
@@ -478,7 +478,7 @@ process_timers(selector_t	       *sel,
     int            called = 0;
 
     timer = theap_get_top(&sel->timer_heap);
-    get_monotonic_time(&now);
+    sel_get_monotonic_time(&now);
     while (timer && cmp_timeval(&now, &timer->val.timeout) >= 0) {
 	called = 1;
 	theap_remove(&(sel->timer_heap), timer);
@@ -494,7 +494,7 @@ process_timers(selector_t	       *sel,
 	timeout->tv_sec = 0;
 	timeout->tv_usec = 0;
     } else if (timer) {
-	get_monotonic_time(&now);
+	sel_get_monotonic_time(&now);
 	diff_timeval((struct timeval *) timeout,
 		     (struct timeval *) &timer->val.timeout,
 		     &now);
