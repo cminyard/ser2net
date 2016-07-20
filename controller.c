@@ -272,44 +272,44 @@ telnet_cmd_handler(void *cb_data, unsigned char cmd)
 }
 
 static char *help_str =
-"exit - leave the program.\n\r"
-"help - display this help.\n\r"
-"version - display the version of this program.\n\r"
-"monitor <type> <tcp port> - display all the input for a given port on\n\r"
-"       the calling control port.  Only one direction may be monitored\n\r"
-"       at a time.  The type field may be 'tcp' or 'term' and specifies\n\r"
-"       whether to monitor data from the TCP port or from the serial port\n\r"
-"       Note that data monitoring is best effort, if the controller port\n\r"
-"       cannot keep up the data will be silently dropped.  A controller\n\r"
-"       may only monitor one thing and a port may only be monitored by\n\r"
-"       one controller.\n\r"
-"monitor stop - stop the current monitor.\n\r"
-"disconnect <tcp port> - disconnect the tcp connection on the port.\n\r"
-"showport [<tcp port>] - Show information about a port. If no port is\n\r"
-"       given, all ports are displayed.\n\r"
-"showshortport [<tcp port>] - Show information about a port in a one-line\n\r"
-"       format. If no port is given, all ports are displayed.\n\r"
-"setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\n\r"
-"       before the port connection will be shut down if no activity\n\r"
-"       has been seen on the port.\n\r"
-"setportconfig <tcp port> <config> - Set the port configuration as in\n\r"
-"       the device configuration in the ser2net.conf file.  Valid options\n\r"
-"       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, \n\r"
-"       EVEN, ODD, NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, \n\r"
-"       LOCAL (ignore modem control), [-]RTSCTS, [-]XONXOFF.\n\r"
-"       Note that these will not change until the port is disconnected\n\r"
-"       and connected again.\n\r"
-"setportcontrol <tcp port> <controls>\n\r"
-"       Dynamically modify the characteristics of the port.  These are\n\r"
-"       immedaite and won't live between connections.  Valid controls are\n\r"
-"       DTRHI, DTRLO, RTSHI, and RTSLO.\n\r"
-"setportenable <tcp port> <enable state> - Sets the port operation state.\n\r"
-"       Valid states are:\n\r"
-"         off - The TCP port is shut down\n\r"
-"         raw - The TCP port is up and all I/O is transferred\n\r"
-"         rawlp - The TCP port is up and the input is transferred to dev\n\r"
-"         telnet - The TCP port is up and the telnet negotiation protocol\n\r"
-"                  runs on the port.\n\r";
+"exit - leave the program.\r\n"
+"help - display this help.\r\n"
+"version - display the version of this program.\r\n"
+"monitor <type> <tcp port> - display all the input for a given port on\r\n"
+"       the calling control port.  Only one direction may be monitored\r\n"
+"       at a time.  The type field may be 'tcp' or 'term' and specifies\r\n"
+"       whether to monitor data from the TCP port or from the serial port\r\n"
+"       Note that data monitoring is best effort, if the controller port\r\n"
+"       cannot keep up the data will be silently dropped.  A controller\r\n"
+"       may only monitor one thing and a port may only be monitored by\r\n"
+"       one controller.\r\n"
+"monitor stop - stop the current monitor.\r\n"
+"disconnect <tcp port> - disconnect the tcp connection on the port.\r\n"
+"showport [<tcp port>] - Show information about a port. If no port is\r\n"
+"       given, all ports are displayed.\r\n"
+"showshortport [<tcp port>] - Show information about a port in a one-line\r\n"
+"       format. If no port is given, all ports are displayed.\r\n"
+"setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\r\n"
+"       before the port connection will be shut down if no activity\r\n"
+"       has been seen on the port.\r\n"
+"setportconfig <tcp port> <config> - Set the port configuration as in\r\n"
+"       the device configuration in the ser2net.conf file.  Valid options\r\n"
+"       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, \r\n"
+"       EVEN, ODD, NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, \r\n"
+"       LOCAL (ignore modem control), [-]RTSCTS, [-]XONXOFF.\r\n"
+"       Note that these will not change until the port is disconnected\r\n"
+"       and connected again.\r\n"
+"setportcontrol <tcp port> <controls>\r\n"
+"       Dynamically modify the characteristics of the port.  These are\r\n"
+"       immedaite and won't live between connections.  Valid controls are\r\n"
+"       DTRHI, DTRLO, RTSHI, and RTSLO.\r\n"
+"setportenable <tcp port> <enable state> - Sets the port operation state.\r\n"
+"       Valid states are:\r\n"
+"         off - The TCP port is shut down\r\n"
+"         raw - The TCP port is up and all I/O is transferred\r\n"
+"         rawlp - The TCP port is up and the input is transferred to dev\r\n"
+"         telnet - The TCP port is up and the telnet negotiation protocol\r\n"
+"                  runs on the port.\r\n";
 
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
@@ -336,7 +336,7 @@ process_input_line(controller_info_t *cntlr)
 	controller_output(cntlr, str, strlen(str));
 	str = VERSION;
 	controller_output(cntlr, str, strlen(str));
-	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
     } else if (strcmp(tok, "showport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	showports(cntlr, tok);
@@ -346,7 +346,7 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "monitor") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No monitor type given\n\r";
+	    char *err = "No monitor type given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -357,14 +357,14 @@ process_input_line(controller_info_t *cntlr)
 	    }
 	} else {
 	    if (cntlr->monitor_port_id != NULL) {
-		char *err = "Already monitoring a port\n\r";
+		char *err = "Already monitoring a port\r\n";
 		controller_output(cntlr, err, strlen(err));
 		goto out;
 	    }
 		
 	    str = strtok_r(NULL, " \t", &strtok_data);
 	    if (str == NULL) {
-		char *err = "No tcp port given\n\r";
+		char *err = "No tcp port given\r\n";
 		controller_output(cntlr, err, strlen(err));
 		goto out;
 	    }
@@ -373,7 +373,7 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "disconnect") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\n\r";
+	    char *err = "No port given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -381,13 +381,13 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setporttimeout") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\n\r";
+	    char *err = "No port given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No timeout given\n\r";
+	    char *err = "No timeout given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -395,13 +395,13 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setportenable") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\n\r";
+	    char *err = "No port given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No timeout given\n\r";
+	    char *err = "No timeout given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -409,14 +409,14 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setportconfig") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\n\r";
+	    char *err = "No port given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
 
 	str = strtok_r(NULL, "", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No device config\n\r";
+	    char *err = "No device config\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -424,14 +424,14 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setportcontrol") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\n\r";
+	    char *err = "No port given\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
 
 	str = strtok_r(NULL, "", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No device controls\n\r";
+	    char *err = "No device controls\r\n";
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
@@ -440,7 +440,7 @@ process_input_line(controller_info_t *cntlr)
 	char *err = "Unknown command: ";
 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, tok, strlen(tok));
-	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
     }
 
 out:
@@ -474,7 +474,7 @@ handle_tcp_fd_read(int fd, void *data)
     int i;
 
     if (cntlr->inbuf_count == INBUF_SIZE) {
-        char *err = "Input line too long\n\r";
+        char *err = "Input line too long\r\n";
 	controller_output(cntlr, err, strlen(err));
 	cntlr->inbuf_count = 0;
 	return;
@@ -534,7 +534,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    /* We got a newline, process the command. */
 	    int j;
 
-	    controller_output(cntlr, "\n\r", 2);
+	    controller_output(cntlr, "\r\n", 2);
 
 	    cntlr->inbuf[i] ='\0';
 	    process_input_line(cntlr);
@@ -638,12 +638,12 @@ handle_accept_port_read(int fd, void *data)
     int               optval;
 
     if (num_controller_ports >= max_controller_ports) {
-	err = "Too many controller ports\n\r";
+	err = "Too many controller ports\r\n";
 	goto errout2;
     } else {
 	cntlr = malloc(sizeof(*cntlr));
 	if (cntlr == NULL) {
-	    err = "Could not allocate controller port\n\r";
+	    err = "Could not allocate controller port\r\n";
 	    goto errout2;
 	}
     }
@@ -665,7 +665,7 @@ handle_accept_port_read(int fd, void *data)
 	fromhost(&req);
 
 	if (!hosts_access(&req)) {
-	    char *err = "Access denied\n\r";
+	    char *err = "Access denied\r\n";
 	    write(cntlr->tcpfd, err, strlen(err));
 	    close(cntlr->tcpfd);
 	    goto errout;

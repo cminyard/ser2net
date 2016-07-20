@@ -859,10 +859,10 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 
 	rv = uucp_mk_lock(io->devname);
 	if (rv > 0 ) {
-	    *errstr = "Port already in use by another process\n\r";
+	    *errstr = "Port already in use by another process\r\n";
 	    return -1;
 	} else if (rv < 0) {
-	    *errstr = "Error creating port lock file\n\r";
+	    *errstr = "Error creating port lock file\r\n";
 	    return -1;
 	}
     }

@@ -1611,7 +1611,7 @@ setup_tcp_port(port_info_t *port)
 	fromhost(&req);
 
 	if (!hosts_access(&req)) {
-	    char *err = "Access denied\n\r";
+	    char *err = "Access denied\r\n";
 	    write(port->tcpfd, err, strlen(err));
 	    close(port->tcpfd);
 	    port->tcpfd = -1;
@@ -1875,13 +1875,13 @@ handle_accept_port_read(int fd, void *data)
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
       if (port->kickolduser_mode) {
 	  if (port->tcp_to_dev_state != PORT_CLOSING)
-	    shutdown_port(port, "kicked off, new user is coming\n\r");
+	    shutdown_port(port, "kicked off, new user is coming\r\n");
 	  /* Wait the port to be unconnected and clean, go back to main loop*/
 	  return;
       }
-	err = "Port already in use\n\r";
+	err = "Port already in use\r\n";
     } else if (is_device_already_inuse(port)) {
-	err = "Port's device already in use\n\r";
+	err = "Port's device already in use\r\n";
     }
 
     if (err != NULL) {
@@ -2555,7 +2555,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	    
 	port->io.f->show_devcontrol(&port->io, &out);
     }
-    controller_output(cntlr, "\n\r", 2);
+    controller_output(cntlr, "\r\n", 2);
 
 }
 
@@ -2567,10 +2567,10 @@ showport(struct controller_info *cntlr, port_info_t *port)
     struct absout out = { .out = cntrl_absout, .data = cntlr };
     int err;
 
-    controller_outputf(cntlr, "TCP Port %s\n\r", port->portname);
-    controller_outputf(cntlr, "  enable state: %s\n\r",
+    controller_outputf(cntlr, "TCP Port %s\r\n", port->portname);
+    controller_outputf(cntlr, "  enable state: %s\r\n",
 		       enabled_str[port->enabled]);
-    controller_outputf(cntlr, "  timeout: %d\n\r", port->timeout);
+    controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
 
     err = getnameinfo((struct sockaddr *) &(port->remote), sizeof(port->remote),
 		      buffer, sizeof(buffer),
@@ -2587,44 +2587,44 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     controller_outputf(cntlr, "  device config: ");
     if (port->enabled == PORT_RAWLP) {
-	controller_outputf(cntlr, "none\n\r");
+	controller_outputf(cntlr, "none\r\n");
     } else {
 	port->io.f->show_devcfg(&port->io, &out);
-	controller_outputf(cntlr, "\n\r");
+	controller_outputf(cntlr, "\r\n");
     }
 
     controller_outputf(cntlr, "  device controls: ");
     if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
-	controller_outputf(cntlr, "not currently connected\n\r");
+	controller_outputf(cntlr, "not currently connected\r\n");
     } else {
 	port->io.f->show_devcontrol(&port->io, &out);
-	controller_outputf(cntlr, "\n\r");
+	controller_outputf(cntlr, "\r\n");
     }
 
-    controller_outputf(cntlr, "  tcp to device state: %s\n\r",
+    controller_outputf(cntlr, "  tcp to device state: %s\r\n",
 		      state_str[port->tcp_to_dev_state]);
 
-    controller_outputf(cntlr, "  device to tcp state: %s\n\r", 
+    controller_outputf(cntlr, "  device to tcp state: %s\r\n",
 		      state_str[port->dev_to_tcp_state]);
 
-    controller_outputf(cntlr, "  bytes read from TCP: %d\n\r",
+    controller_outputf(cntlr, "  bytes read from TCP: %d\r\n",
 		      port->tcp_bytes_received);
 
-    controller_outputf(cntlr, "  bytes written to TCP: %d\n\r",
+    controller_outputf(cntlr, "  bytes written to TCP: %d\r\n",
 		      port->tcp_bytes_sent);
 
-    controller_outputf(cntlr, "  bytes read from device: %d\n\r",
+    controller_outputf(cntlr, "  bytes read from device: %d\r\n",
 		      port->dev_bytes_received);
 
-    controller_outputf(cntlr, "  bytes written to device: %d\n\r",
+    controller_outputf(cntlr, "  bytes written to device: %d\r\n",
 		      port->dev_bytes_sent);
 
     if (port->config_num == -1) {
 	controller_outputf(cntlr, "  Port will be deleted when current"
-			   " session closes.\n\r");
+			   " session closes.\r\n");
     } else if (port->new_config != NULL) {
 	controller_outputf(cntlr, "  Port will be reconfigured when current"
-			   " session closes.\n\r");
+			   " session closes.\r\n");
     }
 }
 
@@ -2675,7 +2675,7 @@ showshortports(struct controller_info *cntlr, char *portspec)
     port_info_t *port;
 
     controller_outputf(cntlr,
-	    "%-22s %-6s %7s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\n\r",
+	    "%-22s %-6s %7s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
 	    "Port name",
 	    "Type",
 	    "Timeout",
@@ -2745,7 +2745,7 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
     } else {
 	if (port->io.f->reconfig(&port->io, &out, devcfg, myconfig, port) == -1)
 	{
-	    controller_outputf(cntlr, "Invalid device config\n\r");
+	    controller_outputf(cntlr, "Invalid device config\r\n");
 	}
     }
 }
@@ -2760,13 +2760,13 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
 
     port = find_port_by_num(portspec);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\n\r", portspec);
+	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
     } else if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
 	controller_outputf(cntlr, "Port is not currently connected: %s\r\n",
 			   portspec);
     } else {
 	if (port->io.f->set_devcontrol(&port->io, controls) == -1) {
-	    controller_outputf(cntlr, "Invalid device controls\n\r");
+	    controller_outputf(cntlr, "Invalid device controls\r\n");
 	}
     }
 }
@@ -2781,7 +2781,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 
     port = find_port_by_num(portspec);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\n\r", portspec);
+	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	return;
     }
 
@@ -2794,7 +2794,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     } else if (strcmp(enable, "telnet") == 0) {
 	new_enable = PORT_TELNET;
     } else {
-	controller_outputf(cntlr, "Invalid enable: %s\n\r", enable);
+	controller_outputf(cntlr, "Invalid enable: %s\r\n", enable);
 	return;
     }
 
@@ -2825,14 +2825,14 @@ data_monitor_start(struct controller_info *cntlr,
 	char *err = "Invalid port number: ";
 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, portspec, strlen(portspec));
-	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
 	return NULL;
     }
 
     if ((port->tcp_monitor != NULL) || (port->dev_monitor != NULL)) {
 	char *err = "Port is already being monitored";
 	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
 	return NULL;
     }
  
@@ -2846,7 +2846,7 @@ data_monitor_start(struct controller_info *cntlr,
 	 char *err = "invalid monitor type: ";
 	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, type, strlen(type));
-	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
 	return NULL;
      }
 }
@@ -2873,13 +2873,13 @@ disconnect_port(struct controller_info *cntlr,
 	char *err = "Invalid port number: ";
  	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, portspec, strlen(portspec));
- 	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
  	return;
     } else if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
 	char *err = "Port not connected: ";
  	controller_output(cntlr, err, strlen(err));
 	controller_output(cntlr, portspec, strlen(portspec));
- 	controller_output(cntlr, "\n\r", 2);
+	controller_output(cntlr, "\r\n", 2);
  	return;
     }
  
