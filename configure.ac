@@ -54,6 +54,9 @@ if test "x$HAVE_OPENIPMI" != "xno"; then
    AC_DEFINE(HAVE_OPENIPMI)
 fi
 
+# Handle RS485 support
+AC_CHECK_DECLS([TIOCSRS485], [], [], [[#include <sys/ioctl.h>]])
+
 # enable silent build
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 

@@ -333,7 +333,7 @@ struct tracefile_s
     struct tracefile_s *next;
 };
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
 struct rs485conf_s
 {
     char *name;
@@ -403,7 +403,7 @@ free_tracefiles(void)
     }
 }
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
 /* All the RS485 configs in the system. */
 struct rs485conf_s *rs485confs = NULL;
 
@@ -799,7 +799,7 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
     if (startswith(inbuf, "RS485CONF", &strtok_data)) {
         char *name = strtok_r(NULL, ":", &strtok_data);
         char *str = strtok_r(NULL, "\n", &strtok_data);
@@ -960,7 +960,7 @@ readconfig(char *filename)
     setup_defaults();
     free_longstrs();
     free_tracefiles();
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
     free_rs485confs();
 #endif
 

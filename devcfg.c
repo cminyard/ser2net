@@ -62,7 +62,7 @@ struct devcfg_data {
     /* Disable break-commands */
     int disablebreak;
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
     struct serial_rs485 *conf;
 #endif
 };
@@ -577,7 +577,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	pos = strtok_r(NULL, ", \t", &strtok_data);
     }
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
     d->conf = get_rs485_conf(data);
 #endif
  out:
@@ -915,7 +915,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 	       name);
     }
 
-#ifdef USE_RS485_FEATURE
+#if HAVE_DECL_TIOCSRS485
     if (d->conf) {
         if (d->conf->flags & SER_RS485_ENABLED) {
             if (ioctl(d->devfd , TIOCSRS485, d->conf ) < 0) {

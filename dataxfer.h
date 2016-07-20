@@ -29,37 +29,16 @@ extern int uucp_locking_enabled;
 #ifdef linux
 
 #include <linux/serial.h>
-#include <asm-generic/ioctls.h>
-
-#define USE_RS485_FEATURE
-
-/* Check, if the toolchain provides serial_rs485 structure and macros */
-#ifndef SER_RS485_ENABLED
-
-#define TIOCGRS485      0x542E
-#define TIOCSRS485      0x542F
-
-struct serial_rs485 {
-    __u32 flags; /* RS485 feature flags */
-#define SER_RS485_ENABLED        (1 << 0) /* If enabled */
-#define SER_RS485_RTS_ON_SEND    (1 << 1) /* Logical level for
-                                             RTS pin when sending */
-#define SER_RS485_RTS_AFTER_SEND (1 << 2) /* Logical level for
-                                             RTS pin after sent*/
-#define SER_RS485_RX_DURING_TX   (1 << 4)
-    __u32 delay_rts_before_send; /* Delay before send (milliseconds) */
-    __u32 delay_rts_after_send;  /* Delay after send (milliseconds) */
-    __u32 padding[5];            /* Memory is cheap, new structs
-                                    are a royal PITA .. */
-};
-#endif /* SER_RS485_ENABLED */
-#endif /* linux */
 
 /* Check, if the toolchain provides SER_RS485_RX_DURING_TX macro
  * (introduced in kernel 3.2) */
+#if HAVE_DECL_TIOCSRS485
 #ifndef SER_RS485_RX_DURING_TX
 #define SER_RS485_RX_DURING_TX          (1 << 4)
-#endif
+#endif /* SER_RS485_RX_DURING_TX */
+#endif /* HAVE_DECL_TIOCSRS485 */
+
+#endif /* linux */
 
 struct absout {
     int (*out)(struct absout *e, const char *str, ...);
