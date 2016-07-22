@@ -173,6 +173,12 @@ main(int argc, char *argv[])
     int i;
     int err;
 
+    err = setup_signals();
+    if (err) {
+	fprintf(stderr,	"Could not setup signal: '%s'\n", strerror(err));
+	return -1;
+    }
+
     err = sel_alloc_selector(&ser2net_sel);
     if (err) {
 	fprintf(stderr,
@@ -281,8 +287,6 @@ main(int argc, char *argv[])
 	    arg_error(argv[0]);
 	}
     }
-
-    setup_signals();
 
     if (ser2net_debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
