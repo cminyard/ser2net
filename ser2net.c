@@ -173,7 +173,7 @@ main(int argc, char *argv[])
     int i;
     int err;
 
-    err = setup_signals();
+    err = sel_setup(NULL, NULL, NULL, NULL);
     if (err) {
 	fprintf(stderr,	"Could not setup signal: '%s'\n", strerror(err));
 	return -1;

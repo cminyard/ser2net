@@ -934,11 +934,11 @@ sol_ipmi_log(os_handler_t *hnd, enum ipmi_log_type_e log_type,
 int
 sol_init(void)
 {
-    os_hnd = ipmi_posix_get_os_handler();
+    os_hnd = ipmi_posix_thread_get_os_handler();
     if (!os_hnd)
 	return -ENOMEM;
     os_hnd->vlog = sol_ipmi_log;
-    ipmi_posix_os_handler_set_sel(os_hnd, ser2net_sel);
+    ipmi_posix_thread_os_handler_set_sel(os_hnd, ser2net_sel);
     ipmi_init(os_hnd);
     return 0;
 }

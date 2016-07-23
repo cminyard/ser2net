@@ -157,7 +157,8 @@ void ipmi_sel_set_read_fds_handler(selector_t                 *sel,
 /* Set a handler to handle shen signals are sent to the process. */
 typedef void (*t_signal_handler)(void);
 void set_signal_handler(int sig, t_signal_handler handler);
-int setup_signals(void);
+int sel_setup(void *(*sel_lock_alloc)(void), void (*sel_lock_free)(void *),
+	      void (*sel_lock)(void *), void (*sel_unlock)(void *));
 
 #ifdef __cplusplus
 }

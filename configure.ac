@@ -50,7 +50,7 @@ if test "x$tryopenipmi" != "xno"; then
 fi
 
 if test "x$HAVE_OPENIPMI" != "xno"; then
-   LIBS="$LIBS -lOpenIPMI -lOpenIPMIposix"
+   LIBS="$LIBS -lOpenIPMI -lOpenIPMIpthread"
    AC_DEFINE(HAVE_OPENIPMI)
 fi
 

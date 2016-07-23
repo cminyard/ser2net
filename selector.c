@@ -166,13 +166,50 @@ struct selector_s
     volatile int maxfd; /* The largest file descriptor registered with
 			   this code. */
 
+    void *fd_lock;
+
     /* The timer heap. */
     theap_t timer_heap;
 
     /* This is a list of items waiting to be woken up because they are
        sitting in a select.  See wake_sel_thread() for more info. */
     sel_wait_list_t wait_list;
+
+    void *timer_lock;
 };
+
+static void *(*sel_lock_alloc)(void);
+static void (*sel_lock_free)(void *lock);
+static void (*sel_lock)(void *lock);
+static void (*sel_unlock)(void *lock);
+
+static void
+sel_timer_lock(selector_t *sel)
+{
+    if (sel_lock)
+	sel_lock(sel->timer_lock);
+}
+
+static void
+sel_timer_unlock(selector_t *sel)
+{
+    if (sel_lock)
+	sel_unlock(sel->timer_lock);
+}
+
+static void
+sel_fd_lock(selector_t *sel)
+{
+    if (sel_lock)
+	sel_lock(sel->fd_lock);
+}
+
+static void
+sel_fd_unlock(selector_t *sel)
+{
+    if (sel_lock)
+	sel_unlock(sel->fd_lock);
+}
 
 /* This function will wake the SEL thread.  It must be called with the
    timer lock held, because it messes with timeout.
@@ -229,7 +266,9 @@ remove_sel_wait_list(selector_t *sel, sel_wait_list_t *item)
 static void
 wake_sel_thread_lock(selector_t *sel)
 {
+    sel_timer_lock(sel);
     wake_sel_thread(sel);
+    sel_timer_unlock(sel);
 }
 
 /* Initialize a single file descriptor. */
@@ -263,6 +302,7 @@ sel_set_fd_handlers(selector_t        *sel,
     state->use_count = 0;
     state->done = done;
 
+    sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
     if (fdc->state) {
 	fdc->state->deleted = 1;
@@ -284,6 +324,7 @@ sel_set_fd_handlers(selector_t        *sel,
     }
 
     wake_sel_thread_lock(sel);
+    sel_fd_unlock(sel);
     return 0;
 }
 
@@ -294,6 +335,8 @@ sel_clear_fd_handlers(selector_t *sel,
 		      int        fd)
 {
     fd_control_t *fdc;
+
+    sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
 
     if (fdc->state) {
@@ -319,6 +362,7 @@ sel_clear_fd_handlers(selector_t *sel,
     }
 
     wake_sel_thread_lock(sel);
+    sel_fd_unlock(sel);
 }
 
 /* Set whether the file descriptor will be monitored for data ready to
@@ -326,12 +370,14 @@ sel_clear_fd_handlers(selector_t *sel,
 void
 sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 {
+    sel_fd_lock(sel);
     if (state == SEL_FD_HANDLER_ENABLED) {
 	FD_SET(fd, &sel->read_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
 	FD_CLR(fd, &sel->read_set);
     }
     wake_sel_thread_lock(sel);
+    sel_fd_unlock(sel);
 }
 
 /* Set whether the file descriptor will be monitored for when the file
@@ -339,12 +385,14 @@ sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 void
 sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 {
+    sel_fd_lock(sel);
     if (state == SEL_FD_HANDLER_ENABLED) {
 	FD_SET(fd, &sel->write_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
 	FD_CLR(fd, &sel->write_set);
     }
     wake_sel_thread_lock(sel);
+    sel_fd_unlock(sel);
 }
 
 /* Set whether the file descriptor will be monitored for exceptions
@@ -352,12 +400,14 @@ sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 void
 sel_set_fd_except_handler(selector_t *sel, int fd, int state)
 {
+    sel_fd_lock(sel);
     if (state == SEL_FD_HANDLER_ENABLED) {
 	FD_SET(fd, &sel->except_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
 	FD_CLR(fd, &sel->except_set);
     }
     wake_sel_thread_lock(sel);
+    sel_fd_unlock(sel);
 }
 
 static void
@@ -408,9 +458,13 @@ sel_alloc_timer(selector_t            *sel,
 int
 sel_free_timer(sel_timer_t *timer)
 {
+    selector_t *sel = timer->val.sel;
+
+    sel_timer_lock(sel);
     if (timer->val.in_heap) {
 	sel_stop_timer(timer);
     }
+    sel_timer_unlock(sel);
     free(timer);
 
     return 0;
@@ -420,8 +474,10 @@ int
 sel_start_timer(sel_timer_t    *timer,
 		struct timeval *timeout)
 {
+    selector_t *sel = timer->val.sel;
     volatile sel_timer_t *top;
 
+    sel_timer_lock(sel);
     if (timer->val.in_heap) {
 	return EBUSY;
     }
@@ -436,14 +492,18 @@ sel_start_timer(sel_timer_t    *timer,
 	/* If the top value changed, restart the waiting thread. */
 	wake_sel_thread(timer->val.sel);
 
+    sel_timer_unlock(sel);
+
     return 0;
 }
 
 int
 sel_stop_timer(sel_timer_t *timer)
 {
+    selector_t *sel = timer->val.sel;
     volatile sel_timer_t *top;
 
+    sel_timer_lock(sel);
     if (!timer->val.in_heap) {
 	return ETIMEDOUT;
     }
@@ -456,6 +516,8 @@ sel_stop_timer(sel_timer_t *timer)
     if (top != theap_get_top(&timer->val.sel->timer_heap))
 	/* If the top value changed, restart the waiting thread. */
 	wake_sel_thread(timer->val.sel);
+
+    sel_timer_unlock(sel);
 
     return 0;
 }
@@ -491,7 +553,9 @@ process_timers(selector_t	       *sel,
 	theap_remove(&(sel->timer_heap), timer);
 	timer->val.in_heap = 0;
 
+	sel_timer_unlock(sel);
 	timer->val.handler(sel, timer, timer->val.user_data);
+	sel_timer_lock(sel);
 
 	timer = theap_get_top(&sel->timer_heap);
     }
@@ -509,6 +573,26 @@ process_timers(selector_t	       *sel,
 	/* No timers, just set a long time. */
 	timeout->tv_sec = 100000;
 	timeout->tv_usec = 0;
+    }
+}
+
+static void
+handle_selector_call(selector_t *sel, int i, sel_fd_handler_t handler)
+{
+    void             *data;
+    fd_state_t       *state;
+
+    data = sel->fds[i].data;
+    state = sel->fds[i].state;
+    state->use_count++;
+    sel_fd_unlock(sel);
+    handler(i, data);
+    sel_fd_lock(sel);
+    state->use_count--;
+    if (state->deleted && state->use_count == 0) {
+	if (state->done)
+	    state->done(i, data);
+	free(state);
     }
 }
 
@@ -531,10 +615,12 @@ process_fds(selector_t	            *sel,
     int err;
     int num_fds;
 
+    sel_fd_lock(sel);
     memcpy(&tmp_read_set, (void *) &sel->read_set, sizeof(tmp_read_set));
     memcpy(&tmp_write_set, (void *) &sel->write_set, sizeof(tmp_write_set));
     memcpy(&tmp_except_set, (void *) &sel->except_set, sizeof(tmp_except_set));
     num_fds = sel->maxfd+1;
+    sel_fd_unlock(sel);
 
     err = select(num_fds,
 		 &tmp_read_set,
@@ -545,77 +631,34 @@ process_fds(selector_t	            *sel,
 	goto out;
 
     /* We got some I/O. */
+    sel_fd_lock(sel);
     for (i=0; i<=sel->maxfd; i++) {
 	if (FD_ISSET(i, &tmp_read_set)) {
-	    sel_fd_handler_t handle_read;
-	    void             *data;
-	    fd_state_t       *state;
-
-	    if (sel->fds[i].handle_read == NULL) {
+	    if (sel->fds[i].handle_read == NULL)
 		/* Somehow we don't have a handler for this.
 		   Just shut it down. */
 		sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    } else {
-		handle_read = sel->fds[i].handle_read;
-		data = sel->fds[i].data;
-		state = sel->fds[i].state;
-		state->use_count++;
-		handle_read(i, data);
-		state->use_count--;
-		if (state->deleted && state->use_count == 0) {
-		    if (state->done)
-			state->done(i, data);
-		    free(state);
-		}
-	    }
+	    else
+		handle_selector_call(sel, i, sel->fds[i].handle_read);
 	}
 	if (FD_ISSET(i, &tmp_write_set)) {
-	    sel_fd_handler_t handle_write;
-	    void             *data;
-	    fd_state_t       *state;
-
-	    if (sel->fds[i].handle_write == NULL) {
+	    if (sel->fds[i].handle_write == NULL)
 		/* Somehow we don't have a handler for this.
                    Just shut it down. */
 		sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    } else {
-		handle_write = sel->fds[i].handle_write;
-		data = sel->fds[i].data;
-		state = sel->fds[i].state;
-		state->use_count++;
-		handle_write(i, data);
-		state->use_count--;
-		if (state->deleted && state->use_count == 0) {
-		    if (state->done)
-			state->done(i, data);
-		    free(state);
-		}
-	    }
+	    else
+		handle_selector_call(sel, i, sel->fds[i].handle_write);
 	}
 	if (FD_ISSET(i, &tmp_except_set)) {
-	    sel_fd_handler_t handle_except;
-	    void             *data;
-	    fd_state_t       *state;
-
-	    if (sel->fds[i].handle_except == NULL) {
+	    if (sel->fds[i].handle_except == NULL)
 		/* Somehow we don't have a handler for this.
                    Just shut it down. */
 		sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    } else {
-	        handle_except = sel->fds[i].handle_except;
-		data = sel->fds[i].data;
-		state = sel->fds[i].state;
-		state->use_count++;
-	        handle_except(i, data);
-		state->use_count--;
-		if (state->deleted && state->use_count == 0) {
-		    if (state->done)
-			state->done(i, data);
-		    free(state);
-		}
-	    }
+	    else
+		handle_selector_call(sel, i, sel->fds[i].handle_except);
 	}
     }
+    sel_fd_unlock(sel);
 out:
     return err;
 }
@@ -636,6 +679,7 @@ sel_select(selector_t      *sel,
     struct timeval  loc_timeout;
     sel_wait_list_t wait_entry;
 
+    sel_timer_lock(sel);
     process_timers(sel, (struct timeval *)(&loc_timeout));
     if (timeout) {
 	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
@@ -643,10 +687,13 @@ sel_select(selector_t      *sel,
     }
     add_sel_wait_list(sel, &wait_entry, send_sig, cb_data, thread_id,
 		      &loc_timeout);
+    sel_timer_unlock(sel);
 
     err = process_fds(sel, send_sig, thread_id, cb_data, &loc_timeout);
 
+    sel_timer_lock(sel);
     remove_sel_wait_list(sel, &wait_entry);
+    sel_timer_unlock(sel);
 
     if (got_sighup) {
 	got_sighup = 0;
@@ -726,6 +773,20 @@ sel_alloc_selector(selector_t **new_selector)
 
     theap_init(&sel->timer_heap);
 
+    if (sel_lock_alloc) {
+	sel->timer_lock = sel_lock_alloc();
+	if (!sel->timer_lock) {
+	    free(sel);
+	    return ENOMEM;
+	}
+	sel->fd_lock = sel_lock_alloc();
+	if (!sel->fd_lock) {
+	    sel_lock_free(sel->fd_lock);
+	    free(sel);
+	    return ENOMEM;
+	}
+    }
+
     /* Watch for signals. */
     sel_set_fd_handlers(sel, sig_fd_watch, NULL, sig_fd_read_handler,
 			NULL, NULL, NULL);
@@ -781,7 +842,8 @@ static void sigint_handler(int sig)
 }
 
 int
-setup_signals(void)
+sel_setup(void *(*psel_lock_alloc)(void), void (*psel_lock_free)(void *),
+	  void (*psel_lock)(void *), void (*psel_unlock)(void *))
 {
     struct sigaction act;
     int              err;
@@ -807,6 +869,11 @@ setup_signals(void)
     err = sigaction(SIGINT, &act, NULL);
     if (err)
 	return errno;
+
+    sel_lock_alloc = psel_lock_alloc;
+    sel_lock_free = psel_lock_free;
+    sel_lock = psel_lock;
+    sel_unlock = psel_unlock;
 
     return 0;
 }
