@@ -98,13 +98,6 @@ typedef struct theap_s theap_t;
 #define HEAP_OUTPUT_PRINTF "(%ld.%7.7ld)"
 #define HEAP_OUTPUT_DATA pos->timeout.tv_sec, pos->timeout.tv_usec
 
-static int dummyrv; /* Used to ignore return values of read() and write(). */
-
-/* Used to reliably deliver signals to a thread.  This is a pipe that
-   we write to from a signal handler to make sure it wakes up. */
-static int sig_fd_alert = -1;
-static int sig_fd_watch = -1;
-
 static int
 cmp_timeval(const struct timeval *tv1, const struct timeval *tv2)
 {
@@ -663,11 +656,6 @@ out:
     return err;
 }
 
-static t_signal_handler user_sighup_handler = NULL;
-static t_signal_handler user_sigint_handler = NULL;
-static volatile int got_sighup = 0; /* Did I get a HUP signal? */
-static volatile int got_sigint = 0; /* Did I get an INT signal? */
-
 int
 sel_select(selector_t      *sel,
 	   sel_send_sig_cb send_sig,
@@ -695,23 +683,6 @@ sel_select(selector_t      *sel,
     remove_sel_wait_list(sel, &wait_entry);
     sel_timer_unlock(sel);
 
-    if (got_sighup) {
-	got_sighup = 0;
-	if (user_sighup_handler != NULL) {
-	    int old_errno = errno;
-	    user_sighup_handler();
-	    errno = old_errno;
-	}
-    }
-    if (got_sigint) {
-	got_sigint = 0;
-	if (user_sigint_handler != NULL) {
-	    int old_errno = errno;
-	    user_sigint_handler();
-	    errno = old_errno;
-	}
-    }
-
     return err;
 }
 
@@ -736,15 +707,6 @@ sel_select_loop(selector_t      *sel,
 	    return err;
 	}
     }
-}
-
-/* Dummy signal handler, it will just get the data and return. */
-static void
-sig_fd_read_handler(int fd, void *cb_data)
-{
-    char dummy[10];
-
-    dummyrv = read(fd, dummy, sizeof(dummy));
 }
 
 /* Initialize the select code. */
@@ -787,11 +749,6 @@ sel_alloc_selector(selector_t **new_selector)
 	}
     }
 
-    /* Watch for signals. */
-    sel_set_fd_handlers(sel, sig_fd_watch, NULL, sig_fd_read_handler,
-			NULL, NULL, NULL);
-    sel_set_fd_read_handler(sel, sig_fd_watch, SEL_FD_HANDLER_ENABLED);
-
     *new_selector = sel;
 
     return 0;
@@ -813,63 +770,10 @@ sel_free_selector(selector_t *sel)
     return 0;
 }
 
-void
-set_signal_handler(int sig, t_signal_handler handler)
-{
-    if (sig == SIGHUP)
-	user_sighup_handler = handler;
-    else if (sig == SIGINT)
-	user_sigint_handler = handler;
-}
-
-static void sig_wake_selector(void)
-{
-    char dummy = 0;
-
-    dummyrv = write(sig_fd_alert, &dummy, 1);
-}
-
-static void sighup_handler(int sig)
-{
-    got_sighup = 1;
-    sig_wake_selector();
-}
-
-static void sigint_handler(int sig)
-{
-    got_sigint = 1;
-    sig_wake_selector();
-}
-
 int
 sel_setup(void *(*psel_lock_alloc)(void), void (*psel_lock_free)(void *),
 	  void (*psel_lock)(void *), void (*psel_unlock)(void *))
 {
-    struct sigaction act;
-    int              err;
-    int              pipefds[2];
-
-    err = pipe(pipefds);
-    if (err)
-	return errno;
-
-    sig_fd_alert = pipefds[1];
-    sig_fd_watch = pipefds[0];
-
-    act.sa_handler = sighup_handler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = SA_RESTART;
-    err = sigaction(SIGHUP, &act, NULL);
-    if (err)
-	return errno;
-
-    act.sa_handler = sigint_handler;
-    /* Only handle SIGINT once. */
-    act.sa_flags |= SA_RESETHAND;
-    err = sigaction(SIGINT, &act, NULL);
-    if (err)
-	return errno;
-
     sel_lock_alloc = psel_lock_alloc;
     sel_lock_free = psel_lock_free;
     sel_lock = psel_lock;

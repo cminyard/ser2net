@@ -75,8 +75,8 @@ static char *help_string =
 "  -v - print the program's version and exit\n"
 "  -s - specify a default signature for RFC2217 protocol\n";
 
-void
-reread_config(void)
+static void
+reread_config_file(void)
 {
     if (config_file) {
 	char *prev_config_port = config_port;
@@ -122,14 +122,14 @@ reread_config(void)
     return;
 }
 
-void
+static void
 arg_error(char *name)
 {
     fprintf(stderr, help_string, name);
     exit(1);
 }
 
-void
+static void
 make_pidfile(void)
 {
     FILE *fpidfile;
@@ -147,7 +147,7 @@ make_pidfile(void)
     fclose(fpidfile);
 }
 
-void
+static void
 shutdown_cleanly(void)
 {
     struct timeval tv;
@@ -165,6 +165,96 @@ shutdown_cleanly(void)
     if (pid_file)
 	unlink(pid_file);
     exit(1);
+}
+
+static int dummyrv; /* Used to ignore return values of read() and write(). */
+
+/* Used to reliably deliver signals to a thread.  This is a pipe that
+   we write to from a signal handler to make sure it wakes up. */
+static int sig_fd_alert = -1;
+static int sig_fd_watch = -1;
+static volatile int reread_config = 0; /* Did I get a HUP signal? */
+static volatile int term_prog = 0; /* Did I get an INT signal? */
+
+static void sig_wake_selector(void)
+{
+    char dummy = 0;
+
+    dummyrv = write(sig_fd_alert, &dummy, 1);
+}
+
+static void sighup_handler(int sig)
+{
+    reread_config = 1;
+    sig_wake_selector();
+}
+
+static void sigint_handler(int sig)
+{
+    term_prog = 1;
+    sig_wake_selector();
+}
+
+
+/* Dummy signal handler, it will just get the data and return. */
+static void
+sig_fd_read_handler(int fd, void *cb_data)
+{
+    char dummy[10];
+
+    dummyrv = read(fd, dummy, sizeof(dummy));
+
+    if (term_prog)
+	shutdown_cleanly();
+
+    if (reread_config)
+	reread_config_file();
+}
+
+static void
+setup_signals(void)
+{
+    struct sigaction act;
+    int              err;
+    int              pipefds[2];
+
+    /* Ignore SIGPIPEs so they don't kill us. */
+    signal(SIGPIPE, SIG_IGN);
+
+    err = pipe(pipefds);
+    if (err)
+	goto out;
+
+    sig_fd_alert = pipefds[1];
+    sig_fd_watch = pipefds[0];
+
+    act.sa_handler = sighup_handler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = SA_RESTART;
+    err = sigaction(SIGHUP, &act, NULL);
+    if (err)
+	goto out;
+
+    act.sa_handler = sigint_handler;
+    /* Only handle SIGINT once. */
+    act.sa_flags |= SA_RESETHAND;
+    err = sigaction(SIGINT, &act, NULL);
+    if (!err)
+	err = sigaction(SIGQUIT, &act, NULL);
+    if (!err)
+	err = sigaction(SIGTERM, &act, NULL);
+    if (err)
+	goto out;
+
+    sel_set_fd_handlers(ser2net_sel, sig_fd_watch, NULL, sig_fd_read_handler,
+			NULL, NULL, NULL);
+    sel_set_fd_read_handler(ser2net_sel, sig_fd_watch, SEL_FD_HANDLER_ENABLED);
+
+ out:
+    if (err) {
+	fprintf(stderr, "Error setting up signals: %s\n", strerror(err));
+	exit(1);
+    }
 }
 
 int
@@ -186,6 +276,8 @@ main(int argc, char *argv[])
 		strerror(err));
 	return -1;
     }
+
+    setup_signals();
 
     err = sol_init();
     if (err) {
@@ -348,14 +440,6 @@ main(int argc, char *argv[])
 
     /* write pid file */
     make_pidfile();
-
-    /* Ignore SIGPIPEs so they don't kill us. */
-    signal(SIGPIPE, SIG_IGN);
-
-    set_signal_handler(SIGHUP, reread_config);
-    set_signal_handler(SIGINT, shutdown_cleanly);
-    set_signal_handler(SIGQUIT, shutdown_cleanly);
-    set_signal_handler(SIGTERM, shutdown_cleanly);
 
     sel_select_loop(ser2net_sel, NULL, 0, NULL);
 
