@@ -42,7 +42,7 @@ struct devio {
 struct devio_f {
     int (*setup)(struct devio *io, const char *name, const char **errstr,
 		 int *bps, int *bpc);
-    void (*shutdown)(struct devio *io);
+    void (*shutdown)(struct devio *io, void (*shutdown_done)(struct devio *));
     int (*reconfig)(struct devio *io, struct absout *eout, const char *instr,
 	    int (*otherconfig)(void *data, struct absout *eout,
 			       const char *item),

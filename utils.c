@@ -30,6 +30,7 @@
 #include "ser2net.h"
 #include "utils.h"
 #include "selector.h"
+#include "locking.h"
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid. */
@@ -115,7 +116,7 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
 
 int *
 open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
-	    unsigned int *nr_fds)
+	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
 {
     struct addrinfo *rp;
     int optval = 1;
@@ -156,7 +157,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
 	    goto next;
 
 	sel_set_fd_handlers(ser2net_sel, fds[curr_fd], data,
-			    readhndlr, NULL, NULL, NULL);
+			    readhndlr, NULL, NULL, fd_handler_cleared);
 	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd],
 				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
@@ -448,3 +449,82 @@ int str_to_argv(const char *s, int *r_argc, char ***r_argv, char *seps)
     }
     return rv;
 }
+
+#include <assert.h>
+
+#ifdef USE_PTHREADS
+struct waiter_s {
+    int set;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+};
+
+waiter_t *alloc_waiter(void)
+{
+    waiter_t *waiter;
+
+    waiter = malloc(sizeof(waiter_t));
+    if (waiter) {
+	memset(waiter, 0, sizeof(*waiter));
+	pthread_mutex_init(&waiter->lock, NULL);
+	pthread_cond_init(&waiter->cond, NULL);
+    }
+    return waiter;
+}
+
+void free_waiter(waiter_t *waiter)
+{
+    assert(waiter->set == 0);
+    pthread_mutex_destroy(&waiter->lock);
+    pthread_cond_destroy(&waiter->cond);
+    free(waiter);
+}
+
+void wait_for_waiter(waiter_t *waiter)
+{
+    pthread_mutex_lock(&waiter->lock);
+    if (!waiter->set)
+	pthread_cond_wait(&waiter->cond, &waiter->lock);
+    waiter->set = 0;
+    pthread_mutex_unlock(&waiter->lock);
+}
+
+void wake_waiter(waiter_t *waiter)
+{
+    pthread_mutex_lock(&waiter->lock);
+    pthread_cond_signal(&waiter->cond);
+    waiter->set = 1;
+    pthread_mutex_unlock(&waiter->lock);
+}
+#else
+struct waiter_s {
+    int set;
+};
+
+waiter_t *alloc_waiter(void)
+{
+    waiter_t *waiter;
+
+    waiter = malloc(sizeof(waiter_t));
+    if (waiter)
+	memset(waiter, 0, sizeof(*waiter));
+    return waiter;
+}
+
+void free_waiter(waiter_t *waiter)
+{
+    assert(waiter->set == 0);
+    free(waiter);
+}
+
+void wait_for_waiter(waiter_t *waiter)
+{
+    assert(waiter->set == 1);
+    waiter->set = 0;
+}
+
+void wake_waiter(waiter_t *waiter)
+{
+    waiter->set = 1;
+}
+#endif

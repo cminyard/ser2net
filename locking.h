@@ -17,22 +17,30 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef SER2NET_H
-#define SER2NET_H
+#ifndef SER2NET_LOCKING_H
+#define SER2NET_LOCKING_H
 
-#include "selector.h"
+#ifdef USE_PTHREADS
 
-/* The default rfc2217 signature if none is provided. */
-extern char *rfc2217_signature;
+#include <pthread.h>
 
-extern selector_t *ser2net_sel;
+#define DEFINE_LOCK(scope, name) scope pthread_mutex_t name;
+#define DEFINE_LOCK_INIT(scope, name) scope pthread_mutex_t name \
+				= PTHREAD_MUTEX_INITIALIZER;
+#define INIT_LOCK(lock) pthread_mutex_init(&lock, NULL)
+#define FREE_LOCK(lock) pthread_mutex_destroy(&lock)
+#define LOCK(lock) pthread_mutex_lock(&lock)
+#define UNLOCK(lock) pthread_mutex_unlock(&lock)
 
-extern int ser2net_debug;
-extern int ser2net_debug_level;
+#else
 
-extern int ser2net_wake_sig;
+#define DEFINE_LOCK(scope, name)
+#define DEFINE_LOCK_INIT(scope, name)
+#define INIT_LOCK(lock) do { } while (0)
+#define FREE_LOCK(lock) do { } while (0)
+#define LOCK(lock) do { } while (0)
+#define UNLOCK(lock) do { } while (0)
 
-void start_maint_op(void);
-void end_maint_op(void);
+#endif
 
-#endif /* SER2NET_H */
+#endif /* SER2NET_LOCKING_H */

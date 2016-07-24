@@ -62,6 +62,10 @@ ignored.
 .I \-v
 Prints the version of the program and exits.
 .TP
+.I \-t <num threads>
+Spawn the given number of threads for ser2net to use.  The default
+is 1.  Only valid if pthreads is enabled at build time.
+.TP
 .I \-p controlport
 Enables the control port and sets the TCP port to listen to for the
 control port.  A port number may be of the form [host,]port, such as

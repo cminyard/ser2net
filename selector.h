@@ -101,9 +101,18 @@ int sel_start_timer(sel_timer_t    *timer,
 		    struct timeval *timeout);
 
 int sel_stop_timer(sel_timer_t *timer);
+int sel_stop_timer_with_done(sel_timer_t *timer,
+			     sel_timeout_handler_t done_handler,
+			     void *cb_data);
 
 /* Use this for times provided to sel_start_time() */
 void sel_get_monotonic_time(struct timeval *tv);
+
+typedef struct sel_runner_s sel_runner_t;
+typedef void (*sel_runner_func_t)(sel_runner_t *runner, void *cb_data);
+int sel_alloc_runner(selector_t *sel, sel_runner_t **new_runner);
+int sel_free_runner(sel_runner_t *runner);
+int sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data);
 
 /* For multi-threaded programs, you will need to wake the selector
    thread if you add a timer to the top of the heap or change the fd

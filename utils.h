@@ -46,7 +46,8 @@ int scan_tcp_port(char *str, struct addrinfo **ai);
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
 int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
-		 void *data, unsigned int *nr_fds);
+		 void *data, unsigned int *nr_fds,
+		 void (*fd_handler_cleared)(int, void *));
 
 /*
  * Search for a banner/open/close string by name.  Note that the
@@ -92,5 +93,12 @@ int str_to_argv(const char *s, int *argc, char ***argv, char *seps);
 
 /* Free the return of str_to_argv */
 void str_to_argv_free(int argc, char **argv);
+
+/* Tools to wait for events. */
+typedef struct waiter_s waiter_t;
+waiter_t *alloc_waiter(void);
+void free_waiter(waiter_t *waiter);
+void wait_for_waiter(waiter_t *waiter);
+void wake_waiter(waiter_t *waiter);
 
 #endif /* UTILS */

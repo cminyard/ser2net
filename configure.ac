@@ -19,6 +19,16 @@ then
   AC_CHECK_LIB(wrap,main)
 fi
 
+use_pthreads=yes
+AC_ARG_WITH(pthreads,
+[  --with-pthreads=yes|no      Use pthreads or not.],
+    if test "x$withval" = "xyes"; then
+      use_pthreads=yes
+    elif test "x$withval" = "xno"; then
+      use_pthreads=no
+    fi,
+)
+
 tryopenipmi=yes
 AC_ARG_WITH(openipmi,
 [  --with-openipmi=yes|no      Look for openipmi.],
@@ -28,6 +38,10 @@ AC_ARG_WITH(openipmi,
       tryopenipmi=no
     fi,
 )
+if test "x$use_pthreads" != "xno"; then
+   LIBS="$LIBS -lpthread"
+   AC_DEFINE(USE_PTHREADS)
+fi
 
 AC_ARG_WITH(openipmiflags,
 [  --with-openipmiflags=flags  Set the flags to compile with OpenIPMI.],
@@ -50,7 +64,11 @@ if test "x$tryopenipmi" != "xno"; then
 fi
 
 if test "x$HAVE_OPENIPMI" != "xno"; then
-   LIBS="$LIBS -lOpenIPMI -lOpenIPMIpthread"
+   if test "x$use_pthreads" == "xyes"; then
+      LIBS="$LIBS -lOpenIPMI -lOpenIPMIpthread"
+   else
+      LIBS="$LIBS -lOpenIPMI -lOpenIPMIposix"
+   fi
    AC_DEFINE(HAVE_OPENIPMI)
 fi
 

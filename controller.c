@@ -33,6 +33,7 @@
 #include "dataxfer.h"
 #include "utils.h"
 #include "telnet.h"
+#include "locking.h"
 
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
@@ -44,9 +45,11 @@ static char *progname = "ser2net-control";
 
 /* This file holds the code that runs the control port. */
 
+DEFINE_LOCK_INIT(static, cntlr_lock)
 static struct addrinfo *cntrl_ai;
 static int *acceptfds;	/* The file descriptor for the accept port. */
 static unsigned int nr_acceptfds;
+static waiter_t *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
 					   do we allow at a time. */
@@ -59,6 +62,9 @@ char *prompt = "-> ";
 
 /* This data structure is kept for each control connection. */
 typedef struct controller_info {
+    DEFINE_LOCK(, lock)
+    int in_shutdown;
+
     int            tcpfd;		/* When connected, the file
                                            descriptor for the TCP
                                            port used for I/O. */
@@ -110,20 +116,14 @@ static struct telnet_cmd telnet_cmds[] =
     { 255 }
 };
 
-/* Shut down a control connection and remove it from the list of
-   controllers. */
 static void
-shutdown_controller(controller_info_t *cntlr)
+shutdown_controller2(controller_info_t *cntlr)
 {
     controller_info_t *prev;
     controller_info_t *curr;
 
-    if (cntlr->monitor_port_id != NULL) {
-	data_monitor_stop(cntlr, cntlr->monitor_port_id);
-	cntlr->monitor_port_id = NULL;
-    }
+    FREE_LOCK(cntlr->lock);
 
-    sel_clear_fd_handlers(ser2net_sel, cntlr->tcpfd);
     close(cntlr->tcpfd);
     if (cntlr->outbuf != NULL) {
 	free(cntlr->outbuf);
@@ -149,6 +149,23 @@ shutdown_controller(controller_info_t *cntlr)
     }
 
     free(cntlr);
+}
+
+/* Shut down a control connection and remove it from the list of
+   controllers. */
+static void
+shutdown_controller(controller_info_t *cntlr)
+{
+    if (cntlr->monitor_port_id != NULL) {
+	data_monitor_stop(cntlr, cntlr->monitor_port_id);
+	cntlr->monitor_port_id = NULL;
+    }
+
+    cntlr->in_shutdown = 1;
+
+    sel_clear_fd_handlers(ser2net_sel, cntlr->tcpfd);
+    /* The rest is handled in the done callback, which calls
+       shutdown_controller2. */
 }
 
 /* Send some output to the control connection.  This allocates and
@@ -313,7 +330,7 @@ static char *help_str =
 
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
-void
+int
 process_input_line(controller_info_t *cntlr)
 {
     char *strtok_data;
@@ -325,10 +342,10 @@ process_input_line(controller_info_t *cntlr)
 	/* Empty line, just ignore it. */
     } else if (strcmp(tok, "exit") == 0) {
 	shutdown_controller(cntlr);
-	return; /* We don't want a prompt any more. */
+	return 1; /* We don't want a prompt any more. */
     } else if (strcmp(tok, "quit") == 0) {
 	shutdown_controller(cntlr);
-	return; /* We don't want a prompt any more. */
+	return 1; /* We don't want a prompt any more. */
     } else if (strcmp(tok, "help") == 0) {
 	controller_output(cntlr, help_str, strlen(help_str));
     } else if (strcmp(tok, "version") == 0) {
@@ -339,10 +356,14 @@ process_input_line(controller_info_t *cntlr)
 	controller_output(cntlr, "\r\n", 2);
     } else if (strcmp(tok, "showport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
+	start_maint_op();
 	showports(cntlr, tok);
+	end_maint_op();
     } else if (strcmp(tok, "showshortport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
+	start_maint_op();
 	showshortports(cntlr, tok);
+	end_maint_op();
     } else if (strcmp(tok, "monitor") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -352,7 +373,9 @@ process_input_line(controller_info_t *cntlr)
 	}
 	if (strcmp(tok, "stop") == 0) {
 	    if (cntlr->monitor_port_id != NULL) {
+		start_maint_op();
 		data_monitor_stop(cntlr, cntlr->monitor_port_id);
+		end_maint_op();
 		cntlr->monitor_port_id = NULL;
 	    }
 	} else {
@@ -368,7 +391,9 @@ process_input_line(controller_info_t *cntlr)
 		controller_output(cntlr, err, strlen(err));
 		goto out;
 	    }
+	    start_maint_op();
 	    cntlr->monitor_port_id = data_monitor_start(cntlr, tok, str);
+	    end_maint_op();
 	}
     } else if (strcmp(tok, "disconnect") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
@@ -377,7 +402,9 @@ process_input_line(controller_info_t *cntlr)
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
+	start_maint_op();
 	disconnect_port(cntlr, tok);
+	end_maint_op();
     } else if (strcmp(tok, "setporttimeout") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -391,7 +418,9 @@ process_input_line(controller_info_t *cntlr)
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
+	start_maint_op();
 	setporttimeout(cntlr, tok, str);
+	end_maint_op();
     } else if (strcmp(tok, "setportenable") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -405,7 +434,9 @@ process_input_line(controller_info_t *cntlr)
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
+	start_maint_op();
 	setportenable(cntlr, tok, str);
+	end_maint_op();
     } else if (strcmp(tok, "setportconfig") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -420,7 +451,9 @@ process_input_line(controller_info_t *cntlr)
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
+	start_maint_op();
 	setportdevcfg(cntlr, tok, str);
+	end_maint_op();
     } else if (strcmp(tok, "setportcontrol") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
@@ -435,7 +468,9 @@ process_input_line(controller_info_t *cntlr)
 	    controller_output(cntlr, err, strlen(err));
 	    goto out;
 	}
+	start_maint_op();
 	setportcontrol(cntlr, tok, str);
+	end_maint_op();
     } else {
 	char *err = "Unknown command: ";
 	controller_output(cntlr, err, strlen(err));
@@ -445,6 +480,7 @@ process_input_line(controller_info_t *cntlr)
 
 out:
     controller_output(cntlr, prompt, strlen(prompt));
+    return 0;
 }
 
 /* Removes one or more characters starting at pos and going backwards.
@@ -473,11 +509,15 @@ handle_tcp_fd_read(int fd, void *data)
     int read_start;
     int i;
 
+    LOCK(cntlr->lock);
+    if (cntlr->in_shutdown)
+	goto out_unlock;
+
     if (cntlr->inbuf_count == INBUF_SIZE) {
         char *err = "Input line too long\r\n";
 	controller_output(cntlr, err, strlen(err));
 	cntlr->inbuf_count = 0;
-	return;
+	goto out_unlock;
     }
 
     read_count = read(fd,
@@ -487,29 +527,29 @@ handle_tcp_fd_read(int fd, void *data)
     if (read_count < 0) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry by returning. */
-	    return;
+	    goto out_unlock;
 	}
 
 	if (errno == EAGAIN) {
 	    /* EAGAIN, is due to O_NONBLOCK, just ignore it. */
-	    return;
+	    goto out_unlock;
 	}
 
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for controller port: %m");
-	shutdown_controller(cntlr);
-	return;
+	shutdown_controller(cntlr); /* Releases the lock */
+	goto out;
     } else if (read_count == 0) {
 	/* The other end closed the port, shut it down. */
-	shutdown_controller(cntlr);
-	return;
+	shutdown_controller(cntlr); /* Releases the lock */
+	goto out;
     }
     read_start = cntlr->inbuf_count;
     read_count = process_telnet_data
 	(cntlr->inbuf+read_start, read_count, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
-	shutdown_controller(cntlr);
-	return;
+	shutdown_controller(cntlr); /* Releases the lock */
+	goto out;
     }
     cntlr->inbuf_count += read_count;
     
@@ -537,7 +577,8 @@ handle_tcp_fd_read(int fd, void *data)
 	    controller_output(cntlr, "\r\n", 2);
 
 	    cntlr->inbuf[i] ='\0';
-	    process_input_line(cntlr);
+	    if (process_input_line(cntlr))
+		goto out; /* Controller was shut down. */
 
 	    /* Now copy any leftover data to the beginning of the buffer. */
 	    /* Don't use memcpy or strcpy because the memory might
@@ -553,6 +594,10 @@ handle_tcp_fd_read(int fd, void *data)
 	    controller_output(cntlr, (char *) &(cntlr->inbuf[i]), 1);
 	}
     }
+ out_unlock:
+    UNLOCK(cntlr->lock);
+ out:
+    return;
 }
 
 /* The TCP port has room to write some data.  This is only activated
@@ -562,9 +607,14 @@ static void
 handle_tcp_fd_write(int fd, void *data)
 {
     controller_info_t *cntlr = (controller_info_t *) data;
-    telnet_data_t *td = &cntlr->tn_data;
+    telnet_data_t *td;
     int write_count;
 
+    LOCK(cntlr->lock);
+    if (cntlr->in_shutdown)
+	goto out;
+
+    td = &cntlr->tn_data;
     if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	int buferr, reterr;
 
@@ -612,10 +662,11 @@ handle_tcp_fd_write(int fd, void *data)
 	}
     }
  out:
+    UNLOCK(cntlr->lock);
     return;
 
  out_fail:
-    shutdown_controller(cntlr);
+    shutdown_controller(cntlr); /* Releases the lock */
 }
 
 /* Handle an exception from the TCP port. */
@@ -624,8 +675,21 @@ handle_tcp_fd_except(int fd, void *data)
 {
     controller_info_t *cntlr = (controller_info_t *) data;
 
+    LOCK(cntlr->lock);
+    if (cntlr->in_shutdown) {
+	UNLOCK(cntlr->lock);
+	return;
+    }
     syslog(LOG_ERR, "Select exception for controller port");
-    shutdown_controller(cntlr);
+    shutdown_controller(cntlr); /* Releases the lock */
+}
+
+static void
+controller_fd_cleared(int fd, void *cb_data)
+{
+    controller_info_t *cntlr = cb_data;
+
+    shutdown_controller2(cntlr);
 }
 
 /* A connection request has come in for the control port. */
@@ -637,6 +701,7 @@ handle_accept_port_read(int fd, void *data)
     char              *err = NULL;
     int               optval;
 
+    LOCK(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\r\n";
 	goto errout2;
@@ -646,14 +711,18 @@ handle_accept_port_read(int fd, void *data)
 	    err = "Could not allocate controller port\r\n";
 	    goto errout2;
 	}
+	memset(cntlr, 0, sizeof(*cntlr));
     }
 
     /* From here on, errors must go to errout. */
 
+    INIT_LOCK(cntlr->lock);
+
     len = sizeof(cntlr->remote);
     cntlr->tcpfd = accept(fd, (struct sockaddr *) &(cntlr->remote), &len);
     if (cntlr->tcpfd == -1) {
-	syslog(LOG_ERR, "Could not accept on controller port: %m");
+	if (errno != EAGAIN && errno != EWOULDBLOCK)
+	    syslog(LOG_ERR, "Could not accept on controller port: %m");
 	goto errout;
     }
 
@@ -697,7 +766,7 @@ handle_accept_port_read(int fd, void *data)
 			handle_tcp_fd_read,
 			handle_tcp_fd_write,
 			handle_tcp_fd_except,
-			NULL);
+			controller_fd_cleared);
 
     cntlr->next = controllers;
     controllers = cntlr;
@@ -714,13 +783,16 @@ handle_accept_port_read(int fd, void *data)
 
     num_controller_ports++;
 
+    UNLOCK(cntlr_lock);
     return;
 
 errout:
+    UNLOCK(cntlr_lock);
     free(cntlr);
     return;
 
 errout2:
+    UNLOCK(cntlr_lock);
     {
 	/* We have a problem so refuse this one. */
 	struct sockaddr_storage dummy_sockaddr;
@@ -732,6 +804,12 @@ errout2:
 	    close(new_fd);
 	}
     }
+}
+
+static void
+controller_accept_fd_cleared(int fd, void *cb_data)
+{
+    wake_waiter(accept_waiter);
 }
 
 /* Set up the controller port to accept connections. */
@@ -749,9 +827,17 @@ controller_init(char *controller_port)
 	else
 	    return -1;
     }
-    
+
+    if (!accept_waiter) {
+	accept_waiter = alloc_waiter();
+	if (!accept_waiter) {
+	    syslog(LOG_ERR, "Unable to allocate controller accept waiter");
+	    return CONTROLLER_CANT_OPEN_PORT;
+	}
+    }
+
     acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL,
-			    &nr_acceptfds);
+			    &nr_acceptfds, controller_accept_fd_cleared);
     if (acceptfds == NULL) {
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	return CONTROLLER_CANT_OPEN_PORT;
@@ -768,6 +854,7 @@ controller_shutdown(void)
 	return;
     for (i = 0; i < nr_acceptfds; i++) {
 	sel_clear_fd_handlers(ser2net_sel, acceptfds[i]);
+	wait_for_waiter(accept_waiter);
 	close(acceptfds[i]);
     }
     acceptfds = NULL;

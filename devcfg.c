@@ -47,6 +47,8 @@ struct devcfg_data {
                                            TCP port is open. */
     struct termios termctl;
 
+    void (*shutdown_done)(struct devio *);
+
     int default_bps;
     int default_data_size;
     int default_stop_bits;
@@ -262,6 +264,12 @@ uucp_mk_lock(char *devname)
     }
 
     return pid;
+}
+#else
+static void uucp_rm_lock(char *devname) { }
+static int uucp_mk_lock(char *devname)
+{
+    return 0;
 }
 #endif /* USE_UUCP_LOCKING */
 
@@ -847,26 +855,35 @@ static int calc_bpc(struct devcfg_data *d)
 	d->current_parity_on + 1;
 }
 
+static void
+devfd_fd_cleared(int fd, void *cb_data)
+{
+    struct devio *io = cb_data;
+    struct devcfg_data *d = io->my_data;
+    void (*shutdown_done)(struct devio *) = d->shutdown_done;
+
+    tcflush(d->devfd, TCOFLUSH);
+    close(d->devfd);
+    d->devfd = -1;
+    uucp_rm_lock(io->devname);
+    shutdown_done(io);
+}
+
 static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 			int *bps, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     int options;
+    int rv;
 
-#ifdef USE_UUCP_LOCKING
-    {
-	int rv;
-
-	rv = uucp_mk_lock(io->devname);
-	if (rv > 0 ) {
-	    *errstr = "Port already in use by another process\r\n";
-	    return -1;
-	} else if (rv < 0) {
-	    *errstr = "Error creating port lock file\r\n";
-	    return -1;
-	}
+    rv = uucp_mk_lock(io->devname);
+    if (rv > 0 ) {
+	*errstr = "Port already in use by another process\r\n";
+	return -1;
+    } else if (rv < 0) {
+	*errstr = "Error creating port lock file\r\n";
+	return -1;
     }
-#endif /* USE_UUCP_LOCKING */
 
     *bps = d->current_bps = d->default_bps;
     d->current_data_size = d->default_data_size;
@@ -887,9 +904,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 	syslog(LOG_ERR, "Could not open device %s for port %s: %m",
 	       io->devname,
 	       name);
-#ifdef USE_UUCP_LOCKING
 	uucp_rm_lock(io->devname);
-#endif /* USE_UUCP_LOCKING */
 	return -1;
     }
 
@@ -900,9 +915,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 	syslog(LOG_ERR, "Could not set up device %s for port %s: %m",
 	       io->devname,
 	       name);
-#ifdef USE_UUCP_LOCKING
 	uucp_rm_lock(io->devname);
-#endif /* USE_UUCP_LOCKING */
 	return -1;
     }
 
@@ -930,25 +943,23 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
 
     sel_set_fd_handlers(ser2net_sel, d->devfd, io,
 			io->read_disabled ? NULL : do_read,
-			do_write, do_except, NULL);
+			do_write, do_except, devfd_fd_cleared);
     return 0;
 }
 
-static void devcfg_shutdown(struct devio *io)
+static void devcfg_shutdown(struct devio *io,
+			    void (*shutdown_done)(struct devio *))
 {
     struct devcfg_data *d = io->my_data;
 
     /* To avoid blocking on close if we have written bytes and are in
        flow-control, we flush the output queue. */
     if (d->devfd != -1) {
+	d->shutdown_done = shutdown_done;
 	sel_clear_fd_handlers(ser2net_sel, d->devfd);
-	tcflush(d->devfd, TCOFLUSH);
-	close(d->devfd);
-	d->devfd = -1;
+    } else {
+	shutdown_done(io);
     }
-#ifdef USE_UUCP_LOCKING
-    uucp_rm_lock(io->devname);
-#endif /* USE_UUCP_LOCKING */
 }
 
 static int devcfg_read(struct devio *io, void *buf, size_t size)

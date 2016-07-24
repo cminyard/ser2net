@@ -672,7 +672,8 @@ out:
     return rv;
 }
 
-static void solcfg_shutdown(struct devio *io)
+static void solcfg_shutdown(struct devio *io,
+			    void (*shutdown_done)(struct devio *))
 {
     struct solcfg_data *d = io->my_data;
 
@@ -680,6 +681,7 @@ static void solcfg_shutdown(struct devio *io)
 	ipmi_sol_close(d->sol);
 	d->ready = 0;
     }
+    shutdown_done(io);
 }
 
 static void solcfg_free(struct devio *io)
@@ -934,11 +936,19 @@ sol_ipmi_log(os_handler_t *hnd, enum ipmi_log_type_e log_type,
 int
 sol_init(void)
 {
-    os_hnd = ipmi_posix_thread_get_os_handler();
+#ifdef USE_PTHREADS
+    os_hnd = ipmi_posix_thread_get_os_handler2(ser2net_wake_sig);
+#else
+    os_hnd = ipmi_posix_get_os_handler();
+#endif
     if (!os_hnd)
 	return -ENOMEM;
     os_hnd->vlog = sol_ipmi_log;
+#ifdef USE_PTHREADS
     ipmi_posix_thread_os_handler_set_sel(os_hnd, ser2net_sel);
+#else
+    ipmi_posix_os_handler_set_sel(os_hnd, ser2net_sel);
+#endif
     ipmi_init(os_hnd);
     return 0;
 }

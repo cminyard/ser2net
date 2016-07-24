@@ -40,6 +40,7 @@
 #include "utils.h"
 #include "selector.h"
 #include "dataxfer.h"
+#include "locking.h"
 
 static char *config_file = "/etc/ser2net.conf";
 int config_port_from_cmdline = 0;
@@ -51,6 +52,10 @@ int ser2net_debug_level = 0;
 #ifdef USE_UUCP_LOCKING
 int uucp_locking_enabled = 1;
 #endif
+#ifdef USE_PTHREADS
+int num_threads = 1;
+#endif
+
 
 selector_t *ser2net_sel;
 char *rfc2217_signature = "ser2net";
@@ -70,6 +75,9 @@ static char *help_string =
 "  -l - Increate the debugging level\n"
 #ifdef USE_UUCP_LOCKING
 "  -u - Disable UUCP locking\n"
+#endif
+#ifdef USE_PTHREADS
+"  -t <num threads> - Use the given number of threads, default 1\n"
 #endif
 "  -b - unused (was Do CISCO IOS baud-rate negotiation, instead of RFC2217)\n"
 "  -v - print the program's version and exit\n"
@@ -153,6 +161,7 @@ shutdown_cleanly(void)
     struct timeval tv;
 
     free_rotators();
+    /* FIXME - shutdown controller ports */
     shutdown_ports();
     do {
 	if (check_ports_shutdown())
@@ -176,27 +185,191 @@ static int sig_fd_watch = -1;
 static volatile int reread_config = 0; /* Did I get a HUP signal? */
 static volatile int term_prog = 0; /* Did I get an INT signal? */
 
-static void sig_wake_selector(void)
+static void
+sig_wake_selector(void)
 {
     char dummy = 0;
 
     dummyrv = write(sig_fd_alert, &dummy, 1);
 }
 
-static void sighup_handler(int sig)
+static void
+sighup_handler(int sig)
 {
     reread_config = 1;
     sig_wake_selector();
 }
 
-static void sigint_handler(int sig)
+static void
+sigint_handler(int sig)
 {
     term_prog = 1;
     sig_wake_selector();
 }
 
+#if USE_PTHREADS
+DEFINE_LOCK_INIT(static, config_lock)
+static int in_config_read = 0;
 
-/* Dummy signal handler, it will just get the data and return. */
+DEFINE_LOCK_INIT(static, maint_lock)
+
+int ser2net_wake_sig = SIGUSR1;
+
+void
+start_maint_op(void)
+{
+    LOCK(maint_lock);
+}
+
+void
+end_maint_op(void)
+{
+    UNLOCK(maint_lock);
+}
+
+static void *
+config_reread_thread(void *dummy)
+{
+    start_maint_op();
+    reread_config_file();
+    end_maint_op();
+    LOCK(config_lock);
+    in_config_read = 0;
+    UNLOCK(config_lock);
+    return NULL;
+}
+
+static void
+thread_reread_config_file(void)
+{
+    int rv;
+    pthread_t thread;
+
+    LOCK(config_lock);
+    if (in_config_read) {
+	UNLOCK(config_lock);
+	return;
+    }
+    in_config_read = 1;
+    UNLOCK(config_lock);
+
+    rv = pthread_create(&thread, NULL, config_reread_thread, NULL);
+    if (rv) {
+	syslog(LOG_ERR,
+	       "Unable to start thread to reread config file: %s",
+	       strerror(rv));
+	LOCK(config_lock);
+	in_config_read = 0;
+	UNLOCK(config_lock);
+    }
+}
+
+static void
+wake_thread_sighandler(int sig)
+{
+    /* Nothing to do, sending the sig just wakes up select(). */
+}
+
+static void
+wake_thread_send_sig(long thread_id, void *cb_data)
+{
+    pthread_t        *id = (void *) thread_id;
+
+    pthread_kill(*id, ser2net_wake_sig);
+}
+
+static void *
+op_loop(void *dummy)
+{
+    pthread_t self = pthread_self();
+
+    sel_select_loop(ser2net_sel, wake_thread_send_sig, (long) &self, NULL);
+    return NULL;
+}
+
+static void
+start_threads(void)
+{
+    int i, rv;
+    pthread_t thread;
+    struct sigaction act;
+
+    act.sa_handler = wake_thread_sighandler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    rv = sigaction(ser2net_wake_sig, &act, NULL);
+    if (rv) {
+	syslog(LOG_ERR, "Unable to set sigaction: %s", strerror(errno));
+	exit(1);
+    }
+
+    for (i = 1; i < num_threads; i++) {
+	rv = pthread_create(&thread, NULL, op_loop, NULL);
+	if (rv) {
+	    syslog(LOG_ERR, "Unable to start thread: %s", strerror(rv));
+	    exit(1);
+	}
+    }
+}
+
+struct plock
+{
+    pthread_mutex_t lock;
+};
+
+static void *
+slock_alloc(void)
+{
+    struct plock *l;
+
+    l = malloc(sizeof(*l));
+    if (!l)
+	return NULL;
+    pthread_mutex_init(&l->lock, NULL);
+    return l;
+}
+
+static void
+slock_free(void *lock)
+{
+    struct plock *l = lock;
+
+    pthread_mutex_destroy(&l->lock);
+    free(l);
+}
+
+static void
+slock_lock(void *lock)
+{
+    struct plock *l = lock;
+
+    pthread_mutex_lock(&l->lock);
+}
+
+static void
+slock_unlock(void *lock)
+{
+    struct plock *l = lock;
+
+    pthread_mutex_unlock(&l->lock);
+}
+
+#else
+void start_maint_op(void) { }
+void end_maint_op(void) { }
+static void start_threads(void) { }
+#define slock_alloc NULL
+#define slock_free NULL
+#define slock_lock NULL
+#define slock_unlock NULL
+static void *
+op_loop(void *dummy)
+{
+    sel_select_loop(ser2net_sel, NULL, 0, NULL);
+    return NULL;
+}
+#endif /* USE_PTHREADS */
+
 static void
 sig_fd_read_handler(int fd, void *cb_data)
 {
@@ -207,8 +380,13 @@ sig_fd_read_handler(int fd, void *cb_data)
     if (term_prog)
 	shutdown_cleanly();
 
-    if (reread_config)
+    if (reread_config) {
+#if USE_PTHREADS
+	thread_reread_config_file();
+#else
 	reread_config_file();
+#endif
+    }
 }
 
 static void
@@ -262,30 +440,9 @@ main(int argc, char *argv[])
 {
     int i;
     int err;
-
-    err = sel_setup(NULL, NULL, NULL, NULL);
-    if (err) {
-	fprintf(stderr,	"Could not setup signal: '%s'\n", strerror(err));
-	return -1;
-    }
-
-    err = sel_alloc_selector(&ser2net_sel);
-    if (err) {
-	fprintf(stderr,
-		"Could not initialize ser2net selector: '%s'\n",
-		strerror(err));
-	return -1;
-    }
-
-    setup_signals();
-
-    err = sol_init();
-    if (err) {
-	fprintf(stderr,
-		"Could not initialize IPMI SOL: '%s'\n",
-		strerror(-err));
-	return -1;
-    }
+#ifdef USE_PTHREADS
+    char *end;
+#endif
 
     for (i=1; i<argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
@@ -374,10 +531,50 @@ main(int argc, char *argv[])
             rfc2217_signature = argv[i];
             break;
 
+#ifdef USE_PTHREADS
+	case 't':
+            i++;
+            if (i == argc) {
+	        fprintf(stderr, "No thread count specified\n");
+		exit(1);
+            }
+	    num_threads = strtoul(argv[i], &end, 10);
+	    if (end == argv[i] || *end != '\0') {
+	        fprintf(stderr, "Invalid thread count specified: %s\n",
+			argv[i]);
+		exit(1);
+	    }
+            break;
+#endif
+
 	default:
 	    fprintf(stderr, "Invalid option: '%s'\n", argv[i]);
 	    arg_error(argv[0]);
 	}
+    }
+
+    err = sel_setup(slock_alloc, slock_free, slock_lock, slock_unlock);
+    if (err) {
+	fprintf(stderr,	"Could not setup signal: '%s'\n", strerror(err));
+	return -1;
+    }
+
+    err = sel_alloc_selector(&ser2net_sel);
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize ser2net selector: '%s'\n",
+		strerror(err));
+	return -1;
+    }
+
+    setup_signals();
+
+    err = sol_init();
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize IPMI SOL: '%s'\n",
+		strerror(-err));
+	return -1;
     }
 
     if (ser2net_debug && !detach)
@@ -441,8 +638,8 @@ main(int argc, char *argv[])
     /* write pid file */
     make_pidfile();
 
-    sel_select_loop(ser2net_sel, NULL, 0, NULL);
+    start_threads();
+    op_loop(NULL);
 
     return 0;
 }
-

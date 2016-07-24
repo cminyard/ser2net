@@ -88,6 +88,18 @@ typedef struct heap_val_s
 
     /* Am I currently running? */
     int in_heap;
+
+    /* Am I currently stopped? */
+    int stopped;
+
+    /* Have I been freed? */
+    int freed;
+
+    /* Am I currently in a handler? */
+    int in_handler;
+
+    sel_timeout_handler_t done_handler;
+    void *done_cb_data;
 } heap_val_t;
 
 typedef struct theap_s theap_t;
@@ -143,6 +155,15 @@ typedef struct sel_wait_list_s
     struct sel_wait_list_s *next, *prev;
 } sel_wait_list_t;
 
+struct sel_runner_s
+{
+    selector_t *sel;
+    sel_runner_func_t func;
+    void *cb_data;
+    int in_use;
+    sel_runner_t *next;
+};
+
 struct selector_s
 {
     /* This is an array of all the file descriptors possible.  This is
@@ -169,6 +190,9 @@ struct selector_s
     sel_wait_list_t wait_list;
 
     void *timer_lock;
+
+    sel_runner_t *runner_head;
+    sel_runner_t *runner_tail;
 };
 
 static void *(*sel_lock_alloc)(void);
@@ -231,6 +255,23 @@ wake_sel_thread(selector_t *sel)
     }
 }
 
+static void
+wake_fd_sel_thread(selector_t *sel)
+{
+    wake_sel_thread(sel);
+    sel_fd_unlock(sel);
+}
+
+static void
+wake_timer_sel_thread(selector_t *sel, volatile sel_timer_t *old_top)
+{
+    if (old_top != theap_get_top(&sel->timer_heap))
+	/* If the top value changed, restart the waiting thread. */
+	wake_sel_thread(sel);
+
+    sel_timer_unlock(sel);
+}
+
 /* Wait list management.  These *must* be called with the timer list
    locked, and the values in the item *must not* change while in the
    list. */
@@ -256,14 +297,6 @@ remove_sel_wait_list(selector_t *sel, sel_wait_list_t *item)
     item->prev->next = item->next;
 }
 
-static void
-wake_sel_thread_lock(selector_t *sel)
-{
-    sel_timer_lock(sel);
-    wake_sel_thread(sel);
-    sel_timer_unlock(sel);
-}
-
 /* Initialize a single file descriptor. */
 static void
 init_fd(fd_control_t *fd)
@@ -287,6 +320,7 @@ sel_set_fd_handlers(selector_t        *sel,
 {
     fd_control_t *fdc;
     fd_state_t   *state;
+    int          added = 1;
 
     state = malloc(sizeof(*state));
     if (!state)
@@ -298,6 +332,7 @@ sel_set_fd_handlers(selector_t        *sel,
     sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
     if (fdc->state) {
+	added = 0;
 	fdc->state->deleted = 1;
 	if (fdc->state->use_count == 0) {
 	    if (fdc->state->done)
@@ -311,12 +346,14 @@ sel_set_fd_handlers(selector_t        *sel,
     fdc->handle_write = write_handler;
     fdc->handle_except = except_handler;
 
-    /* Move maxfd up if necessary. */
-    if (fd > sel->maxfd) {
-	sel->maxfd = fd;
+    if (added) {
+	/* Move maxfd up if necessary. */
+	if (fd > sel->maxfd) {
+	    sel->maxfd = fd;
+	}
+	wake_fd_sel_thread(sel);
+	return 0;
     }
-
-    wake_sel_thread_lock(sel);
     sel_fd_unlock(sel);
     return 0;
 }
@@ -354,7 +391,6 @@ sel_clear_fd_handlers(selector_t *sel,
 	}
     }
 
-    wake_sel_thread_lock(sel);
     sel_fd_unlock(sel);
 }
 
@@ -363,13 +399,25 @@ sel_clear_fd_handlers(selector_t *sel,
 void
 sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 {
+    fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
+
     sel_fd_lock(sel);
+    if (!fdc->state)
+	goto out;
+
     if (state == SEL_FD_HANDLER_ENABLED) {
+	if (FD_ISSET(fd, &sel->read_set))
+	    goto out;
 	FD_SET(fd, &sel->read_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
+	if (!FD_ISSET(fd, &sel->read_set))
+	    goto out;
 	FD_CLR(fd, &sel->read_set);
     }
-    wake_sel_thread_lock(sel);
+    wake_fd_sel_thread(sel);
+    return;
+
+ out:
     sel_fd_unlock(sel);
 }
 
@@ -378,13 +426,25 @@ sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 void
 sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 {
+    fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
+
     sel_fd_lock(sel);
+    if (!fdc->state)
+	goto out;
+
     if (state == SEL_FD_HANDLER_ENABLED) {
+	if (FD_ISSET(fd, &sel->write_set))
+	    goto out;
 	FD_SET(fd, &sel->write_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
+	if (!FD_ISSET(fd, &sel->write_set))
+	    goto out;
 	FD_CLR(fd, &sel->write_set);
     }
-    wake_sel_thread_lock(sel);
+    wake_fd_sel_thread(sel);
+    return;
+
+ out:
     sel_fd_unlock(sel);
 }
 
@@ -393,13 +453,25 @@ sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 void
 sel_set_fd_except_handler(selector_t *sel, int fd, int state)
 {
+    fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
+
     sel_fd_lock(sel);
+    if (!fdc->state)
+	goto out;
+
     if (state == SEL_FD_HANDLER_ENABLED) {
+	if (FD_ISSET(fd, &sel->except_set))
+	    goto out;
 	FD_SET(fd, &sel->except_set);
     } else if (state == SEL_FD_HANDLER_DISABLED) {
+	if (!FD_ISSET(fd, &sel->except_set))
+	    goto out;
 	FD_CLR(fd, &sel->except_set);
     }
-    wake_sel_thread_lock(sel);
+    wake_fd_sel_thread(sel);
+    return;
+
+ out:
     sel_fd_unlock(sel);
 }
 
@@ -438,11 +510,12 @@ sel_alloc_timer(selector_t            *sel,
     timer = malloc(sizeof(*timer));
     if (!timer)
 	return ENOMEM;
+    memset(timer, 0, sizeof(*timer));
 
     timer->val.handler = handler;
     timer->val.user_data = user_data;
-    timer->val.in_heap = 0;
     timer->val.sel = sel;
+    timer->val.stopped = 1;
     *new_timer = timer;
 
     return 0;
@@ -452,13 +525,18 @@ int
 sel_free_timer(sel_timer_t *timer)
 {
     selector_t *sel = timer->val.sel;
+    int in_handler;
 
     sel_timer_lock(sel);
     if (timer->val.in_heap) {
 	sel_stop_timer(timer);
     }
+    timer->val.freed = 1;
+    in_handler = timer->val.in_handler;
     sel_timer_unlock(sel);
-    free(timer);
+
+    if (!in_handler)
+	free(timer);
 
     return 0;
 }
@@ -472,20 +550,22 @@ sel_start_timer(sel_timer_t    *timer,
 
     sel_timer_lock(sel);
     if (timer->val.in_heap) {
+	sel_timer_unlock(sel);
 	return EBUSY;
     }
 
-    top = theap_get_top(&timer->val.sel->timer_heap);
+    top = theap_get_top(&sel->timer_heap);
 
     timer->val.timeout = *timeout;
-    theap_add(&timer->val.sel->timer_heap, timer);
-    timer->val.in_heap = 1;
 
-    if (top != theap_get_top(&timer->val.sel->timer_heap))
-	/* If the top value changed, restart the waiting thread. */
-	wake_sel_thread(timer->val.sel);
+    if (!timer->val.in_handler) {
+	/* Wait until the handler returns to start the timer. */
+	theap_add(&sel->timer_heap, timer);
+	timer->val.in_heap = 1;
+    }
+    timer->val.stopped = 0;
 
-    sel_timer_unlock(sel);
+    wake_timer_sel_thread(sel, top);
 
     return 0;
 }
@@ -497,21 +577,56 @@ sel_stop_timer(sel_timer_t *timer)
     volatile sel_timer_t *top;
 
     sel_timer_lock(sel);
-    if (!timer->val.in_heap) {
+    if (timer->val.stopped) {
+	sel_timer_unlock(sel);
 	return ETIMEDOUT;
     }
 
-    top = theap_get_top(&timer->val.sel->timer_heap);
+    if (timer->val.in_heap) {
+	top = theap_get_top(&sel->timer_heap);
 
-    theap_remove(&timer->val.sel->timer_heap, timer);
-    timer->val.in_heap = 0;
+	theap_remove(&sel->timer_heap, timer);
+	timer->val.in_heap = 0;
+	wake_timer_sel_thread(sel, top);
+    }
+    timer->val.stopped = 1;
 
-    if (top != theap_get_top(&timer->val.sel->timer_heap))
-	/* If the top value changed, restart the waiting thread. */
-	wake_sel_thread(timer->val.sel);
+    return 0;
+}
 
-    sel_timer_unlock(sel);
+int
+sel_stop_timer_with_done(sel_timer_t *timer,
+			 sel_timeout_handler_t done_handler,
+			 void *cb_data)
+{
+    selector_t *sel = timer->val.sel;
+    volatile sel_timer_t *top;
 
+    sel_timer_lock(sel);
+    if (timer->val.stopped) {
+	sel_timer_unlock(sel);
+	goto out;
+    }
+
+    if (timer->val.in_handler) {
+	timer->val.done_handler = done_handler;
+	timer->val.done_cb_data = cb_data;
+	sel_timer_unlock(sel);
+	return 0;
+    }
+
+    if (timer->val.in_heap) {
+	top = theap_get_top(&sel->timer_heap);
+
+	theap_remove(&sel->timer_heap, timer);
+	timer->val.in_heap = 0;
+
+	wake_timer_sel_thread(sel, top);
+    }
+    timer->val.stopped = 1;
+
+ out:
+    done_handler(sel, timer, cb_data);
     return 0;
 }
 
@@ -545,10 +660,27 @@ process_timers(selector_t	       *sel,
 	called = 1;
 	theap_remove(&(sel->timer_heap), timer);
 	timer->val.in_heap = 0;
-
+	timer->val.stopped = 1;
+	timer->val.in_handler = 1;
 	sel_timer_unlock(sel);
 	timer->val.handler(sel, timer, timer->val.user_data);
 	sel_timer_lock(sel);
+	timer->val.in_handler = 0;
+	if (timer->val.done_handler) {
+	    sel_timeout_handler_t done_handler = timer->val.done_handler;
+	    void *done_cb_data = timer->val.done_cb_data;
+	    timer->val.done_handler = NULL;
+	    sel_timer_unlock(sel);
+	    done_handler(sel, timer, done_cb_data);
+	    sel_timer_lock(sel);
+	}
+	if (timer->val.freed)
+	    free(timer);
+	else if (!timer->val.stopped) {
+	    /* We were restarted while in the handler. */
+	    theap_add(&sel->timer_heap, timer);
+	    timer->val.in_heap = 1;
+	}
 
 	timer = theap_get_top(&sel->timer_heap);
     }
@@ -569,11 +701,99 @@ process_timers(selector_t	       *sel,
     }
 }
 
+int
+sel_alloc_runner(selector_t *sel, sel_runner_t **new_runner)
+{
+    sel_runner_t *runner;
+
+    runner = malloc(sizeof(*runner));
+    if (!runner)
+	return ENOMEM;
+    memset(runner, 0, sizeof(*runner));
+    runner->sel = sel;
+    *new_runner = runner;
+    return 0;
+}
+
+int
+sel_free_runner(sel_runner_t *runner)
+{
+    selector_t *sel = runner->sel;
+
+    sel_timer_lock(sel);
+    if (runner->in_use) {
+	sel_timer_unlock(sel);
+	return EBUSY;
+    }
+    sel_timer_unlock(sel);
+    free(runner);
+    return 0;
+}
+
+int
+sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data)
+{
+    selector_t *sel = runner->sel;
+
+    sel_timer_lock(sel);
+    if (runner->in_use) {
+	sel_timer_unlock(sel);
+	return EBUSY;
+    }
+
+    runner->func = func;
+    runner->cb_data = cb_data;
+    runner->next = NULL;
+    runner->in_use = 1;
+
+    if (sel->runner_tail) {
+	sel->runner_tail->next = runner;
+	sel->runner_tail = runner;
+    } else {
+	sel->runner_head = runner;
+	sel->runner_tail = runner;
+    }
+    sel_timer_unlock(sel);
+    return 0;
+}
+
 static void
-handle_selector_call(selector_t *sel, int i, sel_fd_handler_t handler)
+process_runners(selector_t *sel)
+{
+    while (sel->runner_head) {
+	sel_runner_t *runner = sel->runner_head;
+	sel_runner_func_t func;
+	void *cb_data;
+
+	sel->runner_head = sel->runner_head->next;
+	if (!sel->runner_head)
+	    sel->runner_tail = NULL;
+	runner->in_use = 0;
+	func = runner->func;
+	cb_data = runner->cb_data;
+	sel_timer_unlock(sel);
+	func(runner, cb_data);
+	sel_timer_lock(sel);
+    }
+}
+
+static void
+handle_selector_call(selector_t *sel, int i, volatile fd_set *fdset,
+		     sel_fd_handler_t handler)
 {
     void             *data;
     fd_state_t       *state;
+
+    if (handler == NULL) {
+	/* Somehow we don't have a handler for this.
+	   Just shut it down. */
+	FD_CLR(i, fdset);
+	return;
+    }
+
+    if (!FD_ISSET(i, fdset))
+	/* The value was cleared, ignore it. */
+	return;
 
     data = sel->fds[i].data;
     state = sel->fds[i].state;
@@ -583,8 +803,11 @@ handle_selector_call(selector_t *sel, int i, sel_fd_handler_t handler)
     sel_fd_lock(sel);
     state->use_count--;
     if (state->deleted && state->use_count == 0) {
-	if (state->done)
+	if (state->done) {
+	    sel_fd_unlock(sel);
 	    state->done(i, data);
+	    sel_fd_lock(sel);
+	}
 	free(state);
     }
 }
@@ -596,9 +819,6 @@ handle_selector_call(selector_t *sel, int i, sel_fd_handler_t handler)
  */
 static int
 process_fds(selector_t	            *sel,
-	    sel_send_sig_cb         send_sig,
-	    long                    thread_id,
-	    void                    *cb_data,
 	    volatile struct timeval *timeout)
 {
     fd_set      tmp_read_set;
@@ -625,31 +845,16 @@ process_fds(selector_t	            *sel,
 
     /* We got some I/O. */
     sel_fd_lock(sel);
-    for (i=0; i<=sel->maxfd; i++) {
-	if (FD_ISSET(i, &tmp_read_set)) {
-	    if (sel->fds[i].handle_read == NULL)
-		/* Somehow we don't have a handler for this.
-		   Just shut it down. */
-		sel_set_fd_read_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    else
-		handle_selector_call(sel, i, sel->fds[i].handle_read);
-	}
-	if (FD_ISSET(i, &tmp_write_set)) {
-	    if (sel->fds[i].handle_write == NULL)
-		/* Somehow we don't have a handler for this.
-                   Just shut it down. */
-		sel_set_fd_write_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    else
-		handle_selector_call(sel, i, sel->fds[i].handle_write);
-	}
-	if (FD_ISSET(i, &tmp_except_set)) {
-	    if (sel->fds[i].handle_except == NULL)
-		/* Somehow we don't have a handler for this.
-                   Just shut it down. */
-		sel_set_fd_except_handler(sel, i, SEL_FD_HANDLER_DISABLED);
-	    else
-		handle_selector_call(sel, i, sel->fds[i].handle_except);
-	}
+    for (i = 0; i <= sel->maxfd; i++) {
+	if (FD_ISSET(i, &tmp_read_set))
+	    handle_selector_call(sel, i, &sel->read_set,
+				 sel->fds[i].handle_read);
+	if (FD_ISSET(i, &tmp_write_set))
+	    handle_selector_call(sel, i, &sel->write_set,
+				 sel->fds[i].handle_write);
+	if (FD_ISSET(i, &tmp_except_set))
+	    handle_selector_call(sel, i, &sel->except_set,
+				 sel->fds[i].handle_except);
     }
     sel_fd_unlock(sel);
 out:
@@ -668,6 +873,7 @@ sel_select(selector_t      *sel,
     sel_wait_list_t wait_entry;
 
     sel_timer_lock(sel);
+    process_runners(sel);
     process_timers(sel, (struct timeval *)(&loc_timeout));
     if (timeout) {
 	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
@@ -677,7 +883,7 @@ sel_select(selector_t      *sel,
 		      &loc_timeout);
     sel_timer_unlock(sel);
 
-    err = process_fds(sel, send_sig, thread_id, cb_data, &loc_timeout);
+    err = process_fds(sel, &loc_timeout);
 
     sel_timer_lock(sel);
     remove_sel_wait_list(sel, &wait_entry);
@@ -765,6 +971,10 @@ sel_free_selector(selector_t *sel)
 	free(elem);
 	elem = theap_get_top(&(sel->timer_heap));
     }
+    if (sel->fd_lock)
+	sel_lock_free(sel->fd_lock);
+    if (sel->timer_lock)
+	sel_lock_free(sel->timer_lock);
     free(sel);
 
     return 0;
