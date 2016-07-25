@@ -355,6 +355,7 @@ slock_unlock(void *lock)
 }
 
 #else
+int ser2net_wake_sig = 0;
 void start_maint_op(void) { }
 void end_maint_op(void) { }
 static void start_threads(void) { }
@@ -559,7 +560,7 @@ main(int argc, char *argv[])
 	return -1;
     }
 
-    err = sel_alloc_selector(&ser2net_sel);
+    err = sel_alloc_selector2(&ser2net_sel, ser2net_wake_sig);
     if (err) {
 	fprintf(stderr,
 		"Could not initialize ser2net selector: '%s'\n",

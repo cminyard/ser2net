@@ -45,6 +45,7 @@ typedef struct selector_s selector_t;
 
 /* You have to create a selector before you can use it. */
 int sel_alloc_selector(selector_t **new_selector);
+int sel_alloc_selector2(selector_t **new_selector, int wake_sig);
 
 /* Used to destroy a selector. */
 int sel_free_selector(selector_t *new_selector);

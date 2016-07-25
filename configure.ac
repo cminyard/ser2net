@@ -19,6 +19,13 @@ then
   AC_CHECK_LIB(wrap,main)
 fi
 
+AX_HAVE_EPOLL_PWAIT(
+   [AX_CONFIG_FEATURE_ENABLE(epoll_pwait)],
+   [AX_CONFIG_FEATURE_DISABLE(epoll_pwait)])
+AX_CONFIG_FEATURE(
+   [epoll_pwait], [This platform supports epoll(7) with epoll_pwait(2)],
+   [HAVE_EPOLL_PWAIT], [This platform supports epoll(7) with epoll_pwait(2).])
+
 use_pthreads=yes
 AC_ARG_WITH(pthreads,
 [  --with-pthreads=yes|no      Use pthreads or not.],

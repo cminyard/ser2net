@@ -50,6 +50,13 @@
 #include <syslog.h>
 #include <signal.h>
 #include <string.h>
+#ifdef HAVE_EPOLL_PWAIT
+#include <sys/epoll.h>
+#else
+#define EPOLL_CTL_ADD 0
+#define EPOLL_CTL_DEL 0
+#define EPOLL_CTL_MOD 0
+#endif
 
 typedef struct fd_state_s
 {
@@ -193,6 +200,12 @@ struct selector_s
 
     sel_runner_t *runner_head;
     sel_runner_t *runner_tail;
+
+    int wake_sig;
+
+#ifdef HAVE_EPOLL_PWAIT
+    int epollfd;
+#endif
 };
 
 static void *(*sel_lock_alloc)(void);
@@ -308,6 +321,36 @@ init_fd(fd_control_t *fd)
     fd->handle_except = NULL;
 }
 
+#ifdef HAVE_EPOLL_PWAIT
+static int
+sel_update_epoll(selector_t *sel, int fd, int op)
+{
+    struct epoll_event event;
+
+    if (sel->epollfd < 0)
+	return 1;
+
+    memset(&event, 0, sizeof(event));
+    event.events = EPOLLONESHOT;
+    event.data.fd = fd;
+    if (FD_ISSET(fd, &sel->read_set))
+	event.events |= EPOLLIN | EPOLLHUP;
+    if (FD_ISSET(fd, &sel->write_set))
+	event.events |= EPOLLOUT;
+    if (FD_ISSET(fd, &sel->write_set))
+	event.events |= EPOLLERR | EPOLLPRI;
+
+    epoll_ctl(sel->epollfd, op, fd, &event);
+    return 0;
+}
+#else
+static int
+sel_update_epoll(selector_t *sel, int fd, int op)
+{
+    return 1;
+}
+#endif
+
 /* Set the handlers for a file descriptor. */
 int
 sel_set_fd_handlers(selector_t        *sel,
@@ -351,8 +394,11 @@ sel_set_fd_handlers(selector_t        *sel,
 	if (fd > sel->maxfd) {
 	    sel->maxfd = fd;
 	}
-	wake_fd_sel_thread(sel);
-	return 0;
+
+	if (sel_update_epoll(sel, fd, EPOLL_CTL_ADD)) {
+	    wake_fd_sel_thread(sel);
+	    return 0;
+	}
     }
     sel_fd_unlock(sel);
     return 0;
@@ -377,6 +423,8 @@ sel_clear_fd_handlers(selector_t *sel,
 	    free(fdc->state);
 	}
 	fdc->state = NULL;
+
+	sel_update_epoll(sel, fd, EPOLL_CTL_DEL);
     }
 
     init_fd(fdc);
@@ -414,8 +462,10 @@ sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->read_set);
     }
-    wake_fd_sel_thread(sel);
-    return;
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+	wake_fd_sel_thread(sel);
+	return;
+    }
 
  out:
     sel_fd_unlock(sel);
@@ -441,8 +491,10 @@ sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->write_set);
     }
-    wake_fd_sel_thread(sel);
-    return;
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+	wake_fd_sel_thread(sel);
+	return;
+    }
 
  out:
     sel_fd_unlock(sel);
@@ -468,8 +520,10 @@ sel_set_fd_except_handler(selector_t *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->except_set);
     }
-    wake_fd_sel_thread(sel);
-    return;
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+	wake_fd_sel_thread(sel);
+	return;
+    }
 
  out:
     sel_fd_unlock(sel);
@@ -861,6 +915,56 @@ out:
     return err;
 }
 
+#ifdef HAVE_EPOLL_PWAIT
+static int
+process_fds_epoll(selector_t *sel, struct timeval *tvtimeout)
+{
+    int rv, fd;
+    struct epoll_event event;
+    int timeout;
+    sigset_t sigmask;
+
+    if (tvtimeout->tv_sec > 600)
+	 /* Don't wait over 10 minutes, to work around an old epoll bug
+	    and avoid issues with timeout overflowing on 64-bit systems,
+	    which is much larger that 10 minutes, but who cares. */
+	timeout = 600 * 1000;
+    else
+	timeout = ((tvtimeout->tv_sec * 1000) +
+		   (tvtimeout->tv_usec + 999) / 1000);
+
+#ifdef USE_PTHREADS
+    pthread_sigmask(SIG_SETMASK, NULL, &sigmask);
+#else
+    sigprocmask(SIG_SETMASK, NULL, &sigmask);
+#endif
+    sigdelset(&sigmask, sel->wake_sig);
+    rv = epoll_pwait(sel->epollfd, &event, 1, timeout, &sigmask);
+
+    if (rv <= 0)
+	return rv;
+
+    sel_fd_lock(sel);
+    fd = event.data.fd;
+    if (event.events & (EPOLLIN | EPOLLHUP))
+	handle_selector_call(sel, fd, &sel->read_set,
+			     sel->fds[fd].handle_read);
+    if (event.events & EPOLLOUT)
+	handle_selector_call(sel, fd, &sel->write_set,
+			     sel->fds[fd].handle_write);
+    if (event.events & (EPOLLERR | EPOLLPRI))
+	handle_selector_call(sel, fd, &sel->except_set,
+			     sel->fds[fd].handle_except);
+
+    /* Rearm the event.  Remember it could have been deleted in the handler. */
+    if (sel->fds[fd].state)
+	sel_update_epoll(sel, fd, EPOLL_CTL_MOD);
+    sel_fd_unlock(sel);
+
+    return 0;
+}
+#endif
+
 int
 sel_select(selector_t      *sel,
 	   sel_send_sig_cb send_sig,
@@ -883,7 +987,12 @@ sel_select(selector_t      *sel,
 		      &loc_timeout);
     sel_timer_unlock(sel);
 
-    err = process_fds(sel, &loc_timeout);
+#ifdef HAVE_EPOLL_PWAIT
+    if (sel->epollfd >= 0)
+	err = process_fds_epoll(sel, &loc_timeout);
+    else
+#endif
+	err = process_fds(sel, &loc_timeout);
 
     sel_timer_lock(sel);
     remove_sel_wait_list(sel, &wait_entry);
@@ -917,7 +1026,7 @@ sel_select_loop(selector_t      *sel,
 
 /* Initialize the select code. */
 int
-sel_alloc_selector(selector_t **new_selector)
+sel_alloc_selector2(selector_t **new_selector, int wake_sig)
 {
     selector_t *sel;
     unsigned int i;
@@ -930,6 +1039,8 @@ sel_alloc_selector(selector_t **new_selector)
     /* The list is initially empty. */
     sel->wait_list.next = &sel->wait_list;
     sel->wait_list.prev = &sel->wait_list;
+
+    sel->wake_sig = wake_sig;
 
     FD_ZERO((fd_set *) &sel->read_set);
     FD_ZERO((fd_set *) &sel->write_set);
@@ -955,9 +1066,39 @@ sel_alloc_selector(selector_t **new_selector)
 	}
     }
 
+#ifdef HAVE_EPOLL_PWAIT
+    sel->epollfd = epoll_create(32768);
+    if (sel->epollfd == -1) {
+	syslog(LOG_ERR, "Unable to set up epoll, falling back to select: %m");
+    } else {
+	int rv;
+	sigset_t sigset;
+
+	sigemptyset(&sigset);
+	sigaddset(&sigset, wake_sig);
+	rv = sigprocmask(SIG_BLOCK, &sigset, NULL);
+	if (rv == -1) {
+	    rv = errno;
+	    close(sel->epollfd);
+	    if (sel_lock_alloc) {
+		sel_lock_free(sel->fd_lock);
+		sel_lock_free(sel->timer_lock);
+	    }
+	    free(sel);
+	    return rv;
+	}
+    }
+#endif
+
     *new_selector = sel;
 
     return 0;
+}
+
+int
+sel_alloc_selector(selector_t **new_selector)
+{
+    return sel_alloc_selector2(new_selector, 0);
 }
 
 int
@@ -971,6 +1112,10 @@ sel_free_selector(selector_t *sel)
 	free(elem);
 	elem = theap_get_top(&(sel->timer_heap));
     }
+#ifdef HAVE_EPOLL_PWAIT
+    if (sel->epollfd >= 0)
+	close(sel->epollfd);
+#endif
     if (sel->fd_lock)
 	sel_lock_free(sel->fd_lock);
     if (sel->timer_lock)
