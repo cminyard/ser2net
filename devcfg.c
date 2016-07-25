@@ -231,7 +231,6 @@ uucp_mk_lock(char *devname)
 	    if (pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH) {
 		/* death lockfile - remove it */
 		unlink(lck_file);
-		sleep(1);
 		pid = 0;
 	    } else
 		pid = 1;

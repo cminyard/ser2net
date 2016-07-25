@@ -123,6 +123,7 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 		void *data);
 
 int sol_init(void);
+void sol_shutdown(void);
 
 int solcfg_init(struct devio *io, struct absout *eout, const char *instr,
 		int (*otherconfig)(void *data, struct absout *eout,

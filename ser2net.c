@@ -49,11 +49,16 @@ static char *pid_file = NULL;
 static int detach = 1;
 int ser2net_debug = 0;
 int ser2net_debug_level = 0;
+volatile int in_shutdown = 0;
 #ifdef USE_UUCP_LOCKING
 int uucp_locking_enabled = 1;
 #endif
 #ifdef USE_PTHREADS
 int num_threads = 1;
+struct thread_info {
+    pthread_t id;
+};
+struct thread_info *threads;
 #endif
 
 
@@ -155,27 +160,6 @@ make_pidfile(void)
     fclose(fpidfile);
 }
 
-static void
-shutdown_cleanly(void)
-{
-    struct timeval tv;
-
-    free_rotators();
-    /* FIXME - shutdown controller ports */
-    shutdown_ports();
-    do {
-	if (check_ports_shutdown())
-	    break;
-	tv.tv_sec = 1;
-	tv.tv_usec = 0;
-	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
-    } while(1);
-
-    if (pid_file)
-	unlink(pid_file);
-    exit(1);
-}
-
 static int dummyrv; /* Used to ignore return values of read() and write(). */
 
 /* Used to reliably deliver signals to a thread.  This is a pipe that
@@ -214,6 +198,7 @@ static int in_config_read = 0;
 DEFINE_LOCK_INIT(static, maint_lock)
 
 int ser2net_wake_sig = SIGUSR1;
+void (*finish_shutdown)(void);
 
 void
 start_maint_op(void)
@@ -230,6 +215,7 @@ end_maint_op(void)
 static void *
 config_reread_thread(void *dummy)
 {
+    pthread_detach(pthread_self());
     start_maint_op();
     reread_config_file();
     end_maint_op();
@@ -283,7 +269,23 @@ op_loop(void *dummy)
 {
     pthread_t self = pthread_self();
 
-    sel_select_loop(ser2net_sel, wake_thread_send_sig, (long) &self, NULL);
+    while (!in_shutdown)
+	sel_select(ser2net_sel, wake_thread_send_sig, (long) &self, NULL, NULL);
+
+    /* Join the threads only in the first thread.  You cannot join the
+       first thread.  Finish thw shutdown in the first thread. */
+    if (self == threads[0].id) {
+	int i;
+
+	for (i = 0; i < num_threads; i++) {
+	    if (threads[i].id == self)
+		continue;
+	    pthread_join(threads[i].id, NULL);
+	}
+	free(threads);
+
+	finish_shutdown();
+    }
     return NULL;
 }
 
@@ -291,7 +293,6 @@ static void
 start_threads(void)
 {
     int i, rv;
-    pthread_t thread;
     struct sigaction act;
 
     act.sa_handler = wake_thread_sighandler;
@@ -303,12 +304,39 @@ start_threads(void)
 	exit(1);
     }
 
+    threads = malloc(sizeof(*threads) * num_threads);
+    if (!threads) {
+	syslog(LOG_ERR, "Unable to allocate thread info");
+	exit(1);
+    }
+
+    threads[0].id = pthread_self();
+
     for (i = 1; i < num_threads; i++) {
-	rv = pthread_create(&thread, NULL, op_loop, NULL);
+	rv = pthread_create(&threads[i].id, NULL, op_loop, NULL);
 	if (rv) {
 	    syslog(LOG_ERR, "Unable to start thread: %s", strerror(rv));
 	    exit(1);
 	}
+    }
+}
+
+static void
+stop_threads(void (*finish)(void))
+{
+    int i;
+    pthread_t self = pthread_self();
+
+    in_shutdown = 1;
+    finish_shutdown = finish;
+    start_maint_op();
+    /* Make sure we aren't in a reconfig. */
+    end_maint_op();
+
+    for (i = 0; i < num_threads; i++) {
+	if (threads[i].id == self)
+	    continue;
+	pthread_kill(threads[i].id, ser2net_wake_sig);
     }
 }
 
@@ -359,6 +387,7 @@ int ser2net_wake_sig = 0;
 void start_maint_op(void) { }
 void end_maint_op(void) { }
 static void start_threads(void) { }
+static void stop_threads(void (*finish)(void)) { finish(); }
 #define slock_alloc NULL
 #define slock_free NULL
 #define slock_lock NULL
@@ -372,6 +401,41 @@ op_loop(void *dummy)
 #endif /* USE_PTHREADS */
 
 static void
+finish_shutdown_cleanly(void)
+{
+    struct timeval tv;
+
+    sel_clear_fd_handlers(ser2net_sel, sig_fd_watch);
+    free_rotators();
+    free_controllers();
+    shutdown_ports();
+    do {
+	if (check_ports_shutdown())
+	    break;
+	tv.tv_sec = 1;
+	tv.tv_usec = 0;
+	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
+    } while(1);
+
+    sol_shutdown(); /* Free's the selector. */
+
+    free_longstrs();
+    free_tracefiles();
+    free_rs485confs();
+
+    if (pid_file)
+	unlink(pid_file);
+
+    exit(1);
+}
+
+static void
+shutdown_cleanly(void)
+{
+    stop_threads(finish_shutdown_cleanly);
+}
+
+static void
 sig_fd_read_handler(int fd, void *cb_data)
 {
     char dummy[10];
@@ -381,7 +445,7 @@ sig_fd_read_handler(int fd, void *cb_data)
     if (term_prog)
 	shutdown_cleanly();
 
-    if (reread_config) {
+    if (reread_config && !in_shutdown) {
 #if USE_PTHREADS
 	thread_reread_config_file();
 #else

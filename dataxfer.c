@@ -3370,6 +3370,7 @@ shutdown_ports(void)
     while (port != NULL) {
 	port->config_num = -1;
 	next = port->next;
+	change_port_state(NULL, port, PORT_DISABLED);
 	shutdown_port(port, "program shutdown");
 	port = next;
     }

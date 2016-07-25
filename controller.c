@@ -95,7 +95,12 @@ typedef struct controller_info {
 
     /* Data used by the telnet processing. */
     telnet_data_t tn_data;
+
+    void (*shutdown_complete)(void *);
+    void *shutdown_complete_cb_data;
 } controller_info_t;
+
+static waiter_t *controller_shutdown_waiter;
 
 /* List of current control connections. */
 controller_info_t *controllers = NULL;
@@ -121,6 +126,8 @@ shutdown_controller2(controller_info_t *cntlr)
 {
     controller_info_t *prev;
     controller_info_t *curr;
+    void (*shutdown_complete)(void *);
+    void *shutdown_complete_cb_data;
 
     FREE_LOCK(cntlr->lock);
 
@@ -132,6 +139,7 @@ shutdown_controller2(controller_info_t *cntlr)
 
     /* Remove it from the linked list. */
     prev = NULL;
+    LOCK(cntlr_lock);
     curr = controllers;
     while (curr != NULL) {
 	if (cntlr == curr) {
@@ -147,8 +155,15 @@ shutdown_controller2(controller_info_t *cntlr)
 	prev = curr;
 	curr = curr->next;
     }
+    UNLOCK(cntlr_lock);
+
+    shutdown_complete = cntlr->shutdown_complete;
+    shutdown_complete_cb_data = cntlr->shutdown_complete_cb_data;
 
     free(cntlr);
+
+    if (shutdown_complete)
+	shutdown_complete(shutdown_complete_cb_data);
 }
 
 /* Shut down a control connection and remove it from the list of
@@ -156,12 +171,18 @@ shutdown_controller2(controller_info_t *cntlr)
 static void
 shutdown_controller(controller_info_t *cntlr)
 {
+    if (cntlr->in_shutdown) {
+	UNLOCK(cntlr->lock);
+	return;
+    }
+
     if (cntlr->monitor_port_id != NULL) {
 	data_monitor_stop(cntlr, cntlr->monitor_port_id);
 	cntlr->monitor_port_id = NULL;
     }
 
     cntlr->in_shutdown = 1;
+    UNLOCK(cntlr->lock);
 
     sel_clear_fd_handlers(ser2net_sel, cntlr->tcpfd);
     /* The rest is handled in the done callback, which calls
@@ -818,6 +839,12 @@ controller_init(char *controller_port)
 {
     int rv;
 
+    if (!controller_shutdown_waiter) {
+	controller_shutdown_waiter = alloc_waiter();
+	if (!controller_shutdown_waiter)
+	    return ENOMEM;
+    }
+
     rv = scan_tcp_port(controller_port, &cntrl_ai);
     if (rv) {
 	if (rv == EINVAL)
@@ -839,6 +866,7 @@ controller_init(char *controller_port)
     acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL,
 			    &nr_acceptfds, controller_accept_fd_cleared);
     if (acceptfds == NULL) {
+	freeaddrinfo(cntrl_ai);
 	syslog(LOG_ERR, "Unable to create TCP socket: %m");
 	return CONTROLLER_CANT_OPEN_PORT;
     }
@@ -850,12 +878,37 @@ void
 controller_shutdown(void)
 {
     unsigned int i;
-    if (acceptfds != NULL)
+
+    if (acceptfds == NULL)
 	return;
     for (i = 0; i < nr_acceptfds; i++) {
 	sel_clear_fd_handlers(ser2net_sel, acceptfds[i]);
 	wait_for_waiter(accept_waiter);
 	close(acceptfds[i]);
     }
+    free(acceptfds);
+    freeaddrinfo(cntrl_ai);
     acceptfds = NULL;
+}
+
+static void
+shutdown_controller_done(void *cb_data)
+{
+    waiter_t *waiter = cb_data;
+
+    wake_waiter(waiter);
+}
+
+void
+free_controllers(void)
+{
+    controller_shutdown();
+    while (controllers) {
+	controllers->shutdown_complete = shutdown_controller_done;
+	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
+	shutdown_controller(controllers);
+	wait_for_waiter(controller_shutdown_waiter);
+    }
+    free_waiter(controller_shutdown_waiter);
+    free_waiter(accept_waiter);
 }

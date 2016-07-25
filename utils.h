@@ -57,6 +57,13 @@ enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE, CLOSEON, DEVNAME };
 char *find_str(const char *name, enum str_type *type, unsigned int *len);
 
 /*
+ * Clean up longstrings.
+ */
+void free_longstrs(void);
+void free_tracefiles(void);
+void free_rs485confs(void);
+
+/*
  * Search for a tracefile by name.  Note that the
  * returned value needs to be free-ed when done.
  */

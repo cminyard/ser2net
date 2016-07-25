@@ -31,6 +31,9 @@ int controller_init(char *controller_port);
 /* Disable the control port. */
 void controller_shutdown(void);
 
+/* Clean everything up. */
+void free_controllers(void);
+
 struct controller_info;
 
 /* Send some output to a controller port.  The data field is the data

@@ -301,7 +301,7 @@ find_str(const char *name, enum str_type *type, unsigned int *len)
     return NULL;
 }
 
-static void
+void
 free_longstrs(void)
 {
     struct longstr_s *longstr;
@@ -389,7 +389,7 @@ find_tracefile(const char *name)
     return NULL;
 }
 
-static void
+void
 free_tracefiles(void)
 {
     struct tracefile_s *tracefile;
@@ -476,7 +476,7 @@ find_rs485conf(const char *name)
     return NULL;
 }
 
-static void
+void
 free_rs485confs(void)
 {
     struct rs485conf_s *rs485conf;
@@ -488,6 +488,8 @@ free_rs485confs(void)
         free(rs485conf);
     }
 }
+#else
+void free_rs485confs(void) { }
 #endif
 
 static int

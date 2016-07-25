@@ -953,6 +953,13 @@ sol_init(void)
     return 0;
 }
 
+void
+sol_shutdown(void)
+{
+    ipmi_shutdown();
+    os_hnd->free_os_handler(os_hnd);
+}
+
 int
 solcfg_init(struct devio *io, struct absout *eout, const char *instr,
 	    int (*otherconfig)(void *data, struct absout *eout,
