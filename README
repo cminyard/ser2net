@@ -6,6 +6,32 @@ Note that ser2net supports RFC 2217 (remote control of serial port
 parameters), but you must have a compliant client.  The only one I
 know if is kermit (http://www.columbia.edu/kermit).
 
+ser2net supports making connections to IPMI SOL (serial over LAN)
+capable systems.  This way, if you have a system with SOL, you can use
+it with programs that speak sockets and avoid having to run a serial
+cable to the system.  It uses OpenIPMI for this, so you have to know
+how to make an OpenIPMI connection to the remote system.  That can be
+rather complicated, but for a simple example, add a line like:
+
+  3022:telnet:0:sol.lan -U <userid> -P <password> <ipmi BMC IP>:115200
+
+Obviously, use the IPMI BMC userid and password here.  Depending on
+your system there are a lot of other options, and configuration of
+IPMI on the remote system is not for the faint of heart.  And also, if
+you put passwords in the ser2net.conf file, it becomes a security
+issue and you should make it readable only by the user that runs
+ser2net.
+
+ser2net also supports threading.  By default it runs with a single
+thread but you can add '-t <num threads>' and it will spawn the given
+number of threads.  On modern Linux systems it uses epoll to avoid
+the "thundering herd" issue, so it should be quite scalable.  Also,
+it runs reconfigurations in a separate thread to avoid a reconfig
+blocking things up.
+
+If you don't want to compile with threads, you can add
+"--with-pthreads=no" to the configure line.
+
 If you want the opposite of ser2net (you want to connect to a "local"
 serial port device that is really remote) then Cyclades has provided
 a tool for this at http://www.coker.com.au/cyclades.  It is capable
