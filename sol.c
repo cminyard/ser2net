@@ -1005,4 +1005,9 @@ solcfg_init(struct devio *io, struct absout *eout, const char *instr,
     return -ENOSYS;
 }
 
+void
+sol_shutdown(void)
+{
+}
+
 #endif
