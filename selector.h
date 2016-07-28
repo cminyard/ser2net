@@ -44,8 +44,21 @@ struct selector_s;
 typedef struct selector_s selector_t;
 
 /* You have to create a selector before you can use it. */
-int sel_alloc_selector(selector_t **new_selector);
-int sel_alloc_selector2(selector_t **new_selector, int wake_sig);
+
+/* Create a selector for use with threads.  You have to pass in the
+   lock functions and a signal used to wake waiting threads. */
+typedef struct sel_lock_s sel_lock_t;
+int sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
+			      sel_lock_t *(*sel_lock_alloc)(void *cb_data),
+			      void (*sel_lock_free)(sel_lock_t *),
+			      void (*sel_lock)(sel_lock_t *),
+			      void (*sel_unlock)(sel_lock_t *),
+			      void *cb_data);
+
+  /* Create a selector for use in a single-threaded environment.  No
+     need for locks or wakeups.  This just call the above call with
+     NULL for all the values. */
+int sel_alloc_selector_nothread(selector_t **new_selector);
 
 /* Used to destroy a selector. */
 int sel_free_selector(selector_t *new_selector);
@@ -163,12 +176,6 @@ void ipmi_sel_set_read_fds_handler(selector_t                 *sel,
 				   ipmi_sel_check_read_fds_cb handle,
 				   ipmi_sel_check_timeout_cb  timeout,
 				   void                       *cb_data);
-
-/* Set a handler to handle shen signals are sent to the process. */
-typedef void (*t_signal_handler)(void);
-void set_signal_handler(int sig, t_signal_handler handler);
-int sel_setup(void *(*sel_lock_alloc)(void), void (*sel_lock_free)(void *),
-	      void (*sel_lock)(void *), void (*sel_unlock)(void *));
 
 #ifdef __cplusplus
 }

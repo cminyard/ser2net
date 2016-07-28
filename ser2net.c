@@ -340,15 +340,15 @@ stop_threads(void (*finish)(void))
     }
 }
 
-struct plock
+struct sel_lock_s
 {
     pthread_mutex_t lock;
 };
 
-static void *
-slock_alloc(void)
+static sel_lock_t *
+slock_alloc(void *cb_data)
 {
-    struct plock *l;
+    sel_lock_t *l;
 
     l = malloc(sizeof(*l));
     if (!l)
@@ -358,27 +358,21 @@ slock_alloc(void)
 }
 
 static void
-slock_free(void *lock)
+slock_free(sel_lock_t *l)
 {
-    struct plock *l = lock;
-
     pthread_mutex_destroy(&l->lock);
     free(l);
 }
 
 static void
-slock_lock(void *lock)
+slock_lock(sel_lock_t *l)
 {
-    struct plock *l = lock;
-
     pthread_mutex_lock(&l->lock);
 }
 
 static void
-slock_unlock(void *lock)
+slock_unlock(sel_lock_t *l)
 {
-    struct plock *l = lock;
-
     pthread_mutex_unlock(&l->lock);
 }
 
@@ -618,13 +612,9 @@ main(int argc, char *argv[])
 	}
     }
 
-    err = sel_setup(slock_alloc, slock_free, slock_lock, slock_unlock);
-    if (err) {
-	fprintf(stderr,	"Could not setup signal: '%s'\n", strerror(err));
-	return -1;
-    }
-
-    err = sel_alloc_selector2(&ser2net_sel, ser2net_wake_sig);
+    err = sel_alloc_selector_thread(&ser2net_sel, ser2net_wake_sig,
+				    slock_alloc, slock_free,
+				    slock_lock, slock_unlock, NULL);
     if (err) {
 	fprintf(stderr,
 		"Could not initialize ser2net selector: '%s'\n",

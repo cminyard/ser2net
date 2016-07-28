@@ -206,39 +206,38 @@ struct selector_s
 #ifdef HAVE_EPOLL_PWAIT
     int epollfd;
 #endif
+    sel_lock_t *(*sel_lock_alloc)(void *cb_data);
+    void (*sel_lock_free)(sel_lock_t *);
+    void (*sel_lock)(sel_lock_t *);
+    void (*sel_unlock)(sel_lock_t *);
 };
-
-static void *(*sel_lock_alloc)(void);
-static void (*sel_lock_free)(void *lock);
-static void (*sel_lock)(void *lock);
-static void (*sel_unlock)(void *lock);
 
 static void
 sel_timer_lock(selector_t *sel)
 {
-    if (sel_lock)
-	sel_lock(sel->timer_lock);
+    if (sel->sel_lock)
+	sel->sel_lock(sel->timer_lock);
 }
 
 static void
 sel_timer_unlock(selector_t *sel)
 {
-    if (sel_lock)
-	sel_unlock(sel->timer_lock);
+    if (sel->sel_lock)
+	sel->sel_unlock(sel->timer_lock);
 }
 
 static void
 sel_fd_lock(selector_t *sel)
 {
-    if (sel_lock)
-	sel_lock(sel->fd_lock);
+    if (sel->sel_lock)
+	sel->sel_lock(sel->fd_lock);
 }
 
 static void
 sel_fd_unlock(selector_t *sel)
 {
-    if (sel_lock)
-	sel_unlock(sel->fd_lock);
+    if (sel->sel_lock)
+	sel->sel_unlock(sel->fd_lock);
 }
 
 /* This function will wake the SEL thread.  It must be called with the
@@ -1026,7 +1025,12 @@ sel_select_loop(selector_t      *sel,
 
 /* Initialize the select code. */
 int
-sel_alloc_selector2(selector_t **new_selector, int wake_sig)
+sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
+			  sel_lock_t *(*sel_lock_alloc)(void *cb_data),
+			  void (*sel_lock_free)(sel_lock_t *),
+			  void (*sel_lock)(sel_lock_t *),
+			  void (*sel_unlock)(sel_lock_t *),
+			  void *cb_data)
 {
     selector_t *sel;
     unsigned int i;
@@ -1035,6 +1039,11 @@ sel_alloc_selector2(selector_t **new_selector, int wake_sig)
     if (!sel)
 	return ENOMEM;
     memset(sel, 0, sizeof(*sel));
+
+    sel->sel_lock_alloc = sel_lock_alloc;
+    sel->sel_lock_free = sel_lock_free;
+    sel->sel_lock = sel_lock;
+    sel->sel_unlock = sel_unlock;
 
     /* The list is initially empty. */
     sel->wait_list.next = &sel->wait_list;
@@ -1052,15 +1061,15 @@ sel_alloc_selector2(selector_t **new_selector, int wake_sig)
 
     theap_init(&sel->timer_heap);
 
-    if (sel_lock_alloc) {
-	sel->timer_lock = sel_lock_alloc();
+    if (sel->sel_lock_alloc) {
+	sel->timer_lock = sel->sel_lock_alloc(cb_data);
 	if (!sel->timer_lock) {
 	    free(sel);
 	    return ENOMEM;
 	}
-	sel->fd_lock = sel_lock_alloc();
+	sel->fd_lock = sel->sel_lock_alloc(cb_data);
 	if (!sel->fd_lock) {
-	    sel_lock_free(sel->fd_lock);
+	    sel->sel_lock_free(sel->fd_lock);
 	    free(sel);
 	    return ENOMEM;
 	}
@@ -1080,9 +1089,9 @@ sel_alloc_selector2(selector_t **new_selector, int wake_sig)
 	if (rv == -1) {
 	    rv = errno;
 	    close(sel->epollfd);
-	    if (sel_lock_alloc) {
-		sel_lock_free(sel->fd_lock);
-		sel_lock_free(sel->timer_lock);
+	    if (sel->sel_lock_alloc) {
+		sel->sel_lock_free(sel->fd_lock);
+		sel->sel_lock_free(sel->timer_lock);
 	    }
 	    free(sel);
 	    return rv;
@@ -1096,9 +1105,10 @@ sel_alloc_selector2(selector_t **new_selector, int wake_sig)
 }
 
 int
-sel_alloc_selector(selector_t **new_selector)
+sel_alloc_selector_nothread(selector_t **new_selector)
 {
-    return sel_alloc_selector2(new_selector, 0);
+    return sel_alloc_selector_thread(new_selector, 0, NULL, NULL, NULL, NULL,
+				     NULL);
 }
 
 int
@@ -1117,22 +1127,10 @@ sel_free_selector(selector_t *sel)
 	close(sel->epollfd);
 #endif
     if (sel->fd_lock)
-	sel_lock_free(sel->fd_lock);
+	sel->sel_lock_free(sel->fd_lock);
     if (sel->timer_lock)
-	sel_lock_free(sel->timer_lock);
+	sel->sel_lock_free(sel->timer_lock);
     free(sel);
-
-    return 0;
-}
-
-int
-sel_setup(void *(*psel_lock_alloc)(void), void (*psel_lock_free)(void *),
-	  void (*psel_lock)(void *), void (*psel_unlock)(void *))
-{
-    sel_lock_alloc = psel_lock_alloc;
-    sel_lock_free = psel_lock_free;
-    sel_lock = psel_lock;
-    sel_unlock = psel_unlock;
 
     return 0;
 }
