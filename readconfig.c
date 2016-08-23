@@ -33,6 +33,7 @@
 #include "readconfig.h"
 #include "utils.h"
 #include "telnet.h"
+#include "led.h"
 
 #ifdef HAVE_OPENIPMI
 #include <OpenIPMI/ipmi_conn.h>
@@ -899,6 +900,21 @@ handle_config_line(char *inbuf)
 	return;
     }
 
+    if (startswith(inbuf, "LED", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No LED name given on line %d", lineno);
+	    return;
+	}
+	if ((str == NULL) || (strlen(str) == 0)) {
+	    syslog(LOG_ERR, "No LED given on line %d", lineno);
+	    return;
+	}
+	handle_led(name, str, lineno);
+	return;
+    }
+
     comma = strchr(inbuf, ',');
     if (comma) {
 	if (!strtok_r(comma, ":", &strtok_data)) {
@@ -965,6 +981,7 @@ readconfig(char *filename)
 #if HAVE_DECL_TIOCSRS485
     free_rs485confs();
 #endif
+    free_leds();
 
     config_num++;
     free_rotators();

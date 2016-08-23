@@ -18,6 +18,19 @@ then
   AC_HAVE_HEADERS(tcpd.h)
   AC_CHECK_LIB(wrap,main)
 fi
+AC_ARG_WITH(sysfs-led-support,
+ [  --with-sysfs-led-support   Enable LED support (Linux only)],
+ sysfs_led_support_flag="$withval",
+ sysfs_led_support_flag=check)
+if test "x$sysfs_led_support_flag" = "xcheck"; then
+  case "$host_os" in
+    linux*) sysfs_led_support_flag=yes ;;
+    *) sysfs_led_support_flag=no ;;
+  esac
+fi
+if test "x$sysfs_led_support_flag" = "xyes"; then
+  AC_DEFINE(USE_SYSFS_LED_FEATURE)
+fi
 
 AX_HAVE_EPOLL_PWAIT(
    [AX_CONFIG_FEATURE_ENABLE(epoll_pwait)],

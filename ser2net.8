@@ -220,6 +220,10 @@ or
 .IP
 ROTATOR:<TCP port>:<port list>
 .PP
+or
+.IP
+LED:<led-name>:<driver>:<parameters>
+.PP
 
 .SS FIELDS
 .TP
@@ -421,6 +425,12 @@ A space separated list of ports.  When connecting to the given TCP
 port, ser2net will go through the port list until it finds a free one
 and attempt to connect to that port.
 
+.I led-tx=<led-name>
+use the previously defined led to indicate serial tx traffic on this port
+
+.I led-rx=<led-name>
+use the previously defined led to indicate serial rx traffic on this port
+
 .TP
 .I "banner name"
 A name for the banner; this may be used in the options of a port.
@@ -447,6 +457,24 @@ The control port specification as defined by the [\-p] option on the
 command line.  This lets the control port be specified in the configuration
 file.  The command line will override this, and only the first port
 specified is used.
+.TP
+.I "led"
+Define an LED with given name.  At the moment, the only available driver is
+"sysfs" which uses a Linux's LED class device (/sys/class/leds/<device>)
+and configures it for transient LED trigger. It knows about the required
+parameter "device" which specifies which LED class device to use (the
+directory name of the LED below /sys/class/leds). The optional "duration"
+parameter controls the length of the flash pulse in milliseconds and
+defaults to 10. The optional parameter "state" controls whether the LED is
+off/on when the timer is active. It takes 0 or 1 as values and defaults
+to 1.
+See ledtrig-transient.txt in Linux kernel documentation for more details.
+
+The transient trigger must be compiled into the kernel or already loaded
+as kernel module.
+
+Individual TCP ports can refer to this LED and thus trigger flashing
+of this LED when tx/rx traffic is seen.
 
 .PP
 Blank lines and lines starting with `#' are ignored.

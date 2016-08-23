@@ -41,6 +41,7 @@
 #include "selector.h"
 #include "dataxfer.h"
 #include "locking.h"
+#include "led.h"
 
 static char *config_file = "/etc/ser2net.conf";
 int config_port_from_cmdline = 0;
@@ -502,6 +503,11 @@ main(int argc, char *argv[])
 #ifdef USE_PTHREADS
     char *end;
 #endif
+
+    if (led_driver_init() < 0) {
+	fprintf(stderr, "Error while initializing LED drivers\n");
+	exit(1);
+    }
 
     for (i=1; i<argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {

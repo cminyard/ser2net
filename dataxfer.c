@@ -44,6 +44,7 @@
 #include "devio.h"
 #include "buffer.h"
 #include "locking.h"
+#include "led.h"
 
 #define SERIAL "term"
 #define NET    "tcp "
@@ -293,6 +294,12 @@ struct port_info
 #if HAVE_DECL_TIOCSRS485
     struct serial_rs485 *rs485conf;
 #endif
+
+    /*
+     * LED to flash for serial traffic
+     */
+    struct led_s *led_tx;
+    struct led_s *led_rx;
 };
 
 DEFINE_LOCK_INIT(static, ports_lock)
@@ -410,6 +417,9 @@ init_port_data(port_info_t *port)
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");
     port->chardelay_max = find_default_int("chardelay-max");
+
+    port->led_tx = NULL;
+    port->led_rx = NULL;
 }
 
 static void
@@ -728,6 +738,10 @@ handle_dev_fd_read(struct devio *io)
 	/* Do both tracing, ignore errors. */
 	do_trace(port, port->tb, port->dev_to_tcp.buf, count, SERIAL);
 
+    if (port->led_rx) {
+	led_flash(port->led_rx);
+    }
+
     port->dev_bytes_received += count;
 
     if (port->enabled == PORT_TELNET) {
@@ -959,6 +973,9 @@ handle_tcp_fd_read(int fd, void *data)
 	    goto out;
 	}
     } else {
+	if (port->led_tx) {
+	    led_flash(port->led_tx);
+	}
 	port->dev_bytes_sent += count;
 	port->tcp_to_dev.cursize -= count;
 	if (port->tcp_to_dev.cursize != 0) {
@@ -2457,6 +2474,12 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if (strncmp(pos, "tb=", 3) == 0) {
 	/* trace both directions. */
 	port->trace_both.filename = find_tracefile(pos + 3);
+    } else if (strncmp(pos, "led-rx=", 7) == 0) {
+	/* LED for UART RX traffic */
+	port->led_rx = find_led(pos + 7);
+    } else if (strncmp(pos, "led-tx=", 7) == 0) {
+	/* LED for UART TX traffic */
+	port->led_tx = find_led(pos + 7);
 #if HAVE_DECL_TIOCSRS485
     } else if (strncmp(pos, "rs485=", 6) == 0) {
 	/* get RS485 configuration. */
