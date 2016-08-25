@@ -21,6 +21,7 @@
 
 /* This file contains a LED driver for Linux's sysfs based LEDs. */
 
+#ifdef USE_SYSFS_LED_FEATURE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,8 +41,6 @@ struct led_sysfs_s
     int state;
     int duration;
 };
-
-static struct led_driver_s led_sysfs_driver;
 
 static int
 led_is_trigger_missing(const char *led)
@@ -97,7 +96,7 @@ led_write(const char *led, const char *property, const char *buf)
 }
 
 static int
-led_sysfs_init(struct led_s *led, char *parameters)
+led_sysfs_init(struct led_s *led, char *parameters, int lineno)
 {
     struct led_sysfs_s *drv_data = NULL;
     char *str1, *str2, *token, *subtoken;
@@ -107,7 +106,9 @@ led_sysfs_init(struct led_s *led, char *parameters)
 
     drv_data = calloc(1, sizeof(*drv_data));
     if (!drv_data) {
-	syslog(LOG_ERR, "LED driver '%s': LED: %s: Out of memory.", led_sysfs_driver.name, led->name);
+	syslog(LOG_ERR,
+	       "Out of memory handling LED %s on line %d.",
+	       led->name, lineno);
 	return -1;
     }
 
@@ -139,7 +140,9 @@ led_sysfs_init(struct led_s *led, char *parameters)
 
 		    drv_data->device = strdup(value);
 		    if (!drv_data->device) {
-			syslog(LOG_ERR, "LED driver '%s': Out of memory handling LED '%s'.", led_sysfs_driver.name, led->name);
+			syslog(LOG_ERR,
+			       "Out of memory handling LED '%s' on line %d.",
+			       led->name, lineno);
 			return -1;
 		    }
 		}
@@ -154,12 +157,16 @@ led_sysfs_init(struct led_s *led, char *parameters)
     }
 
     if (!drv_data->device) {
-	syslog(LOG_ERR, "LED driver '%s': LED '%s': parameter 'device' is required, but missing.", led_sysfs_driver.name, led->name);
+	syslog(LOG_ERR,
+	       "LED '%s': parameter 'device' required, but missing on line %d.",
+	       led->name, lineno);
 	return -1;
     }
 
     if (drv_data->duration < 0) {
-	syslog(LOG_ERR, "LED driver '%s': LED '%s': invalid duration given, using default.", led_sysfs_driver.name, led->name);
+	syslog(LOG_ERR,
+	       "LED '%s': invalid duration, using default on line %d.",
+	       led->name, lineno);
 	drv_data->duration = 10;
     }
     if (drv_data->duration == 0)
@@ -169,7 +176,9 @@ led_sysfs_init(struct led_s *led, char *parameters)
     if (drv_data->state == -1)
 	drv_data->state = 1;
     if (drv_data->state < 0 || drv_data->state > 1) {
-	syslog(LOG_ERR, "LED driver '%s': LED '%s': invalid state given, using default.", led_sysfs_driver.name, led->name);
+	syslog(LOG_ERR,
+	       "LED '%s': invalid state, using default on line %d.",
+	       led->name, lineno);
 	drv_data->state = 1;
     }
 
@@ -257,3 +266,10 @@ led_sysfs_register(void)
 {
     return led_driver_register(&led_sysfs_driver);
 }
+#else
+int
+led_sysfs_register(void)
+{
+    return 0;
+}
+#endif

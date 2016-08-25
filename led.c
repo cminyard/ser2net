@@ -69,11 +69,26 @@ led_driver_register(struct led_driver_s *led_driver)
 }
 
 void
-handle_led(char *name, char *cfg, int lineno)
+handle_led(const char *name, char *cfg, int lineno)
 {
-#if USE_SYSFS_LED_FEATURE
+    struct led_driver_s *driver;
     struct led_s *new_led;
     char *delim;
+
+    delim = strchr(cfg, ':');
+    if (!delim) {
+	syslog(LOG_ERR, "Couldn't parse LED definition for '%s' on %d",
+	       name, lineno);
+	return;
+    }
+    *delim++ = '\0';
+
+    driver = led_driver_by_name(cfg);
+    if (!driver) {
+	syslog(LOG_ERR, "Unknown LED driver '%s' for LED '%s' on %d",
+	       cfg, name, lineno);
+	return;
+    }
 
     new_led = calloc(1, sizeof(*new_led));
     if (!new_led) {
@@ -88,25 +103,9 @@ handle_led(char *name, char *cfg, int lineno)
 	return;
     }
 
-    delim = strchr(cfg, ':');
-    if (!delim) {
-	syslog(LOG_ERR, "Couldn't parse LED definition for '%s' on %d", name, lineno);
-	free(new_led->name);
-	free(new_led);
-	return;
-    }
+    new_led->driver = driver;
 
-    *delim++ = '\0';
-
-    new_led->driver = led_driver_by_name(cfg);
-    if (!new_led->driver) {
-	syslog(LOG_ERR, "Unknown LED driver '%s' for LED '%s' on %d", cfg, name, lineno);
-	free(new_led->name);
-	free(new_led);
-	return;
-    }
-
-    if (new_led->driver->init(new_led, delim) < 0) {
+    if (new_led->driver->init(new_led, delim, lineno) < 0) {
 	/* errors should be reported by driver itself */
 	free(new_led->name);
 	free(new_led);
@@ -115,7 +114,10 @@ handle_led(char *name, char *cfg, int lineno)
 
     if (new_led->driver->configure) {
 	if (new_led->driver->configure(new_led->drv_data) < 0) {
-	    /* errors should be reported by driver itself; however, we cleanup here */
+	    /*
+	     * errors should be reported by driver itself; however, we
+	     * cleanup here
+	     */
 	    if (new_led->driver->free)
 		new_led->driver->free(new_led);
 
@@ -127,10 +129,6 @@ handle_led(char *name, char *cfg, int lineno)
 
     new_led->next = leds;
     leds = new_led;
-#else
-    syslog(LOG_ERR, "Compiled without LED support, ignoring definition on line %d", lineno);
-    return;
-#endif
 }
 
 struct led_s *

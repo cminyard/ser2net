@@ -34,14 +34,22 @@ struct led_s
 
 struct led_driver_s {
     struct led_driver_s *next;
-    char *name;
+    const char *name;
 
-    int (*init)(struct led_s *led, char *config); /* required: parse the parameters from config file */
-    int (*free)(struct led_s *led);               /* optional, but required when drv_data is malloced in init */
+    /* required: parse the parameters from config file */
+    int (*init)(struct led_s *led, char *config, int lineno);
 
-    int (*configure)(void *drv_data);    /* optional: called once during initialization, prepares the LED */
-    int (*flash)(void *drv_data);        /* required: called when data transfer should be signaled */
-    int (*deconfigure)(void *drv_data);  /* optional: called during deinitialization, could e.g. switch the LED off */
+    /* optional, but required when drv_data is malloced in init */
+    int (*free)(struct led_s *led);
+
+    /* optional: called once during initialization, prepares the LED */
+    int (*configure)(void *drv_data);
+
+    /* required: called when data transfer should be signaled */
+    int (*flash)(void *drv_data);
+
+    /* optional: called during deinitialization, could switch the LED off */
+    int (*deconfigure)(void *drv_data);
 };
 
 /* Initializes and registers all LED drivers */
@@ -51,7 +59,7 @@ int led_driver_init(void);
 int led_driver_register(struct led_driver_s *led_driver);
 
 /* Handle an LED config line */
-void handle_led(char *name, char *cfg, int lineno);
+void handle_led(const char *name, char *cfg, int lineno);
 
 /* Search for a LED by name */
 struct led_s *find_led(const char *name);

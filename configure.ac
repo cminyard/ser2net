@@ -18,6 +18,7 @@ then
   AC_HAVE_HEADERS(tcpd.h)
   AC_CHECK_LIB(wrap,main)
 fi
+
 AC_ARG_WITH(sysfs-led-support,
  [  --with-sysfs-led-support   Enable LED support (Linux only)],
  sysfs_led_support_flag="$withval",
