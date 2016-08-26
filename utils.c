@@ -474,6 +474,7 @@ waiter_t *alloc_waiter(void)
 
 void free_waiter(waiter_t *waiter)
 {
+    assert(waiter);
     assert(waiter->set == 0);
     pthread_mutex_destroy(&waiter->lock);
     pthread_cond_destroy(&waiter->cond);
@@ -513,6 +514,7 @@ waiter_t *alloc_waiter(void)
 
 void free_waiter(waiter_t *waiter)
 {
+    assert(waiter);
     assert(waiter->set == 0);
     free(waiter);
 }

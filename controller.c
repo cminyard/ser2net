@@ -909,6 +909,8 @@ free_controllers(void)
 	shutdown_controller(controllers);
 	wait_for_waiter(controller_shutdown_waiter);
     }
-    free_waiter(controller_shutdown_waiter);
-    free_waiter(accept_waiter);
+    if (controller_shutdown_waiter)
+	free_waiter(controller_shutdown_waiter);
+    if (accept_waiter)
+	free_waiter(accept_waiter);
 }
