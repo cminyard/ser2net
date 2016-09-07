@@ -2424,13 +2424,41 @@ isallzero(char *str)
     return *str == '\0';
 }
 
+static int cmpstrval(const char *s, const char *prefix, unsigned int *end)
+{
+    int len = strlen(prefix);
+
+    if (strncmp(s, prefix, len))
+	return 0;
+    *end = len;
+    return 1;
+}
+
+static int cmpstrint(const char *s, const char *prefix, int *val,
+		     struct absout *eout)
+{
+    unsigned int end;
+    char *endpos;
+
+    if (!cmpstrval(s, prefix, &end))
+	return 0;
+
+    *val = strtoul(s + end, &endpos, 10);
+    if (endpos == s + end || *endpos != '\0') {
+	eout->out(eout, "Invalid number for %s: %s\n", prefix, s + end);
+	return -1;
+    }
+    return 1;
+}
+
 static int
 myconfig(void *data, struct absout *eout, const char *pos)
 {
     port_info_t *port = data;
     enum str_type stype;
-    char *s, *endpos;
-    unsigned int len;
+    char *s;
+    unsigned int len, end;
+    int rv, val;
 
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = 1;
@@ -2468,25 +2496,25 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if (strcmp(pos, "tb-timestamp") == 0 ||
 	       strcmp(pos, "-tb-timestamp") == 0) {
 	port->trace_both.timestamp = (*pos != '-');
-    } else if (strncmp(pos, "tr=", 3) == 0) {
+    } else if (cmpstrval(pos, "tr=", &end)) {
 	/* trace read, data from the port to the socket */
-	port->trace_read.filename = find_tracefile(pos + 3);
-    } else if (strncmp(pos, "tw=", 3) == 0) {
+	port->trace_read.filename = find_tracefile(pos + end);
+    } else if (cmpstrval(pos, "tw=", &end)) {
 	/* trace write, data from the socket to the port */
-	port->trace_write.filename = find_tracefile(pos + 3);
-    } else if (strncmp(pos, "tb=", 3) == 0) {
+	port->trace_write.filename = find_tracefile(pos + end);
+    } else if (cmpstrval(pos, "tb=", &end)) {
 	/* trace both directions. */
-	port->trace_both.filename = find_tracefile(pos + 3);
-    } else if (strncmp(pos, "led-rx=", 7) == 0) {
+	port->trace_both.filename = find_tracefile(pos + end);
+    } else if (cmpstrval(pos, "led-rx=", &end)) {
 	/* LED for UART RX traffic */
-	port->led_rx = find_led(pos + 7);
-    } else if (strncmp(pos, "led-tx=", 7) == 0) {
+	port->led_rx = find_led(pos + end);
+    } else if (cmpstrval(pos, "led-tx=", &end)) {
 	/* LED for UART TX traffic */
-	port->led_tx = find_led(pos + 7);
+	port->led_tx = find_led(pos + end);
 #if HAVE_DECL_TIOCSRS485
-    } else if (strncmp(pos, "rs485=", 6) == 0) {
+    } else if (cmpstrval(pos, "rs485=", &end)) {
 	/* get RS485 configuration. */
-	port->rs485conf = find_rs485conf(pos + 6);
+	port->rs485conf = find_rs485conf(pos + end);
 #endif
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
@@ -2496,41 +2524,26 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	port->enable_chardelay = true;
     } else if (strcmp(pos, "-chardelay") == 0) {
 	port->enable_chardelay = false;
-    } else if (strncmp(pos, "chardelay-scale=", 16) == 0) {
-	port->chardelay_scale = strtoul(pos + 16, &endpos, 10);
-	if (endpos == pos + 16 || *endpos != '\0') {
-	    eout->out(eout, "Invalid number for chardelay-scale: %s\n",
-		      pos + 16);
+    } else if ((rv = cmpstrint(pos, "chardelay-scale=", &val, eout))) {
+	if (rv == -1)
 	    return -1;
-	}
-    } else if (strncmp(pos, "chardelay-min=", 14) == 0) {
-	port->chardelay_min = strtoul(pos + 14, &endpos, 10);
-	if (endpos == pos + 14 || *endpos != '\0') {
-	    eout->out(eout, "Invalid number for chardelay-min: %s\n",
-		      pos + 14);
+	port->chardelay_scale = val;
+    } else if ((rv = cmpstrint(pos, "chardelay-min=", &val, eout))) {
+	if (rv == -1)
 	    return -1;
-	}
-    } else if (strncmp(pos, "chardelay-max=", 14) == 0) {
-	port->chardelay_max = strtoul(pos + 14, &endpos, 10);
-	if (endpos == pos + 14 || *endpos != '\0') {
-	    eout->out(eout, "Invalid number for chardelay-max: %s\n",
-		      pos + 14);
+	port->chardelay_min = val;
+    } else if ((rv = cmpstrint(pos, "chardelay-max=", &val, eout))) {
+	if (rv == -1)
 	    return -1;
-	}
-    } else if (strncmp(pos, "dev-to-tcp-bufsize=", 19) == 0) {
-	port->dev_to_tcp_bufsize = strtoul(pos + 19, &endpos, 10);
-	if (endpos == pos + 14 || *endpos != '\0') {
-	    eout->out(eout, "Invalid number for dev-to-tcp-bufsize: %s\n",
-		      pos + 14);
+	port->chardelay_max = val;
+    } else if ((rv = cmpstrint(pos, "dev-to-tcp-bufsize=", &val, eout))) {
+	if (rv == -1)
 	    return -1;
-	}
-    } else if (strncmp(pos, "tcp-to-dev-bufsize=", 19) == 0) {
-	port->tcp_to_dev_bufsize = strtoul(pos + 19, &endpos, 10);
-	if (endpos == pos + 14 || *endpos != '\0') {
-	    eout->out(eout, "Invalid number for tcp-to-dev-bufsize: %s\n",
-		      pos + 14);
+	port->dev_to_tcp_bufsize = val;
+    } else if ((rv = cmpstrint(pos, "tcp-to-dev-bufsize=", &val, eout))) {
+	if (rv == -1)
 	    return -1;
-	}
+	port->tcp_to_dev_bufsize = val;
     } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
