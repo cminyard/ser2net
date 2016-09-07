@@ -42,6 +42,8 @@
 
 #define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
 
+#define PORT_BUFSIZE	64	/* Default data transfer buffer size */
+
 extern char *config_port;
 
 static int config_num = 0;
@@ -641,6 +643,10 @@ struct default_data defaults[] = {
 					.def.intval = 1000 },
     { "chardelay-max",	DEFAULT_INT,	.min=1, .max=100000,
 					.def.intval = 20000 },
+    { "dev-to-tcp-bufsize", DEFAULT_INT,.min=1, .max=65536,
+					.def.intval = PORT_BUFSIZE },
+    { "tcp-to-dev-bufsize", DEFAULT_INT,.min=1, .max=65536,
+					.def.intval = PORT_BUFSIZE },
 #ifdef HAVE_OPENIPMI
     /* SOL only */
     { "authenticated",	DEFAULT_BOOL,	.def.intval = 1 },

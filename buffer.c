@@ -135,11 +135,19 @@ buffer_outchar(struct sbuf *buf, unsigned char data)
     return 0;
 }
 
-void
+int
 buffer_init(struct sbuf *buf, unsigned char *data, unsigned int datasize)
 {
-    buf->buf = data;
+    if (data) {
+	buf->buf = data;
+    } else {
+	buf->buf = malloc(datasize);
+	if (!buf->buf)
+	    return ENOMEM;
+    }
     buf->maxsize = datasize;
     buf->cursize = 0;
     buf->pos = 0;
+
+    return 0;
 }

@@ -74,8 +74,6 @@ char *state_str[] = { "unconnected", "waiting input", "waiting output",
 #define PORT_TELNET		3 /* Port will do telnet negotiation. */
 char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
 
-#define PORT_BUFSIZE	64
-
 typedef struct trace_info_s
 {
     int  hexdump;     /* output each block as a hexdump */
@@ -185,10 +183,8 @@ struct port_info
     int            tcp_to_dev_state;		/* State of transferring
 						   data from the TCP port
                                                    to the device. */
+    int            tcp_to_dev_bufsize;
     struct sbuf    tcp_to_dev;			/* Buffer struct for
-						   TCP to device
-						   transfers. */
-    unsigned char  tcp_to_devbuf[PORT_BUFSIZE]; /* Buffer used for
 						   TCP to device
 						   transfers. */
     struct controller_info *tcp_monitor; /* If non-null, send any input
@@ -201,10 +197,8 @@ struct port_info
     int            dev_to_tcp_state;		/* State of transferring
 						   data from the device to
                                                    the TCP port. */
+    int            dev_to_tcp_bufsize;
     struct sbuf    dev_to_tcp;			/* Buffer struct for
-						   device to TCP
-						   transfers. */
-    unsigned char  dev_to_tcpbuf[PORT_BUFSIZE]; /* Buffer used for
 						   device to TCP
 						   transfers. */
     struct controller_info *dev_monitor; /* If non-null, send any input
@@ -391,18 +385,14 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
     return rv;
 }
 
-static void
+static int
 init_port_data(port_info_t *port)
 {
     port->enabled = PORT_DISABLED;
     port->tcpfd = -1;
     
     port->tcp_to_dev_state = PORT_UNCONNECTED;
-    buffer_init(&port->tcp_to_dev, port->tcp_to_devbuf,
-		sizeof(port->tcp_to_devbuf));
     port->dev_to_tcp_state = PORT_UNCONNECTED;
-    buffer_init(&port->dev_to_tcp, port->dev_to_tcpbuf,
-		sizeof(port->dev_to_tcpbuf));
     port->trace_read.fd = -1;
     port->trace_write.fd = -1;
     port->trace_both.fd = -1;
@@ -417,9 +407,18 @@ init_port_data(port_info_t *port)
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");
     port->chardelay_max = find_default_int("chardelay-max");
+    port->dev_to_tcp_bufsize = find_default_int("dev-to-tcp-bufsize");
+    port->tcp_to_dev_bufsize = find_default_int("tcp-to-dev-bufsize");
+
+    if (buffer_init(&port->tcp_to_dev, NULL, port->tcp_to_dev_bufsize))
+	return ENOMEM;
+    if (buffer_init(&port->dev_to_tcp, NULL, port->dev_to_tcp_bufsize))
+	return ENOMEM;
 
     port->led_tx = NULL;
     port->led_rx = NULL;
+
+    return 0;
 }
 
 static void
@@ -2114,6 +2113,10 @@ static void
 free_port(port_info_t *port)
 {
     FREE_LOCK(port->lock);
+    if (port->dev_to_tcp.buf)
+	free(port->dev_to_tcp.buf);
+    if (port->tcp_to_dev.buf)
+	free(port->tcp_to_dev.buf);
     if (port->timer)
 	sel_free_timer(port->timer);
     if (port->send_timer)
@@ -2511,6 +2514,20 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	port->chardelay_max = strtoul(pos + 14, &endpos, 10);
 	if (endpos == pos + 14 || *endpos != '\0') {
 	    eout->out(eout, "Invalid number for chardelay-max: %s\n",
+		      pos + 14);
+	    return -1;
+	}
+    } else if (strncmp(pos, "dev-to-tcp-bufsize=", 19) == 0) {
+	port->dev_to_tcp_bufsize = strtoul(pos + 19, &endpos, 10);
+	if (endpos == pos + 14 || *endpos != '\0') {
+	    eout->out(eout, "Invalid number for dev-to-tcp-bufsize: %s\n",
+		      pos + 14);
+	    return -1;
+	}
+    } else if (strncmp(pos, "tcp-to-dev-bufsize=", 19) == 0) {
+	port->tcp_to_dev_bufsize = strtoul(pos + 19, &endpos, 10);
+	if (endpos == pos + 14 || *endpos != '\0') {
+	    eout->out(eout, "Invalid number for tcp-to-dev-bufsize: %s\n",
 		      pos + 14);
 	    return -1;
 	}

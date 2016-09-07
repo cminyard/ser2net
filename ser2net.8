@@ -382,6 +382,14 @@ sets the maximum delay that ser2net will wait, in microseconds, before
 sending the data.  The default value is 20000.  This keeps the connection
 working smoothly at slow speeds.
 
+.I dev-to-tcp-bufsize=<number>
+sets the size of the buffer reading from the serial device and writing
+to the tcp port.
+
+.I tcp-to-dev-bufsize=<number>
+sets the size of the buffer reading from the tcp port and writing to the
+serial device.
+
 .I [-]authenticated
 enable (-disable) authentication on the link. (SOL only)
 
