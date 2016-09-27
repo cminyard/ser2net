@@ -93,6 +93,8 @@ if test "x$HAVE_OPENIPMI" != "xno"; then
    AC_DEFINE(HAVE_OPENIPMI)
 fi
 
+LIBS="$LIBS -lrt"
+
 # Handle RS485 support
 AC_CHECK_DECLS([TIOCSRS485], [], [], [[#include <sys/ioctl.h>]])
 
