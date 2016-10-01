@@ -753,7 +753,7 @@ handle_new_default(const char *name, const char *str)
 void
 handle_config_line(char *inbuf)
 {
-    char *portnum, *state, *timeout, *devname, *devcfg, *comma;
+    char *portnum, *state, *timeout, *devname, *devcfg;
     char *strtok_data = NULL;
 
     lineno++;
@@ -921,19 +921,10 @@ handle_config_line(char *inbuf)
 	return;
     }
 
-    comma = strchr(inbuf, ',');
-    if (comma) {
-	if (!strtok_r(comma, ":", &strtok_data)) {
-	    syslog(LOG_ERR, "Invalid port on line %d", lineno);
-	    return;
-	}
-	portnum = inbuf;
-    } else {
-	portnum = strtok_r(inbuf, ":", &strtok_data);
-	if (portnum == NULL) {
-	    /* An empty line is ok. */
-	    return;
-	}
+    portnum = strtok_r(inbuf, ":", &strtok_data);
+    if (portnum == NULL) {
+	/* An empty line is ok. */
+	return;
     }
 
     state = strtok_r(NULL, ":", &strtok_data);
