@@ -98,6 +98,10 @@ typedef struct tcp_con_info {
 
     struct sbuf *banner;		/* Outgoing banner */
 
+    unsigned int tcp_write_pos;		/* Our current position in the
+					   output buffer where we need
+					   to start writing next. */
+
     int (*tcp_write_handler)(port_info_t *);
 
     /* Data for the telnet processing */
@@ -633,11 +637,10 @@ handle_tcp_send(port_info_t *port)
 	}
     } else {
 	port->tcpcon->tcp_bytes_sent += count;
-	port->dev_to_tcp.cursize -= count;
-	if (port->dev_to_tcp.cursize != 0) {
+	if (port->dev_to_tcp.cursize != count) {
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
-	    port->dev_to_tcp.pos = count;
+	    port->tcpcon->tcp_write_pos = count;
 	    port->io.f->read_handler_enable(&port->io, 0);
 	    sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
 				     SEL_FD_HANDLER_ENABLED);
@@ -645,6 +648,8 @@ handle_tcp_send(port_info_t *port)
 	} else if (port->close_on_output_done) {
 	    shutdown_port(port, "closeon sequence found");
 	    port->close_on_output_done = false;
+	} else {
+	    port->dev_to_tcp.cursize = 0;
 	}
     }
 
@@ -684,7 +689,6 @@ handle_dev_fd_read(struct devio *io)
 
     LOCK(port->lock);
     curend = port->dev_to_tcp.cursize;
-    port->dev_to_tcp.pos = 0;
     if (port->enabled == PORT_TELNET) {
 	/* Leave room for IACs. */
 	count = port->io.f->read(&port->io, port->dev_to_tcp.buf + curend,
@@ -1014,7 +1018,7 @@ handle_tcp_fd_read(int fd, void *data)
    if a write fails to complete, it is deactivated as soon as writing
    is available again.  Returns 1 if it freed the lock, 0 otherwise.*/
 static int
-tcp_fd_write(port_info_t *port, struct sbuf *buf)
+tcp_fd_write(port_info_t *port, struct sbuf *buf, unsigned int *pos)
 {
     telnet_data_t *td = &port->tcpcon->tn_data;
     int buferr, reterr;
@@ -1043,9 +1047,9 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 	}
     }
 
-    reterr = buffer_write(port->tcpcon->tcpfd, buf, &buferr);
+    reterr = write(port->tcpcon->tcpfd, buf->buf + *pos, buf->cursize - *pos);
     if (reterr == -1) {
-	if (buferr == EPIPE) {
+	if (errno == EPIPE) {
 	    shutdown_port(port, "EPIPE");
 	} else {
 	    /* Some other bad error. */
@@ -1055,8 +1059,9 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 	}
 	return 1;
     }
+    *pos += reterr;
 
-    if (buffer_cursize(buf) == 0) {
+    if (*pos >= port->dev_to_tcp.cursize) {
 	/* Start telnet data write when the data write is done. */
 	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	    port->tcpcon->sending_tn_data = true;
@@ -1064,6 +1069,7 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 	}
 
 	/* We are done writing, turn the reader back on. */
+	*pos = 0;
 	port->io.f->read_handler_enable(&port->io, 1);
 	sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
 				 SEL_FD_HANDLER_DISABLED);
@@ -1086,7 +1092,7 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 static int
 handle_tcp_fd_write(port_info_t *port)
 {
-    return tcp_fd_write(port, &port->dev_to_tcp);
+    return tcp_fd_write(port, &port->dev_to_tcp, &port->tcpcon->tcp_write_pos);
 }
 
 static void
@@ -1155,7 +1161,7 @@ static void port_tcp_fd_cleared(int fd, void *cb_data);
 static int
 handle_tcp_fd_banner_write(port_info_t *port)
 {
-    if (!tcp_fd_write(port, port->tcpcon->banner)) {
+    if (!tcp_fd_write(port, port->tcpcon->banner, &port->tcpcon->banner->pos)) {
 	if (buffer_cursize(port->tcpcon->banner) == 0) {
 	    port->tcpcon->tcp_write_handler = handle_tcp_fd_write;
 	    free(port->tcpcon->banner->buf);
