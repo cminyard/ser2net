@@ -83,8 +83,14 @@ typedef struct trace_info_s
 } trace_info_t;
 
 typedef struct port_info port_info_t;
+typedef struct tcp_con_info tcp_con_info_t;
 
-typedef struct tcp_con_info {
+struct tcp_con_info {
+    port_info_t	   *port;		/* My port. */
+
+    bool	   closing;		/* Is the connection in the process
+					   of closing? */
+
     int            tcpfd;		/* When connected, the file
                                            descriptor for the TCP
                                            port used for I/O. */
@@ -101,13 +107,19 @@ typedef struct tcp_con_info {
     unsigned int tcp_write_pos;		/* Our current position in the
 					   output buffer where we need
 					   to start writing next. */
+    bool data_to_write;			/* There is data to write on
+					   this tcp port. */
 
-    int (*tcp_write_handler)(port_info_t *);
+    int (*tcp_write_handler)(port_info_t *, tcp_con_info_t *);
 
     /* Data for the telnet processing */
     telnet_data_t tn_data;
     bool sending_tn_data; /* Are we sending tn data at the moment? */
-} tcp_con_info_t;
+
+    int            timeout_left;	/* The amount of time left (in
+					   seconds) before the timeout
+					   goes off. */
+};
 
 struct port_info
 {
@@ -130,10 +142,6 @@ struct port_info
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
 					   we shut the port down. */
-
-    int            timeout_left;	/* The amount of time left (in
-					   seconds) before the timeout
-					   goes off. */
 
     sel_timer_t *timer;			/* Used to timeout when the no
 					   I/O has been seen for a
@@ -187,7 +195,7 @@ struct port_info
     unsigned int   nr_acceptfds;
     waiter_t       *accept_waiter;      /* Wait for accept changes. */
 
-    tcp_con_info_t *tcpcon;
+    tcp_con_info_t *tcpcons;
 
     unsigned int dev_bytes_received;    /* Number of bytes read from the
 					   device. */
@@ -308,9 +316,17 @@ struct port_info
     struct led_s *led_rx;
 };
 
+#define MAX_CONNECTIONS 1
+
+#define for_each_connection(port, tcpcon) \
+    for (tcpcon = port->tcpcons;				\
+	 tcpcon < &(port->tcpcons[MAX_CONNECTIONS]);		\
+	 tcpcon++)
+
 DEFINE_LOCK_INIT(static, ports_lock)
 port_info_t *ports = NULL; /* Linked list of ports. */
 
+static int shutdown_one_tcp(tcp_con_info_t *tcpcon, char *reason);
 static void shutdown_port(port_info_t *port, char *reason);
 static void finish_shutdown_port(sel_runner_t *runner, void *cb_data);
 
@@ -398,10 +414,38 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
 }
 
 static int
+num_connected_tcp(port_info_t *port, bool include_closing)
+{
+    tcp_con_info_t *tcpcon;
+    int count = 0;
+
+    for_each_connection(port, tcpcon) {
+	if (!include_closing && tcpcon->closing)
+	    continue;
+	if (tcpcon->tcpfd != -1)
+	    count++;
+    }
+
+    return count;
+}
+
+static tcp_con_info_t *
+first_live_tcp_con(port_info_t *port)
+{
+    tcp_con_info_t *tcpcon;
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd != -1)
+	    return tcpcon;
+    }
+
+    return NULL;
+}
+
+static int
 init_port_data(port_info_t *port)
 {
     port->enabled = PORT_DISABLED;
-    port->tcpcon->tcpfd = -1;
 
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
@@ -434,9 +478,9 @@ init_port_data(port_info_t *port)
 }
 
 static void
-reset_timer(port_info_t *port)
+reset_timer(tcp_con_info_t *tcpcon)
 {
-    port->timeout_left = port->timeout;
+    tcpcon->timeout_left = tcpcon->port->timeout;
 }
 
 
@@ -565,7 +609,7 @@ hf_out(port_info_t *port, char *buf, int len)
 }
 
 static void
-header_trace(port_info_t *port)
+header_trace(port_info_t *port, tcp_con_info_t *tcpcon)
 {
     static char buf[1024];
     static trace_info_t tr = { 1, 1, NULL, -1 };
@@ -574,8 +618,8 @@ header_trace(port_info_t *port)
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    getnameinfo((struct sockaddr *) &(port->tcpcon->remote),
-		sizeof(port->tcpcon->remote), buf + len, sizeof(buf) - len,
+    getnameinfo((struct sockaddr *) &(tcpcon->remote),
+		sizeof(tcpcon->remote), buf + len, sizeof(buf) - len,
 		portstr, sizeof(portstr), NI_NUMERICHOST);
     len += strlen(buf + len);
     if ((sizeof(buf) - len) > 2) {
@@ -602,15 +646,31 @@ footer_trace(port_info_t *port, char *reason)
     hf_out(port, buf, len);
 }
 
+static bool
+any_tcp_data_to_write(port_info_t *port)
+{
+    tcp_con_info_t *tcpcon;
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->data_to_write)
+	    return true;
+    }
+    return false;
+}
+
 /* Returns 0 on success or non-fatal failure (with the lock still
    locked) or -1 on fatal failure (with the lock unlocked) */
 static int
-handle_tcp_send(port_info_t *port)
+handle_tcp_send_one(port_info_t *port, tcp_con_info_t *tcpcon)
 {
-    int count;
+    int count = 0;
+
+    if (tcpcon->sending_tn_data)
+	/* We are sending telnet data, stop the reader for now. */
+	goto no_send;
 
  retry_write:
-    count = write(port->tcpcon->tcpfd, port->dev_to_tcp.buf,
+    count = write(tcpcon->tcpfd, port->dev_to_tcp.buf,
 		  port->dev_to_tcp.cursize);
     if (count == -1) {
 	if (errno == EINTR) {
@@ -622,36 +682,53 @@ handle_tcp_send(port_info_t *port)
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
 	    port->io.f->read_handler_enable(&port->io, 0);
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+	    sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 				     SEL_FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else if (errno == EPIPE) {
-	    shutdown_port(port, "EPIPE");
-	    return -1;
+	    return shutdown_one_tcp(tcpcon, "EPIPE");
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		   port->portname);
-	    shutdown_port(port, "tcp write error");
-	    return -1;
+	    return shutdown_one_tcp(tcpcon, "tcp write error");
 	}
     } else {
-	port->tcpcon->tcp_bytes_sent += count;
+	tcpcon->tcp_bytes_sent += count;
 	if (port->dev_to_tcp.cursize != count) {
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
-	    port->tcpcon->tcp_write_pos = count;
+	no_send:
+	    tcpcon->tcp_write_pos = count;
+	    tcpcon->data_to_write = true;
 	    port->io.f->read_handler_enable(&port->io, 0);
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+	    sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 				     SEL_FD_HANDLER_ENABLED);
 	    port->dev_to_tcp_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else if (port->close_on_output_done) {
-	    shutdown_port(port, "closeon sequence found");
-	    port->close_on_output_done = false;
-	} else {
-	    port->dev_to_tcp.cursize = 0;
+	    return shutdown_one_tcp(tcpcon, "closeon sequence found");
 	}
     }
+
+    reset_timer(tcpcon);
+    return 0;
+}
+
+/* Returns 0 on success or non-fatal failure (with the lock still
+   locked) or -1 on fatal failure (with the lock unlocked) */
+static int
+handle_tcp_send(port_info_t *port)
+{
+    tcp_con_info_t *tcpcon;
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd == -1)
+	    continue;
+	if (handle_tcp_send_one(port, tcpcon))
+	    return -1;
+    }
+    if (!any_tcp_data_to_write(port))
+	port->dev_to_tcp.cursize = 0;
 
     return 0;
 }
@@ -676,6 +753,30 @@ send_timeout(selector_t  *sel,
 	    UNLOCK(port->lock);
     }
     UNLOCK(port->lock);
+}
+
+static void
+disable_all_tcp_read(port_info_t *port)
+{
+    tcp_con_info_t *tcpcon;
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd != -1)
+	    sel_set_fd_read_handler(ser2net_sel, tcpcon->tcpfd,
+				    SEL_FD_HANDLER_DISABLED);
+    }
+}
+
+static void
+enable_all_tcp_read(port_info_t *port)
+{
+    tcp_con_info_t *tcpcon;
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd != -1)
+	    sel_set_fd_read_handler(ser2net_sel, tcpcon->tcpfd,
+				    SEL_FD_HANDLER_ENABLED);
+    }
 }
 
 /* Data is ready to read on the serial port. */
@@ -781,9 +882,7 @@ handle_dev_fd_read(struct devio *io)
     if (send_now || port->dev_to_tcp.cursize == port->dev_to_tcp.maxsize ||
 	port->chardelay == 0) {
     send_it:
-	if (handle_tcp_send(port) == 0)
-	    reset_timer(port);
-	else
+	if (handle_tcp_send(port))
 	    goto out; /* Already unlocked */
     } else {
 	struct timeval then;
@@ -831,13 +930,11 @@ dev_fd_write(port_info_t *port, struct sbuf *buf)
 
     if (buffer_cursize(buf) == 0) {
 	/* We are done writing, turn the reader back on. */
-	sel_set_fd_read_handler(ser2net_sel, port->tcpcon->tcpfd,
-				SEL_FD_HANDLER_ENABLED);
+	enable_all_tcp_read(port);
 	port->io.f->write_handler_enable(&port->io, 0);
 	port->tcp_to_dev_state = PORT_WAITING_INPUT;
     }
 
-    reset_timer(port);
     return 0;
 }
 
@@ -911,7 +1008,8 @@ closeit:
 static void
 handle_tcp_fd_read(int fd, void *data)
 {
-    port_info_t *port = (port_info_t *) data;
+    tcp_con_info_t *tcpcon = data;
+    port_info_t *port = tcpcon->port;
     int count;
 
     LOCK(port->lock);
@@ -925,23 +1023,23 @@ handle_tcp_fd_read(int fd, void *data)
 
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for port %s: %m", port->portname);
-	shutdown_port(port, "tcp read error");
+	shutdown_one_tcp(tcpcon, "tcp read error");
 	goto out;
     } else if (count == 0) {
 	/* The other end closed the port, shut it down. */
-	shutdown_port(port, "tcp read close");
+	shutdown_one_tcp(tcpcon, "tcp read close");
 	goto out;
     }
     port->tcp_to_dev.cursize = count;
 
-    port->tcpcon->tcp_bytes_received += count;
+    tcpcon->tcp_bytes_received += count;
 
     if (port->enabled == PORT_TELNET) {
 	port->tcp_to_dev.cursize = process_telnet_data(port->tcp_to_dev.buf,
 						       count,
-						       &port->tcpcon->tn_data);
-	if (port->tcpcon->tn_data.error) {
-	    shutdown_port(port, "telnet output error");
+						       &tcpcon->tn_data);
+	if (tcpcon->tn_data.error) {
+	    shutdown_one_tcp(tcpcon, "telnet output error");
 	    goto out;
 	}
 	if (port->tcp_to_dev.cursize == 0) {
@@ -979,8 +1077,7 @@ handle_tcp_fd_read(int fd, void *data)
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    sel_set_fd_read_handler(ser2net_sel, port->tcpcon->tcpfd,
-				    SEL_FD_HANDLER_DISABLED);
+	    disable_all_tcp_read(port);
 	    port->io.f->write_handler_enable(&port->io, 1);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	} else {
@@ -1000,14 +1097,13 @@ handle_tcp_fd_read(int fd, void *data)
 	    /* We didn't write all the data, shut off the reader and
                start the write monitor. */
 	    port->tcp_to_dev.pos = count;
-	    sel_set_fd_read_handler(ser2net_sel, port->tcpcon->tcpfd,
-				    SEL_FD_HANDLER_DISABLED);
+	    disable_all_tcp_read(port);
 	    port->io.f->write_handler_enable(&port->io, 1);
 	    port->tcp_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
 	}
     }
 
-    reset_timer(port);
+    reset_timer(tcpcon);
  out_unlock:
     UNLOCK(port->lock);
  out: /* shutdown_port frees the lock */
@@ -1018,25 +1114,23 @@ handle_tcp_fd_read(int fd, void *data)
    if a write fails to complete, it is deactivated as soon as writing
    is available again.  Returns 1 if it freed the lock, 0 otherwise.*/
 static int
-tcp_fd_write(port_info_t *port, struct sbuf *buf, unsigned int *pos)
+tcp_fd_write(port_info_t *port, tcp_con_info_t *tcpcon,
+	     struct sbuf *buf, unsigned int *pos)
 {
-    telnet_data_t *td = &port->tcpcon->tn_data;
+    telnet_data_t *td = &tcpcon->tn_data;
     int buferr, reterr;
 
-    if (port->tcpcon->sending_tn_data) {
+    if (tcpcon->sending_tn_data) {
     send_tn_data:
-	reterr = buffer_write(port->tcpcon->tcpfd, &td->out_telnet_cmd,
-			      &buferr);
+	reterr = buffer_write(tcpcon->tcpfd, &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
-		shutdown_port(port, "EPIPE");
-		return 1;
+		return shutdown_one_tcp(tcpcon, "EPIPE");
 	    } else {
 		/* Some other bad error. */
 		syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		       port->portname);
-		shutdown_port(port, "tcp write error");
-		return 1;
+		return shutdown_one_tcp(tcpcon, "tcp write error");
 	    }
 	}
 
@@ -1045,44 +1139,47 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf, unsigned int *pos)
 	       send any real data. */
 	    return 0;
 	}
+	tcpcon->sending_tn_data = false;
     }
 
-    reterr = write(port->tcpcon->tcpfd, buf->buf + *pos, buf->cursize - *pos);
+    reterr = write(tcpcon->tcpfd, buf->buf + *pos, buf->cursize - *pos);
     if (reterr == -1) {
 	if (errno == EPIPE) {
-	    shutdown_port(port, "EPIPE");
+	    return shutdown_one_tcp(tcpcon, "EPIPE");
 	} else {
 	    /* Some other bad error. */
 	    syslog(LOG_ERR, "The tcp write for port %s had error: %m",
 		   port->portname);
-	    shutdown_port(port, "tcp write error");
+	    return shutdown_one_tcp(tcpcon, "tcp write error");
 	}
-	return 1;
     }
     *pos += reterr;
 
-    if (*pos >= port->dev_to_tcp.cursize) {
+    if (*pos >= buf->cursize) {
+	tcpcon->data_to_write = false;
+
 	/* Start telnet data write when the data write is done. */
 	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
-	    port->tcpcon->sending_tn_data = true;
+	    tcpcon->sending_tn_data = true;
 	    goto send_tn_data;
 	}
 
+	if (any_tcp_data_to_write(port))
+	    goto out;
+
+	port->dev_to_tcp.cursize = 0;
+
 	/* We are done writing, turn the reader back on. */
-	*pos = 0;
 	port->io.f->read_handler_enable(&port->io, 1);
-	sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+	sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 				 SEL_FD_HANDLER_DISABLED);
 	port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
-	if (port->close_on_output_done) {
-	    port->close_on_output_done = false;
-	    shutdown_port(port, "closeon sequence found");
-	    return 1;
-	}
+	if (port->close_on_output_done)
+	    return shutdown_one_tcp(tcpcon, "closeon sequence found");
     }
-
-    reset_timer(port);
+ out:
+    reset_timer(tcpcon);
     return 0;
 }
 
@@ -1090,18 +1187,20 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf, unsigned int *pos)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static int
-handle_tcp_fd_write(port_info_t *port)
+handle_tcp_fd_write(port_info_t *port, tcp_con_info_t *tcpcon)
 {
-    return tcp_fd_write(port, &port->dev_to_tcp, &port->tcpcon->tcp_write_pos);
+    return tcp_fd_write(port, tcpcon,
+			&port->dev_to_tcp, &tcpcon->tcp_write_pos);
 }
 
 static void
 handle_tcp_fd_write_mux(int fd, void *data)
 {
-    port_info_t *port = (port_info_t *) data;
+    tcp_con_info_t *tcpcon = data;
+    port_info_t *port = tcpcon->port;
 
     LOCK(port->lock);
-    if (!port->tcpcon->tcp_write_handler(port))
+    if (!tcpcon->tcp_write_handler(port, tcpcon))
 	UNLOCK(port->lock);
 }
 
@@ -1109,7 +1208,8 @@ handle_tcp_fd_write_mux(int fd, void *data)
 static void
 handle_tcp_fd_except(int fd, void *data)
 {
-    port_info_t *port = (port_info_t *) data;
+    tcp_con_info_t *tcpcon = data;
+    port_info_t *port = tcpcon->port;
     int rv, val;
     unsigned char c;
     int cmd_pos;
@@ -1133,11 +1233,11 @@ handle_tcp_fd_except(int fd, void *data)
 
     /* Store it if we last got an IAC, and abort any current
        telnet processing. */
-    cmd_pos = port->tcpcon->tn_data.telnet_cmd_pos;
+    cmd_pos = tcpcon->tn_data.telnet_cmd_pos;
     if (cmd_pos != 1)
 	cmd_pos = 0;
-    port->tcpcon->tn_data.telnet_cmd_pos = 0;
-    port->tcpcon->tn_data.suboption_iac = 0;
+    tcpcon->tn_data.telnet_cmd_pos = 0;
+    tcpcon->tn_data.suboption_iac = 0;
 
     while ((rv = read(fd, &c, 1)) > 0) {
 	if (cmd_pos == 1) {
@@ -1159,14 +1259,14 @@ handle_tcp_fd_except(int fd, void *data)
 static void port_tcp_fd_cleared(int fd, void *cb_data);
 
 static int
-handle_tcp_fd_banner_write(port_info_t *port)
+handle_tcp_fd_banner_write(port_info_t *port, tcp_con_info_t *tcpcon)
 {
-    if (!tcp_fd_write(port, port->tcpcon->banner, &port->tcpcon->banner->pos)) {
-	if (buffer_cursize(port->tcpcon->banner) == 0) {
-	    port->tcpcon->tcp_write_handler = handle_tcp_fd_write;
-	    free(port->tcpcon->banner->buf);
-	    free(port->tcpcon->banner);
-	    port->tcpcon->banner = NULL;
+    if (!tcp_fd_write(port, tcpcon, tcpcon->banner, &tcpcon->banner->pos)) {
+	if (tcpcon->banner->pos >= tcpcon->banner->cursize) {
+	    tcpcon->tcp_write_handler = handle_tcp_fd_write;
+	    free(tcpcon->banner->buf);
+	    free(tcpcon->banner);
+	    tcpcon->banner = NULL;
 	}
 	return 0;
     } else {
@@ -1177,7 +1277,8 @@ handle_tcp_fd_banner_write(port_info_t *port)
 static void
 telnet_cmd_handler(void *cb_data, unsigned char cmd)
 {
-    port_info_t *port = cb_data;
+    tcp_con_info_t *tcpcon = cb_data;
+    port_info_t *port = tcpcon->port;
 
     if ((cmd == TN_BREAK) || (port->telnet_brk_on_sync && cmd == TN_DATA_MARK))
 	port->io.f->send_break(&port->io);
@@ -1187,18 +1288,18 @@ telnet_cmd_handler(void *cb_data, unsigned char cmd)
 static void
 telnet_output_ready(void *cb_data)
 {
-    port_info_t *port = cb_data;
+    tcp_con_info_t *tcpcon = cb_data;
+    port_info_t *port = tcpcon->port;
 
     /* If we are currently sending some data, wait until it is done.
        it might have IACs in it, and we don't want to split those. */
     if (buffer_cursize(&port->dev_to_tcp) != 0)
 	return;
-    if (port->tcpcon->banner && buffer_cursize(port->tcpcon->banner) != 0)
+    if (tcpcon->banner && buffer_cursize(tcpcon->banner) != 0)
 	return;
 
-    port->tcpcon->sending_tn_data = true;
-    port->io.f->read_handler_enable(&port->io, 0);
-    sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+    tcpcon->sending_tn_data = true;
+    sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 			     SEL_FD_HANDLER_ENABLED);
 }
 
@@ -1240,7 +1341,8 @@ static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
 static void
-process_str(port_info_t *port, struct tm *time, struct timeval *tv,
+process_str(port_info_t *port, tcp_con_info_t *tcpcon,
+	    struct tm *time, struct timeval *tv,
 	    const char *s,
 	    void (*op)(void *data, char val), void *data, int isfilename)
 {
@@ -1510,8 +1612,13 @@ process_str(port_info_t *port, struct tm *time, struct timeval *tv,
 	    case 'I':
 	    {
 		char ip[100], *ipp;
-		if (!getnameinfo((struct sockaddr *) &(port->tcpcon->remote),
-				 sizeof(port->tcpcon->remote),
+
+		if (!tcpcon)
+		    tcpcon = first_live_tcp_con(port);
+		if (!tcpcon)
+		    break;
+		if (!getnameinfo((struct sockaddr *) &(tcpcon->remote),
+				 sizeof(tcpcon->remote),
 				 ip, sizeof(ip), NULL, 0, NI_NUMERICHOST))
 		    break;
 		for (ipp = ip; *ipp; ipp++)
@@ -1550,7 +1657,8 @@ buffer_op(void *data, char c)
 }
 
 static char *
-process_str_to_str(port_info_t *port, const char *str, struct timeval *tv,
+process_str_to_str(port_info_t *port, tcp_con_info_t *tcpcon,
+		   const char *str, struct timeval *tv,
 		   unsigned int *lenrv, int isfilename)
 {
     unsigned int len = 0;
@@ -1558,7 +1666,7 @@ process_str_to_str(port_info_t *port, const char *str, struct timeval *tv,
     struct bufop_data bufop;
 
     localtime_r(&tv->tv_sec, &now);
-    process_str(port, &now, tv, str, count_op, &len, isfilename);
+    process_str(port, tcpcon, &now, tv, str, count_op, &len, isfilename);
     if (!lenrv)
 	/* If we don't return a length, append a nil char. */
 	len++;
@@ -1572,7 +1680,7 @@ process_str_to_str(port_info_t *port, const char *str, struct timeval *tv,
 	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
 	return NULL;
     }
-    process_str(port, &now, tv, str, buffer_op, &bufop, isfilename);
+    process_str(port, tcpcon, &now, tv, str, buffer_op, &bufop, isfilename);
 
     if (lenrv)
 	*lenrv = len;
@@ -1583,7 +1691,7 @@ process_str_to_str(port_info_t *port, const char *str, struct timeval *tv,
 }
 
 static struct sbuf *
-process_str_to_buf(port_info_t *port, const char *str)
+process_str_to_buf(port_info_t *port, tcp_con_info_t *tcpcon, const char *str)
 {
     const char *bstr;
     struct sbuf *buf;
@@ -1599,7 +1707,7 @@ process_str_to_buf(port_info_t *port, const char *str)
 	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
 	return NULL;
     }
-    bstr = process_str_to_str(port, str, &tv, &len, 0);
+    bstr = process_str_to_str(port, tcpcon, str, &tv, &len, 0);
     if (!bstr) {
 	free(buf);
 	syslog(LOG_ERR, "Error processing string: %s", port->portname);
@@ -1619,7 +1727,7 @@ open_trace_file(port_info_t *port,
     int rv;
     char *trfile;
 
-    trfile = process_str_to_str(port, t->filename, tv, NULL, 1);
+    trfile = process_str_to_str(port, NULL, t->filename, tv, NULL, 1);
     if (!trfile) {
 	syslog(LOG_ERR, "Unable to translate trace file %s", t->filename);
 	t->fd = -1;
@@ -1696,23 +1804,23 @@ recalc_port_chardelay(port_info_t *port)
 
 /* Called to set up a new connection's file descriptor. */
 static int
-setup_tcp_port(port_info_t *port)
+setup_tcp_port(port_info_t *port, tcp_con_info_t *tcpcon)
 {
     int options;
     struct timeval then;
-    const char *errstr;
+    bool i_am_first = false;
 
-    if (fcntl(port->tcpcon->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
-	close(port->tcpcon->tcpfd);
-	port->tcpcon->tcpfd = -1;
+    if (fcntl(tcpcon->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
+	close(tcpcon->tcpfd);
+	tcpcon->tcpfd = -1;
 	syslog(LOG_ERR, "Could not fcntl the tcp port %s: %m", port->portname);
 	return -1;
     }
     options = 1;
-    if (setsockopt(port->tcpcon->tcpfd, IPPROTO_TCP, TCP_NODELAY,
+    if (setsockopt(tcpcon->tcpfd, IPPROTO_TCP, TCP_NODELAY,
 		   (char *) &options, sizeof(options)) == -1) {
-	close(port->tcpcon->tcpfd);
-	port->tcpcon->tcpfd = -1;
+	close(tcpcon->tcpfd);
+	tcpcon->tcpfd = -1;
 	syslog(LOG_ERR, "Could not enable TCP_NODELAY tcp port %s: %m",
 	       port->portname);
 	return -1;
@@ -1722,92 +1830,100 @@ setup_tcp_port(port_info_t *port)
     {
 	struct request_info req;
 
-	request_init(&req, RQ_DAEMON, progname, RQ_FILE, port->tcpcon->tcpfd,
-		     NULL);
+	request_init(&req, RQ_DAEMON, progname, RQ_FILE, tcpcon->tcpfd, NULL);
 	fromhost(&req);
 
 	if (!hosts_access(&req)) {
 	    char *err = "Access denied\r\n";
-	    write(port->tcpcon->tcpfd, err, strlen(err));
-	    close(port->tcpcon->tcpfd);
-	    port->tcpcon->tcpfd = -1;
+	    write(tcpcon->tcpfd, err, strlen(err));
+	    close(tcpcon->tcpfd);
+	    tcpcon->tcpfd = -1;
 	    return -1;
 	}
     }
 #endif /* HAVE_TCPD_H */
 
-    errstr = NULL;
-    if (port->io.f->setup(&port->io, port->portname, &errstr,
-			  &port->bps, &port->bpc) == -1) {
-	if (errstr)
-	    write_ignore_fail(port->tcpcon->tcpfd, errstr, strlen(errstr));
-	close(port->tcpcon->tcpfd);
-	port->tcpcon->tcpfd = -1;
-	return -1;
+    tcpcon->banner = process_str_to_buf(port, tcpcon, port->bannerstr);
+    if (tcpcon->banner)
+	tcpcon->tcp_write_handler = handle_tcp_fd_banner_write;
+    else
+	tcpcon->tcp_write_handler = handle_tcp_fd_write;
+
+    if (num_connected_tcp(port, true) == 1) {
+	/* We are first, set things up on the device. */
+	const char *errstr = NULL;
+
+	if (port->io.f->setup(&port->io, port->portname, &errstr,
+			      &port->bps, &port->bpc) == -1) {
+	    if (errstr)
+		write_ignore_fail(tcpcon->tcpfd, errstr, strlen(errstr));
+	    close(tcpcon->tcpfd);
+	    tcpcon->tcpfd = -1;
+	    return -1;
+	}
+	recalc_port_chardelay(port);
+	port->is_2217 = 0;
+
+	port->devstr = process_str_to_buf(port, tcpcon, port->openstr);
+	if (port->devstr)
+	    port->dev_write_handler = handle_dev_fd_devstr_write;
+	else
+	    port->dev_write_handler = handle_dev_fd_normal_write;
+
+	port->io.read_handler = (port->enabled == PORT_RAWLP
+				 ? NULL
+				 : handle_dev_fd_read);
+	port->io.write_handler = handle_dev_fd_write;
+	port->io.except_handler = handle_dev_fd_except;
+	port->io.f->read_handler_enable(&port->io, port->enabled != PORT_RAWLP);
+	port->io.f->except_handler_enable(&port->io, 1);
+	if (port->devstr)
+	    port->io.f->write_handler_enable(&port->io, 1);
+	port->dev_to_tcp_state = PORT_WAITING_INPUT;
+	i_am_first = true;
     }
-    recalc_port_chardelay(port);
-    port->is_2217 = 0;
-
-    port->tcpcon->banner = process_str_to_buf(port, port->bannerstr);
-    if (port->tcpcon->banner)
-	port->tcpcon->tcp_write_handler = handle_tcp_fd_banner_write;
-    else
-	port->tcpcon->tcp_write_handler = handle_tcp_fd_write;
-
-    port->devstr = process_str_to_buf(port, port->openstr);
-    if (port->devstr)
-	port->dev_write_handler = handle_dev_fd_devstr_write;
-    else
-	port->dev_write_handler = handle_dev_fd_normal_write;
-
-    port->io.read_handler = (port->enabled == PORT_RAWLP
-			     ? NULL
-			     : handle_dev_fd_read);
-    port->io.write_handler = handle_dev_fd_write;
-    port->io.except_handler = handle_dev_fd_except;
-    port->io.f->read_handler_enable(&port->io, port->enabled != PORT_RAWLP);
-    port->io.f->except_handler_enable(&port->io, 1);
-    if (port->devstr)
-	port->io.f->write_handler_enable(&port->io, 1);
-    port->dev_to_tcp_state = PORT_WAITING_INPUT;
 
     sel_set_fd_handlers(ser2net_sel,
-			port->tcpcon->tcpfd,
-			port,
+			tcpcon->tcpfd,
+			tcpcon,
 			handle_tcp_fd_read,
 			handle_tcp_fd_write_mux,
 			handle_tcp_fd_except,
 			port_tcp_fd_cleared);
-    sel_set_fd_read_handler(ser2net_sel, port->tcpcon->tcpfd,
+    sel_set_fd_read_handler(ser2net_sel, tcpcon->tcpfd,
 			    SEL_FD_HANDLER_ENABLED);
-    sel_set_fd_except_handler(ser2net_sel, port->tcpcon->tcpfd,
+    sel_set_fd_except_handler(ser2net_sel, tcpcon->tcpfd,
 			      SEL_FD_HANDLER_ENABLED);
     port->tcp_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
-	telnet_init(&port->tcpcon->tn_data, port, telnet_output_ready,
+	telnet_init(&tcpcon->tn_data, tcpcon, telnet_output_ready,
 		    telnet_cmd_handler,
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
 	/* May not have been set if we have banner output. */
-	sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+	sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 				 SEL_FD_HANDLER_ENABLED);
     } else {
-	buffer_init(&port->tcpcon->tn_data.out_telnet_cmd, NULL, 0);
-	port->io.f->read_handler_enable(&port->io, 1);
-	if (port->tcpcon->banner)
-	    sel_set_fd_write_handler(ser2net_sel, port->tcpcon->tcpfd,
+	buffer_init(&tcpcon->tn_data.out_telnet_cmd, NULL, 0);
+	if (i_am_first)
+	    port->io.f->read_handler_enable(&port->io, 1);
+	if (tcpcon->banner)
+	    sel_set_fd_write_handler(ser2net_sel, tcpcon->tcpfd,
 				     SEL_FD_HANDLER_ENABLED);
     }
 
-    setup_trace(port);
-    header_trace(port);
+    if (i_am_first)
+	setup_trace(port);
+    header_trace(port, tcpcon);
 
-    sel_get_monotonic_time(&then);
-    then.tv_sec += 1;
-    sel_start_timer(port->timer, &then);
+    if (i_am_first) {
+	sel_get_monotonic_time(&then);
+	then.tv_sec += 1;
+	sel_start_timer(port->timer, &then);
+    }
 
-    reset_timer(port);
+    reset_timer(tcpcon);
     return 0;
 }
 
@@ -1828,33 +1944,31 @@ is_port_free(char *portname)
 }
 
 static void
-handle_port_accept(port_info_t *port, int fd)
+handle_port_accept(port_info_t *port, int fd, tcp_con_info_t *tcpcon)
 {
     socklen_t len;
     int optval;
 
-    len = sizeof(port->tcpcon->remote);
+    len = sizeof(tcpcon->remote);
 
-    port->tcpcon->tcpfd = accept(fd,
-				 (struct sockaddr *) &(port->tcpcon->remote),
-				 &len);
-    if (port->tcpcon->tcpfd == -1) {
+    tcpcon->tcpfd = accept(fd, (struct sockaddr *) &(tcpcon->remote), &len);
+    if (tcpcon->tcpfd == -1) {
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
 	    syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
 	return;
     }
 
     optval = 1;
-    if (setsockopt(port->tcpcon->tcpfd, SOL_SOCKET, SO_KEEPALIVE,
+    if (setsockopt(tcpcon->tcpfd, SOL_SOCKET, SO_KEEPALIVE,
 		   (void *)&optval, sizeof(optval)) == -1) {
-	close(port->tcpcon->tcpfd);
+	close(tcpcon->tcpfd);
 	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on tcp port %s: %m",
 	       port->portname);
 	return;
     }
 
-    /* XXX log port->tcpcon->remote */
-    setup_tcp_port(port);
+    /* XXX log tcpcon->remote */
+    setup_tcp_port(port, tcpcon);
 }
 
 typedef struct rotator
@@ -1897,7 +2011,7 @@ handle_rot_port_read(int fd, void *data)
 	if (port) {
 	    rot->curr_port = i;
 	    LOCK(port->lock);
-	    handle_port_accept(port, fd);
+	    handle_port_accept(port, fd, &(port->tcpcons[0]));
 	    UNLOCK(port->lock);
 	    UNLOCK(ports_lock);
 	    return;
@@ -2013,19 +2127,50 @@ add_rotator(char *portname, char *ports, int lineno)
     return rv;
 }
 
+static void
+disable_accept_ports(port_info_t *port)
+{
+    int i;
+
+    for (i = 0; i < port->nr_acceptfds; i++)
+	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i],
+				SEL_FD_HANDLER_DISABLED);
+}
+
+static void
+enable_accept_ports(port_info_t *port)
+{
+    int i;
+
+    for (i = 0; i < port->nr_acceptfds; i++)
+	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i],
+				SEL_FD_HANDLER_ENABLED);
+}
+
 /* A connection request has come in on a port. */
 static void
 handle_accept_port_read(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
     char *err = NULL;
+    int i;
 
     LOCK(port->lock);
 
     if (port->enabled == PORT_DISABLED)
 	goto out;
 
-    if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
+    /* We raced, the shutdown should disable the accept read
+       until the shutdown is complete. */
+    if (port->dev_to_tcp_state == PORT_CLOSING)
+	goto out;
+
+    for (i = 0; i < MAX_CONNECTIONS; i++) {
+	if (port->tcpcons[i].tcpfd == -1)
+	    break;
+    }
+
+    if (i == MAX_CONNECTIONS) {
 	if (port->kickolduser_mode) {
 	    shutdown_port(port, "kicked off, new user is coming\r\n");
 	    /* Wait the port to be unconnected and clean, go back to main loop*/
@@ -2053,7 +2198,7 @@ handle_accept_port_read(int fd, void *data)
 
     /* We have to hold the ports_lock until after this call so the
        device won't get used (from is_device_already_inuse()). */
-    handle_port_accept(port, fd);
+    handle_port_accept(port, fd, &(port->tcpcons[i]));
  out:
     UNLOCK(port->lock);
 }
@@ -2077,8 +2222,8 @@ startup_port(struct absout *eout, port_info_t *port)
 	    return -1;
 	} else {
 	    port->acceptfds = NULL;
-	    port->tcpcon->tcpfd = 0; /* stdin */
-	    if (setup_tcp_port(port) == -1)
+	    port->tcpcons[0].tcpfd = 0; /* stdin */
+	    if (setup_tcp_port(port, &(port->tcpcons[0])) == -1)
 		return -1;
 	}
 	return 0;
@@ -2200,6 +2345,8 @@ free_port(port_info_t *port)
 	free(port->closestr);
     if (port->closeon)
 	free(port->closeon);
+    if (port->tcpcons)
+	free(port->tcpcons);
     free(port);
 }
 
@@ -2269,13 +2416,6 @@ finish_shutdown_port(sel_runner_t *runner, void *cb_data)
 
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     buffer_reset(&port->tcp_to_dev);
-    port->tcpcon->tcp_bytes_received = 0;
-    port->tcpcon->tcp_bytes_sent = 0;
-    if (port->tcpcon->banner) {
-	free(port->tcpcon->banner->buf);
-	free(port->tcpcon->banner);
-	port->tcpcon->banner = NULL;
-    }
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
@@ -2341,6 +2481,7 @@ finish_shutdown_port(sel_runner_t *runner, void *cb_data)
     /* Wait until here to let anything start on the port. */
     LOCK(port->lock);
     port->dev_to_tcp_state = PORT_UNCONNECTED;
+    enable_accept_ports(port);
     UNLOCK(port->lock);
 }
 
@@ -2360,7 +2501,7 @@ static void shutdown_port2(sel_runner_t *runner, void *cb_data)
 	free(port->devstr->buf);
 	free(port->devstr);
     }
-    port->devstr = process_str_to_buf(port, port->closestr);
+    port->devstr = process_str_to_buf(port, NULL, port->closestr);
     if (port->devstr && (port->tcp_to_dev_state != PORT_UNCONNECTED)) {
 	port->io.f->read_handler_enable(&port->io, 0);
 	port->io.f->except_handler_enable(&port->io, 0);
@@ -2376,20 +2517,45 @@ static void shutdown_port2(sel_runner_t *runner, void *cb_data)
 static void
 port_tcp_fd_cleared(int fd, void *cb_data)
 {
-    port_info_t *port = (port_info_t *) cb_data;
+    tcp_con_info_t *tcpcon = cb_data;
+    port_info_t *port = tcpcon->port;
 
-    close(port->tcpcon->tcpfd);
-    port->tcpcon->tcpfd = -1;
-    sel_run(port->runshutdown, shutdown_port2, port);
+    LOCK(port->lock);
+    close(tcpcon->tcpfd);
+    tcpcon->tcpfd = -1;
+    tcpcon->closing = false;
+    tcpcon->tcp_bytes_received = 0;
+    tcpcon->tcp_bytes_sent = 0;
+    tcpcon->sending_tn_data = false;
+    tcpcon->tcp_write_pos = 0;
+    tcpcon->data_to_write = false;
+    if (tcpcon->banner) {
+	free(tcpcon->banner->buf);
+	free(tcpcon->banner);
+	tcpcon->banner = NULL;
+    }
+    if (num_connected_tcp(port, true) == 0) {
+	UNLOCK(port->lock);
+	sel_run(port->runshutdown, shutdown_port2, port);
+    } else {
+	UNLOCK(port->lock);
+    }
 }
 
 static void
 shutdown_port(port_info_t *port, char *reason)
 {
+    tcp_con_info_t *tcpcon;
+    bool some_to_close = false;
+
     if (port->dev_to_tcp_state == PORT_CLOSING) {
 	UNLOCK(port->lock);
 	return;
     }
+
+    port->close_on_output_done = false;
+
+    disable_accept_ports(port);
 
     footer_trace(port, reason);
 
@@ -2408,11 +2574,42 @@ shutdown_port(port_info_t *port, char *reason)
     port->tw = port->tr = port->tb = NULL;
 
     port->dev_to_tcp_state = PORT_CLOSING;
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd != -1) {
+	    tcpcon->closing = true;
+	    some_to_close = true;
+	}
+    }
     UNLOCK(port->lock);
-    if (port->tcpcon->tcpfd != -1)
-	sel_clear_fd_handlers(ser2net_sel, port->tcpcon->tcpfd);
-    else
+
+    for_each_connection(port, tcpcon) {
+	if (tcpcon->tcpfd != -1)
+	    sel_clear_fd_handlers(ser2net_sel, tcpcon->tcpfd);
+    }
+    if (!some_to_close)
 	sel_run(port->runshutdown, shutdown_port2, port);
+}
+
+/* Returns 0 if only one tcp port was shut down and the lock is still
+   held, 1 if the whole port was shut down and the lock is released. */
+static int
+shutdown_one_tcp(tcp_con_info_t *tcpcon, char *reason)
+{
+    port_info_t *port = tcpcon->port;
+
+    if (tcpcon->closing)
+	return 0;
+
+    if (num_connected_tcp(port, false) == 1) {
+	shutdown_port(port, reason);
+	return 1;
+    }
+
+    tcpcon->closing = true;
+    UNLOCK(port->lock);
+    sel_clear_fd_handlers(ser2net_sel, tcpcon->tcpfd);
+
+    return 0;
 }
 
 void
@@ -2423,6 +2620,7 @@ got_timeout(selector_t  *sel,
     port_info_t *port = (port_info_t *) data;
     struct timeval then;
     unsigned char modemstate;
+    tcp_con_info_t *tcpcon;
 
     LOCK(port->lock);
 
@@ -2432,10 +2630,14 @@ got_timeout(selector_t  *sel,
     }
 
     if (port->timeout) {
-	port->timeout_left--;
-	if (port->timeout_left < 0) {
-	    shutdown_port(port, "timeout"); /* Releases lock */
-	    return;
+	for_each_connection(port, tcpcon) {
+	    if (tcpcon->tcpfd == -1)
+		continue;
+	    tcpcon->timeout_left--;
+	    if (tcpcon->timeout_left < 0) {
+		shutdown_port(port, "timeout"); /* Releases lock */
+		return;
+	    }
 	}
     }
 
@@ -2448,7 +2650,11 @@ got_timeout(selector_t  *sel,
 	    data[1] = 107; /* Notify modemstate */
 	    data[2] = modemstate;
 	    port->last_modemstate = modemstate;
-	    telnet_send_option(&port->tcpcon->tn_data, data, 3);
+	    for_each_connection(port, tcpcon) {
+		if (tcpcon->tcpfd == -1)
+		    continue;
+		telnet_send_option(&tcpcon->tn_data, data, 3);
+	    }
 	}
     }
 
@@ -2621,6 +2827,7 @@ portconfig(struct absout *eout,
 {
     port_info_t *new_port, *curr, *prev;
     enum str_type str_type;
+    int i;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -2628,13 +2835,6 @@ portconfig(struct absout *eout,
 	return -1;
     }
     memset(new_port, 0, sizeof(*new_port));
-
-    new_port->tcpcon = malloc(sizeof(*(new_port->tcpcon)));
-    if (new_port->tcpcon == NULL) {
-	eout->out(eout, "Could not allocate a port data structure");
-	return -1;
-    }
-    memset(new_port->tcpcon, 0, sizeof(*(new_port->tcpcon)));
 
     INIT_LOCK(new_port->lock);
 
@@ -2733,6 +2933,19 @@ portconfig(struct absout *eout,
 	    eout->out(eout, "device configuration invalid");
 	    goto errout;
 	}
+    }
+
+    new_port->tcpcons = malloc(sizeof(*(new_port->tcpcons)) *
+			      MAX_CONNECTIONS);
+    if (new_port->tcpcons == NULL) {
+	eout->out(eout, "Could not allocate a port data structure");
+	goto errout;
+    }
+    memset(new_port->tcpcons, 0,
+	   sizeof(*(new_port->tcpcons)) * MAX_CONNECTIONS);
+    for (i = 0; i < MAX_CONNECTIONS; i++) {
+	new_port->tcpcons[i].port = new_port;
+	new_port->tcpcons[i].tcpfd = -1;
     }
 
     new_port->config_num = config_num;
@@ -2840,6 +3053,8 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     int  need_space = 0;
     int  err;
     struct absout out = { .out = cntrl_absout, .data = cntlr };
+    tcp_con_info_t *tcpcon = NULL;
+    unsigned int bytes_recv = 0, bytes_sent = 0;
 
     controller_outputf(cntlr, "%-22s ", port->portname);
     if (port->config_num == -1)
@@ -2848,8 +3063,12 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	controller_outputf(cntlr, "%-6s ", enabled_str[port->enabled]);
     controller_outputf(cntlr, "%7d ", port->timeout);
 
-    err = getnameinfo((struct sockaddr *) &(port->tcpcon->remote),
-		      sizeof(port->tcpcon->remote),
+    tcpcon = first_live_tcp_con(port);
+    if (!tcpcon)
+	tcpcon = &(port->tcpcons[0]);
+
+    err = getnameinfo((struct sockaddr *) &(tcpcon->remote),
+		      sizeof(tcpcon->remote),
 		      buffer, sizeof(buffer),
 		      portbuff, sizeof(portbuff),
 		      NI_NUMERICHOST | NI_NUMERICSERV);
@@ -2857,6 +3076,8 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	strcpy(buffer, "*err*");
 	sprintf(portbuff, "%s", gai_strerror(err));
     }
+    bytes_recv = tcpcon->tcp_bytes_received;
+    bytes_sent = tcpcon->tcp_bytes_sent;
 
     count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
     while (count < 23) {
@@ -2867,8 +3088,8 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "%-22s ", port->io.devname);
     controller_outputf(cntlr, "%-14s ", state_str[port->tcp_to_dev_state]);
     controller_outputf(cntlr, "%-14s ", state_str[port->dev_to_tcp_state]);
-    controller_outputf(cntlr, "%9d ", port->tcpcon->tcp_bytes_received);
-    controller_outputf(cntlr, "%9d ", port->tcpcon->tcp_bytes_sent);
+    controller_outputf(cntlr, "%9d ", bytes_recv);
+    controller_outputf(cntlr, "%9d ", bytes_sent);
     controller_outputf(cntlr, "%9d ", port->dev_bytes_received);
     controller_outputf(cntlr, "%9d ", port->dev_bytes_sent);
 
@@ -2895,23 +3116,30 @@ showport(struct controller_info *cntlr, port_info_t *port)
     char buffer[NI_MAXHOST], portbuff[NI_MAXSERV];
     struct absout out = { .out = cntrl_absout, .data = cntlr };
     int err;
+    tcp_con_info_t *tcpcon;
 
     controller_outputf(cntlr, "TCP Port %s\r\n", port->portname);
     controller_outputf(cntlr, "  enable state: %s\r\n",
 		       enabled_str[port->enabled]);
     controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
 
-    err = getnameinfo((struct sockaddr *) &(port->tcpcon->remote),
-		      sizeof(port->tcpcon->remote),
-		      buffer, sizeof(buffer),
-		      portbuff, sizeof(portbuff),
-		      NI_NUMERICHOST | NI_NUMERICSERV);
-    if (err) {
-	strcpy(buffer, "*err*");
-	sprintf(portbuff, "%s", gai_strerror(err));
+    for_each_connection(port, tcpcon) {
+	err = getnameinfo((struct sockaddr *) &(tcpcon->remote),
+			  sizeof(tcpcon->remote),
+			  buffer, sizeof(buffer),
+			  portbuff, sizeof(portbuff),
+			  NI_NUMERICHOST | NI_NUMERICSERV);
+	if (err) {
+	    strcpy(buffer, "*err*");
+	    sprintf(portbuff, "%s", gai_strerror(err));
+	}
+	controller_outputf(cntlr, "  connected to: %s,%s\r\n",
+			   buffer, portbuff);
+	controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
+			   tcpcon->tcp_bytes_received);
+	controller_outputf(cntlr, "    bytes written to TCP: %d\r\n",
+			   tcpcon->tcp_bytes_sent);
     }
-    controller_outputf(cntlr, "  connected to (or last connection): %s,%s\r\n",
-		       buffer, portbuff);
 
     controller_outputf(cntlr, "  device: %s\r\n", port->io.devname);
 
@@ -2936,12 +3164,6 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     controller_outputf(cntlr, "  device to tcp state: %s\r\n",
 		      state_str[port->dev_to_tcp_state]);
-
-    controller_outputf(cntlr, "  bytes read from TCP: %d\r\n",
-		      port->tcpcon->tcp_bytes_received);
-
-    controller_outputf(cntlr, "  bytes written to TCP: %d\r\n",
-		      port->tcpcon->tcp_bytes_sent);
 
     controller_outputf(cntlr, "  bytes read from device: %d\r\n",
 		      port->dev_bytes_received);
@@ -3059,6 +3281,7 @@ void
 setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
 {
     port_info_t *port;
+    tcp_con_info_t *tcpcon;
 
     LOCK(ports_lock);
     port = find_port_by_num(portspec, true);
@@ -3071,8 +3294,10 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
 	    controller_outputf(cntlr, "Invalid timeout: %s\r\n", timeout);
 	} else {
 	    port->timeout = timeout_num;
-	    if (port->tcpcon->tcpfd != -1) {
-		reset_timer(port);
+
+	    for_each_connection(port, tcpcon) {
+		if (tcpcon->tcpfd != -1)
+		    reset_timer(tcpcon);
 	    }
 	}
 	UNLOCK(port->lock);
@@ -3270,7 +3495,8 @@ disconnect_port(struct controller_info *cntlr,
 static int
 com_port_will(void *cb_data)
 {
-    port_info_t *port = cb_data;
+    tcp_con_info_t *tcpcon = cb_data;
+    port_info_t *port = tcpcon->port;
     unsigned char data[3];
 
     if (! port->allow_2217)
@@ -3289,14 +3515,15 @@ com_port_will(void *cb_data)
     if (port->io.f->get_modem_state(&port->io, data + 2) != -1) {
 	port->last_modemstate = data[2];
     }
-    telnet_send_option(&port->tcpcon->tn_data, data, 3);
+    telnet_send_option(&tcpcon->tn_data, data, 3);
     return 1;
 }
 
 static void
 com_port_handler(void *cb_data, unsigned char *option, int len)
 {
-    port_info_t *port = cb_data;
+    tcp_con_info_t *tcpcon = cb_data;
+    port_info_t *port = tcpcon->port;
     unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
     int val;
     unsigned char ucval;
@@ -3323,7 +3550,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 100;
 	strncpy((char *) outopt + 2, sig, sign_len);
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 2 + sign_len);
+	telnet_send_option(&tcpcon->tn_data, outopt, 2 + sign_len);
 	break;
     }
 
@@ -3350,7 +3577,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[1] = 101;
 	if (cisco_ios_baud_rates) {
 	    outopt[2] = val;
-	    telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	    telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	} else {
 	    /* Basically the same as:
 	     * *((uint32_t *) (outopt + 2)) = htonl(val);
@@ -3359,7 +3586,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    outopt[3] = val >> 16;
 	    outopt[4] = val >> 8;
 	    outopt[5] = val;
-	    telnet_send_option(&port->tcpcon->tn_data, outopt, 6);
+	    telnet_send_option(&tcpcon->tn_data, outopt, 6);
 	}
 	break;
 
@@ -3373,7 +3600,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 102;
 	outopt[2] = ucval;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 3: /* SET-PARITY */
@@ -3386,7 +3613,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 103;
 	outopt[2] = ucval;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 4: /* SET-STOPSIZE */
@@ -3399,7 +3626,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 104;
 	outopt[2] = ucval;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 5: /* SET-CONTROL */
@@ -3411,21 +3638,21 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 105;
 	outopt[2] = ucval;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 8: /* FLOWCONTROL-SUSPEND */
 	port->io.f->flow_control(&port->io, 1);
 	outopt[0] = 44;
 	outopt[1] = 108;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 2);
+	telnet_send_option(&tcpcon->tn_data, outopt, 2);
 	break;
 
     case 9: /* FLOWCONTROL-RESUME */
 	port->io.f->flow_control(&port->io, 0);
 	outopt[0] = 44;
 	outopt[1] = 109;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 2);
+	telnet_send_option(&tcpcon->tn_data, outopt, 2);
 	break;
 
     case 10: /* SET-LINESTATE-MASK */
@@ -3435,7 +3662,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 110;
 	outopt[2] = port->linestate_mask;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 11: /* SET-MODEMSTATE-MASK */
@@ -3445,7 +3672,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 111;
 	outopt[2] = port->modemstate_mask;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 12: /* PURGE_DATA */
@@ -3456,7 +3683,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	outopt[0] = 44;
 	outopt[1] = 112;
 	outopt[2] = val;
-	telnet_send_option(&port->tcpcon->tn_data, outopt, 3);
+	telnet_send_option(&tcpcon->tn_data, outopt, 3);
 	break;
 
     case 6: /* NOTIFY-LINESTATE */
