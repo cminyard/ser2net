@@ -591,6 +591,8 @@ footer_trace(port_info_t *port, char *reason)
     hf_out(port, buf, len);
 }
 
+/* Returns 0 on success or non-fatal failure (with the lock still
+   locked) or -1 on fatal failure (with the lock unlocked) */
 static int
 handle_tcp_send(port_info_t *port)
 {
@@ -656,8 +658,10 @@ send_timeout(selector_t  *sel,
     }
 
     port->send_timer_running = false;
-    if (port->dev_to_tcp.cursize > 0)
-	handle_tcp_send(port);
+    if (port->dev_to_tcp.cursize > 0) {
+	if (handle_tcp_send(port) == 0)
+	    UNLOCK(port->lock);
+    }
     UNLOCK(port->lock);
 }
 
@@ -767,6 +771,8 @@ handle_dev_fd_read(struct devio *io)
     send_it:
 	if (handle_tcp_send(port) == 0)
 	    reset_timer(port);
+	else
+	    goto out; /* Already unlocked */
     } else {
 	struct timeval then;
 	int delay;
