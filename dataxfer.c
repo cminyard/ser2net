@@ -220,6 +220,7 @@ struct port_info
 
     /* Data for the telnet processing */
     telnet_data_t tn_data;
+    bool sending_tn_data; /* Are we sending tn data at the moment? */
 
     /* Is RFC 2217 mode enabled? */
     int is_2217;
@@ -1004,7 +1005,8 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
     telnet_data_t *td = &port->tn_data;
     int buferr, reterr;
 
-    if (buffer_cursize(&td->out_telnet_cmd) > 0) {
+    if (port->sending_tn_data) {
+    send_tn_data:
 	reterr = buffer_write(port->tcpfd, &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
@@ -1038,7 +1040,14 @@ tcp_fd_write(port_info_t *port, struct sbuf *buf)
 	}
 	return 1;
     }
+
     if (buffer_cursize(buf) == 0) {
+	/* Start telnet data write when the data write is done. */
+	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
+	    port->sending_tn_data = true;
+	    goto send_tn_data;
+	}
+
 	/* We are done writing, turn the reader back on. */
 	port->io.f->read_handler_enable(&port->io, 1);
 	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
@@ -1158,6 +1167,15 @@ static void
 telnet_output_ready(void *cb_data)
 {
     port_info_t *port = cb_data;
+
+    /* If we are currently sending some data, wait until it is done.
+       it might have IACs in it, and we don't want to split those. */
+    if (buffer_cursize(&port->dev_to_tcp) != 0)
+	return;
+    if (port->banner && buffer_cursize(port->banner) != 0)
+	return;
+
+    port->sending_tn_data = true;
     port->io.f->read_handler_enable(&port->io, 0);
     sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
 			     SEL_FD_HANDLER_ENABLED);
@@ -1749,6 +1767,9 @@ setup_tcp_port(port_info_t *port)
 		    telnet_cmd_handler,
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
+	/* May not have been set if we have banner output. */
+	sel_set_fd_write_handler(ser2net_sel, port->tcpfd,
+				 SEL_FD_HANDLER_ENABLED);
     } else {
 	buffer_init(&port->tn_data.out_telnet_cmd, NULL, 0);
 	port->io.f->read_handler_enable(&port->io, 1);
