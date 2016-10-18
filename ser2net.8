@@ -437,10 +437,17 @@ port, ser2net will go through the port list until it finds a free one
 and attempt to connect to that port.
 
 .I led-tx=<led-name>
-use the previously defined led to indicate serial tx traffic on this port
+use the previously defined led to indicate serial tx traffic on this port.
 
 .I led-rx=<led-name>
-use the previously defined led to indicate serial rx traffic on this port
+use the previously defined led to indicate serial rx traffic on this port.
+
+.I max-connections=<number>
+set the maximum number of connections that can be made on this particular
+TCP port.  If you make more than one connection to the same port, each
+ports output goes to the device, and the device output goes to all ports
+simultaneously.  See "MULTIPLE CONNECTIONS" below for details.  The default
+is 1.
 
 .TP
 .I "banner name"
@@ -572,6 +579,65 @@ identify which port/device the filename was for.  Note that in
 filenames when using \ed, everything up to and including last / in the
 device name is removed, because you can't have a / in a filename.  So
 in a filename /dev/ttyS0 would become just ttyS0.
+
+.SH MULTIPLE CONNECTIONS
+As mentioned earlier, you can set
+.I max-connections=<n>
+on a port to allow more than one connection at a time to the same serial
+port.  These connections will share all the settings.  You cannot have
+two separate TCP ports connect to the same port at the same time.
+
+This has some significant interactions with other features:
+
+.I flow control
+is not exactly a feature, but more an interaction between the different
+connections.  If a TCP port stops receiving data from ser2net, all TCP
+ports connected will be flow-controlled.  This means a single TCP
+connection can stop all the others.
+
+.I closeon
+will close all connections when the closeon sequence is seen.
+
+.I openstr
+is only sent when the port is unconnected and the first connections is
+made.
+
+.I closestr
+is only sent when the last port disconnects and there are no more connections
+to the port.
+
+Any monitor ("monitor start" from a control connections) will catch
+input from all TCP connections.
+
+.I kickolduser
+will kick off all connections if a connection comes in on a port that already
+has a maximum number of connections.
+
+.I tracing
+will trace data from all TCP connections.
+
+.I remctl
+(remote telnet serial control) will change the connection settings on the
+device and will be accepted from any TCP connection.
+
+.I ROTATOR
+will only choose a port if there are no connections at all on the port.
+
+.I timeout
+will be per TCP port and will only disconnect that TCP port on a timeout.
+
+.I telnet_brk_on_sync
+will send a break for any TCP port that does a sync.
+
+.I showport
+will show all possible connections, so if you say
+.I max-connections=3
+you will get three entries.
+
+.I showshortport
+will only show the first live connection, or if no connection is present
+it will show whatever the first one was the last time a connection was
+present.
 
 .SH SECURITY
 ser2net uses the tcp wrappers interface to implement host-based security.

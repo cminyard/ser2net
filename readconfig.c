@@ -561,6 +561,8 @@ struct default_data defaults[] = {
 					.def.intval = PORT_BUFSIZE },
     { "tcp-to-dev-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
 					.def.intval = PORT_BUFSIZE },
+    { "max-connections", DEFAULT_INT,	.min=1, .max=65536,
+					.def.intval = 1 },
 #ifdef HAVE_OPENIPMI
     /* SOL only */
     { "authenticated",	DEFAULT_BOOL,	.def.intval = 1 },

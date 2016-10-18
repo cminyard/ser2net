@@ -195,6 +195,9 @@ struct port_info
     unsigned int   nr_acceptfds;
     waiter_t       *accept_waiter;      /* Wait for accept changes. */
 
+    unsigned int max_connections;	/* Maximum number of TCP connections
+					   we can accept at a time for this
+					   port. */
     tcp_con_info_t *tcpcons;
 
     unsigned int dev_bytes_received;    /* Number of bytes read from the
@@ -316,11 +319,9 @@ struct port_info
     struct led_s *led_rx;
 };
 
-#define MAX_CONNECTIONS 1
-
 #define for_each_connection(port, tcpcon) \
     for (tcpcon = port->tcpcons;				\
-	 tcpcon < &(port->tcpcons[MAX_CONNECTIONS]);		\
+	 tcpcon < &(port->tcpcons[port->max_connections]);	\
 	 tcpcon++)
 
 DEFINE_LOCK_INIT(static, ports_lock)
@@ -465,6 +466,7 @@ init_port_data(port_info_t *port)
     port->chardelay_max = find_default_int("chardelay-max");
     port->dev_to_tcp_bufsize = find_default_int("dev-to-tcp-bufsize");
     port->tcp_to_dev_bufsize = find_default_int("tcp-to-dev-bufsize");
+    port->max_connections = find_default_int("max-connections");
 
     if (buffer_init(&port->tcp_to_dev, NULL, port->tcp_to_dev_bufsize))
 	return ENOMEM;
@@ -2165,12 +2167,12 @@ handle_accept_port_read(int fd, void *data)
     if (port->dev_to_tcp_state == PORT_CLOSING)
 	goto out;
 
-    for (i = 0; i < MAX_CONNECTIONS; i++) {
+    for (i = 0; i < port->max_connections; i++) {
 	if (port->tcpcons[i].tcpfd == -1)
 	    break;
     }
 
-    if (i == MAX_CONNECTIONS) {
+    if (i == port->max_connections) {
 	if (port->kickolduser_mode) {
 	    shutdown_port(port, "kicked off, new user is coming\r\n");
 	    /* Wait the port to be unconnected and clean, go back to main loop*/
@@ -2795,6 +2797,12 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	if (rv == -1)
 	    return -1;
 	port->tcp_to_dev_bufsize = val;
+    } else if ((rv = cmpstrint(pos, "max-connections=", &val, eout))) {
+	if (rv == -1)
+	    return -1;
+	if (val < 1)
+	    val = 1;
+	port->max_connections = val;
     } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
@@ -2936,14 +2944,14 @@ portconfig(struct absout *eout,
     }
 
     new_port->tcpcons = malloc(sizeof(*(new_port->tcpcons)) *
-			      MAX_CONNECTIONS);
+			       new_port->max_connections);
     if (new_port->tcpcons == NULL) {
 	eout->out(eout, "Could not allocate a port data structure");
 	goto errout;
     }
     memset(new_port->tcpcons, 0,
-	   sizeof(*(new_port->tcpcons)) * MAX_CONNECTIONS);
-    for (i = 0; i < MAX_CONNECTIONS; i++) {
+	   sizeof(*(new_port->tcpcons)) * new_port->max_connections);
+    for (i = 0; i < new_port->max_connections; i++) {
 	new_port->tcpcons[i].port = new_port;
 	new_port->tcpcons[i].tcpfd = -1;
     }
