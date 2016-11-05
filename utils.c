@@ -229,7 +229,7 @@ enum state {
 
 static int add_to_parm(char **parm, size_t *parmlen, size_t *parmpos, char c)
 {
-    if (parmpos >= parmlen) {
+    if (*parmpos >= *parmlen) {
 	char *new_parm = realloc(*parm, *parmlen + 10);
 	if (!new_parm)
 	    return ENOMEM;
