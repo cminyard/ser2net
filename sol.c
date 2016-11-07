@@ -496,7 +496,8 @@ static void bmc_transmit_overrun(ipmi_sol_conn_t *conn, void *user_data)
 
 static void finish_close_connection(struct solcfg_data *d)
 {
-printf("Finish close: %d %p\n", d->closed, d->ipmi);
+    if (ser2net_debug_level > 0)
+	printf("Finish close: %d %p\n", d->closed, d->ipmi);
     if (d->sol)
 	ipmi_sol_free(d->sol);
     d->sol = NULL;
@@ -512,7 +513,8 @@ static void sol_connection_state(ipmi_sol_conn_t *conn, ipmi_sol_state state,
 {
     struct solcfg_data *d = cb_data;
 
-printf("sol_con_change: %d %d\n", state, error);
+    if (ser2net_debug_level > 0)
+	printf("sol_con_change: %d %d\n", state, error);
     if (error) {
 	finish_close_connection(d);
 	if (d->io)
@@ -555,7 +557,8 @@ static void conn_changed(ipmi_con_t   *ipmi,
 {
     struct solcfg_data *d = cb_data;
 
-printf("con_change: %d %d\n", any_port_up, err);
+    if (ser2net_debug_level > 0)
+	printf("con_change: %d %d\n", any_port_up, err);
     if (any_port_up == d->last_any_port_up)
 	return;
 
@@ -884,7 +887,7 @@ sol_ipmi_log(os_handler_t *hnd, enum ipmi_log_type_e log_type,
 	     const char *format, va_list ap)
 {
     int slevel = -1;
-    
+
     switch (log_type) {
     case IPMI_LOG_INFO:
 	if (ser2net_debug_level > 0)
