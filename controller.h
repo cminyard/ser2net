@@ -55,4 +55,7 @@ int controller_voutputf(struct controller_info *cntlr,
 void controller_write(struct controller_info *cntlr,
 		      const char *data, int count);
 
+/*  output a string  */
+void controller_outs (struct controller_info *cntlr, char *s);
+
 #endif /* CONTROLLER */

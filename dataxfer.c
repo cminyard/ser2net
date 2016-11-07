@@ -2834,7 +2834,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 
     count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
     while (count < 23) {
-	controller_output(cntlr, " ", 1);
+	controller_outs(cntlr, " ");
 	count++;
     }
 
@@ -2853,12 +2853,12 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 
     if (port->tcp_to_dev_state != PORT_UNCONNECTED) {
 	if (need_space) {
-	    controller_output(cntlr, " ", 1);
+	    controller_outs(cntlr, " ");
 	}
 	    
 	port->io.f->show_devcontrol(&port->io, &out);
     }
-    controller_output(cntlr, "\r\n", 2);
+    controller_outs(cntlr, "\r\n");
 
 }
 
@@ -3158,16 +3158,16 @@ data_monitor_start(struct controller_info *cntlr,
     port = find_port_by_num(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
-	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, portspec, strlen(portspec));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, portspec);
+	controller_outs(cntlr, "\r\n");
 	goto out;
     }
 
     if ((port->tcp_monitor != NULL) || (port->dev_monitor != NULL)) {
 	char *err = "Port is already being monitored";
-	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, "\r\n");
 	goto out_unlock;
     }
  
@@ -3177,9 +3177,9 @@ data_monitor_start(struct controller_info *cntlr,
 	port->dev_monitor = cntlr;
     } else {
 	char *err = "invalid monitor type: ";
-	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, type, strlen(type));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, type);
+	controller_outs(cntlr, "\r\n");
 	port = NULL;
     }
  out_unlock:
@@ -3220,15 +3220,15 @@ disconnect_port(struct controller_info *cntlr,
     port = find_port_by_num(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
- 	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, portspec, strlen(portspec));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, portspec);
+	controller_outs(cntlr, "\r\n");
 	goto out;
     } else if (port->tcp_to_dev_state == PORT_UNCONNECTED) {
 	char *err = "Port not connected: ";
- 	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, portspec, strlen(portspec));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, portspec);
+	controller_outs(cntlr, "\r\n");
 	goto out_unlock;
     }
 

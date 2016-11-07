@@ -284,6 +284,12 @@ controller_outputf(struct controller_info *cntlr, const char *str, ...)
     return rv;
 }
 
+void controller_outs(struct controller_info *cntlr, char *s)
+{
+  controller_output (cntlr, s, strlen(s));
+}
+
+
 /* Write some data directly to the controllers output port. */
 void
 controller_write(struct controller_info *cntlr, const char *data, int count)
@@ -368,13 +374,13 @@ process_input_line(controller_info_t *cntlr)
 	shutdown_controller(cntlr);
 	return 1; /* We don't want a prompt any more. */
     } else if (strcmp(tok, "help") == 0) {
-	controller_output(cntlr, help_str, strlen(help_str));
+	controller_outs(cntlr, help_str);
     } else if (strcmp(tok, "version") == 0) {
 	str = "ser2net version ";
-	controller_output(cntlr, str, strlen(str));
+	controller_outs(cntlr, str);
 	str = VERSION;
-	controller_output(cntlr, str, strlen(str));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, str);
+	controller_outs(cntlr, "\r\n");
     } else if (strcmp(tok, "showport") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	start_maint_op();
@@ -389,7 +395,7 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No monitor type given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	if (strcmp(tok, "stop") == 0) {
@@ -402,14 +408,14 @@ process_input_line(controller_info_t *cntlr)
 	} else {
 	    if (cntlr->monitor_port_id != NULL) {
 		char *err = "Already monitoring a port\r\n";
-		controller_output(cntlr, err, strlen(err));
+		controller_outs(cntlr, err);
 		goto out;
 	    }
 		
 	    str = strtok_r(NULL, " \t", &strtok_data);
 	    if (str == NULL) {
 		char *err = "No tcp port given\r\n";
-		controller_output(cntlr, err, strlen(err));
+		controller_outs(cntlr, err);
 		goto out;
 	    }
 	    start_maint_op();
@@ -420,7 +426,7 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No port given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	start_maint_op();
@@ -430,13 +436,13 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No port given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
 	    char *err = "No timeout given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	start_maint_op();
@@ -446,13 +452,13 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No port given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
 	    char *err = "No timeout given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	start_maint_op();
@@ -462,14 +468,14 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No port given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 
 	str = strtok_r(NULL, "", &strtok_data);
 	if (str == NULL) {
 	    char *err = "No device config\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	start_maint_op();
@@ -479,14 +485,14 @@ process_input_line(controller_info_t *cntlr)
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
 	    char *err = "No port given\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 
 	str = strtok_r(NULL, "", &strtok_data);
 	if (str == NULL) {
 	    char *err = "No device controls\r\n";
-	    controller_output(cntlr, err, strlen(err));
+	    controller_outs(cntlr, err);
 	    goto out;
 	}
 	start_maint_op();
@@ -494,13 +500,13 @@ process_input_line(controller_info_t *cntlr)
 	end_maint_op();
     } else {
 	char *err = "Unknown command: ";
-	controller_output(cntlr, err, strlen(err));
-	controller_output(cntlr, tok, strlen(tok));
-	controller_output(cntlr, "\r\n", 2);
+	controller_outs(cntlr, err);
+	controller_outs(cntlr, tok);
+	controller_outs(cntlr, "\r\n");
     }
 
 out:
-    controller_output(cntlr, prompt, strlen(prompt));
+    controller_outs(cntlr, prompt);
     return 0;
 }
 
@@ -536,7 +542,7 @@ handle_tcp_fd_read(int fd, void *data)
 
     if (cntlr->inbuf_count == INBUF_SIZE) {
         char *err = "Input line too long\r\n";
-	controller_output(cntlr, err, strlen(err));
+	controller_outs(cntlr, err);
 	cntlr->inbuf_count = 0;
 	goto out_unlock;
     }
@@ -589,13 +595,13 @@ handle_tcp_fd_read(int fd, void *data)
 		i = remove_chars(cntlr, i, 1);
 	    } else {
 		i = remove_chars(cntlr, i, 2);
-		controller_output(cntlr, "\b \b", 3);
+		controller_outs(cntlr, "\b \b");
 	    }
 	} else if (cntlr->inbuf[i] == '\r') {
 	    /* We got a newline, process the command. */
 	    int j;
 
-	    controller_output(cntlr, "\r\n", 2);
+	    controller_outs(cntlr, "\r\n");
 
 	    cntlr->inbuf[i] ='\0';
 	    if (process_input_line(cntlr))
@@ -612,7 +618,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    i = -1;
 	} else {
 	    /* It's a normal character, just echo it. */
-	    controller_output(cntlr, (char *) &(cntlr->inbuf[i]), 1);
+	    controller_outs(cntlr, (char *) &(cntlr->inbuf[i]));
 	}
     }
  out_unlock:
@@ -800,7 +806,7 @@ handle_accept_port_read(int fd, void *data)
 		telnet_cmd_handler,
 		telnet_cmds,
 		telnet_init_seq, sizeof(telnet_init_seq));
-    controller_output(cntlr, prompt, strlen(prompt));
+    controller_outs(cntlr, prompt);
 
     num_controller_ports++;
 
