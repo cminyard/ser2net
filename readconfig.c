@@ -641,7 +641,7 @@ struct default_data defaults[] = {
     { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .def.intval = 20 },
     { "chardelay-min",	DEFAULT_INT,	.min=1, .max=100000,
 					.def.intval = 1000 },
-    { "chardelay-max",	DEFAULT_INT,	.min=1, .max=100000,
+    { "chardelay-max",	DEFAULT_INT,	.min=1, .max=1000000,
 					.def.intval = 20000 },
     { "dev-to-tcp-bufsize", DEFAULT_INT,.min=1, .max=65536,
 					.def.intval = PORT_BUFSIZE },
