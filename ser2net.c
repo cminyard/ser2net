@@ -509,7 +509,7 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
-    for (i=1; i<argc; i++) {
+    for (i = 1; i < argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
 	    fprintf(stderr, "Invalid argument: '%s'\n", argv[i]);
 	    arg_error(argv[0]);
@@ -567,7 +567,7 @@ main(int argc, char *argv[])
 	    }
 	    config_port_from_cmdline = 1;
 	    break;
-	
+
 	case 'P':
 	    i++;
 	    if (i == argc) {

@@ -173,7 +173,7 @@ finish_longstr(void)
 
     /* On the final alloc an extra byte will be added for the nil char */
     working_longstr->str[working_longstr_len] = '\0';
-    
+
     if (working_longstr->type == CLOSEON) {
 	char *err = NULL, *errpos = NULL;
 
@@ -209,7 +209,7 @@ handle_longstr(const char *name, const char *line, enum str_type type)
 
     line_len = strlen(line);
 
-    working_longstr_continued = (line_len > 0) && (line[line_len-1] == '\\');
+    working_longstr_continued = (line_len > 0) && (line[line_len - 1] == '\\');
 
     working_longstr = malloc(sizeof(*working_longstr));
     if (!working_longstr) {
@@ -250,7 +250,7 @@ handle_continued_longstr(char *line)
     int line_len = strlen(line);
     char *newstr;
 
-    working_longstr_continued = (line_len > 0) && (line[line_len-1] == '\\');
+    working_longstr_continued = (line_len > 0) && (line[line_len - 1] == '\\');
 
     if (!working_longstr)
 	/* Ran out of memory during processing */
@@ -638,22 +638,23 @@ struct default_data defaults[] = {
     { "telnet_brk_on_sync",DEFAULT_BOOL,.def.intval = 0 },
     { "kickolduser",	DEFAULT_BOOL,	.def.intval = 0 },
     { "chardelay",	DEFAULT_BOOL,	.def.intval = 1 },
-    { "chardelay-scale",DEFAULT_INT,	.min=1, .max=1000, .def.intval = 20 },
-    { "chardelay-min",	DEFAULT_INT,	.min=1, .max=100000,
+    { "chardelay-scale",DEFAULT_INT,	.min = 1, .max = 1000,
+					.def.intval = 20 },
+    { "chardelay-min",	DEFAULT_INT,	.min = 1, .max = 100000,
 					.def.intval = 1000 },
-    { "chardelay-max",	DEFAULT_INT,	.min=1, .max=1000000,
+    { "chardelay-max",	DEFAULT_INT,	.min = 1, .max = 1000000,
 					.def.intval = 20000 },
-    { "dev-to-tcp-bufsize", DEFAULT_INT,.min=1, .max=65536,
+    { "dev-to-tcp-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
 					.def.intval = PORT_BUFSIZE },
-    { "tcp-to-dev-bufsize", DEFAULT_INT,.min=1, .max=65536,
+    { "tcp-to-dev-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
 					.def.intval = PORT_BUFSIZE },
 #ifdef HAVE_OPENIPMI
     /* SOL only */
     { "authenticated",	DEFAULT_BOOL,	.def.intval = 1 },
     { "encrypted",	DEFAULT_BOOL,	.def.intval = 1 },
-    { "ack-timeout",	DEFAULT_INT,	.min=1, .max=INT_MAX,
+    { "ack-timeout",	DEFAULT_INT,	.min = 1, .max = INT_MAX,
 					.def.intval = 1000000 },
-    { "ack-retries",	DEFAULT_INT,	.min=1, .max=INT_MAX,
+    { "ack-retries",	DEFAULT_INT,	.min = 1, .max = INT_MAX,
 					.def.intval = 10 },
     { "shared-serial-alert", DEFAULT_ENUM, .enums = shared_serial_alert_enums,
 				   .def.intval = ipmi_sol_serial_alerts_fail },
@@ -985,13 +986,13 @@ readconfig(char *filename)
 
     while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
 	int len = strlen(inbuf);
-	if (inbuf[len-1] != '\n') {
+	if (inbuf[len - 1] != '\n') {
 	    lineno++;
 	    syslog(LOG_ERR, "line %d is too long in config file", lineno);
 	    continue;
 	}
 	/* Remove the '\n' */
-	inbuf[len-1] = '\0';
+	inbuf[len - 1] = '\0';
 	handle_config_line(inbuf);
     }
 

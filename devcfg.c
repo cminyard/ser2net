@@ -103,7 +103,7 @@ static int
 get_baud_rate(int rate, int *val, int cisco, int *bps)
 {
     unsigned int i;
-    for (i=0; i<BAUD_RATES_LEN; i++) {
+    for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (cisco) {
 	    if (rate == baud_rates[i].cisco_ios_val) {
 		*val = baud_rates[i].val;
@@ -126,7 +126,7 @@ static void
 get_rate_from_baud_rate(int baud_rate, int *val, int cisco)
 {
     unsigned int i;
-    for (i=0; i<BAUD_RATES_LEN; i++) {
+    for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
 	    if (cisco) {
 		if (baud_rates[i].cisco_ios_val < 0)
@@ -158,7 +158,7 @@ uucp_fname_lock_size(char *devname)
     /*
      * Format is "/var/lock/LCK..<devname>".  The 6 is for
      * the "LCK.." and the final nil char.
-     */ 
+     */
     return 6 + strlen(uucp_lck_dir) + strlen(devname);
 }
 
@@ -567,11 +567,11 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
         } else if (strcmp(pos, "-RTSCTS") == 0) {
 	    set_termios_rtscts(termctl, 0);
         } else if (strcmp(pos, "LOCAL") == 0) {
-            termctl->c_cflag |= CLOCAL;  
+            termctl->c_cflag |= CLOCAL;
         } else if (strcmp(pos, "-LOCAL") == 0) {
             termctl->c_cflag &= ~CLOCAL;
         } else if (strcmp(pos, "HANGUP_WHEN_DONE") == 0) {
-            termctl->c_cflag |= HUPCL;  
+            termctl->c_cflag |= HUPCL;
         } else if (strcmp(pos, "-HANGUP_WHEN_DONE") == 0) {
             termctl->c_cflag &= ~HUPCL;
 	} else if (strcmp(pos, "NOBREAK") == 0) {
@@ -668,7 +668,7 @@ devcfg_serparm_to_str(struct devio *io, char *str, int strlen)
 
     sstr = baud_string(speed);
 
-    if (stopbits) 
+    if (stopbits)
 	schar = '2';
     else
 	schar = '1';
@@ -698,7 +698,7 @@ devcfg_show_devcfg(struct devio *io, struct absout *out)
 {
     struct devcfg_data *d = io->my_data;
     struct termios *termctl = &d->termctl;
-    
+
     speed_t speed = cfgetospeed(termctl);
     int     stopbits = termctl->c_cflag & CSTOPB;
     int     databits = termctl->c_cflag & CSIZE;
@@ -716,8 +716,8 @@ devcfg_show_devcfg(struct devio *io, struct absout *out)
 
     if (xon && xoff && xany) {
       out->out(out, "XONXOFF ");
-    }      
-    
+    }
+
     if (flow_rtscts) {
       out->out(out, "RTSCTS ");
     }
@@ -899,7 +899,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
     d->current_parity_on = d->default_parity_on;
     *bpc = calc_bpc(d);
 
-    /* Oct 05 2001 druzus: NOCTTY - don't make 
+    /* Oct 05 2001 druzus: NOCTTY - don't make
        device control tty for our process */
     options = O_NONBLOCK | O_NOCTTY;
     if (io->read_disabled) {
@@ -1244,7 +1244,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 	if (ioctl(d->devfd, TIOCSBRK) != -1)
 	    d->break_set = 1;
 	goto read_break_val;
-	    
+
     case 4:
     read_break_val:
 	if (d->break_set)
@@ -1275,7 +1275,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 	ioctl(d->devfd, TIOCMSET, &ival);
 #endif
 	goto read_dtr_val;
-	    
+
     case 7:
     read_dtr_val:
 	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)
@@ -1297,7 +1297,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 	ioctl(d->devfd, TIOCMSET, &ival);
 #endif
 	goto read_rts_val;
-	
+
     case 12:
 #ifndef __CYGWIN__
 	ival = TIOCM_RTS;
@@ -1308,7 +1308,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 	ioctl(d->devfd, TIOCMSET, &ival);
 #endif
 	goto read_rts_val;
-	    
+
     case 10:
     read_rts_val:
 	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)

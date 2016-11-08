@@ -184,7 +184,7 @@ static void
 solcfg_show_solcfg(struct devio *io, struct absout *out)
 {
     struct solcfg_data *d = io->my_data;
-    
+
     out->out(out, "%s", baud_string(d->speed));
 }
 
@@ -319,7 +319,7 @@ static int solcfg_write(struct devio *io, void *buf, size_t size)
 	errno = EAGAIN;
 	return -1;
     }
-    
+
     if (size == 0)
 	return 0;
     if (size < 0) {
@@ -473,10 +473,10 @@ static int sol_data_received(ipmi_sol_conn_t *conn,
 	count -= space;
 	d->read_end = 0;
     }
-	
+
     memcpy(d->read_data + d->read_end, data, count);
     d->read_end += count;
-    
+
     check_read_handler(d);
 
     return 0;
@@ -523,7 +523,7 @@ static void sol_connection_state(ipmi_sol_conn_t *conn, ipmi_sol_state state,
 	    free(d);
 	return;
     }
-	
+
     switch (state) {
     case ipmi_sol_state_closed:
 	finish_close_connection(d);
@@ -644,7 +644,7 @@ static int solcfg_setup(struct devio *io, const char *name, const char **errstr,
 					 d->deassert_CTS_DCD_DSR_on_connect);
 
     ipmi_sol_set_bit_rate(d->sol, d->speed);
-    
+
     *bps = get_rate_from_sol_baud_rate(d->speed, 0);
     *bpc = 10;
 
@@ -735,7 +735,7 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
 		  d->io->devname + 4, speed);
 	return -1;
     }
-    
+
     /* Enable authentication and encryption by default. */
     d->authenticated = find_default_int("authenticated");
     d->encrypted = find_default_int("encrypted");
@@ -754,7 +754,7 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
 	eout->out(eout, "Invalid SOL string: %s", d->io->devname + 4);
 	return -1;
     }
-    
+
     rv = ipmi_parse_args2(&curr_arg, argc, argv, &args);
     if (rv) {
 	str_to_argv_free(argc, argv);
@@ -837,7 +837,7 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
     if (rv && args)
 	ipmi_free_args(args);
     if (!rv) {
-	if (d->args) 
+	if (d->args)
 	    ipmi_free_args(d->args);
 	d->args = args;
     }

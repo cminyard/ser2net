@@ -56,7 +56,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	cmd = find_cmd(td->cmds, cmd_str[2]);
 	if (!cmd)
 	    return;
-	cmd->option_handler(td->cb_data, cmd_str+2, size-2);
+	cmd->option_handler(td->cb_data, cmd_str + 2, size - 2);
     } else if (cmd_str[1] == TN_WILL) {
 	unsigned char option = cmd_str[2];
 	cmd = find_cmd(td->cmds, option);
@@ -117,7 +117,7 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
     unsigned int i;
 
     /* Make sure to account for any duplicate 255s. */
-    for (real_len=0, i=0; i<len; i++, real_len++) {
+    for (real_len = 0, i = 0; i < len; i++, real_len++) {
 	if (option[i] == TN_IAC)
 	    real_len++;
     }
@@ -133,7 +133,7 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 
     buffer_outchar(&td->out_telnet_cmd, TN_IAC);
     buffer_outchar(&td->out_telnet_cmd, TN_SB);
-    for (i=0; i<len; i++) {
+    for (i = 0; i < len; i++) {
 	buffer_outchar(&td->out_telnet_cmd, option[i]);
 	if (option[i] == TN_IAC)
 	    buffer_outchar(&td->out_telnet_cmd, option[i]);
@@ -149,10 +149,10 @@ delete_char(unsigned char *data, int pos, int len)
 {
     int i;
 
-    for (i=pos; i<len-1; i++) {
-	data[i] = data[i+1];
+    for (i = pos; i < len - 1; i++) {
+	data[i] = data[i + 1];
     }
-    return len-1;
+    return len - 1;
 }
 
 int
@@ -161,7 +161,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
     int i;
 
     /* If it's a telnet port, get the commands out of the stream. */
-    for (i=0; i<len;) {
+    for (i = 0; i < len;) {
 	if (td->telnet_cmd_pos != 0) {
 	    unsigned char tn_byte;
 
@@ -219,7 +219,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 			   so we can detect the end of the
 			   suboption. */
 			td->telnet_cmd_pos = MAX_TELNET_CMD_SIZE;
-	  
+
 		    td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
 		    td->telnet_cmd_pos++;
 		    if (tn_byte == TN_IAC)

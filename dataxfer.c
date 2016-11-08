@@ -315,7 +315,7 @@ static unsigned char telnet_init_seq[] = {
 static void com_port_handler(void *cb_data, unsigned char *option, int len);
 static int com_port_will(void *cb_data);
 
-static struct telnet_cmd telnet_cmds[] = 
+static struct telnet_cmd telnet_cmds[] =
 {
     /*                        I will,  I do,  sent will, sent do */
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
@@ -391,7 +391,7 @@ init_port_data(port_info_t *port)
 {
     port->enabled = PORT_DISABLED;
     port->tcpfd = -1;
-    
+
     port->tcp_to_dev_state = PORT_UNCONNECTED;
     port->dev_to_tcp_state = PORT_UNCONNECTED;
     port->trace_read.fd = -1;
@@ -442,15 +442,15 @@ timestamp(trace_info_t *t, char *buf, int size)
 static int
 trace_write_end(char *out, int size, unsigned char *start, int col)
 {
-    int pos=0, w;
+    int pos = 0, w;
 
-    strncat(out, " |", size-pos);
+    strncat(out, " |", size - pos);
     pos += 2;
     for(w = 0; w < col; w++) {
         pos += snprintf(out + pos, size - pos, "%c",
 			isprint(start[w]) ? start[w] : '.');
     }
-    strncat(out+pos, "|\n", size-pos);
+    strncat(out + pos, "|\n", size - pos);
     pos += 2;
     return pos;
 }
@@ -464,15 +464,15 @@ trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
     static char out[1024];
     unsigned char *start;
 
-    if (buf_len == 0) 
+    if (buf_len == 0)
         return 0;
 
     if (!t->hexdump)
         return write(file, buf, buf_len);
 
-    pos = timestamp(t, out, sizeof(out));    
+    pos = timestamp(t, out, sizeof(out));
     pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
-        
+
     start = buf;
     for (q = 0; q < buf_len; q++) {
         pos += snprintf(out + pos, sizeof(out) - pos, "%02x ", buf[q]);
@@ -481,8 +481,8 @@ trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
             pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
             rv = write(file, out, strlen(out));
             if (rv < 0)
-                return rv;           
-            pos = timestamp(t, out, sizeof(out));    
+                return rv;
+            pos = timestamp(t, out, sizeof(out));
             pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
             col = 0;
             start = buf + q + 1;
@@ -516,7 +516,7 @@ do_trace(port_info_t *port, trace_info_t *t, unsigned char *buf,
 
 	    if (err == EINTR)
 		goto retry_write;
-	    
+
 	    /* Fatal error writing to the file, log it and close the file. */
 
 	    if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
@@ -525,7 +525,7 @@ do_trace(port_info_t *port, trace_info_t *t, unsigned char *buf,
 	    else
 		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
 		       port->portname, errbuf);
-	    
+
 	    close(t->fd);
 	    t->fd = -1;
 	    return;
@@ -550,7 +550,7 @@ hf_out(port_info_t *port, char *buf, int len)
     /* don't output to both file if it's the same as read or write file */
     if (port->tb && port->tb != port->tr && port->tb != port->tw
 		&& port->tb->timestamp)
-        write_ignore_fail(port->tb->fd, buf, len);    
+        write_ignore_fail(port->tb->fd, buf, len);
 }
 
 static void
@@ -753,10 +753,10 @@ handle_dev_fd_read(struct devio *io)
 
 	/* Double the IACs on a telnet stream.  This will fit because
 	   we only use half the buffer for telnet connections. */
-	for (i=0; i<count; i++) {
+	for (i = 0; i < count; i++) {
 	    if (port->dev_to_tcp.buf[i] == TN_IAC) {
-		for (j=count; j>i; j--)
-		    port->dev_to_tcp.buf[j+1] = port->dev_to_tcp.buf[j];
+		for (j = count; j > i; j--)
+		    port->dev_to_tcp.buf[j + 1] = port->dev_to_tcp.buf[j];
 		count++;
 		i++;
 		port->dev_to_tcp.buf[i] = TN_IAC;
@@ -1196,12 +1196,12 @@ is_device_already_inuse(port_info_t *check_port)
 
     while (port != NULL) {
 	if (port != check_port) {
-	    if ((strcmp(port->io.devname, check_port->io.devname) == 0) 
+	    if ((strcmp(port->io.devname, check_port->io.devname) == 0)
 		&& (port->tcp_to_dev_state != PORT_UNCONNECTED))
 	    {
 		return 1;
 	    }
-	}    
+	}
 	port = port->next;
     }
 
@@ -1268,7 +1268,7 @@ process_str(port_info_t *port, struct tm *time, struct timeval *tv,
 
 	    case 'p':
 		/* ser2net TCP port. */
-		for (t=port->portname; *t; t++)
+		for (t = port->portname; *t; t++)
 		    op(data, *t);
 		break;
 
@@ -1283,7 +1283,7 @@ process_str(port_info_t *port, struct tm *time, struct timeval *tv,
 		{
 		    char str[15];
 		    port->io.f->serparm_to_str(&port->io, str, sizeof(str));
-		    for (t=str; *t; t++)
+		    for (t = str; *t; t++)
 			op(data, *t);
 		}
 		break;
@@ -1596,7 +1596,7 @@ process_str_to_buf(port_info_t *port, const char *str)
 }
 
 static void
-open_trace_file(port_info_t *port, 
+open_trace_file(port_info_t *port,
                 trace_info_t *t,
                 struct timeval *tv,
                 trace_info_t **out)
@@ -1706,7 +1706,7 @@ setup_tcp_port(port_info_t *port)
 #ifdef HAVE_TCPD_H
     {
 	struct request_info req;
-	
+
 	request_init(&req, RQ_DAEMON, progname, RQ_FILE, port->tcpfd, NULL);
 	fromhost(&req);
 
@@ -2374,7 +2374,7 @@ shutdown_port(port_info_t *port, char *reason)
     }
 
     footer_trace(port, reason);
-    
+
     if (port->trace_write.fd != -1) {
 	close(port->trace_write.fd);
 	port->trace_write.fd = -1;
@@ -2433,7 +2433,7 @@ got_timeout(selector_t  *sel,
 	    telnet_send_option(&port->tn_data, data, 3);
 	}
     }
-    
+
     sel_get_monotonic_time(&then);
     then.tv_sec += 1;
     sel_start_timer(port->timer, &then);
@@ -2855,7 +2855,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	if (need_space) {
 	    controller_outs(cntlr, " ");
 	}
-	    
+
 	port->io.f->show_devcontrol(&port->io, &out);
     }
     controller_outs(cntlr, "\r\n");
@@ -3019,7 +3019,7 @@ showshortports(struct controller_info *cntlr, char *portspec)
 	if (port == NULL) {
 	    controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	} else {
-	    showshortport(cntlr, port);	    
+	    showshortport(cntlr, port);
 	    UNLOCK(port->lock);
 	}
     }
@@ -3170,7 +3170,7 @@ data_monitor_start(struct controller_info *cntlr,
 	controller_outs(cntlr, "\r\n");
 	goto out_unlock;
     }
- 
+
     if (strcmp(type, "tcp") == 0) {
 	port->tcp_monitor = cntlr;
     } else if (strcmp(type, "term") == 0) {
@@ -3255,7 +3255,6 @@ com_port_will(void *cb_data)
     port->modemstate_mask = 255;
     port->last_modemstate = 0;
 
-    
     /* send a modemstate notify */
     data[0] = TN_OPT_COM_PORT;
     data[1] = 107; /* Notify modemstate */
@@ -3275,8 +3274,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     int val;
     unsigned char ucval;
     int cisco_ios_baud_rates = 0;
-    
-    if (len < 2) 
+
+    if (len < 2)
 	return;
 
     switch (option[1]) {
@@ -3293,10 +3292,10 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	sign_len = strlen(sig);
 	if (sign_len > (MAX_TELNET_CMD_XMIT_BUF - 2))
 	    sign_len = MAX_TELNET_CMD_XMIT_BUF - 2;
-	
+
 	outopt[0] = 44;
 	outopt[1] = 100;
-	strncpy((char *) outopt+2, sig, sign_len);
+	strncpy((char *) outopt + 2, sig, sign_len);
 	telnet_send_option(&port->tn_data, outopt, 2 + sign_len);
 	break;
     }
@@ -3309,7 +3308,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    if (len < 6)
 		return;
 	    /* Basically the same as:
-	     *  val = ntohl(*((uint32_t *) (option+2)));
+	     *  val = ntohl(*((uint32_t *) (option + 2)));
 	     * but handled unaligned cases */
 	    val = option[2] << 24;
 	    val |= option[3] << 16;
@@ -3327,7 +3326,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    telnet_send_option(&port->tn_data, outopt, 3);
 	} else {
 	    /* Basically the same as:
-	     * *((uint32_t *) (outopt+2)) = htonl(val);
+	     * *((uint32_t *) (outopt + 2)) = htonl(val);
 	     * but handles unaligned cases */
 	    outopt[2] = val >> 24;
 	    outopt[3] = val >> 16;

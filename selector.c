@@ -177,8 +177,8 @@ struct selector_s
        moderately wasteful of space, but easy to do.  Hey, memory is
        cheap. */
     volatile fd_control_t fds[FD_SETSIZE];
-    
-    /* These are the offical fd_sets used to track what file descriptors
+
+  /* These are the offical fd_sets used to track what file descriptors
        need to be monitored. */
     volatile fd_set read_set;
     volatile fd_set write_set;
@@ -885,7 +885,7 @@ process_fds(selector_t	            *sel,
     memcpy(&tmp_read_set, (void *) &sel->read_set, sizeof(tmp_read_set));
     memcpy(&tmp_write_set, (void *) &sel->write_set, sizeof(tmp_write_set));
     memcpy(&tmp_except_set, (void *) &sel->except_set, sizeof(tmp_except_set));
-    num_fds = sel->maxfd+1;
+    num_fds = sel->maxfd + 1;
     sel_fd_unlock(sel);
 
     err = select(num_fds,
@@ -1055,7 +1055,7 @@ sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
     FD_ZERO((fd_set *) &sel->write_set);
     FD_ZERO((fd_set *) &sel->except_set);
 
-    for (i=0; i<FD_SETSIZE; i++) {
+    for (i = 0; i < FD_SETSIZE; i++) {
 	init_fd((fd_control_t *) &(sel->fds[i]));
     }
 

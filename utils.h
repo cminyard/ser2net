@@ -35,7 +35,7 @@ int scan_int(char *str);
  * The mandatory second part is the port number or a service name. */
 int scan_tcp_port(char *str, struct addrinfo **ai);
 
-/* 
+/*
  * Open a set of sockets given the addrinfo list, one per address.
  * Return the actual number of sockets opened in nr_fds.  Set the
  * I/O handler to readhndlr, with the given data.

@@ -121,15 +121,15 @@ static void
 HEAP_EXPORT_NAME(print_item)(struct heap_node_s *pos, int indent)
 {
     int i;
-    for (i=0; i<indent; i++)
+    for (i = 0; i < indent; i++)
 	fprintf(*HEAP_EXPORT_NAME(debug_out), " ");
     fprintf(*HEAP_EXPORT_NAME(debug_out),
 	    "  %p: %p %p %p " HEAP_OUTPUT_PRINTF "\n",
 	    pos, pos->left, pos->right, pos->up, HEAP_OUTPUT_DATA);
     if (pos->left)
-	HEAP_EXPORT_NAME(print_item)(pos->left, indent+1);
+	HEAP_EXPORT_NAME(print_item)(pos->left, indent + 1);
     if (pos->right)
-	HEAP_EXPORT_NAME(print_item)(pos->right, indent+1);
+	HEAP_EXPORT_NAME(print_item)(pos->right, indent + 1);
 }
 
 static void

@@ -71,7 +71,7 @@ typedef struct controller_info {
     struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
 
-    unsigned char inbuf[INBUF_SIZE+1];	/* Buffer to receive command on. */
+    unsigned char inbuf[INBUF_SIZE + 1];/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
 					   in the inbuf. */
 
@@ -112,7 +112,7 @@ static unsigned char telnet_init_seq[] = {
     TN_IAC, TN_DONT, TN_OPT_ECHO,
 };
 
-static struct telnet_cmd telnet_cmds[] = 
+static struct telnet_cmd telnet_cmds[] =
 {
     /*                        I will,  I do,  sent will, sent do */
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
@@ -207,7 +207,7 @@ controller_output(struct controller_info *cntlr,
 	    int i;
 
 	    if (cntlr->outbuf_pos > 0) {
-		for (i=0; i<cntlr->outbuf_count; i++) {
+		for (i = 0; i < cntlr->outbuf_count; i++) {
 		    cntlr->outbuf[i] = cntlr->outbuf[cntlr->outbuf_pos + i];
 		}
 	    }
@@ -231,7 +231,7 @@ controller_output(struct controller_info *cntlr,
 	    memcpy(newbuf,
 		   &(cntlr->outbuf[cntlr->outbuf_pos]),
 		   cntlr->outbuf_count);
-	    memcpy(newbuf+cntlr->outbuf_count, data, count);
+	    memcpy(newbuf + cntlr->outbuf_count, data, count);
 	    free(cntlr->outbuf);
 	    cntlr->outbuf = newbuf;
 	}
@@ -247,7 +247,7 @@ controller_output(struct controller_info *cntlr,
 	    /* Out of memory, just ignore thre request */
 	    return;
 	}
-	
+
 	cntlr->outbufsize = new_size;
 
 	memcpy(newbuf, data, count);
@@ -411,7 +411,7 @@ process_input_line(controller_info_t *cntlr)
 		controller_outs(cntlr, err);
 		goto out;
 	    }
-		
+
 	    str = strtok_r(NULL, " \t", &strtok_data);
 	    if (str == NULL) {
 		char *err = "No tcp port given\r\n";
@@ -518,8 +518,8 @@ static int
 remove_chars(controller_info_t *cntlr, int pos, int count) {
     int j;
 
-    for (j=pos-count+1; j<(cntlr->inbuf_count-count); j++) {
-	cntlr->inbuf[j] = cntlr->inbuf[j+count];
+    for (j = pos-count + 1; j < (cntlr->inbuf_count - count); j++) {
+	cntlr->inbuf[j] = cntlr->inbuf[j + count];
     }
     cntlr->inbuf_count -= count;
     pos -= count;
@@ -573,14 +573,14 @@ handle_tcp_fd_read(int fd, void *data)
     }
     read_start = cntlr->inbuf_count;
     read_count = process_telnet_data
-	(cntlr->inbuf+read_start, read_count, &cntlr->tn_data);
+	(cntlr->inbuf + read_start, read_count, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }
     cntlr->inbuf_count += read_count;
-    
-    for (i=read_start; i<cntlr->inbuf_count; i++) {
+
+    for (i = read_start; i < cntlr->inbuf_count; i++) {
 	if (cntlr->inbuf[i] == 0x0) {
 	    /* Ignore nulls. */
 	    i = remove_chars(cntlr, i, 1);
@@ -612,7 +612,7 @@ handle_tcp_fd_read(int fd, void *data)
                overlap */
 	    i++;
 	    cntlr->inbuf_count -= i;
-	    for (j=0; j<cntlr->inbuf_count; i++,j++) {
+	    for (j = 0; j < cntlr->inbuf_count; i++, j++) {
 		cntlr->inbuf[j] = cntlr->inbuf[i];
 	    }
 	    i = -1;
@@ -756,7 +756,7 @@ handle_accept_port_read(int fd, void *data)
 #ifdef HAVE_TCPD_H
     {
 	struct request_info req;
-	
+
 	request_init(&req, RQ_DAEMON, progname, RQ_FILE, cntlr->tcpfd, NULL);
 	fromhost(&req);
 

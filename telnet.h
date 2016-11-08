@@ -53,7 +53,7 @@ struct telnet_data_s
   /* Incoming telnet commands.  This is "+1" because the last byte
      always holds the previous byte received, even on an overflow, so
      that the end of the options can be correctly detected. */
-    unsigned char  telnet_cmd[MAX_TELNET_CMD_SIZE+1];
+    unsigned char  telnet_cmd[MAX_TELNET_CMD_SIZE + 1];
     int            telnet_cmd_pos;      /* Current position in the
 					   telnet_cmd buffer.  If zero,
 					   no telnet command is in
