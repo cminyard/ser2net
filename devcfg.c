@@ -862,7 +862,14 @@ devfd_fd_cleared(int fd, void *cb_data)
     struct devio *io = cb_data;
     struct devcfg_data *d = io->my_data;
     void (*shutdown_done)(struct devio *) = d->shutdown_done;
+    struct termios termio;
 
+    /* Disable flow control to avoid a long shutdown. */
+    if (tcgetattr(d->devfd, &termio) != -1) {
+	termio.c_iflag &= ~(IXON | IXOFF);
+	termio.c_cflag &= ~CRTSCTS;
+	tcsetattr(d->devfd, TCSANOW, &termio);
+    }
     tcflush(d->devfd, TCOFLUSH);
     close(d->devfd);
     d->devfd = -1;
