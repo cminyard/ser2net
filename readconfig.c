@@ -22,6 +22,7 @@
    configuration file. */
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -40,8 +41,6 @@
 #include <OpenIPMI/ipmi_sol.h>
 #endif
 
-#define MAX_LINE_SIZE 256	/* Maximum line length in the config file. */
-
 #define PORT_BUFSIZE	64	/* Default data transfer buffer size */
 
 extern char *config_port;
@@ -58,10 +57,6 @@ struct longstr_s
     enum str_type type;
     struct longstr_s *next;
 };
-
-static struct longstr_s *working_longstr;
-static int working_longstr_continued = 0;
-static int working_longstr_len = 0;
 
 /* All the strings in the system. */
 struct longstr_s *longstrs = NULL;
@@ -153,130 +148,61 @@ translateescapes(char *string, unsigned int *outlen,
     *errpos = "";
 }
 
-static void
-free_working_longstr(void)
-{
-    if (working_longstr->name)
-	free(working_longstr->name);
-    if (working_longstr->str)
-	free(working_longstr->str);
-    free(working_longstr);
-    working_longstr = NULL;
-}
-
-static void
-finish_longstr(void)
-{
-    if (!working_longstr)
-	/* Couldn't allocate memory someplace. */
-	goto out;
-
-    /* On the final alloc an extra byte will be added for the nil char */
-    working_longstr->str[working_longstr_len] = '\0';
-
-    if (working_longstr->type == CLOSEON) {
-	char *err = NULL, *errpos = NULL;
-
-	translateescapes(working_longstr->str, &working_longstr->length,
-			 &err, &errpos);
-	if (err) {
-	    syslog(LOG_ERR, "%s (starting at %s) on line %d", err, errpos,
-		   lineno);
-	    free_working_longstr();
-	    goto out;
-	}
-    } else {
-	working_longstr->length = working_longstr_len;
-    }
-
-    working_longstr->next = longstrs;
-    longstrs = working_longstr;
-    working_longstr = NULL;
-
- out:
-    working_longstr_len = 0;
-}
-
 /* Parse the incoming string, it may be on multiple lines. */
 static void
 handle_longstr(const char *name, const char *line, enum str_type type)
 {
-    int line_len;
+    struct longstr_s *longstr;
 
     /* If the user gave an empty string, we get a NULL. */
     if (!line)
 	line = "";
 
-    line_len = strlen(line);
-
-    working_longstr_continued = (line_len > 0) && (line[line_len - 1] == '\\');
-
-    working_longstr = malloc(sizeof(*working_longstr));
-    if (!working_longstr) {
+    longstr = malloc(sizeof(*longstr));
+    if (!longstr) {
 	syslog(LOG_ERR, "Out of memory handling string on %d", lineno);
 	return;
     }
-    memset(working_longstr, 0, sizeof(*working_longstr));
-    working_longstr->type = type;
+    memset(longstr, 0, sizeof(*longstr));
+    longstr->type = type;
 
-    working_longstr->name = strdup(name);
-    if (!working_longstr->name) {
-	free_working_longstr();
+    longstr->name = strdup(name);
+    if (!longstr->name) {
 	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
-	return;
+	goto out_err;
     }
 
-    if (working_longstr_continued)
-	line_len--;
-
-    /* Add 1 if it's not continued and thus needs the '\0' */
-    working_longstr->str = malloc(line_len + !working_longstr_continued);
-    if (!working_longstr->str) {
-	free_working_longstr();
+    longstr->str = strdup(line);
+    if (!longstr->str) {
 	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
-	return;
+	goto out_err;
     }
 
-    memcpy(working_longstr->str, line, line_len);
-    working_longstr_len = line_len;
+    longstr->length = strlen(line);
 
-    if (!working_longstr_continued)
-	finish_longstr();
-}
+    if (longstr->type == CLOSEON) {
+	char *err = NULL, *errpos = NULL;
 
-static void
-handle_continued_longstr(char *line)
-{
-    int line_len = strlen(line);
-    char *newstr;
-
-    working_longstr_continued = (line_len > 0) && (line[line_len - 1] == '\\');
-
-    if (!working_longstr)
-	/* Ran out of memory during processing */
-	goto out;
-
-    if (working_longstr_continued)
-	line_len--;
-
-    /* Add 1 if it's not continued and thus needs the '\0' */
-    newstr = realloc(working_longstr->str, (working_longstr_len + line_len
-					    + !working_longstr_continued));
-    if (!newstr) {
-	free(working_longstr->str);
-	free(working_longstr->name);
-	free(working_longstr);
-	working_longstr = NULL;
-	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
-	goto out;
+	translateescapes(longstr->str, &longstr->length,
+			 &err, &errpos);
+	if (err) {
+	    syslog(LOG_ERR, "%s (starting at %s) on line %d", err, errpos,
+		   lineno);
+	    goto out_err;
+	}
     }
-    working_longstr->str = newstr;
-    memcpy(working_longstr->str + working_longstr_len, line, line_len);
-    working_longstr_len += line_len;
 
-out:
-    if (!working_longstr_continued)
-	finish_longstr();
+    longstr->next = longstrs;
+    longstrs = longstr;
+    return;
+
+ out_err:
+    if (longstr->name)
+	free(longstr->name);
+    if (longstr->str)
+	free(longstr->str);
+    free(longstr);
+    return;
 }
 
 char *
@@ -308,17 +234,6 @@ void
 free_longstrs(void)
 {
     struct longstr_s *longstr;
-
-    if (working_longstr) {
-	if (working_longstr->name)
-	    free(working_longstr->name);
-	if (working_longstr->str)
-	    free(working_longstr->str);
-	free(working_longstr);
-	working_longstr = NULL;
-    }
-    working_longstr_len = 0;
-    working_longstr_continued = 0;
 
     while (longstrs) {
 	longstr = longstrs;
@@ -751,25 +666,102 @@ handle_new_default(const char *name, const char *str)
     }
 }
 
-void
-handle_config_line(char *inbuf)
+int
+handle_config_line(char *inbuf, int len)
 {
     char *portnum, *state, *timeout, *devname, *devcfg;
     char *strtok_data = NULL;
 
-    lineno++;
+    if (len == 0)
+	/* Ignore empty lines */
+	goto out;
 
-    if (working_longstr_continued) {
-	char *str = strtok_r(inbuf, "\n", &strtok_data);
-	if (!str)
-	    str = "";
-	handle_continued_longstr(str);
-	return;
+    if (inbuf[0] == '#')
+	/* Ignore comments. */
+	goto out;
+
+    if (inbuf[len - 1] == '\\')
+	return len - 1; /* Continued line. */
+
+    if (startswith(inbuf, "BANNER", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No banner name given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, BANNER);
+	goto out;
     }
 
-    if (inbuf[0] == '#') {
-	/* Ignore comments. */
-	return;
+    if (startswith(inbuf, "SIGNATURE", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No signature given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, SIGNATURE);
+	goto out;
+    }
+
+    if (startswith(inbuf, "OPENSTR", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No open string name given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, OPENSTR);
+	goto out;
+    }
+
+    if (startswith(inbuf, "CLOSESTR", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No close string name given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, CLOSESTR);
+	goto out;
+    }
+
+    if (startswith(inbuf, "CLOSEON", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, CLOSEON);
+	goto out;
+    }
+
+    if (startswith(inbuf, "DEVICE", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No device name given on line %d", lineno);
+	    goto out;
+	}
+	handle_longstr(name, str, DEVNAME);
+	goto out;
+    }
+
+    if (startswith(inbuf, "TRACEFILE", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *str = strtok_r(NULL, "\n", &strtok_data);
+	if (name == NULL) {
+	    syslog(LOG_ERR, "No tracefile name given on line %d", lineno);
+	    goto out;
+	}
+	if ((str == NULL) || (strlen(str) == 0)) {
+	    syslog(LOG_ERR, "No tracefile given on line %d", lineno);
+	    goto out;
+	}
+	handle_tracefile(name, str);
+	goto out;
     }
 
     if (startswith(inbuf, "CONTROLPORT", &strtok_data)) {
@@ -778,35 +770,13 @@ handle_config_line(char *inbuf)
 	     * The control port has already been configured either on the
 	     * command line or on a previous statement.  Only take the first.
 	     */
-	    return;
+	    goto out;
 	config_port = strdup(strtok_r(NULL, "\n", &strtok_data));
 	if (!config_port) {
 	    syslog(LOG_ERR, "Could not allocate memory for CONTROLPORT");
-	    return;
+	    goto out;
 	}
-	return;
-    }
-
-    if (startswith(inbuf, "BANNER", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No banner name given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, BANNER);
-	return;
-    }
-
-    if (startswith(inbuf, "SIGNATURE", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No signature given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, SIGNATURE);
-	return;
+	goto out;
     }
 
 #if HAVE_DECL_TIOCSRS485
@@ -815,85 +785,26 @@ handle_config_line(char *inbuf)
         char *str = strtok_r(NULL, "\n", &strtok_data);
         if (name == NULL) {
             syslog(LOG_ERR, "No signature given on line %d", lineno);
-            return;
+            goto out;
         }
         if ((str == NULL) || (strlen(str) == 0)) {
             syslog(LOG_ERR, "No RS485 configuration given on line %d", lineno);
-            return;
+            goto out;
         }
         handle_rs485conf(name, str);
-        return;
+        goto out;
     }
 #endif
-
-    if (startswith(inbuf, "OPENSTR", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No open string name given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, OPENSTR);
-	return;
-    }
-
-    if (startswith(inbuf, "CLOSESTR", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No close string name given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, CLOSESTR);
-	return;
-    }
-
-    if (startswith(inbuf, "CLOSEON", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, CLOSEON);
-	return;
-    }
-
-    if (startswith(inbuf, "TRACEFILE", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No tracefile name given on line %d", lineno);
-	    return;
-	}
-	if ((str == NULL) || (strlen(str) == 0)) {
-	    syslog(LOG_ERR, "No tracefile given on line %d", lineno);
-	    return;
-	}
-	handle_tracefile(name, str);
-	return;
-    }
-
-    if (startswith(inbuf, "DEVICE", &strtok_data)) {
-	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
-	    syslog(LOG_ERR, "No device name given on line %d", lineno);
-	    return;
-	}
-	handle_longstr(name, str, DEVNAME);
-	return;
-    }
 
     if (startswith(inbuf, "DEFAULT", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No default name given on line %d", lineno);
-	    return;
+	    goto out;
 	}
 	handle_new_default(name, str);
-	return;
+	goto out;
     }
 
     if (startswith(inbuf, "ROTATOR", &strtok_data)) {
@@ -901,10 +812,10 @@ handle_config_line(char *inbuf)
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No rotator name given on line %d", lineno);
-	    return;
+	    goto out;
 	}
 	add_rotator(name, str, lineno);
-	return;
+	goto out;
     }
 
     if (startswith(inbuf, "LED", &strtok_data)) {
@@ -912,38 +823,38 @@ handle_config_line(char *inbuf)
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No LED name given on line %d", lineno);
-	    return;
+	    goto out;
 	}
 	if ((str == NULL) || (strlen(str) == 0)) {
 	    syslog(LOG_ERR, "No LED given on line %d", lineno);
-	    return;
+	    goto out;
 	}
 	handle_led(name, str, lineno);
-	return;
+	goto out;
     }
 
     portnum = strtok_r(inbuf, ":", &strtok_data);
     if (portnum == NULL) {
 	/* An empty line is ok. */
-	return;
+	goto out;
     }
 
     state = strtok_r(NULL, ":", &strtok_data);
     if (state == NULL) {
 	syslog(LOG_ERR, "No state given on line %d", lineno);
-	return;
+	goto out;
     }
 
     timeout = strtok_r(NULL, ":", &strtok_data);
     if (timeout == NULL) {
 	syslog(LOG_ERR, "No timeout given on line %d", lineno);
-	return;
+	goto out;
     }
 
     devname = strtok_r(NULL, ":", &strtok_data);
     if (devname == NULL) {
 	syslog(LOG_ERR, "No device name given on line %d", lineno);
-	return;
+	goto out;
     }
 
     devcfg = strtok_r(NULL, ":", &strtok_data);
@@ -954,6 +865,9 @@ handle_config_line(char *inbuf)
 
     portconfig(&syslog_eout, portnum, state, timeout, devname, devcfg,
 	       config_num);
+
+ out:
+    return 0;
 }
 
 /* Read the specified configuration file and call the routine to
@@ -962,15 +876,22 @@ int
 readconfig(char *filename)
 {
     FILE *instream;
-    char inbuf[MAX_LINE_SIZE];
-    int  rv = 0;
+    int linesize = 256;
+    char *inbuf = malloc(linesize);
+    int  rv = 0, pos = 0;
+
+    if (!inbuf) {
+	syslog(LOG_ERR, "Unable to allocate input buffer");
+	return -1;
+    }
 
     lineno = 0;
 
     instream = fopen(filename, "r");
-    if (instream == NULL) {
+    if (!instream) {
 	syslog(LOG_ERR, "Unable to open config file '%s': %m", filename);
-	return -1;
+	rv = -1;
+	goto out_err;
     }
 
     setup_defaults();
@@ -984,22 +905,42 @@ readconfig(char *filename)
     config_num++;
     free_rotators();
 
-    while (fgets(inbuf, MAX_LINE_SIZE, instream) != NULL) {
+    while (fgets(inbuf + pos, linesize - pos, instream) != NULL) {
 	int len = strlen(inbuf);
-	if (inbuf[len - 1] != '\n') {
-	    lineno++;
-	    syslog(LOG_ERR, "line %d is too long in config file", lineno);
+	lineno++;
+	if (len >= (linesize - 1) && inbuf[len - 1] != '\n') {
+	    char *new_inbuf;
+
+	    /* We filled up the buffer.  Expand the line. */
+	    pos = len;
+	    linesize += 256;
+	    new_inbuf = realloc(inbuf, linesize);
+	    if (!new_inbuf) {
+		syslog(LOG_ERR, "Unable to reallocate input buffer");
+		rv = -1;
+		goto out_err;
+	    }
+	    inbuf = new_inbuf;
 	    continue;
 	}
+
 	/* Remove the '\n' */
-	inbuf[len - 1] = '\0';
-	handle_config_line(inbuf);
+	if (len > 0 && inbuf[len - 1] == '\n') {
+	    inbuf[len - 1] = '\0';
+	    len--;
+	}
+	pos = handle_config_line(inbuf, len);
     }
+    if (pos > 0)
+	handle_config_line(inbuf, strlen(inbuf));
 
     /* Delete anything that wasn't in the new config file. */
     clear_old_port_config(config_num);
 
     fclose(instream);
+ out_err:
+    free(inbuf);
     return rv;
+
 }
 

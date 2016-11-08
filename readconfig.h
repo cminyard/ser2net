@@ -21,7 +21,7 @@
 #define READCONFIG
 
 /* Handle one line of configuration. */
-void handle_config_line(char *inbuf);
+int handle_config_line(char *inbuf, int len);
 
 /* Read the specified configuration file and call the routine to
    create the ports. */

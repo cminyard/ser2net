@@ -539,7 +539,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No config line specified with -C\n");
 		arg_error(argv[0]);
 	    }
-	    handle_config_line(argv[i]);
+	    handle_config_line(argv[i], strlen(argv[i]));
 	    config_file = NULL;
 	    break;
 
