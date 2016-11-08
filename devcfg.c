@@ -144,35 +144,37 @@ get_rate_from_baud_rate(int baud_rate, int *val, int cisco)
 }
 
 #ifdef USE_UUCP_LOCKING
-static char *uucp_lck_dir = "/var/lock";
+static char *uucp_lck_dir = "/var/lock/";
+static char *dev_prefix = "/dev/";
 
 static int
 uucp_fname_lock_size(char *devname)
 {
-    char *ptr;
+    int dev_prefix_len = strlen(dev_prefix);
 
-    (ptr = strrchr(devname, '/'));
-    if (ptr == NULL) {
-	ptr = devname;
-    } else {
-	ptr = ptr + 1;
-    }
+    if (strncmp(dev_prefix, devname, dev_prefix_len) == 0)
+	devname += dev_prefix_len;
 
-    return 7 + strlen(uucp_lck_dir) + strlen(ptr);
+    /*
+     * Format is "/var/lock/LCK..<devname>".  The 6 is for
+     * the "LCK.." and the final nil char.
+     */ 
+    return 6 + strlen(uucp_lck_dir) + strlen(devname);
 }
 
 static void
 uucp_fname_lock(char *buf, char *devname)
 {
-    char *ptr;
+    int i, dev_prefix_len = strlen(dev_prefix);
 
-    (ptr = strrchr(devname, '/'));
-    if (ptr == NULL) {
-	ptr = devname;
-    } else {
-	ptr = ptr + 1;
+    if (strncmp(dev_prefix, devname, dev_prefix_len) == 0)
+	devname += dev_prefix_len;
+
+    sprintf(buf, "%sLCK..%s", uucp_lck_dir, devname);
+    for (i = strlen(uucp_lck_dir); buf[i]; i++) {
+	if (buf[i] == '/')
+	    buf[i] = '_';
     }
-    sprintf(buf, "%s/LCK..%s", uucp_lck_dir, ptr);
 }
 
 static void
