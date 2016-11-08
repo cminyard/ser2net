@@ -5,8 +5,10 @@
 #include "buffer.h"
 
 /* Telnet commands */
+#define TN_SE   240
 #define TN_DATA_MARK 242
 #define TN_BREAK 243
+#define TN_SB   250
 #define TN_WILL	251
 #define TN_WONT	252
 #define TN_DO	253
@@ -20,6 +22,7 @@
 
 typedef struct telnet_data_s telnet_data_t;
 
+#define TELNET_CMD_END_OPTION	255
 struct telnet_cmd
 {
     unsigned char option;

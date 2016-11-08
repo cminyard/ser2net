@@ -9,7 +9,7 @@ find_cmd(struct telnet_cmd *array, unsigned char option)
 {
     int i;
 
-    for (i=0; array[i].option != 255; i++) {
+    for (i = 0; array[i].option != TELNET_CMD_END_OPTION; i++) {
 	if (array[i].option == option)
 	    return &array[i];
     }
@@ -50,14 +50,14 @@ handle_telnet_cmd(telnet_data_t *td)
     if (size < 2)
 	return;
 
-    if (cmd_str[1] < 250) { /* A one-byte command. */
+    if (cmd_str[1] < TN_SB) { /* A one-byte command. */
 	td->cmd_handler(td->cb_data, cmd_str[1]);
-    } else if (cmd_str[1] == 250) { /* Option */
+    } else if (cmd_str[1] == TN_SB) { /* Option */
 	cmd = find_cmd(td->cmds, cmd_str[2]);
 	if (!cmd)
 	    return;
 	cmd->option_handler(td->cb_data, cmd_str+2, size-2);
-    } else if (cmd_str[1] == 251) { /* WILL */
+    } else if (cmd_str[1] == TN_WILL) {
 	unsigned char option = cmd_str[2];
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_do) {
@@ -77,7 +77,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	if (cmd) {
 	    cmd->rem_will = 1;
 	}
-    } else if (cmd_str[1] == 252) { /* WONT */
+    } else if (cmd_str[1] == TN_WONT) {
 	unsigned char option = cmd_str[2];
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_do)
@@ -86,7 +86,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	    cmd->sent_do = 0;
 	if (cmd)
 	    cmd->rem_will = 0;
-    } else if (cmd_str[1] == 253) { /* DO */
+    } else if (cmd_str[1] == TN_DO) {
 	unsigned char option = cmd_str[2];
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_will) {
@@ -98,7 +98,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	    cmd->sent_will = 0;
 	if (cmd)
 	    cmd->rem_do = 1;
-    } else if (cmd_str[1] == 254) { /* DONT */
+    } else if (cmd_str[1] == TN_DONT) {
 	unsigned char option = cmd_str[2];
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_will)
@@ -118,7 +118,7 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 
     /* Make sure to account for any duplicate 255s. */
     for (real_len=0, i=0; i<len; i++, real_len++) {
-	if (option[i] == 255)
+	if (option[i] == TN_IAC)
 	    real_len++;
     }
 
@@ -131,15 +131,15 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 	return;
     }
 
-    buffer_outchar(&td->out_telnet_cmd, 255);
-    buffer_outchar(&td->out_telnet_cmd, 250);
+    buffer_outchar(&td->out_telnet_cmd, TN_IAC);
+    buffer_outchar(&td->out_telnet_cmd, TN_SB);
     for (i=0; i<len; i++) {
 	buffer_outchar(&td->out_telnet_cmd, option[i]);
-	if (option[i] == 255)
+	if (option[i] == TN_IAC)
 	    buffer_outchar(&td->out_telnet_cmd, option[i]);
     }
-    buffer_outchar(&td->out_telnet_cmd, 255);
-    buffer_outchar(&td->out_telnet_cmd, 240);
+    buffer_outchar(&td->out_telnet_cmd, TN_IAC);
+    buffer_outchar(&td->out_telnet_cmd, TN_SE);
 
     td->output_ready(td->cb_data);
 }
@@ -167,7 +167,7 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 
 	    tn_byte = data[i];
 
-	    if ((td->telnet_cmd_pos == 1) && (tn_byte == 255)) {
+	    if ((td->telnet_cmd_pos == 1) && (tn_byte == TN_IAC)) {
 		/* Two IACs in a row causes one IAC to be sent, so
 		   just let this one go through. */
 		i++;
@@ -182,14 +182,14 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 		   everything we need to handle the command. */
 		td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
 		td->telnet_cmd_pos++;
-		if (tn_byte < 250) {
+		if (tn_byte < TN_SB) {
 		    handle_telnet_cmd(td);
 		    td->telnet_cmd_pos = 0;
 		}
 	    } else if (td->telnet_cmd_pos == 2) {
 		td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
 		td->telnet_cmd_pos++;
-		if (td->telnet_cmd[1] != 250) {
+		if (td->telnet_cmd[1] != TN_SB) {
 		    /* It's a will/won't/do/don't */
 		    handle_telnet_cmd(td);
 		    td->telnet_cmd_pos = 0;
@@ -197,12 +197,12 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 	    } else {
 		/* It's in a suboption, look for the end and IACs. */
 	      if (td->suboption_iac) {
-		    if (tn_byte == 240) {
+		    if (tn_byte == TN_SE) {
 			/* Remove the IAC 240 from the end. */
 			td->telnet_cmd_pos--;
 			handle_telnet_cmd(td);
 			td->telnet_cmd_pos = 0;
-		    } else if (tn_byte == 255) {
+		    } else if (tn_byte == TN_IAC) {
 			/* Don't do anything, a double 255 means
 			   we leave on 255 in. */
 		    } else {
@@ -222,12 +222,12 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 	  
 		    td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
 		    td->telnet_cmd_pos++;
-		    if (tn_byte == 255)
-		      td->suboption_iac = 1;
+		    if (tn_byte == TN_IAC)
+			td->suboption_iac = 1;
 		}
 	    }
-	} else if (data[i] == 255) {
-	    td->telnet_cmd[td->telnet_cmd_pos] = 255;
+	} else if (data[i] == TN_IAC) {
+	    td->telnet_cmd[td->telnet_cmd_pos] = TN_IAC;
 	    len = delete_char(data, i, len);
 	    td->telnet_cmd_pos++;
 	    td->suboption_iac = 0;

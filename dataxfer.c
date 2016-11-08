@@ -323,7 +323,7 @@ static struct telnet_cmd telnet_cmds[] =
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
     { TN_OPT_COM_PORT,		   1,     1,          0,       0, 0, 0,
       com_port_handler, com_port_will },
-    { 255 }
+    { TELNET_CMD_END_OPTION }
 };
 
 static void
@@ -754,12 +754,12 @@ handle_dev_fd_read(struct devio *io)
 	/* Double the IACs on a telnet stream.  This will fit because
 	   we only use half the buffer for telnet connections. */
 	for (i=0; i<count; i++) {
-	    if (port->dev_to_tcp.buf[i] == 255) {
+	    if (port->dev_to_tcp.buf[i] == TN_IAC) {
 		for (j=count; j>i; j--)
 		    port->dev_to_tcp.buf[j+1] = port->dev_to_tcp.buf[j];
 		count++;
 		i++;
-		port->dev_to_tcp.buf[i] = 255;
+		port->dev_to_tcp.buf[i] = TN_IAC;
 	    }
 	}
     }
