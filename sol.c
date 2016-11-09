@@ -161,11 +161,11 @@ baud_string(int speed)
 {
     char *str;
     switch (speed) {
-    case IPMI_SOL_BIT_RATE_9600: str = "9600";
-    case IPMI_SOL_BIT_RATE_19200: str = "19200";
-    case IPMI_SOL_BIT_RATE_38400: str = "38400";
-    case IPMI_SOL_BIT_RATE_57600: str = "57600";
-    case IPMI_SOL_BIT_RATE_115200: str = "115200";
+    case IPMI_SOL_BIT_RATE_9600: str = "9600"; break;
+    case IPMI_SOL_BIT_RATE_19200: str = "19200"; break;
+    case IPMI_SOL_BIT_RATE_38400: str = "38400"; break;
+    case IPMI_SOL_BIT_RATE_57600: str = "57600"; break;
+    case IPMI_SOL_BIT_RATE_115200: str = "115200"; break;
     default: str = "unknown speed";
     }
     return str;
