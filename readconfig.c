@@ -233,10 +233,10 @@ find_str(const char *name, enum str_type *type, unsigned int *len)
 void
 free_longstrs(void)
 {
-    struct longstr_s *longstr;
 
     while (longstrs) {
-	longstr = longstrs;
+	struct longstr_s *longstr = longstrs;
+
 	longstrs = longstrs->next;
 	free(longstr->name);
 	free(longstr->str);
@@ -310,10 +310,9 @@ find_tracefile(const char *name)
 void
 free_tracefiles(void)
 {
-    struct tracefile_s *tracefile;
-
     while (tracefiles) {
-	tracefile = tracefiles;
+	struct tracefile_s *tracefile = tracefiles;
+
 	tracefiles = tracefiles->next;
 	free(tracefile->name);
 	free(tracefile->str);
@@ -344,7 +343,7 @@ handle_rs485conf(char *name, char *str)
 	return;
     }
 
-    if (sscanf(str, "%u:%u:%1hhu:%1hhu",
+    if (sscanf(str, "%10u:%10u:%1hhu:%1hhu",
                &new_rs485conf->conf.delay_rts_before_send,
                &new_rs485conf->conf.delay_rts_after_send,
                &rts_on_send,
@@ -397,10 +396,9 @@ find_rs485conf(const char *name)
 void
 free_rs485confs(void)
 {
-    struct rs485conf_s *rs485conf;
-
     while (rs485confs) {
-        rs485conf = rs485confs;
+	struct rs485conf_s *rs485conf = rs485confs;
+
         rs485confs = rs485confs->next;
         free(rs485conf->name);
         free(rs485conf);

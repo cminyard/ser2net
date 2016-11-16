@@ -227,7 +227,7 @@ uucp_mk_lock(char *devname)
 		pid = buf.ival;
 	    else if (n > 0) {		/* Ascii lockfile. */
 		buf.str[n] = 0;
-		sscanf(buf.str, "%d", &pid);
+		sscanf(buf.str, "%10d", &pid);
 	    }
 
 	    if (pid > 0 && kill((pid_t)pid, 0) < 0 && errno == ESRCH) {

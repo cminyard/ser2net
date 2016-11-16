@@ -627,7 +627,6 @@ int
 sel_stop_timer(sel_timer_t *timer)
 {
     selector_t *sel = timer->val.sel;
-    volatile sel_timer_t *top;
 
     sel_timer_lock(sel);
     if (timer->val.stopped) {
@@ -636,7 +635,7 @@ sel_stop_timer(sel_timer_t *timer)
     }
 
     if (timer->val.in_heap) {
-	top = theap_get_top(&sel->timer_heap);
+	volatile sel_timer_t *top = theap_get_top(&sel->timer_heap);
 
 	theap_remove(&sel->timer_heap, timer);
 	timer->val.in_heap = 0;
@@ -1009,10 +1008,9 @@ sel_select_loop(selector_t      *sel,
 		long            thread_id,
 		void            *cb_data)
 {
-    int             err;
-
     for (;;) {
-	err = sel_select(sel, send_sig, thread_id, cb_data, NULL);
+	int err = sel_select(sel, send_sig, thread_id, cb_data, NULL);
+
 	if ((err < 0) && (errno != EINTR)) {
 	    err = errno;
 	    /* An error occurred. */

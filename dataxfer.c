@@ -1865,16 +1865,15 @@ static void
 handle_rot_port_read(int fd, void *data)
 {
     rotator_t *rot = (rotator_t *) data;
-    port_info_t *port;
     struct sockaddr_storage dummy_sockaddr;
     socklen_t len = sizeof(dummy_sockaddr);
     int i, new_fd;
-    char *err;
 
     LOCK(ports_lock);
     i = rot->curr_port;
     do {
-	port = is_port_free(rot->portv[i]);
+	port_info_t *port = is_port_free(rot->portv[i]);
+
 	if (++i >= rot->portc)
 	    i = 0;
 	if (port) {
@@ -1890,7 +1889,8 @@ handle_rot_port_read(int fd, void *data)
 
     new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
     if (new_fd != -1) {
-	err = "No free port found\r\n";
+	char *err = "No free port found\r\n";
+
 	write_ignore_fail(new_fd, err, strlen(err));
 	close(new_fd);
     }
@@ -3031,7 +3031,6 @@ showshortports(struct controller_info *cntlr, char *portspec)
 void
 setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
 {
-    int timeout_num;
     port_info_t *port;
 
     LOCK(ports_lock);
@@ -3039,7 +3038,8 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
     } else {
-	timeout_num = scan_int(timeout);
+	int timeout_num = scan_int(timeout);
+
 	if (timeout_num == -1) {
 	    controller_outputf(cntlr, "Invalid timeout: %s\r\n", timeout);
 	} else {

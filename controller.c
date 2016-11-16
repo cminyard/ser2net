@@ -204,9 +204,9 @@ controller_output(struct controller_info *cntlr,
 	if (new_size <= cntlr->outbufsize) {
 	    /* It will fit into the current buffer, just move things
 	       around and append it. */
-	    int i;
-
 	    if (cntlr->outbuf_pos > 0) {
+		int i;
+
 		for (i = 0; i < cntlr->outbuf_count; i++) {
 		    cntlr->outbuf[i] = cntlr->outbuf[cntlr->outbuf_pos + i];
 		}

@@ -618,9 +618,15 @@ main(int argc, char *argv[])
 	}
     }
 
-    err = sel_alloc_selector_thread(&ser2net_sel, ser2net_wake_sig,
-				    slock_alloc, slock_free,
-				    slock_lock, slock_unlock, NULL);
+#ifdef USE_PTHREADS
+    if (num_threads > 1)
+	err = sel_alloc_selector_thread(&ser2net_sel, ser2net_wake_sig,
+					slock_alloc, slock_free,
+					slock_lock, slock_unlock, NULL);
+    else
+#endif
+	err = sel_alloc_selector_nothread(&ser2net_sel);
+
     if (err) {
 	fprintf(stderr,
 		"Could not initialize ser2net selector: '%s'\n",
@@ -701,6 +707,8 @@ main(int argc, char *argv[])
 
     start_threads();
     op_loop(NULL);
+
+    sel_free_selector(ser2net_sel);
 
     return 0;
 }

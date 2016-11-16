@@ -229,10 +229,6 @@ static int solcfg_read(struct devio *io, void *buf, size_t size)
 
     if (size == 0)
 	return 0;
-    if (size < 0) {
-	errno = EINVAL;
-	return -1;
-    }
 
     if (d->read_end == d->read_start) {
 	errno = EAGAIN;
@@ -322,10 +318,6 @@ static int solcfg_write(struct devio *io, void *buf, size_t size)
 
     if (size == 0)
 	return 0;
-    if (size < 0) {
-	errno = EINVAL;
-	return -1;
-    }
 
     tc = malloc(sizeof(*tc));
     if (!tc) {
@@ -447,9 +439,10 @@ static int solcfg_flush(struct devio *io, int *val)
 }
 
 static int sol_data_received(ipmi_sol_conn_t *conn,
-			     const void *data, size_t count, void *user_data)
+			     const void *idata, size_t count, void *user_data)
 {
     struct solcfg_data *d = user_data;
+    const char *data = idata;
     int space;
 
     if (d->read_end >= d->read_start)
