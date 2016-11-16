@@ -57,7 +57,7 @@ led_driver_init(void)
 
     rv |= led_sysfs_register();
 
-    return 0;
+    return rv;
 }
 
 int
@@ -149,10 +149,8 @@ find_led(const char *name)
 void
 free_leds(void)
 {
-    struct led_s *led;
-
     while (leds) {
-	led = leds;
+	struct led_s *led = leds;
 	leds = leds->next;
 
 	/* let driver deconfigure the LED */
