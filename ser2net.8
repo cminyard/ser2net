@@ -385,12 +385,12 @@ sets the maximum delay that ser2net will wait, in microseconds, before
 sending the data.  The default value is 20000.  This keeps the connection
 working smoothly at slow speeds.
 
-.I dev-to-tcp-bufsize=<number>
+.I dev-to-net-bufsize=<number>
 sets the size of the buffer reading from the serial device and writing
-to the tcp port.
+to the network port.
 
-.I tcp-to-dev-bufsize=<number>
-sets the size of the buffer reading from the tcp port and writing to the
+.I net-to-dev-bufsize=<number>
+sets the size of the buffer reading from the network port and writing to the
 serial device.
 
 .I [-]authenticated
@@ -491,7 +491,7 @@ See ledtrig-transient.txt in Linux kernel documentation for more details.
 The transient trigger must be compiled into the kernel or already loaded
 as kernel module.
 
-Individual TCP ports can refer to this LED and thus trigger flashing
+Individual network ports can refer to this LED and thus trigger flashing
 of this LED when tx/rx traffic is seen.
 
 .PP
@@ -530,7 +530,7 @@ escape sequences and a large number of other escape sequences, too:
 .br
 \ed - The device name (/dev/ttyS0, etc.)
 .br
-\ep - TCP port number
+\ep - Network port number
 .br
 \eB - The serial port parameters (eg 9600N81)
 .br
@@ -607,18 +607,18 @@ is only sent when the last port disconnects and there are no more connections
 to the port.
 
 Any monitor ("monitor start" from a control connections) will catch
-input from all TCP connections.
+input from all network connections.
 
 .I kickolduser
 will kick off all connections if a connection comes in on a port that already
 has a maximum number of connections.
 
 .I tracing
-will trace data from all TCP connections.
+will trace data from all network connections.
 
 .I remctl
 (remote telnet serial control) will change the connection settings on the
-device and will be accepted from any TCP connection.
+device and will be accepted from any network connection.
 
 .I ROTATOR
 will only choose a port if there are no connections at all on the port.

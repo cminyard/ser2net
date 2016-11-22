@@ -63,12 +63,12 @@ scan_int(char *str)
     return rv;
 }
 
-/* Scan for a TCP port in the form "[hostname,]x", where the optional
+/* Scan for a network port in the form "[hostname,]x", where the optional
    first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
    In the absence of a host specification, a wildcard address is used.
    The mandatory second part is the port number or a service name. */
 int
-scan_tcp_port(char *str, struct addrinfo **rai)
+scan_network_port(char *str, struct addrinfo **rai)
 {
     char *strtok_data, *strtok_buffer;
     char *ip;

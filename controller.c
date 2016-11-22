@@ -851,7 +851,7 @@ controller_init(char *controller_port)
 	    return ENOMEM;
     }
 
-    rv = scan_tcp_port(controller_port, &cntrl_ai);
+    rv = scan_network_port(controller_port, &cntrl_ai);
     if (rv) {
 	if (rv == EINVAL)
 	    return CONTROLLER_INVALID_TCP_SPEC;

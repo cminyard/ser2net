@@ -29,11 +29,11 @@
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
 
-/* Scan for a TCP port in the form "[hostname,]x", where the optional
+/* Scan for a network port in the form "[hostname,]x", where the optional
  * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
  * In the absence of a host specification, a wildcard address is used.
  * The mandatory second part is the port number or a service name. */
-int scan_tcp_port(char *str, struct addrinfo **ai);
+int scan_network_port(char *str, struct addrinfo **ai);
 
 /*
  * Open a set of sockets given the addrinfo list, one per address.

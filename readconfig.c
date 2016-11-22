@@ -530,6 +530,7 @@ struct default_data
     union {
 	int intval;
     } def;
+    const char *altname;
 };
 
 struct default_data defaults[] = {
@@ -557,10 +558,12 @@ struct default_data defaults[] = {
 					.def.intval = 1000 },
     { "chardelay-max",	DEFAULT_INT,	.min = 1, .max = 1000000,
 					.def.intval = 20000 },
-    { "dev-to-tcp-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
-					.def.intval = PORT_BUFSIZE },
-    { "tcp-to-dev-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
-					.def.intval = PORT_BUFSIZE },
+    { "dev-to-net-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
+					.def.intval = PORT_BUFSIZE,
+					.altname = "dev-to-tcp-bufsize" },
+    { "net-to-dev-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
+					.def.intval = PORT_BUFSIZE,
+					.altname = "tcp-to-dev-bufsize" },
     { "max-connections", DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
 #ifdef HAVE_OPENIPMI
@@ -589,13 +592,19 @@ setup_defaults(void)
     }
 }
 
+static int cmp_default_name(struct default_data *def, const char *name)
+{
+    return (strcmp(def->name, name) == 0 ||
+	    (def->altname && strcmp(def->altname, name) == 0));
+}
+
 int
 find_default_int(const char *name)
 {
     int i;
 
     for (i = 0; defaults[i].name; i++) {
-	if (strcmp(defaults[i].name, name) == 0)
+	if (cmp_default_name(&defaults[i], name))
 	    return defaults[i].val.intval;
     }
     abort();
@@ -620,7 +629,7 @@ handle_new_default(const char *name, const char *str)
     len = s - str;
 
     for (i = 0; defaults[i].name; i++) {
-	if (strcmp(defaults[i].name, name) != 0)
+	if (!cmp_default_name(&defaults[i], name))
 	    continue;
 
 	switch (defaults[i].type) {
@@ -664,6 +673,8 @@ handle_new_default(const char *name, const char *str)
 	}
 	return;
     }
+
+    syslog(LOG_ERR, "unknown default name '%s' on %d", name, lineno);
 }
 
 int
