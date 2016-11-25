@@ -25,7 +25,8 @@
 #include "devio.h"
 
 static int
-lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr)
+lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr,
+	      const struct sockaddr *addr, socklen_t addrlen)
 {
     ssize_t write_count;
     int towrite1;
@@ -40,6 +41,9 @@ lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr)
     if (towrite1 > 0) {
 	if (io)
 	    write_count = io->f->write(io, buf->buf + buf->pos, towrite1);
+	else if (addr)
+	    write_count = sendto(fd, buf->buf + buf->pos, towrite1, 0,
+				 addr, addrlen);
 	else
 	    write_count = write(fd, buf->buf + buf->pos, towrite1);
 	if (write_count == -1) {
@@ -63,6 +67,9 @@ lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr)
 	buf->pos = 0;
 	if (io)
 	    write_count = io->f->write(io, buf->buf + buf->pos, towrite2);
+	else if (addr)
+	    write_count = sendto(fd, buf->buf + buf->pos, towrite2, 0,
+				 addr, addrlen);
 	else
 	    write_count = write(fd, buf->buf + buf->pos, towrite2);
 	if (write_count == -1) {
@@ -87,13 +94,20 @@ lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr)
 int
 buffer_write(int fd, struct sbuf *buf, int *buferr)
 {
-    return lbuffer_write(NULL, fd, buf, buferr);
+    return lbuffer_write(NULL, fd, buf, buferr, NULL, 0);
+}
+
+int
+buffer_sendto(int fd, const struct sockaddr *addr, socklen_t addrlen,
+	      struct sbuf *buf, int *buferr)
+{
+    return lbuffer_write(NULL, fd, buf, buferr, addr, addrlen);
 }
 
 int
 buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr)
 {
-    return lbuffer_write(io, 0, buf, buferr);
+    return lbuffer_write(io, 0, buf, buferr, NULL, 0);
 }
 
 int

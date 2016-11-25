@@ -20,6 +20,8 @@
 #ifndef _SER2NET_BUFFER_H
 #define _SER2NET_BUFFER_H
 
+#include <sys/socket.h>
+
 struct devio;
 
 struct sbuf {
@@ -30,6 +32,9 @@ struct sbuf {
 };
 
 int buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr);
+
+int buffer_sendto(int fd, const struct sockaddr *addr, socklen_t addrlen,
+		  struct sbuf *buf, int *buferr);
 
 int buffer_write(int fd, struct sbuf *buf, int *buferr);
 
