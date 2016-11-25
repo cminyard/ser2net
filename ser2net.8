@@ -14,7 +14,7 @@ The
 daemon allows telnet and tcp sessions to be established with a unit's
 serial ports or with an IPMI Serial Over LAN (SOL) interface.
 .PP
-The program comes up normally as a daemon, opens the TCP ports
+The program comes up normally as a daemon, opens the network ports
 specified in the configuration file, and waits for connections.  Once
 a connection occurs, the program attempts to set up the connection and
 open the serial port.  If another user is already using the connection
@@ -85,10 +85,10 @@ Specifies the default RFC2217 signature.
 The control port provides a simple interface for controlling the ports and 
 viewing their status. To accomplish this, it has the following commands:
 .TP
-.B showport [<TCP port>]
+.B showport [<network port>]
 Show information about a port. If no port is given, all ports are displayed.
 .TP
-.B showshortport [<TCP port>]
+.B showshortport [<network port>]
 Show information about a port, each port on one line. If no port is given,
 all ports are displayed.  This can produce very wide output.
 .TP
@@ -101,7 +101,7 @@ Disconnect from the control port.
 .B version
 Display the version of this program.
 .TP
-.B monitor <type> <tcp port>
+.B monitor <type> <network port>
 Display all the input for a given port on
 the calling control port.  Only one direction may be monitored
 at a time.  The type field may be 
@@ -109,7 +109,7 @@ at a time.  The type field may be
 or
 .I term
 and specifies
-whether to monitor data from the TCP port or from the serial port
+whether to monitor data from the network port or from the serial port
 Note that data monitoring is best effort, if the controller port
 cannot keep up the data will be silently dropped.  A controller
 may only monitor one thing and a port may only be monitored by
@@ -118,14 +118,14 @@ one controller.
 .B monitor stop
 Stop the current monitor.
 .TP
-.B disconnect <tcp port>
+.B disconnect <network port>
 Disconnect the tcp connection on the port.
 .TP
-.B setporttimeout <tcp port> <timeout>
+.B setporttimeout <network port> <timeout>
 Set the amount of time in seconds before the port connection will be
 shut down if no activity has been seen on the port.
 .TP
-.B setportconfig <tcp port> <config>
+.B setportconfig <network port> <config>
 Set the port configuration as in the device configuration in the
 .BR /etc/ser2net.conf
 file.  If conflicting options are specified, the last option will
@@ -149,7 +149,7 @@ turns on (- off) hardware flow control.
 .I [-]LOCAL
 ignores (- checks) the modem control lines (DCD, DTR, etc.)
 .TP
-.B setportcontrol <tcp port> <controls>
+.B setportcontrol <network port> <controls>
 Modify dynamic port controls.  These do not stay between connections.
 Controls are:
 .I DTRHI, DTRLO
@@ -157,16 +157,16 @@ Turns on and off the DTR line.
 .I RTSHI, RTSLO
 Turns on and off the RTS line.
 .TP
-.B setportenable <tcp port> <enable state>
+.B setportenable <network port> <enable state>
 Sets the port operation state.  Valid states are:
 .I off
-to shut the TCP port down,
+to shut the network port down,
 .I raw
-to enable the TCP port transfer all I/O as-is,
+to enable the network port transfer all I/O as-is,
 .I rawlp
-to enable the TCP port input and device output without termios setting, and
+to enable the network port input and device output without termios setting, and
 .I telnet
-to enable the TCP port is up run the telnet negotiation protocol on the port.
+to enable the network port is up run the telnet negotiation protocol on the port.
 
 .SH CONFIGURATION
 Configuration is accomplished through the file
@@ -178,7 +178,7 @@ option, or individual config lines may be specified with the
 option.  This  file consists of one or more entries with the following
 format:
 .IP
-<TCP port>:<state>:<timeout>:<device>:<options>
+<network port>:<state>:<timeout>:<device>:<options>
 .PP
 or
 .IP
@@ -230,15 +230,19 @@ on the next line.  There is no arbitrary maximum line length.
 
 .SS FIELDS
 .TP
-.I "TCP port"
+.I "network port"
 Name or number of the network port to accept connections from for this
-device.  A port number may be of the form [ipv4,|ipv6,][host,]port,
-such as 127.0.0.1,2000 or ipv4,localhost,2000, or ::,2000.  If host is
+device.  A port number may be of the form [ipv4,|ipv6,][tcp,|udp,][host,]port,
+such as 127.0.0.1,2000 or ipv4,localhost,2000, or udp,::,2000.  If host is
 specified, it will only bind to the IP address specified for the port.
 Otherwise, it will bind to all the ports on the machine.  You can
 specify an IPV6 address in the port, any colon before the comma is
 ignored for parsing fields.  If ipv4 or ipv6 is specified, it will
 only bind to that network type.
+
+If udp is specified, any data received on the port from a remote source is
+considered a "connection" and the data for that port will go back to
+the remote source address.
 .TP
 .I state
 Either 

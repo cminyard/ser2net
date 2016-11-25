@@ -349,10 +349,10 @@ static char *help_str =
 "       DTRHI, DTRLO, RTSHI, and RTSLO.\r\n"
 "setportenable <tcp port> <enable state> - Sets the port operation state.\r\n"
 "       Valid states are:\r\n"
-"         off - The TCP port is shut down\r\n"
-"         raw - The TCP port is up and all I/O is transferred\r\n"
-"         rawlp - The TCP port is up and the input is transferred to dev\r\n"
-"         telnet - The TCP port is up and the telnet negotiation protocol\r\n"
+"         off - The port is shut down\r\n"
+"         raw - The port is up and all I/O is transferred\r\n"
+"         rawlp - The port is up and the input is transferred to dev\r\n"
+"         telnet - The port is up and the telnet negotiation protocol\r\n"
 "                  runs on the port.\r\n";
 
 /* Process a line of input.  This scans for commands, reads any
