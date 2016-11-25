@@ -851,7 +851,7 @@ controller_init(char *controller_port)
 	    return ENOMEM;
     }
 
-    rv = scan_network_port(controller_port, &cntrl_ai);
+    rv = scan_network_port(controller_port, &cntrl_ai, NULL);
     if (rv) {
 	if (rv == EINVAL)
 	    return CONTROLLER_INVALID_TCP_SPEC;
@@ -869,7 +869,7 @@ controller_init(char *controller_port)
 	}
     }
 
-    acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL,
+    acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL, NULL,
 			    &nr_acceptfds, controller_accept_fd_cleared);
     if (acceptfds == NULL) {
 	freeaddrinfo(cntrl_ai);

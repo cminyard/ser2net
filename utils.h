@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <stdbool.h>
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
@@ -33,7 +34,7 @@ int scan_int(char *str);
  * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
  * In the absence of a host specification, a wildcard address is used.
  * The mandatory second part is the port number or a service name. */
-int scan_network_port(char *str, struct addrinfo **ai);
+int scan_network_port(char *str, struct addrinfo **ai, bool *is_dgram);
 
 /*
  * Open a set of sockets given the addrinfo list, one per address.
@@ -46,7 +47,8 @@ int scan_network_port(char *str, struct addrinfo **ai);
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
 int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
-		 void *data, unsigned int *nr_fds,
+		 void (*writehndlr)(int, void *), void *data,
+		 unsigned int *nr_fds,
 		 void (*fd_handler_cleared)(int, void *));
 
 /*

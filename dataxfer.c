@@ -2108,13 +2108,13 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = scan_network_port(rot->portname, &rot->ai);
+    rv = scan_network_port(rot->portname, &rot->ai, NULL);
     if (rv) {
 	syslog(LOG_ERR, "port number was invalid on line %d", lineno);
 	goto out;
     }
 
-    rot->acceptfds = open_socket(rot->ai, handle_rot_port_read, rot,
+    rot->acceptfds = open_socket(rot->ai, handle_rot_port_read, NULL, rot,
 				 &rot->nr_acceptfds, rotator_fd_cleared);
     if (rot->acceptfds == NULL) {
 	syslog(LOG_ERR, "Unable to create TCP socket on line %d", lineno);
@@ -2233,13 +2233,13 @@ startup_port(struct absout *eout, port_info_t *port)
 	return 0;
     }
 
-    port->acceptfds = open_socket(port->ai, handle_accept_port_read, port,
+    port->acceptfds = open_socket(port->ai, handle_accept_port_read, NULL, port,
 				  &port->nr_acceptfds, port_accept_fd_cleared);
     if (port->acceptfds == NULL) {
 	if (eout)
-	    eout->out(eout, "Unable to create TCP socket");
+	    eout->out(eout, "Unable to create network socket(s)");
 	else
-	    syslog(LOG_ERR, "Unable to create TCP socket for port %s: %s",
+	    syslog(LOG_ERR, "Unable to create network socket for port %s: %s",
 		   port->portname, strerror(errno));
 
 	return -1;
@@ -2914,7 +2914,7 @@ portconfig(struct absout *eout,
 
     if (isallzero(new_port->portname)) {
 	new_port->is_stdio = 1;
-    } else if (scan_network_port(new_port->portname, &new_port->ai)) {
+    } else if (scan_network_port(new_port->portname, &new_port->ai, NULL)) {
 	eout->out(eout, "port number was invalid");
 	goto errout;
     }
