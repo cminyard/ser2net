@@ -116,6 +116,46 @@ scan_network_port(char *str, struct addrinfo **rai, bool *is_dgram)
     return 0;
 }
 
+bool
+sockaddr_equal(struct sockaddr *a1, socklen_t l1,
+	       struct sockaddr *a2, socklen_t l2)
+{
+    if (l1 != l2)
+	return false;
+    if (a1->sa_family != a2->sa_family)
+	return false;
+    switch (a1->sa_family) {
+    case AF_INET:
+	{
+	    struct sockaddr_in *s1 = (struct sockaddr_in *) a1;
+	    struct sockaddr_in *s2 = (struct sockaddr_in *) a2;
+	    if (s1->sin_port != s2->sin_port)
+		return false;
+	    if (s1->sin_addr.s_addr != s2->sin_addr.s_addr)
+		return false;
+	}
+	break;
+
+    case AF_INET6:
+	{
+	    struct sockaddr_in6 *s1 = (struct sockaddr_in6 *) a1;
+	    struct sockaddr_in6 *s2 = (struct sockaddr_in6 *) a2;
+	    if (s1->sin6_port != s2->sin6_port)
+		return false;
+	    if (memcmp(s1->sin6_addr.s6_addr, s2->sin6_addr.s6_addr,
+		       sizeof(s1->sin6_addr.s6_addr)) != 0)
+		return false;
+	}
+	break;
+
+    default:
+	/* Unknown family. */
+	return false;
+    }
+
+    return true;
+}
+
 void
 check_ipv6_only(int family, struct sockaddr *addr, int fd)
 {

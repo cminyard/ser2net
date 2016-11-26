@@ -26,6 +26,13 @@
 #include <netdb.h>
 #include <stdbool.h>
 
+/*
+ * Compare two sockaddr structure and return TRUE if they are equal
+ * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
+ */
+bool sockaddr_equal(struct sockaddr *a1, socklen_t l1,
+		    struct sockaddr *a2, socklen_t l2);
+
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
