@@ -515,7 +515,7 @@ lookup_parity(const char *str)
     return lookup_enum(parity_enums, str, -1);
 }
 
-enum default_type { DEFAULT_INT, DEFAULT_BOOL, DEFAULT_ENUM };
+enum default_type { DEFAULT_INT, DEFAULT_BOOL, DEFAULT_ENUM, DEFAULT_STR };
 
 struct default_data
 {
@@ -526,9 +526,11 @@ struct default_data
     struct enum_val *enums;
     union {
 	int intval;
+	char *strval;
     } val;
     union {
 	int intval;
+	const char *strval;
     } def;
     const char *altname;
 };
@@ -578,6 +580,7 @@ struct default_data defaults[] = {
 				   .def.intval = ipmi_sol_serial_alerts_fail },
     { "deassert_CTS_DCD_DSR_on_connect", DEFAULT_BOOL, .def.intval = 0 },
 #endif
+    { "remaddr",	DEFAULT_STR,	.def.strval = "" },
     { NULL }
 };
 
@@ -588,7 +591,14 @@ setup_defaults(void)
     int i;
 
     for (i = 0; defaults[i].name; i++) {
-	defaults[i].val.intval = defaults[i].def.intval;
+	if (defaults[i].type == DEFAULT_STR) {
+	    if (defaults[i].val.strval) {
+		free(defaults[i].val.strval);
+		defaults[i].val.strval = NULL;
+	    }
+	} else {
+	    defaults[i].val.intval = defaults[i].def.intval;
+	}
     }
 }
 
@@ -604,8 +614,26 @@ find_default_int(const char *name)
     int i;
 
     for (i = 0; defaults[i].name; i++) {
-	if (cmp_default_name(&defaults[i], name))
+	if (cmp_default_name(&defaults[i], name) &&
+			defaults[i].type != DEFAULT_STR)
 	    return defaults[i].val.intval;
+    }
+    abort();
+}
+
+char *
+find_default_str(const char *name)
+{
+    int i;
+
+    for (i = 0; defaults[i].name; i++) {
+	if (cmp_default_name(&defaults[i], name) &&
+			defaults[i].type == DEFAULT_STR) {
+	    const char *s = defaults[i].val.strval;
+	    if (!s)
+		s = defaults[i].def.strval;
+	    return strdup(s);
+	}
     }
     abort();
 }
@@ -614,7 +642,7 @@ static void
 handle_new_default(const char *name, const char *str)
 {
     int i, val, len;
-    char *end;
+    char *end, *sval;
     const char *s;
 
     while (isspace(*str))
@@ -669,6 +697,18 @@ handle_new_default(const char *name, const char *str)
 		return;
 	    }
 	    defaults[i].val.intval = val;
+	    break;
+
+	case DEFAULT_STR:
+	    sval = strdup(str);
+	    if (!sval) {
+		syslog(LOG_ERR, "Out of memory processing default string on"
+		       " line %d", lineno);
+		return;
+	    }
+	    if (defaults[i].val.strval)
+		free(defaults[i].val.strval);
+	    defaults[i].val.strval = sval;
 	    break;
 	}
 	return;

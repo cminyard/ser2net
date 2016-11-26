@@ -20,6 +20,7 @@
 #ifndef DATAXFER
 #define DATAXFER
 
+#include "utils.h"
 #include "controller.h"
 
 #ifdef USE_UUCP_LOCKING
@@ -39,11 +40,6 @@ extern int uucp_locking_enabled;
 #endif /* HAVE_DECL_TIOCSRS485 */
 
 #endif /* linux */
-
-struct absout {
-    int (*out)(struct absout *e, const char *str, ...);
-    void *data;
-};
 
 /* Create a port given the criteria. */
 int portconfig(struct absout *eout,

@@ -242,7 +242,7 @@ only bind to that network type.
 
 If udp is specified, any data received on the port from a remote source is
 considered a "connection" and the data for that port will go back to
-the remote source address.
+the remote source address.  See the later section on UDP for details.
 .TP
 .I state
 Either 
@@ -455,6 +455,13 @@ ports output goes to the device, and the device output goes to all ports
 simultaneously.  See "MULTIPLE CONNECTIONS" below for details.  The default
 is 1.
 
+.I remaddr=<addr>[;<addr>[;...]]
+specifies the allowed remote connections, where the addr is a standard
+address in the form (see "network port" above).  Multiple addresses
+can be separated by colons, and you can specify remaddr more than
+once.  If you set the port for an address to zero, ser2net will accept
+a connection from any port from the given network host.
+
 .TP
 .I "banner name"
 A name for the banner; this may be used in the options of a port.
@@ -585,6 +592,38 @@ identify which port/device the filename was for.  Note that in
 filenames when using \ed, everything up to and including last / in the
 device name is removed, because you can't have a / in a filename.  So
 in a filename /dev/ttyS0 would become just ttyS0.
+
+.SH UDP
+UDP handling is a bit different than you might imagine, because it's
+hard for ser2net to know where to send the data to.  To handle this,
+UDP ports still have the concept of a "connection".  If a UDP port is
+not connected, then if it received a packet the remote address for
+that packet is set to the remote end of the "connection".  It will do
+all the normal new connection operations.  ser2net will then ignore
+packets from other addresses until a disconnect occurs.
+
+Unfortunately, there is no easy way to know when to disconnect.  You
+have two basic options:
+.IP
+Set a timeout, if the remote end isn't heard from before the
+timeout, then the port is disconnected and something else can
+connect.  This means anything that is using the port must
+periodically send a packet (empty is find) to ser2net to
+keep the connection alive.
+
+Use the kickolduser option on the port, any new connection that
+comes in will replace the previous connection.
+.PP
+Note that UDP ports handle multiple connections just like TCP ports,
+so you can have multiple UDP listeners.
+
+You also have a third option.  If you set a remote address
+(remaddr) with a non-zero port, ser2net will take one of the
+connections and assign it to that port permanently.  This is
+called a fixed remote address.  All the traffic from the device
+will go to that port.  Every fixed remote address on a UDP port
+has to have a corresponding connection, so if you have 3 fixed
+remote addresses, you must have at least 3 connections.
 
 .SH MULTIPLE CONNECTIONS
 As mentioned earlier, you can set

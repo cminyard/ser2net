@@ -112,6 +112,10 @@ enum parity_vals lookup_parity(const char *str);
 /* Return the default int value for the given name. */
 int find_default_int(const char *name);
 
+/* Return the default string value for the given name.  Return NULL if
+   out of memory.  The returned value must be freed. */
+char *find_default_str(const char *name);
+
 /* Separate out a string into an argv array, returning the argc/argv
    values given.  Returns -ENOMEM when out of memory or -EINVAL if
    there is something wrong with the string.  seps is a list of
@@ -129,5 +133,10 @@ waiter_t *alloc_waiter(void);
 void free_waiter(waiter_t *waiter);
 void wait_for_waiter(waiter_t *waiter);
 void wake_waiter(waiter_t *waiter);
+
+struct absout {
+    int (*out)(struct absout *e, const char *str, ...);
+    void *data;
+};
 
 #endif /* UTILS */
