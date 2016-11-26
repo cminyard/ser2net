@@ -677,6 +677,67 @@ handle_new_default(const char *name, const char *str)
     syslog(LOG_ERR, "unknown default name '%s' on %d", name, lineno);
 }
 
+/*
+ * This rather complicated variable is used to scan the string for
+ * ":off", ":telnet", ":raw:", or ":rawlp:".  It's a basic state
+ * machine where if a character in the first string "c" matches the
+ * current character, you go to the state machine index in the
+ * corresponding location giving by the character in string "next".
+ * So ":raw:" would see the ":" in state zero and go to state 1.  Then
+ * the "r" in state 1 would go to state 7.  Then "a" in state 7 would
+ * go to state 8, "w" to state name.  The ":" has a zero, that means a
+ * match was found.
+ *
+ * This is nasty, but it allows there to be ":" characters in the
+ * portnum so that IPV6 addresses can be specified.
+ */
+static struct {
+    char *c;
+    char *next;
+} scanstate[] = {
+    { ":",   "\x01" },		/* 0x00 */
+    { "tro", "\x02\x07\x0b" },	/* 0x01 */
+    { "e",   "\x03" },		/* 0x02 */
+    { "l",   "\x04" },		/* 0x03 */
+    { "n",   "\x05" },		/* 0x04 */
+    { "e",   "\x06" },		/* 0x05 */
+    { "t",   "\x0d" },		/* 0x06 */
+    { "a",   "\x08" },		/* 0x07 */
+    { "w",   "\x09" },		/* 0x09 */
+    { ":l",  "\x00\x0a" },	/* 0x09 */
+    { "p",   "\x0d" },		/* 0x0a */
+    { "f",   "\x0c" },		/* 0x0b */
+    { "f",   "\x0d" },		/* 0x0c */
+    { ":",   "\x00" }		/* 0x0d */
+};
+
+static char *
+scan_for_state(char *str)
+{
+    int s = 0;
+    char *b = str;
+
+    for (; *str; str++) {
+	int i;
+
+	for (i = 0; scanstate[s].c[i]; i++) {
+	    if (scanstate[s].c[i] == *str)
+		break;
+	}
+
+	if (scanstate[s].c[i]) {
+	    s = scanstate[s].next[i];
+	    if (s == 0)
+		return b;
+	} else {
+	    s = 0;
+	    b = str + 1;
+	}
+    }
+
+    return NULL;
+}
+
 int
 handle_config_line(char *inbuf, int len)
 {
@@ -844,19 +905,24 @@ handle_config_line(char *inbuf, int len)
 	goto out;
     }
 
-    portnum = strtok_r(inbuf, ":", &strtok_data);
-    if (portnum == NULL) {
-	/* An empty line is ok. */
-	goto out;
-    }
-
-    state = strtok_r(NULL, ":", &strtok_data);
-    if (state == NULL) {
+    /* Scan for the state. */
+    state = scan_for_state(inbuf);
+    if (!state) {
 	syslog(LOG_ERR, "No state given on line %d", lineno);
 	goto out;
     }
 
-    timeout = strtok_r(NULL, ":", &strtok_data);
+    /* Everything before the state is the port number. */
+    portnum = inbuf;
+    *state = '\0';
+    state++;
+
+    /* Terminate the state. */
+    inbuf = strchr(state, ':'); /* ":" must be there if scan_for_state works */
+    *inbuf = '\0';
+    inbuf++;
+
+    timeout = strtok_r(inbuf, ":", &strtok_data);
     if (timeout == NULL) {
 	syslog(LOG_ERR, "No timeout given on line %d", lineno);
 	goto out;

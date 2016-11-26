@@ -41,7 +41,7 @@ int scan_int(char *str);
  * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
  * In the absence of a host specification, a wildcard address is used.
  * The mandatory second part is the port number or a service name. */
-int scan_network_port(char *str, struct addrinfo **ai, bool *is_dgram);
+int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram);
 
 /*
  * Open a set of sockets given the addrinfo list, one per address.

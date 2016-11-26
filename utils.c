@@ -68,13 +68,22 @@ scan_int(char *str)
    In the absence of a host specification, a wildcard address is used.
    The mandatory second part is the port number or a service name. */
 int
-scan_network_port(char *str, struct addrinfo **rai, bool *is_dgram)
+scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram)
 {
     char *strtok_data, *strtok_buffer;
     char *ip;
     char *port;
     struct addrinfo hints, *ai;
+    int family = AF_UNSPEC;
     int socktype = SOCK_STREAM;
+
+    if (strncmp(str, "ipv4,", 5) == 0) {
+	family = AF_INET;
+	str += 5;
+    } else if (strncmp(str, "ipv6,", 5) == 0) {
+	family = AF_INET6;
+	str += 5;
+    }
 
     if (strncmp(str, "tcp,", 4) == 0) {
 	str += 4;
@@ -99,7 +108,7 @@ scan_network_port(char *str, struct addrinfo **rai, bool *is_dgram)
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_flags = AI_PASSIVE;
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = family;
     hints.ai_socktype = socktype;
     if (getaddrinfo(ip, port, &hints, &ai)) {
 	free(strtok_buffer);
