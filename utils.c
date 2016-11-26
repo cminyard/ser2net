@@ -177,7 +177,7 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
     }
 }
 
-int *
+struct opensocks *
 open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 	    void (*writehndlr)(int, void *), void *data,
 	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
@@ -185,7 +185,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
     struct addrinfo *rp;
     int optval = 1;
     int family = AF_INET6; /* Try IPV6 first, then IPV4. */
-    int *fds;
+    struct opensocks *fds;
     unsigned int curr_fd = 0;
     unsigned int max_fds = 0;
 
@@ -195,7 +195,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
     if (max_fds == 0)
 	return NULL;
 
-    fds = malloc(sizeof(int) * max_fds);
+    fds = malloc(sizeof(*fds) * max_fds);
     if (!fds)
 	return NULL;
 
@@ -204,34 +204,37 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 	if (family != rp->ai_family)
 	    continue;
 
-	fds[curr_fd] = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-	if (fds[curr_fd] == -1)
+	fds[curr_fd].fd = socket(rp->ai_family, rp->ai_socktype,
+				 rp->ai_protocol);
+	if (fds[curr_fd].fd == -1)
 	    continue;
 
-	if (fcntl(fds[curr_fd], F_SETFL, O_NONBLOCK) == -1)
+	fds[curr_fd].family = rp->ai_family;
+
+	if (fcntl(fds[curr_fd].fd, F_SETFL, O_NONBLOCK) == -1)
 	    goto next;
 
-	if (setsockopt(fds[curr_fd], SOL_SOCKET, SO_REUSEADDR,
+	if (setsockopt(fds[curr_fd].fd, SOL_SOCKET, SO_REUSEADDR,
 		       (void *)&optval, sizeof(optval)) == -1)
 	    goto next;
 
-	check_ipv6_only(rp->ai_family, rp->ai_addr, fds[curr_fd]);
+	check_ipv6_only(rp->ai_family, rp->ai_addr, fds[curr_fd].fd);
 
-	if (bind(fds[curr_fd], rp->ai_addr, rp->ai_addrlen) != 0)
+	if (bind(fds[curr_fd].fd, rp->ai_addr, rp->ai_addrlen) != 0)
 	    goto next;
 
-	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd], 1) != 0)
+	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd].fd, 1) != 0)
 	    goto next;
 
-	sel_set_fd_handlers(ser2net_sel, fds[curr_fd], data,
+	sel_set_fd_handlers(ser2net_sel, fds[curr_fd].fd, data,
 			    readhndlr, writehndlr, NULL, fd_handler_cleared);
-	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd],
+	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd].fd,
 				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
 	continue;
 
       next:
-	close(fds[curr_fd]);
+	close(fds[curr_fd].fd);
     }
     if (family == AF_INET6) {
 	family = AF_INET;

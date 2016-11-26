@@ -198,7 +198,7 @@ struct port_info
     int                is_stdio;	/* Do stdio on the port? */
     struct addrinfo    *ai;		/* The address list for the portname. */
     bool               dgram;		/* Is this a datagram (UDP) port? */
-    int            *acceptfds;		/* The file descriptor used to
+    struct opensocks   *acceptfds;	/* The file descriptor used to
 					   accept connections on the
 					   TCP port. */
     unsigned int   nr_acceptfds;
@@ -2005,7 +2005,7 @@ typedef struct rotator
     char *portname;
 
     struct addrinfo    *ai;		/* The address list for the portname. */
-    int            *acceptfds;		/* The file descriptor used to
+    struct opensocks   *acceptfds;	/* The file descriptor used to
 					   accept connections on the
 					   TCP port. */
     unsigned int   nr_acceptfds;
@@ -2059,11 +2059,11 @@ free_rotator(rotator_t *rot)
 
     for (i = 0; i < rot->nr_acceptfds; i++) {
 	sel_set_fd_read_handler(ser2net_sel,
-				rot->acceptfds[i],
+				rot->acceptfds[i].fd,
 				SEL_FD_HANDLER_DISABLED);
-	sel_clear_fd_handlers(ser2net_sel, rot->acceptfds[i]);
+	sel_clear_fd_handlers(ser2net_sel, rot->acceptfds[i].fd);
 	wait_for_waiter(rot->accept_waiter);
-	close(rot->acceptfds[i]);
+	close(rot->acceptfds[i].fd);
     }
     if (rot->accept_waiter)
 	free_waiter(rot->accept_waiter);
@@ -2157,7 +2157,7 @@ disable_accept_ports(port_info_t *port)
     int i;
 
     for (i = 0; i < port->nr_acceptfds; i++)
-	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i],
+	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i].fd,
 				SEL_FD_HANDLER_DISABLED);
 }
 
@@ -2167,7 +2167,7 @@ enable_accept_ports(port_info_t *port)
     int i;
 
     for (i = 0; i < port->nr_acceptfds; i++)
-	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i],
+	sel_set_fd_read_handler(ser2net_sel, port->acceptfds[i].fd,
 				SEL_FD_HANDLER_ENABLED);
 }
 
@@ -2381,7 +2381,7 @@ redo_port_handlers(port_info_t *port)
 	readhandler = handle_udp_net_fd_read;
 
     for (i = 0; i < port->nr_acceptfds; i++) {
-	sel_set_fd_handlers(ser2net_sel, port->acceptfds[i], port,
+	sel_set_fd_handlers(ser2net_sel, port->acceptfds[i].fd, port,
 			    readhandler, NULL, NULL,
 			    port_accept_fd_cleared);
 	wait_for_waiter(port->accept_waiter);
@@ -2407,11 +2407,11 @@ change_port_state(struct absout *eout, port_info_t *port, int state)
 
 	    for (i = 0; i < port->nr_acceptfds; i++) {
 		sel_set_fd_read_handler(ser2net_sel,
-					port->acceptfds[i],
+					port->acceptfds[i].fd,
 					SEL_FD_HANDLER_DISABLED);
-		sel_clear_fd_handlers(ser2net_sel, port->acceptfds[i]);
+		sel_clear_fd_handlers(ser2net_sel, port->acceptfds[i].fd);
 		wait_for_waiter(port->accept_waiter);
-		close(port->acceptfds[i]);
+		close(port->acceptfds[i].fd);
 	    }
 	    free(port->acceptfds);
 	    port->acceptfds = NULL;

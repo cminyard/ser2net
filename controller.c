@@ -47,7 +47,7 @@ static char *progname = "ser2net-control";
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
 static struct addrinfo *cntrl_ai;
-static int *acceptfds;	/* The file descriptor for the accept port. */
+static struct opensocks *acceptfds;/* File descriptors for the accept port. */
 static unsigned int nr_acceptfds;
 static waiter_t *accept_waiter;
 
@@ -888,9 +888,9 @@ controller_shutdown(void)
     if (acceptfds == NULL)
 	return;
     for (i = 0; i < nr_acceptfds; i++) {
-	sel_clear_fd_handlers(ser2net_sel, acceptfds[i]);
+	sel_clear_fd_handlers(ser2net_sel, acceptfds[i].fd);
 	wait_for_waiter(accept_waiter);
-	close(acceptfds[i]);
+	close(acceptfds[i].fd);
     }
     free(acceptfds);
     freeaddrinfo(cntrl_ai);

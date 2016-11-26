@@ -43,6 +43,12 @@ int scan_int(char *str);
  * The mandatory second part is the port number or a service name. */
 int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram);
 
+struct opensocks
+{
+    int fd;
+    int family;
+};
+
 /*
  * Open a set of sockets given the addrinfo list, one per address.
  * Return the actual number of sockets opened in nr_fds.  Set the
@@ -53,10 +59,11 @@ int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram);
  * Also, open IPV6 addresses first.  This way, addresses in shared
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
-int *open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
-		 void (*writehndlr)(int, void *), void *data,
-		 unsigned int *nr_fds,
-		 void (*fd_handler_cleared)(int, void *));
+struct opensocks *
+open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
+	    void (*writehndlr)(int, void *), void *data,
+	    unsigned int *nr_fds,
+	    void (*fd_handler_cleared)(int, void *));
 
 /*
  * Search for a banner/open/close string by name.  Note that the
