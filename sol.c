@@ -773,7 +773,7 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
 	goto out;
     }
 
-    pos = strtok_r(str, ", \t", &strtok_data);
+    pos = strtok_r(str, " \t", &strtok_data);
     while (pos != NULL) {
 	if (strcmp(pos, "9600") == 0) {
 	    d->speed = IPMI_SOL_BIT_RATE_9600;
@@ -826,7 +826,7 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
 		goto out;
 	}
 
-	pos = strtok_r(NULL, ", \t", &strtok_data);
+	pos = strtok_r(NULL, " \t", &strtok_data);
     }
 
  out:

@@ -934,7 +934,7 @@ handle_config_line(char *inbuf, int len)
 	goto out;
     }
 
-    devcfg = strtok_r(NULL, ":", &strtok_data);
+    devcfg = strtok_r(NULL, "", &strtok_data);
     if (devcfg == NULL) {
 	/* An empty device config is ok. */
 	devcfg = "";

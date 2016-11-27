@@ -534,7 +534,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	return -1;
     }
 
-    pos = strtok_r(str, ", \t", &strtok_data);
+    pos = strtok_r(str, " \t", &strtok_data);
     while (pos != NULL) {
 	if ((val = speedstr_to_speed(pos)) != -1) {
 	    rv = set_termios_from_speed(d, termctl, val);
@@ -583,7 +583,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 		goto out;
 	}
 
-	pos = strtok_r(NULL, ", \t", &strtok_data);
+	pos = strtok_r(NULL, " \t", &strtok_data);
     }
 
 #if HAVE_DECL_TIOCSRS485
