@@ -29,9 +29,11 @@
 /*
  * Compare two sockaddr structure and return TRUE if they are equal
  * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
+ * If a2->sin_port is zero, then the port comparison is ignored.
  */
 bool sockaddr_equal(struct sockaddr *a1, socklen_t l1,
-		    struct sockaddr *a2, socklen_t l2);
+		    struct sockaddr *a2, socklen_t l2,
+		    bool compare_ports);
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
@@ -41,7 +43,8 @@ int scan_int(char *str);
  * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
  * In the absence of a host specification, a wildcard address is used.
  * The mandatory second part is the port number or a service name. */
-int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram);
+int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
+		      bool *is_port_set);
 
 struct opensocks
 {

@@ -68,7 +68,8 @@ scan_int(char *str)
    In the absence of a host specification, a wildcard address is used.
    The mandatory second part is the port number or a service name. */
 int
-scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram)
+scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
+		  bool *is_port_set)
 {
     char *strtok_data, *strtok_buffer;
     char *ip;
@@ -118,6 +119,9 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram)
     if (is_dgram)
 	*is_dgram = socktype == SOCK_DGRAM;
 
+    if (is_port_set)
+	*is_port_set = port != 0;
+
     free(strtok_buffer);
     if (*rai)
 	freeaddrinfo(*rai);
@@ -127,7 +131,8 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram)
 
 bool
 sockaddr_equal(struct sockaddr *a1, socklen_t l1,
-	       struct sockaddr *a2, socklen_t l2)
+	       struct sockaddr *a2, socklen_t l2,
+	       bool compare_ports)
 {
     if (l1 != l2)
 	return false;
@@ -138,7 +143,7 @@ sockaddr_equal(struct sockaddr *a1, socklen_t l1,
 	{
 	    struct sockaddr_in *s1 = (struct sockaddr_in *) a1;
 	    struct sockaddr_in *s2 = (struct sockaddr_in *) a2;
-	    if (s1->sin_port != s2->sin_port)
+	    if (compare_ports && s1->sin_port != s2->sin_port)
 		return false;
 	    if (s1->sin_addr.s_addr != s2->sin_addr.s_addr)
 		return false;
@@ -149,7 +154,7 @@ sockaddr_equal(struct sockaddr *a1, socklen_t l1,
 	{
 	    struct sockaddr_in6 *s1 = (struct sockaddr_in6 *) a1;
 	    struct sockaddr_in6 *s2 = (struct sockaddr_in6 *) a2;
-	    if (s1->sin6_port != s2->sin6_port)
+	    if (compare_ports && s1->sin6_port != s2->sin6_port)
 		return false;
 	    if (memcmp(s1->sin6_addr.s6_addr, s2->sin6_addr.s6_addr,
 		       sizeof(s1->sin6_addr.s6_addr)) != 0)

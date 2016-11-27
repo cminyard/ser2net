@@ -844,6 +844,7 @@ int
 controller_init(char *controller_port)
 {
     int rv;
+    bool is_port_set;
 
     if (!controller_shutdown_waiter) {
 	controller_shutdown_waiter = alloc_waiter();
@@ -851,7 +852,7 @@ controller_init(char *controller_port)
 	    return ENOMEM;
     }
 
-    rv = scan_network_port(controller_port, &cntrl_ai, NULL);
+    rv = scan_network_port(controller_port, &cntrl_ai, NULL, &is_port_set);
     if (rv) {
 	if (rv == EINVAL)
 	    return CONTROLLER_INVALID_TCP_SPEC;
@@ -860,6 +861,8 @@ controller_init(char *controller_port)
 	else
 	    return -1;
     }
+    if (!is_port_set)
+	return CONTROLLER_INVALID_TCP_SPEC;
 
     if (!accept_waiter) {
 	accept_waiter = alloc_waiter();
