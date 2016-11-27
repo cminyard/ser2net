@@ -32,6 +32,17 @@
 #include "selector.h"
 #include "locking.h"
 
+int
+strisallzero(char *str)
+{
+    if (*str == '\0')
+	return 0;
+
+    while (*str == '0')
+	str++;
+    return *str == '\0';
+}
+
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid. */
 int
@@ -120,7 +131,7 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
 	*is_dgram = socktype == SOCK_DGRAM;
 
     if (is_port_set)
-	*is_port_set = port != 0;
+	*is_port_set = !strisallzero(port);
 
     free(strtok_buffer);
     if (*rai)

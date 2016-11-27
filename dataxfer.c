@@ -2802,17 +2802,6 @@ got_timeout(selector_t  *sel,
     UNLOCK(port->lock);
 }
 
-static int
-isallzero(char *str)
-{
-    if (*str == '\0')
-	return 0;
-
-    while (*str == '0')
-	str++;
-    return *str == '\0';
-}
-
 static int cmpstrval(const char *s, const char *prefix, unsigned int *end)
 {
     int len = strlen(prefix);
@@ -3048,7 +3037,7 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    if (isallzero(new_port->portname)) {
+    if (strisallzero(new_port->portname)) {
 	new_port->is_stdio = 1;
     } else if (scan_network_port(new_port->portname, &new_port->ai,
 				 &new_port->dgram, &is_port_set)) {

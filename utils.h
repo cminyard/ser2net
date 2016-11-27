@@ -35,6 +35,9 @@ bool sockaddr_equal(struct sockaddr *a1, socklen_t l1,
 		    struct sockaddr *a2, socklen_t l2,
 		    bool compare_ports);
 
+/* Returns true if the string is a numeric zero, false if not. */
+int strisallzero(char *str);
+
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
