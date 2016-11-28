@@ -104,6 +104,7 @@ struct net_info {
     struct sockaddr *udpraddr;		/* Points to remote, only for UDP,
 					   so sendto's addr will be NULL on
 					   TCP. */
+    socklen_t udpraddrlen;
 
     unsigned int bytes_received;	/* Number of bytes read from the
 					   network port. */
@@ -127,6 +128,17 @@ struct net_info {
     int            timeout_left;	/* The amount of time left (in
 					   seconds) before the timeout
 					   goes off. */
+
+    /*
+     * If a user gets kicked, store the information for the new user
+     * here since we have already accepted the connection or received
+     * the packet, we have to store it someplace.
+     */
+    int new_fd;
+    struct sockaddr_storage new_remote;
+    socklen_t new_raddrlen;
+    unsigned char *new_buf;
+    int new_buf_len;
 };
 
 struct port_remaddr
@@ -354,6 +366,8 @@ port_info_t *ports = NULL; /* Linked list of ports. */
 static int shutdown_one_netcon(net_info_t *netcon, char *reason);
 static void shutdown_port(port_info_t *port, char *reason);
 static void finish_shutdown_port(sel_runner_t *runner, void *cb_data);
+static void disable_accept_ports(port_info_t *port);
+static void enable_accept_ports(port_info_t *port);
 
 /* The init sequence we use. */
 static unsigned char telnet_init_seq[] = {
@@ -451,6 +465,15 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
     va_end(ap);
     rv += controller_outputf(o->data, "\r\n");
     return rv;
+}
+
+static void generic_sendto(bool is_dgram, int fd, char *data, int len,
+			   struct sockaddr *addr,  socklen_t addrlen)
+{
+    if (is_dgram)
+	sendto(fd, data, len, 0, addr, addrlen);
+    else
+	sendto(fd, data, len, 0, NULL, 0);
 }
 
 static int
@@ -711,7 +734,7 @@ handle_net_send_one(port_info_t *port, net_info_t *netcon)
 
  retry_write:
     count = sendto(netcon->fd, port->dev_to_net.buf, port->dev_to_net.cursize,
-		   0, netcon->udpraddr, netcon->raddrlen);
+		   0, netcon->udpraddr, netcon->udpraddrlen);
     if (count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry. */
@@ -805,6 +828,8 @@ disable_all_net_read(port_info_t *port)
 	    sel_set_fd_read_handler(ser2net_sel, netcon->fd,
 				    SEL_FD_HANDLER_DISABLED);
     }
+    if (port->dgram)
+	disable_accept_ports(port);
 }
 
 static void
@@ -817,6 +842,8 @@ enable_all_net_read(port_info_t *port)
 	    sel_set_fd_read_handler(ser2net_sel, netcon->fd,
 				    SEL_FD_HANDLER_ENABLED);
     }
+    if (port->dgram)
+	enable_accept_ports(port);
 }
 
 /* Data is ready to read on the serial port. */
@@ -1044,39 +1071,9 @@ closeit:
     return 0;
 }
 
-/* Data is ready to read on the network port. */
 static void
-handle_net_fd_read(int fd, void *data)
+net_fd_read2(port_info_t *port, net_info_t *netcon, int count)
 {
-    net_info_t *netcon = data;
-    port_info_t *port = netcon->port;
-    int count, readerr = 0;
-    char *reason;
-
-    LOCK(port->lock);
-    if (port->net_to_dev_state == PORT_WAITING_OUTPUT_CLEAR) {
-	/* Catch a race here. */
-	UNLOCK(port->lock);
-	return;
-    }
-    port->net_to_dev.pos = 0;
-    count = port->netread(fd, port, &readerr, &netcon);
-    if (count < 0) {
-	if (readerr == EAGAIN || readerr == EWOULDBLOCK) {
-	    /* Nothing to read, just return. */
-	    goto out_unlock;
-	}
-
-	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "read error for port %s: %s", port->portname,
-	       strerror(readerr));
-	reason = "network read error";
-	goto out_shutdown;
-    } else if (count == 0) {
-	/* The other end closed the port, shut it down. */
-	reason = "network read close";
-	goto out_shutdown;
-    }
     port->net_to_dev.cursize = count;
 
     netcon->bytes_received += count;
@@ -1086,8 +1083,9 @@ handle_net_fd_read(int fd, void *data)
 						       count,
 						       &netcon->tn_data);
 	if (netcon->tn_data.error) {
-	    reason =  "telnet output error";
-	    goto out_shutdown;
+	    if (shutdown_one_netcon(netcon, "telnet output error"))
+		goto out;
+	    goto out_unlock;
 	}
 	if (port->net_to_dev.cursize == 0) {
 	    /* We are out of characters; they were all processed.  We
@@ -1155,6 +1153,46 @@ handle_net_fd_read(int fd, void *data)
     UNLOCK(port->lock);
  out:
     return;
+}
+
+/* Data is ready to read on the network port. */
+static void
+handle_net_fd_read(int fd, void *data)
+{
+    net_info_t *netcon = data;
+    port_info_t *port = netcon->port;
+    int count, readerr = 0;
+    char *reason;
+
+    LOCK(port->lock);
+    if (port->net_to_dev_state == PORT_WAITING_OUTPUT_CLEAR)
+	/* Catch a race here. */
+	goto out_unlock;
+
+    port->net_to_dev.pos = 0;
+    count = port->netread(fd, port, &readerr, &netcon);
+    if (count < 0) {
+	if (readerr == EAGAIN || readerr == EWOULDBLOCK)
+	    /* Nothing to read, just return. */
+	    goto out_unlock;
+
+	/* Got an error on the read, shut down the port. */
+	syslog(LOG_ERR, "read error for port %s: %s", port->portname,
+	       strerror(readerr));
+	reason = "network read error";
+	goto out_shutdown;
+    } else if (count == 0) {
+	/* The other end closed the port, shut it down. */
+	reason = "network read close";
+	goto out_shutdown;
+    }
+
+    net_fd_read2(port, netcon, count); /* Releases the lock */
+    return;
+
+ out_unlock:
+    UNLOCK(port->lock);
+    return;
 
  out_shutdown:
     if (!shutdown_one_netcon(netcon, reason))
@@ -1173,7 +1211,8 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 
     if (netcon->sending_tn_data) {
     send_tn_data:
-	reterr = buffer_sendto(netcon->fd, netcon->udpraddr, netcon->raddrlen,
+	reterr = buffer_sendto(netcon->fd,
+			       netcon->udpraddr, netcon->udpraddrlen,
 			       &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
@@ -1195,7 +1234,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     }
 
     reterr = sendto(netcon->fd, buf->buf + *pos, buf->cursize - *pos,
-		    0, netcon->udpraddr, netcon->raddrlen);
+		    0, netcon->udpraddr, netcon->udpraddrlen);
     if (reterr == -1) {
 	if (errno == EPIPE) {
 	    return shutdown_one_netcon(netcon, "EPIPE");
@@ -1892,7 +1931,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	    if (!hosts_access(&req)) {
 		char *err = "Access denied\r\n";
 		sendto(netcon->fd, err, strlen(err),
-		       0, netcon->udpraddr, netcon->raddrlen);
+		       0, netcon->udpraddr, netcon->udpraddrlen);
 		close(netcon->fd);
 		netcon->fd = -1;
 		return -1;
@@ -1901,8 +1940,13 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 #endif /* HAVE_TCPD_H */
     }
 
-    if (!is_reconfig)
+    if (!is_reconfig) {
+	if (netcon->banner) {
+	    free(netcon->banner->buf);
+	    free(netcon->banner);
+	}
 	netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
+    }
     if (netcon->banner)
 	netcon->write_handler = handle_net_fd_banner_write;
     else
@@ -1923,8 +1967,13 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	recalc_port_chardelay(port);
 	port->is_2217 = 0;
 
-	if (!is_reconfig)
+	if (!is_reconfig) {
+	    if (port->devstr) {
+		free(port->devstr->buf);
+		free(port->devstr);
+	    }
 	    port->devstr = process_str_to_buf(port, netcon, port->openstr);
+	}
 	if (port->devstr)
 	    port->dev_write_handler = handle_dev_fd_devstr_write;
 	else
@@ -2211,6 +2260,58 @@ enable_accept_ports(port_info_t *port)
 				SEL_FD_HANDLER_ENABLED);
 }
 
+static int
+kick_old_user(port_info_t *port, net_info_t *netcon, int new_fd, int buflen,
+	      struct sockaddr_storage *remaddr, socklen_t remaddrlen)
+{
+    char *err = "kicked off, new user is coming\r\n";
+
+    /* If another user is waiting for a kick, kick that user. */
+    if (netcon->new_fd) {
+	generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
+		       (struct sockaddr *) &netcon->new_remote,
+		       netcon->new_raddrlen);
+	close(netcon->new_fd);
+    }
+
+    /* Wait it to be unconnected and clean, restart the process. */
+    netcon->new_fd = new_fd;
+    memcpy(&netcon->new_remote, remaddr, remaddrlen);
+    netcon->new_raddrlen = remaddrlen;
+    if (port->dgram) {
+	memcpy(netcon->new_buf, port->net_to_dev.buf, buflen);
+	netcon->new_buf_len = buflen;
+    }
+
+    return shutdown_one_netcon(netcon, err);
+}
+
+static void
+check_port_new_fd(port_info_t *port, net_info_t *netcon)
+{
+    int fd;
+
+    if (netcon->new_fd == -1)
+	return;
+
+    fd = netcon->new_fd;
+    netcon->new_fd = -1;
+    memcpy(netcon->raddr, &netcon->new_remote, netcon->new_raddrlen);
+    netcon->raddrlen = netcon->new_raddrlen;
+    if (port->dgram) {
+	netcon->fd = fd;
+	netcon->udpraddrlen = netcon->new_raddrlen;
+	if (!setup_port(port, netcon, false)) {
+	    memcpy(port->net_to_dev.buf, netcon->new_buf, netcon->new_buf_len);
+	    /* Releases the lock. */
+	    net_fd_read2(port, netcon, netcon->new_buf_len);
+	    LOCK(port->lock);
+	}
+    } else {
+	handle_port_accept(port, fd, netcon);
+    }
+}
+
 /* A connection request has come in on a port. */
 static void
 handle_accept_port_read(int fd, void *data)
@@ -2261,13 +2362,11 @@ handle_accept_port_read(int fd, void *data)
 
     if (i == port->max_connections) {
 	if (port->kickolduser_mode) {
-	    for (i = 0; i < port->max_connections; i++) {
-		if (!shutdown_one_netcon(&(port->netcons[i]),
-					 "kicked off, new user is coming\r\n"))
-		    UNLOCK(port->lock);
-		/* Wait it to be unconnected and clean, go back to main loop. */
-		return;
-	    }
+	    /* Kick off user 0. */
+	    if (!kick_old_user(port, &port->netcons[0], new_fd, 0,
+			       &addr, addrlen))
+		UNLOCK(port->lock);
+	    return;
 	}
 
 	err = "Port already in use\r\n";
@@ -2286,6 +2385,8 @@ handle_accept_port_read(int fd, void *data)
 
     memcpy(port->netcons[i].raddr, &addr, addrlen);
     port->netcons[i].raddrlen = addrlen;
+    if (port->dgram)
+	port->netcons[i].udpraddrlen = addrlen;
 
     /* We have to hold the ports_lock until after this call so the
        device won't get used (from is_device_already_inuse()). */
@@ -2379,16 +2480,22 @@ udp_port_read(int fd, port_info_t *port, int *readerr, net_info_t **rnetcon)
 	err = "Port's device already in use\r\n";
 
     if (!err) {
-    out_err:
+	int new_fd = dup(fd);
+
+	if (new_fd == -1)
+	    err = "Unable to dup port fd\r\n";
 	netcon = &(port->netcons[i]);
 	if (netcon->fd == -1) {
-	    netcon->fd = dup(fd);
-	    if (netcon->fd == -1)
-		err = "Unable to dup port fd\r\n";
+	    netcon->fd = new_fd;
+	} else {
+	    if (kick_old_user(port, netcon, new_fd, rv, &remaddr, remaddrlen))
+		LOCK(port->lock);
+	    goto out_ignore;
 	}
     }
 
-    if (err != NULL) {
+    if (err) {
+    out_err:
 	sendto(fd, err, strlen(err), 0,
 	       (struct sockaddr *) &remaddr, remaddrlen);
 	goto out_ignore;
@@ -2396,6 +2503,8 @@ udp_port_read(int fd, port_info_t *port, int *readerr, net_info_t **rnetcon)
 
     memcpy(netcon->raddr, &remaddr, remaddrlen);
     netcon->raddrlen = remaddrlen;
+    if (port->dgram)
+	netcon->udpraddrlen = remaddrlen;
 
     if (setup_port(port, netcon, false))
 	goto out_ignore;
@@ -2451,6 +2560,8 @@ process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r,
 	netcon->remote_fixed = true;
 	memcpy(netcon->raddr, &r->addr, r->addrlen);
 	netcon->raddrlen = r->addrlen;
+	if (port->dgram)
+	    netcon->udpraddrlen = r->addrlen;
 
 	netcon->fd = dup(port->acceptfds[i].fd);
 	if (netcon->fd == -1) {
@@ -2580,6 +2691,20 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 static void
 free_port(port_info_t *port)
 {
+    net_info_t *netcon;
+
+    for_each_connection(port, netcon) {
+	char *err = "Port was deleted\n\r";
+	if (netcon->new_fd != -1) {
+	    generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
+			   (struct sockaddr *) &netcon->new_remote,
+			   netcon->new_raddrlen);
+	    close(netcon->new_fd);
+	}
+	if (netcon->new_buf)
+	    free(netcon->new_buf);
+    }
+
     while (port->remaddrs) {
 	struct port_remaddr *r = port->remaddrs;
 
@@ -2642,6 +2767,7 @@ switchout_port(struct absout *eout, port_info_t *new_port,
 {
     int new_state = new_port->enabled;
     waiter_t *tmp_waiter;
+    int i;
 
     /* Keep the same accept ports as the old port. */
     new_port->enabled = curr->enabled;
@@ -2658,6 +2784,18 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     curr->acceptfds = NULL;
     redo_port_handlers(new_port);
     curr->accept_waiter = tmp_waiter;
+
+    for (i = 0; i < new_port->max_connections; i++) {
+	if (curr->netcons[i].new_fd == -1)
+	    continue;
+	new_port->netcons[i].new_fd = curr->netcons[i].new_fd;
+	new_port->netcons[i].new_remote = curr->netcons[i].new_remote;
+	new_port->netcons[i].new_raddrlen = curr->netcons[i].new_raddrlen;
+	free(new_port->netcons[i].new_buf);
+	new_port->netcons[i].new_buf = curr->netcons[i].new_buf;
+	new_port->netcons[i].new_buf_len =curr->netcons[i].new_buf_len;
+	curr->netcons[i].new_buf = NULL;
+    }
 
     if (prev == NULL) {
 	ports = new_port;
@@ -2690,6 +2828,7 @@ static void
 finish_shutdown_port(sel_runner_t *runner, void *cb_data)
 {
     port_info_t *port = cb_data;
+    net_info_t *netcon;
     struct port_remaddr *r;
 
     if (port->io.f) {
@@ -2773,6 +2912,8 @@ finish_shutdown_port(sel_runner_t *runner, void *cb_data)
     for (r = port->remaddrs; r; r = r->next)
 	process_remaddr(&syslog_eout, port, r, true);
     enable_accept_ports(port);
+    for_each_connection(port, netcon)
+	check_port_new_fd(port, netcon);
     UNLOCK(port->lock);
 }
 
@@ -2825,10 +2966,12 @@ port_net_fd_cleared(int fd, void *cb_data)
 	free(netcon->banner);
 	netcon->banner = NULL;
     }
+
     if (num_connected_net(port, true) == 0) {
 	UNLOCK(port->lock);
 	sel_run(port->runshutdown, shutdown_port2, port);
     } else {
+	check_port_new_fd(port, netcon);
 	UNLOCK(port->lock);
     }
 }
@@ -2888,7 +3031,6 @@ shutdown_one_netcon(net_info_t *netcon, char *reason)
 {
     port_info_t *port = netcon->port;
 
-    /* FIXME - how to handle if it's a fixed UDP port. */
     if (netcon->closing)
 	return 0;
 
@@ -3202,8 +3344,8 @@ portconfig(struct absout *eout,
 	   int  config_num)
 {
     port_info_t *new_port, *curr, *prev;
+    net_info_t *netcon;
     enum str_type str_type;
-    int i;
     bool is_port_set;
 
     new_port = malloc(sizeof(port_info_t));
@@ -3346,13 +3488,19 @@ portconfig(struct absout *eout,
     }
     memset(new_port->netcons, 0,
 	   sizeof(*(new_port->netcons)) * new_port->max_connections);
-    for (i = 0; i < new_port->max_connections; i++) {
-	new_port->netcons[i].port = new_port;
-	new_port->netcons[i].fd = -1;
-	new_port->netcons[i].raddr = ((struct sockaddr *)
-				      &new_port->netcons[i].remote);
-	if (new_port->dgram)
-	    new_port->netcons[i].udpraddr = new_port->netcons[i].raddr;
+    for_each_connection(new_port, netcon) {
+	netcon->port = new_port;
+	netcon->fd = -1;
+	netcon->new_fd = -1;
+	netcon->raddr = ((struct sockaddr *) &netcon->remote);
+	if (new_port->dgram) {
+	    netcon->udpraddr = netcon->raddr;
+	    netcon->new_buf = malloc(new_port->net_to_dev_bufsize);
+	    if (!netcon->new_buf) {
+		eout->out(eout, "Could not allocate a temp buf");
+		goto errout;
+	    }
+	}
     }
 
     new_port->config_num = config_num;
