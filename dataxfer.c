@@ -1051,6 +1051,7 @@ handle_net_fd_read(int fd, void *data)
     net_info_t *netcon = data;
     port_info_t *port = netcon->port;
     int count, readerr = 0;
+    char *reason;
 
     LOCK(port->lock);
     if (port->net_to_dev_state == PORT_WAITING_OUTPUT_CLEAR) {
@@ -1069,12 +1070,12 @@ handle_net_fd_read(int fd, void *data)
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for port %s: %s", port->portname,
 	       strerror(readerr));
-	shutdown_one_netcon(netcon, "network read error");
-	goto out;
+	reason = "network read error";
+	goto out_shutdown;
     } else if (count == 0) {
 	/* The other end closed the port, shut it down. */
-	shutdown_one_netcon(netcon, "network read close");
-	goto out;
+	reason = "network read close";
+	goto out_shutdown;
     }
     port->net_to_dev.cursize = count;
 
@@ -1085,8 +1086,8 @@ handle_net_fd_read(int fd, void *data)
 						       count,
 						       &netcon->tn_data);
 	if (netcon->tn_data.error) {
-	    shutdown_one_netcon(netcon, "telnet output error");
-	    goto out;
+	    reason =  "telnet output error";
+	    goto out_shutdown;
 	}
 	if (port->net_to_dev.cursize == 0) {
 	    /* We are out of characters; they were all processed.  We
@@ -1152,8 +1153,12 @@ handle_net_fd_read(int fd, void *data)
     reset_timer(netcon);
  out_unlock:
     UNLOCK(port->lock);
- out: /* shutdown_port frees the lock */
+ out:
     return;
+
+ out_shutdown:
+    if (!shutdown_one_netcon(netcon, reason))
+	goto out_unlock;
 }
 
 /* The network fd has room to write some data.  This is only activated
@@ -2257,8 +2262,9 @@ handle_accept_port_read(int fd, void *data)
     if (i == port->max_connections) {
 	if (port->kickolduser_mode) {
 	    for (i = 0; i < port->max_connections; i++) {
-		shutdown_one_netcon(&(port->netcons[i]),
-				    "kicked off, new user is coming\r\n");
+		if (!shutdown_one_netcon(&(port->netcons[i]),
+					 "kicked off, new user is coming\r\n"))
+		    UNLOCK(port->lock);
 		/* Wait it to be unconnected and clean, go back to main loop. */
 		return;
 	    }
@@ -2754,8 +2760,9 @@ finish_shutdown_port(sel_runner_t *runner, void *cb_data)
 	if (curr != NULL) {
 	    port = curr->new_config;
 	    curr->new_config = NULL;
+	    LOCK(curr->lock);
 	    LOCK(port->lock);
-	    switchout_port(NULL, port, curr, prev); /* Releases lock */
+	    switchout_port(NULL, port, curr, prev); /* Releases locks */
 	}
 	UNLOCK(ports_lock);
     }
@@ -2893,6 +2900,7 @@ shutdown_one_netcon(net_info_t *netcon, char *reason)
     netcon->closing = true;
     UNLOCK(port->lock);
     sel_clear_fd_handlers(ser2net_sel, netcon->fd);
+    LOCK(port->lock);
 
     return 0;
 }
@@ -2920,8 +2928,9 @@ got_timeout(selector_t  *sel,
 		continue;
 	    netcon->timeout_left--;
 	    if (netcon->timeout_left < 0) {
-		shutdown_port(port, "timeout"); /* Releases lock */
-		return;
+		if (shutdown_one_netcon(netcon, "timeout"))
+		    /* Entire port was shut down, lock was released. */
+		    return;
 	    }
 	}
     }
@@ -3359,16 +3368,17 @@ portconfig(struct absout *eout,
 	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
 		/* Port is disconnected, switch it now. */
 		LOCK(new_port->lock);
-		switchout_port(eout, new_port, curr, prev); /* releases lock */
+		switchout_port(eout, new_port, curr, prev); /* releases locks */
 	    } else {
 		/* Mark it to be replaced later. */
 		if (curr->new_config != NULL)
 		    free_port(curr->new_config);
 		curr->config_num = config_num;
 		curr->new_config = new_port;
-		UNLOCK(curr->lock);
 		if (curr->dgram)
-		    shutdown_port(curr, "UDP reconfig");
+		    shutdown_port(curr, "UDP reconfig"); /* releases lock */
+		else
+		    UNLOCK(curr->lock);
 	    }
 	    goto out;
 	} else {
@@ -4111,6 +4121,7 @@ shutdown_ports(void)
 	next = port->next;
 	LOCK(port->lock);
 	change_port_state(NULL, port, PORT_DISABLED, false);
+	LOCK(port->lock);
 	shutdown_port(port, "program shutdown");
 	port = next;
     }
