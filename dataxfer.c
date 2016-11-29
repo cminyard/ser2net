@@ -2294,6 +2294,18 @@ check_port_new_fd(port_info_t *port, net_info_t *netcon)
     if (netcon->new_fd == -1)
 	return;
 
+    if (netcon->fd != -1) {
+	/* Something snuck in before, kick this one out. */
+	char *err = "kicked off, new user is coming\r\n";
+	
+	generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
+		       (struct sockaddr *) &netcon->new_remote,
+		       netcon->new_raddrlen);
+	close(netcon->new_fd);
+	netcon->new_fd = -1;
+	return;
+    }
+
     fd = netcon->new_fd;
     netcon->new_fd = -1;
     memcpy(netcon->raddr, &netcon->new_remote, netcon->new_raddrlen);
