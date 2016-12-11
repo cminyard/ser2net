@@ -556,7 +556,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	    set_termios_datasize(d, termctl, 7);
 	} else if (strcmp(pos, "8DATABITS") == 0) {
 	    set_termios_datasize(d, termctl, 8);
-	} else if ((val = lookup_parity(pos)) == 0) {
+	} else if ((val = lookup_parity(pos)) != -1) {
 	    set_termios_parity(d, termctl, val);
         } else if (strcmp(pos, "XONXOFF") == 0) {
 	    set_termios_xonoff(termctl, 1);
