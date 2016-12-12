@@ -286,7 +286,7 @@ controller_outputf(struct controller_info *cntlr, const char *str, ...)
 
 void controller_outs(struct controller_info *cntlr, char *s)
 {
-  controller_output (cntlr, s, strlen(s));
+    controller_output (cntlr, s, strlen(s));
 }
 
 
@@ -618,7 +618,7 @@ handle_tcp_fd_read(int fd, void *data)
 	    i = -1;
 	} else {
 	    /* It's a normal character, just echo it. */
-	    controller_outs(cntlr, (char *) &(cntlr->inbuf[i]));
+	    controller_output(cntlr, (char *) &(cntlr->inbuf[i]), 1);
 	}
     }
  out_unlock:
