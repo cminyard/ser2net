@@ -3430,8 +3430,7 @@ portconfig(struct absout *eout,
 				 &new_port->dgram, &is_port_set)) {
 	eout->out(eout, "port number was invalid");
 	goto errout;
-    }
-    if (!is_port_set) {
+    } else if (!is_port_set) {
 	eout->out(eout, "port number was zero");
 	goto errout;
     }
