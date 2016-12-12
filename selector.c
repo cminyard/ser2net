@@ -361,7 +361,8 @@ sel_set_fd_handlers(selector_t        *sel,
 		    sel_fd_cleared_cb done)
 {
     fd_control_t *fdc;
-    fd_state_t   *state;
+    fd_state_t   *state, *oldstate = NULL;
+    void         *olddata = NULL;
     int          added = 1;
 
     state = malloc(sizeof(*state));
@@ -374,13 +375,9 @@ sel_set_fd_handlers(selector_t        *sel,
     sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
     if (fdc->state) {
+	oldstate = fdc->state;
+	olddata = fdc->data;
 	added = 0;
-	fdc->state->deleted = 1;
-	if (fdc->state->use_count == 0) {
-	    if (fdc->state->done)
-		fdc->state->done(fd, fdc->data);
-	    free(fdc->state);
-	}
     }
     fdc->state = state;
     fdc->data = data;
@@ -396,10 +393,20 @@ sel_set_fd_handlers(selector_t        *sel,
 
 	if (sel_update_epoll(sel, fd, EPOLL_CTL_ADD)) {
 	    wake_fd_sel_thread(sel);
-	    return 0;
+	    goto out;
 	}
     }
     sel_fd_unlock(sel);
+
+ out:
+    if (oldstate) {
+	oldstate->deleted = 1;
+	if (oldstate->use_count == 0) {
+	    if (oldstate->done)
+		oldstate->done(fd, olddata);
+	    free(oldstate);
+	}
+    }
     return 0;
 }
 
@@ -410,17 +417,15 @@ sel_clear_fd_handlers(selector_t *sel,
 		      int        fd)
 {
     fd_control_t *fdc;
+    fd_state_t   *oldstate = NULL;
+    void         *olddata = NULL;
 
     sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
 
     if (fdc->state) {
-	fdc->state->deleted = 1;
-	if (fdc->state->use_count == 0) {
-	    if (fdc->state->done)
-		fdc->state->done(fd, fdc->data);
-	    free(fdc->state);
-	}
+	oldstate = fdc->state;
+	olddata = fdc->data;
 	fdc->state = NULL;
 
 	sel_update_epoll(sel, fd, EPOLL_CTL_DEL);
@@ -439,6 +444,15 @@ sel_clear_fd_handlers(selector_t *sel,
     }
 
     sel_fd_unlock(sel);
+
+    if (oldstate) {
+	oldstate->deleted = 1;
+	if (oldstate->use_count == 0) {
+	    if (oldstate->done)
+		oldstate->done(fd, olddata);
+	    free(oldstate);
+	}
+    }
 }
 
 /* Set whether the file descriptor will be monitored for data ready to
