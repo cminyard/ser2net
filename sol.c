@@ -746,6 +746,9 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
     } else if (rv) {
 	eout->out(eout, "Invalid SOL string: %s", d->io->devname + 4);
 	return -1;
+    } else if (argc == 0) {
+	eout->out(eout, "No SOL string given");
+	return -1;
     }
 
     rv = ipmi_parse_args2(&curr_arg, argc, argv, &args);

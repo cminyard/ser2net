@@ -128,6 +128,9 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *), void *data,
     for (rp = ai; rp != NULL; rp = rp->ai_next)
 	max_fds++;
 
+    if (max_fds == 0)
+	return NULL;
+
     fds = malloc(sizeof(int) * max_fds);
     if (!fds)
 	return NULL;
@@ -212,6 +215,8 @@ void str_to_argv_free(int argc, char **argv)
 {
     int i;
 
+    if (!argv)
+	return;
     for (i = 0; i < argc; i++) {
 	if (argv[i])
 	    free(argv[i]);
@@ -284,7 +289,7 @@ int str_to_argv(const char *s, int *r_argc, char ***r_argv, char *seps)
     char *parm = NULL;
     size_t parmlen = 0;
     size_t parmpos = 0;
-    int rv;
+    int rv = 0;
     int c = 0;
 
     if (!seps)

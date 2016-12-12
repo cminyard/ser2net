@@ -535,7 +535,7 @@ trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
         pos += snprintf(out + pos, sizeof(out) - pos, "%02x ", buf[q]);
         col++;
         if (col >= 8) {
-            pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
+            trace_write_end(out + pos, sizeof(out) - pos, start, col);
             rv = write(file, out, strlen(out));
             if (rv < 0)
                 return rv;
@@ -550,7 +550,7 @@ trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
             strncat(out + pos, "   ", sizeof(out) - pos);
             pos += 3;
         }
-        pos += trace_write_end(out + pos, sizeof(out) - pos, start, col);
+        trace_write_end(out + pos, sizeof(out) - pos, start, col);
         rv = write(file, out, strlen(out));
         if (rv < 0)
             return rv;
@@ -1429,6 +1429,7 @@ process_str(port_info_t *port, tcp_con_info_t *tcpcon,
 		    continue;
 		}
 		val = (val * 8) + (*s) - '0';
+		op(data, val);
 		break;
 
 	    case 'x':
@@ -1447,6 +1448,7 @@ process_str(port_info_t *port, tcp_con_info_t *tcpcon,
 		if (!isdigit(*s))
 		    continue;
 		val = (val * 16) + from_hex_digit(*s);
+		op(data, val);
 		break;
 
 	    /* \Y -> year */
@@ -3372,7 +3374,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     port = find_port_by_num(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
-	goto out_unlock;
+	goto out;
     }
 
     if (strcmp(enable, "off") == 0) {
@@ -3389,6 +3391,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     }
 
     change_port_state(&eout, port, new_enable); /* releases lock */
+ out:
     return;
 
  out_unlock:
@@ -3440,7 +3443,9 @@ data_monitor_start(struct controller_info *cntlr,
 	controller_outs(cntlr, err);
 	controller_outs(cntlr, type);
 	controller_outs(cntlr, "\r\n");
+	UNLOCK(port->lock);
 	port = NULL;
+	goto out;
     }
  out_unlock:
     UNLOCK(port->lock);

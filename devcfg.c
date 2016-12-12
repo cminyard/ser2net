@@ -540,7 +540,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	    rv = set_termios_from_speed(d, termctl, val);
 	    if (rv) {
 		eout->out(eout, "Invalid baud rate: %d\n", d->default_bps);
-		return -1;
+		goto out;
 	    }
 	} else if (strcmp(pos, "1STOPBIT") == 0) {
 	    termctl->c_cflag &= ~(CSTOPB);
