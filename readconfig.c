@@ -335,12 +335,12 @@ handle_rs485conf(char *name, char *str)
 	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
 	return;
     }
+    memset(new_rs485conf, 0, sizeof(*new_rs485conf));
 
     new_rs485conf->name = strdup(name);
     if (!new_rs485conf->name) {
 	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
-	free(new_rs485conf);
-	return;
+	goto out_err;
     }
 
     if (sscanf(str, "%10u:%10u:%1hhu:%1hhu",
@@ -349,18 +349,18 @@ handle_rs485conf(char *name, char *str)
                &rts_on_send,
                &rx_during_tx) != 4) {
 	syslog(LOG_ERR, "Couldn't parse RS485 config on %d", lineno);
-	return;
+	goto out_err;
     }
 
     /* check, if flags have values 0 or 1 */
     if (rts_on_send > 1) {
 	syslog(LOG_ERR, "RTS_ON_SEND parameter can be 0 or 1 on %d", lineno);
-	return;
+	goto out_err;
     }
 
     if (rx_during_tx > 1) {
 	syslog(LOG_ERR, "RX_DURING_TX parameter can be 0 or 1 on %d", lineno);
-	return;
+	goto out_err;
     }
 
     new_rs485conf->conf.flags = SER_RS485_ENABLED;
@@ -377,6 +377,12 @@ handle_rs485conf(char *name, char *str)
 
     new_rs485conf->next = rs485confs;
     rs485confs = new_rs485conf;
+    return;
+
+ out_err:
+    if (new_rs485conf->name)
+	free(new_rs485conf->name);
+    free(new_rs485conf);
 }
 
 struct serial_rs485 *
