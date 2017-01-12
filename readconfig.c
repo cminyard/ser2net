@@ -998,7 +998,7 @@ handle_config_line(char *inbuf, int len)
 int
 readconfig(char *filename)
 {
-    FILE *instream;
+    FILE *instream = NULL;
     int linesize = 256;
     char *inbuf = malloc(linesize);
     int  rv = 0, pos = 0;
@@ -1060,10 +1060,10 @@ readconfig(char *filename)
     /* Delete anything that wasn't in the new config file. */
     clear_old_port_config(config_num);
 
-    fclose(instream);
  out_err:
+    if (instream)
+	fclose(instream);
     free(inbuf);
     return rv;
-
 }
 
