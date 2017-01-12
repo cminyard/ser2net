@@ -912,6 +912,7 @@ sol_ipmi_log(os_handler_t *hnd, enum ipmi_log_type_e log_type,
     case IPMI_LOG_DEBUG_END:
 	if (!ser2net_debug)
 	    return;
+	slevel = LOG_DEBUG;
     }
 
     if (slevel < 0)
