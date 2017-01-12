@@ -3753,12 +3753,16 @@ showport(struct controller_info *cntlr, port_info_t *port)
     }
 }
 
-/* Find a port data structure given a port number. */
+/*
+ * Find a port data structure given a port number.  Returns with port->lock
+ * held, if it returns a non-NULL port.
+ */
 static port_info_t *
 find_port_by_num(char *portstr, bool allow_deleted)
 {
     port_info_t *port;
 
+    LOCK(ports_lock);
     port = ports;
     while (port != NULL) {
 	if (strcmp(portstr, port->portname) == 0) {
@@ -3783,8 +3787,8 @@ showports(struct controller_info *cntlr, char *portspec)
 {
     port_info_t *port;
 
-    LOCK(ports_lock);
     if (portspec == NULL) {
+	LOCK(ports_lock);
 	/* Dump everything. */
 	port = ports;
 	while (port != NULL) {
@@ -3825,8 +3829,8 @@ showshortports(struct controller_info *cntlr, char *portspec)
 	    "Dev in",
 	    "Dev out",
 	    "State");
-    LOCK(ports_lock);
     if (portspec == NULL) {
+	LOCK(ports_lock);
 	/* Dump everything. */
 	port = ports;
 	while (port != NULL) {
@@ -3856,7 +3860,6 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
     port_info_t *port;
     net_info_t *netcon;
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, true);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
@@ -3886,7 +3889,6 @@ setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
     port_info_t *port;
     struct absout out = { .out = cntrl_abserrout, .data = cntlr };
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
@@ -3907,7 +3909,6 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
 {
     port_info_t *port;
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
@@ -3933,7 +3934,6 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     int         new_enable;
     struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
@@ -3980,7 +3980,6 @@ data_monitor_start(struct controller_info *cntlr,
 {
     port_info_t *port;
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
@@ -4044,7 +4043,6 @@ disconnect_port(struct controller_info *cntlr,
 {
     port_info_t *port;
 
-    LOCK(ports_lock);
     port = find_port_by_num(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
