@@ -753,15 +753,15 @@ solconfig(struct solcfg_data *d, struct absout *eout, const char *instr,
 
     rv = ipmi_parse_args2(&curr_arg, argc, argv, &args);
     if (rv) {
-	str_to_argv_free(argc, argv);
 	eout->out(eout, "Invalid SOL arguments");
+	str_to_argv_free(argc, argv);
 	goto out;
     }
 
     if (curr_arg != argc) {
-	str_to_argv_free(argc, argv);
 	eout->out(eout, "Extra SOL arguments starting with '%s'",
 		  argv[curr_arg]);
+	str_to_argv_free(argc, argv);
 	rv = -1;
 	goto out;
     }
