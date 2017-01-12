@@ -490,7 +490,7 @@ setup_signals(void)
 
  out:
     if (err) {
-	fprintf(stderr, "Error setting up signals: %s\n", strerror(err));
+	fprintf(stderr, "Error setting up signals: %s\n", strerror(errno));
 	exit(1);
     }
 }
