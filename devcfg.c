@@ -221,12 +221,12 @@ uucp_mk_lock(char *devname)
 	if ((fd = open(lck_file, O_RDONLY)) >= 0) {
 	    int n;
 
-    	    n = read(fd, &buf, sizeof(buf));
+	    n = read(fd, &buf, sizeof(buf) - 1);
 	    close(fd);
-	    if( n == 4 ) 		/* Kermit-style lockfile. */
+	    if (n == 4) 		/* Kermit-style lockfile. */
 		pid = buf.ival;
 	    else if (n > 0) {		/* Ascii lockfile. */
-		buf.str[n] = 0;
+		buf.str[n] = '\0';
 		sscanf(buf.str, "%10d", &pid);
 	    }
 
