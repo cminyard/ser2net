@@ -915,7 +915,8 @@ free_controllers(void)
     while (controllers) {
 	controllers->shutdown_complete = shutdown_controller_done;
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
-	shutdown_controller(controllers);
+	LOCK(controllers->lock);
+	shutdown_controller(controllers); /* Releases the lock. */
 	wait_for_waiter(controller_shutdown_waiter);
     }
     if (controller_shutdown_waiter)

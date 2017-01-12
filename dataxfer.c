@@ -814,8 +814,9 @@ send_timeout(selector_t  *sel,
     if (port->dev_to_net.cursize > 0) {
 	if (handle_net_send(port) == 0)
 	    UNLOCK(port->lock);
+    } else {
+	UNLOCK(port->lock);
     }
-    UNLOCK(port->lock);
 }
 
 static void
@@ -2348,7 +2349,7 @@ handle_accept_port_read(int fd, void *data)
     if (new_fd == -1) {
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
 	    syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
-	return;
+	goto out;
     }
 
     if (port->remaddrs) {
