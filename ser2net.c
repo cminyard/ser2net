@@ -96,6 +96,7 @@ reread_config_file(void)
 	char *prev_config_port = config_port;
 	config_port = NULL;
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
+	readconfig_init();
 	readconfig(config_file);
 	if (config_port_from_cmdline) {
 	    /* Never override the config port from the command line. */
@@ -503,6 +504,15 @@ main(int argc, char *argv[])
 #ifdef USE_PTHREADS
     char *end;
 #endif
+    char **config_lines;
+    int num_config_lines = 0;
+
+    config_lines = malloc(sizeof(*config_lines));
+    if (!config_lines) {
+	fprintf(stderr, "Out of memory\n");
+	exit(1);
+    }
+    *config_lines = NULL;
 
     if (led_driver_init() < 0) {
 	fprintf(stderr, "Error while initializing LED drivers\n");
@@ -539,7 +549,14 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No config line specified with -C\n");
 		arg_error(argv[0]);
 	    }
-	    handle_config_line(argv[i], strlen(argv[i]));
+	    num_config_lines++;
+	    config_lines = realloc(config_lines, sizeof(*config_lines) *
+				   (num_config_lines + 1));
+	    if (!config_lines) {
+		fprintf(stderr, "Out of memory handling config line\n");
+		exit(1);
+	    }
+	    config_lines[num_config_lines - 1] = argv[i];
 	    config_file = NULL;
 	    break;
 
@@ -647,6 +664,10 @@ main(int argc, char *argv[])
     if (ser2net_debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
 
+    readconfig_init();
+    for (i = 0; i < num_config_lines; i++)
+	handle_config_line(config_lines[i], strlen(config_lines[i]));
+    free(config_lines);
     if (config_file) {
 	if (readconfig(config_file) == -1) {
 	    return 1;

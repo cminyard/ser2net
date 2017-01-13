@@ -96,6 +96,10 @@ struct serial_rs485 *find_rs485conf(const char *name);
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
+/* Do a sendto if an address is provided, a write if not. */
+int net_write(int fd, const void *buf, size_t len, int flags,
+	      const struct sockaddr *addr, socklen_t addrlen);
+
 /* Make sure the full contents get written, return an error if it occurs. */
 int write_full(int fd, char *data, size_t count);
 

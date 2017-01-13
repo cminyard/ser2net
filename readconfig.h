@@ -23,6 +23,9 @@
 /* Handle one line of configuration. */
 int handle_config_line(char *inbuf, int len);
 
+/* Initialize for a new config read. */
+void readconfig_init(void);
+
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int readconfig(char *filename);

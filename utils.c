@@ -266,6 +266,16 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 }
 
 int
+net_write(int fd, const void *buf, size_t len, int flags,
+	  const struct sockaddr *addr, socklen_t addrlen)
+{
+    if (addr)
+	return sendto(fd, buf, len, flags, addr, addrlen);
+    else
+	return write(fd, buf, len);
+}
+
+int
 write_full(int fd, char *data, size_t count)
 {
     ssize_t written;

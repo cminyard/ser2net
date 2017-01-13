@@ -993,6 +993,21 @@ handle_config_line(char *inbuf, int len)
     return 0;
 }
 
+void
+readconfig_init(void)
+{
+    setup_defaults();
+    free_longstrs();
+    free_tracefiles();
+#if HAVE_DECL_TIOCSRS485
+    free_rs485confs();
+#endif
+    free_leds();
+
+    config_num++;
+    free_rotators();
+}
+
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int
@@ -1016,17 +1031,6 @@ readconfig(char *filename)
 	rv = -1;
 	goto out_err;
     }
-
-    setup_defaults();
-    free_longstrs();
-    free_tracefiles();
-#if HAVE_DECL_TIOCSRS485
-    free_rs485confs();
-#endif
-    free_leds();
-
-    config_num++;
-    free_rotators();
 
     while (fgets(inbuf + pos, linesize - pos, instream) != NULL) {
 	int len = strlen(inbuf);

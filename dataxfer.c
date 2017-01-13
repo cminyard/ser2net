@@ -477,7 +477,7 @@ static void generic_sendto(bool is_dgram, int fd, char *data, int len,
     if (is_dgram)
 	sendto(fd, data, len, 0, addr, addrlen);
     else
-	sendto(fd, data, len, 0, NULL, 0);
+	write(fd, data, len);
 }
 
 static int
@@ -681,20 +681,26 @@ header_trace(port_info_t *port, net_info_t *netcon)
 {
     static char buf[1024];
     static trace_info_t tr = { 1, 1, NULL, -1 };
-    int len = 0;
+    int len = 0, err;
     char portstr[NI_MAXSERV];
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    getnameinfo(netcon->raddr, netcon->raddrlen, buf + len, sizeof(buf) - len,
-		portstr, sizeof(portstr), NI_NUMERICHOST);
-    len += strlen(buf + len);
-    if ((sizeof(buf) - len) > 2) {
-	buf[len] = ':';
-	len++;
+    err = getnameinfo(netcon->raddr, netcon->raddrlen,
+		      buf + len, sizeof(buf) - len,
+		      portstr, sizeof(portstr), NI_NUMERICHOST);
+    if (err) {
+	len += snprintf(buf + len, sizeof(buf) - len,
+			"unknown:%s\n", gai_strerror(err));
+    } else {
+	len += strlen(buf + len);
+	if ((sizeof(buf) - len) > 2) {
+	    buf[len] = ':';
+	    len++;
+	}
+	strncpy(buf + len, portstr, sizeof(buf) - len);
+	len += strlen(buf + len);
     }
-    strncpy(buf + len, portstr, sizeof(buf) - len);
-    len += strlen(buf + len);
     len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
     hf_out(port, buf, len);
@@ -735,8 +741,9 @@ handle_net_send_one(port_info_t *port, net_info_t *netcon)
 	goto no_send;
 
  retry_write:
-    count = sendto(netcon->fd, port->dev_to_net.buf, port->dev_to_net.cursize,
-		   0, netcon->udpraddr, netcon->udpraddrlen);
+    count = net_write(netcon->fd,
+		      port->dev_to_net.buf, port->dev_to_net.cursize,
+		      0, netcon->udpraddr, netcon->udpraddrlen);
     if (count == -1) {
 	if (errno == EINTR) {
 	    /* EINTR means we were interrupted, just retry. */
@@ -1227,8 +1234,8 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	/* Don't send empty packets, that can confuse UDP clients. */
 	return;
 
-    reterr = sendto(netcon->fd, buf->buf + *pos, to_send,
-		    0, netcon->udpraddr, netcon->udpraddrlen);
+    reterr = net_write(netcon->fd, buf->buf + *pos, to_send,
+		       0, netcon->udpraddr, netcon->udpraddrlen);
     if (reterr == -1) {
 	if (errno == EPIPE) {
 	    shutdown_one_netcon(netcon, "EPIPE");
@@ -1909,6 +1916,10 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	options = 1;
 	if (setsockopt(netcon->fd, IPPROTO_TCP, TCP_NODELAY,
 		       (char *) &options, sizeof(options)) == -1) {
+	    if (port->is_stdio)
+		/* Ignore this error on stdio ports. */
+		goto end_net_config;
+
 	    close(netcon->fd);
 	    netcon->fd = -1;
 	    syslog(LOG_ERR, "Could not enable TCP_NODELAY tcp port %s: %m",
@@ -1925,8 +1936,8 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 
 	    if (!hosts_access(&req)) {
 		char *err = "Access denied\r\n";
-		sendto(netcon->fd, err, strlen(err),
-		       0, netcon->udpraddr, netcon->udpraddrlen);
+		net_write(netcon->fd, err, strlen(err),
+			  0, netcon->udpraddr, netcon->udpraddrlen);
 		close(netcon->fd);
 		netcon->fd = -1;
 		return -1;
@@ -1934,6 +1945,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	}
 #endif /* HAVE_TCPD_H */
     }
+ end_net_config:
 
     if (!is_reconfig) {
 	if (netcon->banner) {
@@ -2524,8 +2536,8 @@ udp_port_read(int fd, port_info_t *port, int *readerr, net_info_t **rnetcon)
 
     if (err) {
     out_err:
-	sendto(fd, err, strlen(err), 0,
-	       (struct sockaddr *) &remaddr, remaddrlen);
+	net_write(fd, err, strlen(err), 0,
+		  (struct sockaddr *) &remaddr, remaddrlen);
 	goto out_ignore;
     }
 
