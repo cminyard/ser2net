@@ -2152,9 +2152,9 @@ handle_rot_port_read(int fd, void *data)
 	    i = 0;
 	if (port) {
 	    rot->curr_port = i;
+	    UNLOCK(ports_lock);
 	    handle_port_accept(port, new_fd, &(port->netcons[0]));
 	    UNLOCK(port->lock);
-	    UNLOCK(ports_lock);
 	    return;
 	}
     } while (i != rot->curr_port);
