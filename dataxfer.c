@@ -471,15 +471,6 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
     return rv;
 }
 
-static void generic_sendto(bool is_dgram, int fd, char *data, int len,
-			   struct sockaddr *addr,  socklen_t addrlen)
-{
-    if (is_dgram)
-	sendto(fd, data, len, 0, addr, addrlen);
-    else
-	write(fd, data, len);
-}
-
 static int
 num_connected_net(port_info_t *port, bool include_closing)
 {
@@ -2310,9 +2301,9 @@ kick_old_user(port_info_t *port, net_info_t *netcon, int new_fd, int buflen,
 
     /* If another user is waiting for a kick, kick that user. */
     if (netcon->new_fd) {
-	generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
-		       (struct sockaddr *) &netcon->new_remote,
-		       netcon->new_raddrlen);
+	net_write(netcon->new_fd, err, strlen(err), 0,
+		  (struct sockaddr *) &netcon->new_remote,
+		  netcon->new_raddrlen);
 	close(netcon->new_fd);
     }
 
@@ -2340,9 +2331,9 @@ check_port_new_fd(port_info_t *port, net_info_t *netcon)
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
 	
-	generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
-		       (struct sockaddr *) &netcon->new_remote,
-		       netcon->new_raddrlen);
+	net_write(netcon->new_fd, err, strlen(err), 0,
+		  (struct sockaddr *) &netcon->new_remote,
+		  netcon->new_raddrlen);
 	close(netcon->new_fd);
 	netcon->new_fd = -1;
 	return;
@@ -2738,9 +2729,9 @@ free_port(port_info_t *port)
     for_each_connection(port, netcon) {
 	char *err = "Port was deleted\n\r";
 	if (netcon->new_fd != -1) {
-	    generic_sendto(port->dgram, netcon->new_fd, err, strlen(err),
-			   (struct sockaddr *) &netcon->new_remote,
-			   netcon->new_raddrlen);
+	    net_write(netcon->new_fd, err, strlen(err), 0,
+		      (struct sockaddr *) &netcon->new_remote,
+		      netcon->new_raddrlen);
 	    close(netcon->new_fd);
 	}
 	if (netcon->runshutdown)
