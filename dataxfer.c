@@ -869,10 +869,9 @@ handle_dev_fd_read(struct devio *io)
 	}
 
 	if (count < 0) {
-	    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+	    if (errno == EAGAIN || errno == EWOULDBLOCK)
 		/* Nothing to read, just return. */
 		goto out_unlock;
-	    }
 
 	    /* Got an error on the read, shut down the port. */
 	    syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
@@ -1033,6 +1032,9 @@ handle_dev_fd_devstr_write(port_info_t *port)
 	free(port->devstr->buf);
 	free(port->devstr);
 	port->devstr = NULL;
+
+	/* Send out any data we got on the TCP port. */
+	handle_dev_fd_normal_write(port);
     }
 }
 
@@ -1075,6 +1077,16 @@ net_fd_read2(port_info_t *port, net_info_t *netcon, int count)
 		 port->net_to_dev.buf, port->net_to_dev.cursize, NET);
 
  retry_write:
+    /*
+     * Don't write anything to the device until devstr is written.
+     * This can happen on UDP ports, we get the first packet before
+     * the port is enabled, so there will be data in the output buffer
+     * but there will also possibly be devstr data.  We want the
+     * devstr data to go out first.
+     */
+    if (port->devstr)
+	goto stop_write;
+
     count = port->io.f->write(&port->io, port->net_to_dev.buf,
 			      port->net_to_dev.cursize);
     if (count == -1) {
@@ -1086,6 +1098,7 @@ net_fd_read2(port_info_t *port, net_info_t *netcon, int count)
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
+	stop_write:
 	    disable_all_net_read(port);
 	    port->io.f->write_handler_enable(&port->io, 1);
 	    port->net_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
@@ -1163,6 +1176,12 @@ handle_net_fd_read(int fd, void *data)
     goto out_unlock;
 }
 
+void io_enable_read_handler(port_info_t *port)
+{
+    port->io.f->read_handler_enable(&port->io,
+				    port->enabled != PORT_RAWLP);
+}
+
 /*
  * The network fd has room to write some data.  This is only activated
  * if a write fails to complete, it is deactivated as soon as writing
@@ -1173,7 +1192,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	     struct sbuf *buf, unsigned int *pos)
 {
     telnet_data_t *td = &netcon->tn_data;
-    int buferr, reterr;
+    int buferr, reterr, to_send;
 
     if (netcon->sending_tn_data) {
     send_tn_data:
@@ -1199,9 +1218,16 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	    return;
 	}
 	netcon->sending_tn_data = false;
+	if (!any_net_data_to_write(port))
+	    io_enable_read_handler(port);
     }
 
-    reterr = sendto(netcon->fd, buf->buf + *pos, buf->cursize - *pos,
+    to_send = buf->cursize - *pos;
+    if (to_send <= 0)
+	/* Don't send empty packets, that can confuse UDP clients. */
+	return;
+
+    reterr = sendto(netcon->fd, buf->buf + *pos, to_send,
 		    0, netcon->udpraddr, netcon->udpraddrlen);
     if (reterr == -1) {
 	if (errno == EPIPE) {
@@ -1232,7 +1258,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	port->dev_to_net.cursize = 0;
 
 	/* We are done writing, turn the reader back on. */
-	port->io.f->read_handler_enable(&port->io, 1);
+	io_enable_read_handler(port);
 	sel_set_fd_write_handler(ser2net_sel, netcon->fd,
 				 SEL_FD_HANDLER_DISABLED);
 	port->dev_to_net_state = PORT_WAITING_INPUT;
@@ -1330,6 +1356,8 @@ handle_net_fd_banner_write(port_info_t *port, net_info_t *netcon)
 	free(netcon->banner->buf);
 	free(netcon->banner);
 	netcon->banner = NULL;
+
+	handle_net_fd_write(port, netcon);
     }
 }
 
@@ -1951,7 +1979,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 				 : handle_dev_fd_read);
 	port->io.write_handler = handle_dev_fd_write;
 	port->io.except_handler = handle_dev_fd_except;
-	port->io.f->read_handler_enable(&port->io, port->enabled != PORT_RAWLP);
 	port->io.f->except_handler_enable(&port->io, 1);
 	if (port->devstr)
 	    port->io.f->write_handler_enable(&port->io, 1);
@@ -1984,7 +2011,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
 	if (i_am_first)
-	    port->io.f->read_handler_enable(&port->io, 1);
+	    io_enable_read_handler(port);
 	if (netcon->banner)
 	    sel_set_fd_write_handler(ser2net_sel, netcon->fd,
 				     SEL_FD_HANDLER_ENABLED);
@@ -2001,6 +2028,15 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     }
 
     reset_timer(netcon);
+
+    /*
+     * If we have a banner, start the write here to avoid data from
+     * the port getting read first and going on before the banner.
+     * This happens on UDP connections on the first packet.
+     */
+    if (netcon->banner)
+	handle_net_fd_banner_write(port, netcon);
+
     return 0;
 }
 
@@ -3549,7 +3585,12 @@ portconfig(struct absout *eout,
        would affect a port replacement here. */
 
     if (new_port->enabled != PORT_DISABLED) {
-	if (startup_port(eout, new_port, false) == -1)
+	int rv;
+
+	LOCK(new_port->lock);
+	rv = startup_port(eout, new_port, false);
+	UNLOCK(new_port->lock);
+	if (rv == -1)
 	    goto errout_unlock;
     }
 
