@@ -2688,13 +2688,15 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 	    port->acceptfds = NULL;
 	    port->nr_acceptfds = 0;
 	}
-    } else if (port->enabled == PORT_DISABLED) {
-	if (state == PORT_RAWLP)
-	    port->io.read_disabled = 1;
-	else
-	    port->io.read_disabled = 0;
-	rv = startup_port(eout, port, is_reconfig);
-	port->enabled = state;
+    } else {
+	if (port->enabled == PORT_DISABLED) {
+	    if (state == PORT_RAWLP)
+		port->io.read_disabled = 1;
+	    else
+		port->io.read_disabled = 0;
+	    rv = startup_port(eout, port, is_reconfig);
+	    port->enabled = state;
+	}
 	UNLOCK(port->lock);
     }
 
