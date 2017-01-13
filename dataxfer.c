@@ -2826,10 +2826,13 @@ switchout_port(struct absout *eout, port_info_t *new_port,
 	new_port->netcons[i].new_fd = curr->netcons[i].new_fd;
 	new_port->netcons[i].new_remote = curr->netcons[i].new_remote;
 	new_port->netcons[i].new_raddrlen = curr->netcons[i].new_raddrlen;
-	free(new_port->netcons[i].new_buf);
-	new_port->netcons[i].new_buf = curr->netcons[i].new_buf;
-	new_port->netcons[i].new_buf_len =curr->netcons[i].new_buf_len;
-	curr->netcons[i].new_buf = NULL;
+	if (new_port->net_to_dev_bufsize < curr->netcons[i].new_buf_len)
+	    /* Buffer shrank and data won't fit, just drop the old data. */
+	    new_port->netcons[i].new_buf_len = new_port->net_to_dev_bufsize;
+	else
+	    new_port->netcons[i].new_buf_len = curr->netcons[i].new_buf_len;
+	memcpy(new_port->netcons[i].new_buf, curr->netcons[i].new_buf,
+	       new_port->netcons[i].new_buf_len);
     }
 
     if (prev == NULL) {
