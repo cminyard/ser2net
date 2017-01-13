@@ -666,7 +666,9 @@ will trace data from all network connections.
 device and will be accepted from any network connection.
 
 .I ROTATOR
-will only choose a port if there are no connections at all on the port.
+will only choose a port if there are no connections at all on the
+port.  Note that the use of a rotator with a port with max-connections
+> 1 will result in undefined behavior.
 
 .I timeout
 will be per TCP port and will only disconnect that TCP port on a timeout.

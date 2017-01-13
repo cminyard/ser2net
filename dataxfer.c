@@ -2038,16 +2038,43 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     return 0;
 }
 
+static bool
+port_remaddr_ok(port_info_t *port, struct sockaddr *addr, socklen_t addrlen)
+{
+    struct port_remaddr *r = port->remaddrs;
+
+    if (!port->remaddrs)
+	return true;
+
+    r = port->remaddrs;
+    while (r) {
+	if (sockaddr_equal(addr, addrlen,
+			   (struct sockaddr *) &r->addr, r->addrlen,
+			   r->is_port_set))
+	    break;
+	r = r->next;
+    }
+
+    return r != NULL;
+}
+
+/* Returns with the port locked, if non-NULL. */
 static port_info_t *
-is_port_free(char *portname)
+find_rotator_port(char *portname, struct sockaddr *addr, socklen_t addrlen)
 {
     port_info_t *port = ports;
 
     while (port) {
-	if (strcmp(port->portname, portname) == 0)
-	    if (port->net_to_dev_state == PORT_UNCONNECTED &&
+	if (strcmp(port->portname, portname) == 0) {
+	    LOCK(port->lock);
+	    if (port->dev_to_net_state != PORT_DISABLED &&
+			port->dev_to_net_state != PORT_CLOSING &&
+			port->net_to_dev_state == PORT_UNCONNECTED &&
+			port_remaddr_ok(port, addr, addrlen) &&
 			!is_device_already_inuse(port))
 		return port;
+	    UNLOCK(port->lock);
+	}
 	port = port->next;
     }
 
@@ -2118,13 +2145,13 @@ handle_rot_port_read(int fd, void *data)
     LOCK(ports_lock);
     i = rot->curr_port;
     do {
-	port_info_t *port = is_port_free(rot->portv[i]);
+	port_info_t *port = find_rotator_port(rot->portv[i],
+					(struct sockaddr *) &addr, addrlen);
 
 	if (++i >= rot->portc)
 	    i = 0;
 	if (port) {
 	    rot->curr_port = i;
-	    LOCK(port->lock);
 	    handle_port_accept(port, new_fd, &(port->netcons[0]));
 	    UNLOCK(port->lock);
 	    UNLOCK(ports_lock);
@@ -2352,20 +2379,9 @@ handle_accept_port_read(int fd, void *data)
 	goto out;
     }
 
-    if (port->remaddrs) {
-	struct port_remaddr *r = port->remaddrs;
-
-	while (r) {
-	    if (sockaddr_equal((struct sockaddr *) &addr, addrlen,
-			       (struct sockaddr *) &r->addr, r->addrlen,
-			       r->is_port_set))
-		break;
-	    r = r->next;
-	}
-	if (!r) {
-	    err = "Access denied\r\n";
-	    goto out_err;
-	}
+    if (!port_remaddr_ok(port, (struct sockaddr *) &addr, addrlen)) {
+	err = "Access denied\r\n";
+	goto out_err;
     }
 
     for (i = 0; i < port->max_connections; i++) {
