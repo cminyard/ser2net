@@ -24,13 +24,24 @@
 
 #include <pthread.h>
 
+/* #define LOCKING_DEBUG */
+
+#ifdef LOCKING_DEBUG
+#define LOCKDEBUG_PRINT(name, lock) printf("%s %p: %s:%d\n", name, \
+					   &lock, __FILE__, __LINE__)
+#else
+#define LOCKDEBUG_PRINT(name, lock) do { } while (0)
+#endif
+
 #define DEFINE_LOCK(scope, name) scope pthread_mutex_t name;
 #define DEFINE_LOCK_INIT(scope, name) scope pthread_mutex_t name \
 				= PTHREAD_MUTEX_INITIALIZER;
 #define INIT_LOCK(lock) pthread_mutex_init(&lock, NULL)
 #define FREE_LOCK(lock) pthread_mutex_destroy(&lock)
-#define LOCK(lock) pthread_mutex_lock(&lock)
-#define UNLOCK(lock) pthread_mutex_unlock(&lock)
+#define LOCK(lock) do { LOCKDEBUG_PRINT("LOCK", lock); \
+			pthread_mutex_lock(&lock); } while (0)
+#define UNLOCK(lock) do { LOCKDEBUG_PRINT("UNLOCK", lock); \
+			  pthread_mutex_unlock(&lock); } while (0)
 
 #else
 
