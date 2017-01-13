@@ -2819,6 +2819,8 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     curr->accept_waiter = tmp_waiter;
 
     for (i = 0; i < new_port->max_connections; i++) {
+	if (i >= curr->max_connections)
+	    break;
 	if (curr->netcons[i].new_fd == -1)
 	    continue;
 	new_port->netcons[i].new_fd = curr->netcons[i].new_fd;
