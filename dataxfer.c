@@ -2048,10 +2048,9 @@ port_remaddr_ok(port_info_t *port, struct sockaddr *addr, socklen_t addrlen)
 {
     struct port_remaddr *r = port->remaddrs;
 
-    if (!port->remaddrs)
+    if (!r)
 	return true;
 
-    r = port->remaddrs;
     while (r) {
 	if (sockaddr_equal(addr, addrlen,
 			   (struct sockaddr *) &r->addr, r->addrlen,
