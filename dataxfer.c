@@ -872,7 +872,7 @@ handle_dev_fd_read(struct devio *io)
 		goto out_unlock;
 
 	    /* Got an error on the read, shut down the port. */
-	    syslog(LOG_ERR, "dev read error for port %s: %m", port->portname);
+	    syslog(LOG_ERR, "dev read error for device %s: %m", port->portname);
 	    shutdown_port(port, "dev read error");
 	} else if (count == 0) {
 	    /* The port got closed somehow, shut it down. */
@@ -1157,7 +1157,7 @@ handle_net_fd_read(int fd, void *data)
 	       strerror(readerr));
 	reason = "network read error";
 	goto out_shutdown;
-    } else if (count == 0) {
+    } else if (count == 0 && !port->dgram) {
 	/* The other end closed the port, shut it down. */
 	reason = "network read close";
 	goto out_shutdown;
@@ -2458,8 +2458,10 @@ udp_port_read(int fd, port_info_t *port, int *readerr, net_info_t **rnetcon)
     remaddrlen = sizeof(remaddr);
     rv = recvfrom(fd, port->net_to_dev.buf, port->net_to_dev.maxsize, 0,
 		  (struct sockaddr *) &remaddr, &remaddrlen);
-    if (rv < 0)
+    if (rv < 0) {
+	*readerr = errno;
 	return rv;
+    }
 
     for (i = 0; i < port->max_connections; i++) {
 	if (port->netcons[i].fd == -1)
