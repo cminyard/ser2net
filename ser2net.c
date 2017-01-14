@@ -648,7 +648,7 @@ main(int argc, char *argv[])
 	fprintf(stderr,
 		"Could not initialize ser2net selector: '%s'\n",
 		strerror(err));
-	return -1;
+	exit(1);
     }
 
     setup_signals();
@@ -658,7 +658,7 @@ main(int argc, char *argv[])
 	fprintf(stderr,
 		"Could not initialize IPMI SOL: '%s'\n",
 		strerror(-err));
-	return -1;
+	exit(1);
     }
 
     if (ser2net_debug && !detach)
@@ -669,9 +669,8 @@ main(int argc, char *argv[])
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
     if (config_file) {
-	if (readconfig(config_file) == -1) {
-	    return 1;
-	}
+	if (readconfig(config_file) == -1)
+	    exit(1);
     }
 
     if (config_port != NULL) {
