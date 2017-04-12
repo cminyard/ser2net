@@ -3702,17 +3702,19 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 		      portbuff, sizeof(portbuff),
 		      NI_NUMERICHOST | NI_NUMERICSERV);
     if (err) {
-	strcpy(buffer, "*err*");
-	sprintf(portbuff, "%s", gai_strerror(err));
+	snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
+	count = controller_outputf(cntlr, "%s", buffer);
+    } else {
+	count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
     }
-    bytes_recv = netcon->bytes_received;
-    bytes_sent = netcon->bytes_sent;
 
-    count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
     while (count < 23) {
 	controller_outs(cntlr, " ");
 	count++;
     }
+
+    bytes_recv = netcon->bytes_received;
+    bytes_sent = netcon->bytes_sent;
 
     controller_outputf(cntlr, "%-22s ", port->io.devname);
     controller_outputf(cntlr, "%-14s ", state_str[port->net_to_dev_state]);
@@ -3758,11 +3760,12 @@ showport(struct controller_info *cntlr, port_info_t *port)
 			  portbuff, sizeof(portbuff),
 			  NI_NUMERICHOST | NI_NUMERICSERV);
 	if (err) {
-	    strcpy(buffer, "*err*");
-	    sprintf(portbuff, "%s", gai_strerror(err));
+	    snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
+	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
+	} else {
+	    controller_outputf(cntlr, "  connected to: %s,%s\r\n",
+			       buffer, portbuff);
 	}
-	controller_outputf(cntlr, "  connected to: %s,%s\r\n",
-			   buffer, portbuff);
 	controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
 			   netcon->bytes_received);
 	controller_outputf(cntlr, "    bytes written to TCP: %d\r\n",
