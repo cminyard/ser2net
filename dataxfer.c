@@ -3703,6 +3703,10 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 		      NI_NUMERICHOST | NI_NUMERICSERV);
     if (err) {
 	snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
+	/* gai_strerror could return an elongated string which could break
+	   our pretty formatted output below, so truncate the string nicely */
+	if (strlen(buffer) > 22)
+	    strcpy(&buffer[22 - 3], "...");
 	count = controller_outputf(cntlr, "%s", buffer);
     } else {
 	count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
