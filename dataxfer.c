@@ -3674,6 +3674,9 @@ clear_old_port_config(int curr_config)
     UNLOCK(ports_lock);
 }
 
+#define REMOTEADDR_COLUMN_WIDTH \
+    (INET6_ADDRSTRLEN - 1 /* terminating NUL */ + 1 /* comma */ + 5 /* strlen("65535") */)
+
 /* Print information about a port to the control port given in cntlr. */
 static void
 showshortport(struct controller_info *cntlr, port_info_t *port)
@@ -3705,14 +3708,14 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
 	/* gai_strerror could return an elongated string which could break
 	   our pretty formatted output below, so truncate the string nicely */
-	if (strlen(buffer) > 22)
-	    strcpy(&buffer[22 - 3], "...");
+	if (strlen(buffer) > REMOTEADDR_COLUMN_WIDTH)
+	    strcpy(&buffer[REMOTEADDR_COLUMN_WIDTH - 3], "...");
 	count = controller_outputf(cntlr, "%s", buffer);
     } else {
 	count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
     }
 
-    while (count < 23) {
+    while (count < REMOTEADDR_COLUMN_WIDTH + 1) {
 	controller_outs(cntlr, " ");
 	count++;
     }
@@ -3878,10 +3881,11 @@ showshortports(struct controller_info *cntlr, char *portspec)
     port_info_t *port;
 
     controller_outputf(cntlr,
-	    "%-22s %-6s %7s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
+	    "%-22s %-6s %7s %-*s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
 	    "Port name",
 	    "Type",
 	    "Timeout",
+	    REMOTEADDR_COLUMN_WIDTH,
 	    "Remote address",
 	    "Device",
 	    "TCP to device",
