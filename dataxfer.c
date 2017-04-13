@@ -3700,19 +3700,23 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     if (!netcon)
 	netcon = &(port->netcons[0]);
 
-    err = getnameinfo(netcon->raddr, netcon->raddrlen,
-		      buffer, sizeof(buffer),
-		      portbuff, sizeof(portbuff),
-		      NI_NUMERICHOST | NI_NUMERICSERV);
-    if (err) {
-	snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
-	/* gai_strerror could return an elongated string which could break
-	   our pretty formatted output below, so truncate the string nicely */
-	if (strlen(buffer) > REMOTEADDR_COLUMN_WIDTH)
-	    strcpy(&buffer[REMOTEADDR_COLUMN_WIDTH - 3], "...");
-	count = controller_outputf(cntlr, "%s", buffer);
+    if (port->net_to_dev_state != PORT_UNCONNECTED) {
+	err = getnameinfo(netcon->raddr, netcon->raddrlen,
+			  buffer, sizeof(buffer),
+			  portbuff, sizeof(portbuff),
+			  NI_NUMERICHOST | NI_NUMERICSERV);
+	if (err) {
+	    snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
+	    /* gai_strerror could return an elongated string which could break
+	       our pretty formatted output below, so truncate the string nicely */
+	    if (strlen(buffer) > REMOTEADDR_COLUMN_WIDTH)
+		strcpy(&buffer[REMOTEADDR_COLUMN_WIDTH - 3], "...");
+	    count = controller_outputf(cntlr, "%s", buffer);
+	} else {
+	    count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
+	}
     } else {
-	count = controller_outputf(cntlr, "%s,%s", buffer, portbuff);
+	count = controller_outputf(cntlr, "unconnected");
     }
 
     while (count < REMOTEADDR_COLUMN_WIDTH + 1) {
@@ -3762,21 +3766,25 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
 
     for_each_connection(port, netcon) {
-	err = getnameinfo(netcon->raddr, netcon->raddrlen,
-			  buffer, sizeof(buffer),
-			  portbuff, sizeof(portbuff),
-			  NI_NUMERICHOST | NI_NUMERICSERV);
-	if (err) {
-	    snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
-	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
+	if (port->net_to_dev_state != PORT_UNCONNECTED) {
+	    err = getnameinfo(netcon->raddr, netcon->raddrlen,
+			      buffer, sizeof(buffer),
+			      portbuff, sizeof(portbuff),
+			      NI_NUMERICHOST | NI_NUMERICSERV);
+	    if (err) {
+		snprintf(buffer, sizeof(buffer), "*err*,%s", gai_strerror(err));
+		controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
+	    } else {
+		controller_outputf(cntlr, "  connected to: %s,%s\r\n",
+				   buffer, portbuff);
+	    }
+	    controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
+			       netcon->bytes_received);
+	    controller_outputf(cntlr, "    bytes written to TCP: %d\r\n",
+			       netcon->bytes_sent);
 	} else {
-	    controller_outputf(cntlr, "  connected to: %s,%s\r\n",
-			       buffer, portbuff);
+	    controller_outputf(cntlr, "  unconnected\r\n");
 	}
-	controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
-			   netcon->bytes_received);
-	controller_outputf(cntlr, "    bytes written to TCP: %d\r\n",
-			   netcon->bytes_sent);
     }
 
     controller_outputf(cntlr, "  device: %s\r\n", port->io.devname);
