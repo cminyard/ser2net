@@ -136,7 +136,7 @@ set the various baud rates.  The following speed may be available
 if your system has the values defined and your hardware supports
 it: 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000,
 2000000, 2500000, 3000000, 3500000, 4000000.
-.I EVEN, ODD, NONE
+.I EVEN, ODD, NONE (MARK and SPACE if supported)
 set the parity.
 .I 1STOPBIT, 2STOPBITS
 set the number of stop bits.
@@ -297,8 +297,10 @@ set are available on SOL.
 disables automatic clearing of the break setting of the port.  Available
 on serial device and SOL ports.
 
-.I EVEN, ODD, NONE
-set the parity. (serial device only)
+.I EVEN, ODD, NONE (MARK and SPACE if supported)
+set the parity. (serial device only)  Note that MARK and SPACE are
+not available on all systems or hardware, if it is not supported
+then it will be silently set to ODD or EVEN parity.
 .I 1STOPBIT, 2STOPBITS
 set the number of stop bits. (serial device only)
 .I 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS

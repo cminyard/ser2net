@@ -503,6 +503,10 @@ struct enum_val parity_enums[] = {
     { "none", PARITY_NONE },
     { "even", PARITY_EVEN },
     { "odd", PARITY_ODD },
+    { "MARK", PARITY_MARK },
+    { "SPACE", PARITY_SPACE },
+    { "mark", PARITY_MARK },
+    { "space", PARITY_SPACE },
     { NULL }
 };
 

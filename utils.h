@@ -110,7 +110,8 @@ void write_ignore_fail(int fd, const char *data, size_t count);
    Returns -1 on an invalid value. */
 int speedstr_to_speed(const char *speed);
 
-enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD };
+enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
+		   PARITY_MARK, PARITY_SPACE };
 enum parity_vals lookup_parity(const char *str);
 
 /* Return the default int value for the given name. */

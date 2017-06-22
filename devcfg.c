@@ -434,11 +434,22 @@ set_termios_parity(struct devcfg_data *d, struct termios *termctl,
 	termctl->c_cflag &= ~(PARENB);
 	break;
     case PARITY_EVEN:
+    case PARITY_SPACE:
 	termctl->c_cflag |= PARENB;
 	termctl->c_cflag &= ~(PARODD);
+#ifdef CMSPAR
+	if (val == PARITY_SPACE)
+	    termctl->c_cflag |= CMSPAR;
+#endif
 	break;
     case PARITY_ODD:
+    case PARITY_MARK:
 	termctl->c_cflag |= PARENB | PARODD;
+#ifdef CMSPAR
+	if (val == PARITY_MARK)
+	    termctl->c_cflag |= CMSPAR;
+#endif
+	break;
     }
     d->default_parity_on = val != PARITY_NONE;
 }
