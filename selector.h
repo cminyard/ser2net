@@ -41,14 +41,13 @@ extern "C" {
 
 /* The main data structure used by the selector. */
 struct selector_s;
-typedef struct selector_s selector_t;
 
 /* You have to create a selector before you can use it. */
 
 /* Create a selector for use with threads.  You have to pass in the
    lock functions and a signal used to wake waiting threads. */
 typedef struct sel_lock_s sel_lock_t;
-int sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
+int sel_alloc_selector_thread(struct selector_s **new_selector, int wake_sig,
 			      sel_lock_t *(*sel_lock_alloc)(void *cb_data),
 			      void (*sel_lock_free)(sel_lock_t *),
 			      void (*sel_lock)(sel_lock_t *),
@@ -58,10 +57,10 @@ int sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
   /* Create a selector for use in a single-threaded environment.  No
      need for locks or wakeups.  This just call the above call with
      NULL for all the values. */
-int sel_alloc_selector_nothread(selector_t **new_selector);
+int sel_alloc_selector_nothread(struct selector_s **new_selector);
 
 /* Used to destroy a selector. */
-int sel_free_selector(selector_t *new_selector);
+int sel_free_selector(struct selector_s *new_selector);
 
 
 /* A function to call when select sees something on a file
@@ -73,7 +72,7 @@ typedef void (*sel_fd_handler_t)(int fd, void *data);
    handler (if non-NULL) will be called when the data is removed or
    replaced. */
 typedef void (*sel_fd_cleared_cb)(int fd, void *data);
-int sel_set_fd_handlers(selector_t        *sel,
+int sel_set_fd_handlers(struct selector_s *sel,
 			int               fd,
 			void              *data,
 			sel_fd_handler_t  read_handler,
@@ -87,24 +86,24 @@ int sel_set_fd_handlers(selector_t        *sel,
    clearing the data (SMP only), you should provide a done handler in
    the set routine; it will be called when the registered handler is
    sure to not be called again. */
-void sel_clear_fd_handlers(selector_t *sel,
+void sel_clear_fd_handlers(struct selector_s *sel,
 			   int        fd);
 
 /* Turn on and off handling for I/O from a file descriptor. */
 #define SEL_FD_HANDLER_ENABLED	0
 #define SEL_FD_HANDLER_DISABLED	1
-void sel_set_fd_read_handler(selector_t *sel, int fd, int state);
-void sel_set_fd_write_handler(selector_t *sel, int fd, int state);
-void sel_set_fd_except_handler(selector_t *sel, int fd, int state);
+void sel_set_fd_read_handler(struct selector_s *sel, int fd, int state);
+void sel_set_fd_write_handler(struct selector_s *sel, int fd, int state);
+void sel_set_fd_except_handler(struct selector_s *sel, int fd, int state);
 
 struct sel_timer_s;
 typedef struct sel_timer_s sel_timer_t;
 
-typedef void (*sel_timeout_handler_t)(selector_t  *sel,
+typedef void (*sel_timeout_handler_t)(struct selector_s *sel,
 				      sel_timer_t *timer,
 				      void        *data);
 
-int sel_alloc_timer(selector_t            *sel,
+int sel_alloc_timer(struct selector_s     *sel,
 		    sel_timeout_handler_t handler,
 		    void                  *user_data,
 		    sel_timer_t           **new_timer);
@@ -124,7 +123,7 @@ void sel_get_monotonic_time(struct timeval *tv);
 
 typedef struct sel_runner_s sel_runner_t;
 typedef void (*sel_runner_func_t)(sel_runner_t *runner, void *cb_data);
-int sel_alloc_runner(selector_t *sel, sel_runner_t **new_runner);
+int sel_alloc_runner(struct selector_s *sel, sel_runner_t **new_runner);
 int sel_free_runner(sel_runner_t *runner);
 int sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data);
 
@@ -145,7 +144,7 @@ typedef void (*sel_send_sig_cb)(long thread_id, void *cb_data);
  * The timeout is a relative timeout (just like normal select() on
  * *nix).
  */
-int sel_select(selector_t      *sel,
+int sel_select(struct selector_s *sel,
 	       sel_send_sig_cb send_sig,
 	       long            thread_id,
 	       void            *cb_data,
@@ -155,23 +154,23 @@ int sel_select(selector_t      *sel,
    send_sig, then the signal sender is not used.  If this encounters
    an unrecoverable problem with select(), it will return the errno.
    Otherwise it will loop forever. */
-int sel_select_loop(selector_t      *sel,
+int sel_select_loop(struct selector_s *sel,
 		    sel_send_sig_cb send_sig,
 		    long            thread_id,
 		    void            *cb_data);
 
-typedef void (*ipmi_sel_add_read_fds_cb)(selector_t     *sel,
+typedef void (*ipmi_sel_add_read_fds_cb)(struct selector_s *sel,
 					 int            *num_fds,
 					 fd_set         *fdset,
 					 struct timeval *timeout,
 					 int            *timeout_invalid,
 					 void           *cb_data);
-typedef void (*ipmi_sel_check_read_fds_cb)(selector_t *sel,
+typedef void (*ipmi_sel_check_read_fds_cb)(struct selector_s *sel,
 					   fd_set     *fds,
 					   void       *cb_data);
-typedef void (*ipmi_sel_check_timeout_cb)(selector_t *sel,
+typedef void (*ipmi_sel_check_timeout_cb)(struct selector_s *sel,
 					  void       *cb_data);
-void ipmi_sel_set_read_fds_handler(selector_t                 *sel,
+void ipmi_sel_set_read_fds_handler(struct selector_s          *sel,
 				   ipmi_sel_add_read_fds_cb   add,
 				   ipmi_sel_check_read_fds_cb handle,
 				   ipmi_sel_check_timeout_cb  timeout,

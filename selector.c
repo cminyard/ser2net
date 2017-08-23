@@ -91,7 +91,7 @@ typedef struct heap_val_s
     struct timeval timeout;
 
     /* Who owns me? */
-    selector_t *sel;
+    struct selector_s *sel;
 
     /* Am I currently running? */
     int in_heap;
@@ -164,7 +164,7 @@ typedef struct sel_wait_list_s
 
 struct sel_runner_s
 {
-    selector_t *sel;
+    struct selector_s *sel;
     sel_runner_func_t func;
     void *cb_data;
     int in_use;
@@ -213,28 +213,28 @@ struct selector_s
 };
 
 static void
-sel_timer_lock(selector_t *sel)
+sel_timer_lock(struct selector_s *sel)
 {
     if (sel->sel_lock)
 	sel->sel_lock(sel->timer_lock);
 }
 
 static void
-sel_timer_unlock(selector_t *sel)
+sel_timer_unlock(struct selector_s *sel)
 {
     if (sel->sel_lock)
 	sel->sel_unlock(sel->timer_lock);
 }
 
 static void
-sel_fd_lock(selector_t *sel)
+sel_fd_lock(struct selector_s *sel)
 {
     if (sel->sel_lock)
 	sel->sel_lock(sel->fd_lock);
 }
 
 static void
-sel_fd_unlock(selector_t *sel)
+sel_fd_unlock(struct selector_s *sel)
 {
     if (sel->sel_lock)
 	sel->sel_unlock(sel->fd_lock);
@@ -253,7 +253,7 @@ sel_fd_unlock(selector_t *sel)
    this after we have calculated the timeout, but before we have
    called select, thus only things in the wait list matter. */
 static void
-wake_sel_thread(selector_t *sel)
+wake_sel_thread(struct selector_s *sel)
 {
     sel_wait_list_t *item;
 
@@ -268,14 +268,14 @@ wake_sel_thread(selector_t *sel)
 }
 
 static void
-wake_fd_sel_thread(selector_t *sel)
+wake_fd_sel_thread(struct selector_s *sel)
 {
     wake_sel_thread(sel);
     sel_fd_unlock(sel);
 }
 
 static void
-wake_timer_sel_thread(selector_t *sel, volatile sel_timer_t *old_top)
+wake_timer_sel_thread(struct selector_s *sel, volatile sel_timer_t *old_top)
 {
     if (old_top != theap_get_top(&sel->timer_heap))
 	/* If the top value changed, restart the waiting thread. */
@@ -286,7 +286,7 @@ wake_timer_sel_thread(selector_t *sel, volatile sel_timer_t *old_top)
    locked, and the values in the item *must not* change while in the
    list. */
 static void
-add_sel_wait_list(selector_t *sel, sel_wait_list_t *item,
+add_sel_wait_list(struct selector_s *sel, sel_wait_list_t *item,
 		  sel_send_sig_cb send_sig,
 		  void            *cb_data,
 		  long thread_id, volatile struct timeval *timeout)
@@ -301,7 +301,7 @@ add_sel_wait_list(selector_t *sel, sel_wait_list_t *item,
     sel->wait_list.next = item;
 }
 static void
-remove_sel_wait_list(selector_t *sel, sel_wait_list_t *item)
+remove_sel_wait_list(struct selector_s *sel, sel_wait_list_t *item)
 {
     item->next->prev = item->prev;
     item->prev->next = item->next;
@@ -320,7 +320,7 @@ init_fd(fd_control_t *fd)
 
 #ifdef HAVE_EPOLL_PWAIT
 static int
-sel_update_epoll(selector_t *sel, int fd, int op)
+sel_update_epoll(struct selector_s *sel, int fd, int op)
 {
     struct epoll_event event;
 
@@ -342,7 +342,7 @@ sel_update_epoll(selector_t *sel, int fd, int op)
 }
 #else
 static int
-sel_update_epoll(selector_t *sel, int fd, int op)
+sel_update_epoll(struct selector_s *sel, int fd, int op)
 {
     return 1;
 }
@@ -350,7 +350,7 @@ sel_update_epoll(selector_t *sel, int fd, int op)
 
 /* Set the handlers for a file descriptor. */
 int
-sel_set_fd_handlers(selector_t        *sel,
+sel_set_fd_handlers(struct selector_s *sel,
 		    int               fd,
 		    void              *data,
 		    sel_fd_handler_t  read_handler,
@@ -411,7 +411,7 @@ sel_set_fd_handlers(selector_t        *sel,
 /* Clear the handlers for a file descriptor and remove it from
    select's monitoring. */
 void
-sel_clear_fd_handlers(selector_t *sel,
+sel_clear_fd_handlers(struct selector_s *sel,
 		      int        fd)
 {
     fd_control_t *fdc;
@@ -456,7 +456,7 @@ sel_clear_fd_handlers(selector_t *sel,
 /* Set whether the file descriptor will be monitored for data ready to
    read on the file descriptor. */
 void
-sel_set_fd_read_handler(selector_t *sel, int fd, int state)
+sel_set_fd_read_handler(struct selector_s *sel, int fd, int state)
 {
     fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
 
@@ -485,7 +485,7 @@ sel_set_fd_read_handler(selector_t *sel, int fd, int state)
 /* Set whether the file descriptor will be monitored for when the file
    descriptor can be written to. */
 void
-sel_set_fd_write_handler(selector_t *sel, int fd, int state)
+sel_set_fd_write_handler(struct selector_s *sel, int fd, int state)
 {
     fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
 
@@ -514,7 +514,7 @@ sel_set_fd_write_handler(selector_t *sel, int fd, int state)
 /* Set whether the file descriptor will be monitored for exceptions
    on the file descriptor. */
 void
-sel_set_fd_except_handler(selector_t *sel, int fd, int state)
+sel_set_fd_except_handler(struct selector_s *sel, int fd, int state)
 {
     fd_control_t *fdc = (fd_control_t *) &(sel->fds[fd]);
 
@@ -565,7 +565,7 @@ diff_timeval(struct timeval *dest,
 }
 
 int
-sel_alloc_timer(selector_t            *sel,
+sel_alloc_timer(struct selector_s     *sel,
 		sel_timeout_handler_t handler,
 		void                  *user_data,
 		sel_timer_t           **new_timer)
@@ -589,7 +589,7 @@ sel_alloc_timer(selector_t            *sel,
 int
 sel_free_timer(sel_timer_t *timer)
 {
-    selector_t *sel = timer->val.sel;
+    struct selector_s *sel = timer->val.sel;
     int in_handler;
 
     sel_timer_lock(sel);
@@ -610,7 +610,7 @@ int
 sel_start_timer(sel_timer_t    *timer,
 		struct timeval *timeout)
 {
-    selector_t *sel = timer->val.sel;
+    struct selector_s *sel = timer->val.sel;
     volatile sel_timer_t *top;
 
     sel_timer_lock(sel);
@@ -640,7 +640,7 @@ sel_start_timer(sel_timer_t    *timer,
 int
 sel_stop_timer(sel_timer_t *timer)
 {
-    selector_t *sel = timer->val.sel;
+    struct selector_s *sel = timer->val.sel;
 
     sel_timer_lock(sel);
     if (timer->val.stopped) {
@@ -667,7 +667,7 @@ sel_stop_timer_with_done(sel_timer_t *timer,
 			 sel_timeout_handler_t done_handler,
 			 void *cb_data)
 {
-    selector_t *sel = timer->val.sel;
+    struct selector_s *sel = timer->val.sel;
     volatile sel_timer_t *top;
 
     sel_timer_lock(sel);
@@ -716,7 +716,7 @@ sel_get_monotonic_time(struct timeval *tv)
  * any timers, the timeout will be set to { 0,0 }.
  */
 static void
-process_timers(selector_t	       *sel,
+process_timers(struct selector_s       *sel,
 	       volatile struct timeval *timeout)
 {
     struct timeval now;
@@ -771,7 +771,7 @@ process_timers(selector_t	       *sel,
 }
 
 int
-sel_alloc_runner(selector_t *sel, sel_runner_t **new_runner)
+sel_alloc_runner(struct selector_s *sel, sel_runner_t **new_runner)
 {
     sel_runner_t *runner;
 
@@ -787,7 +787,7 @@ sel_alloc_runner(selector_t *sel, sel_runner_t **new_runner)
 int
 sel_free_runner(sel_runner_t *runner)
 {
-    selector_t *sel = runner->sel;
+    struct selector_s *sel = runner->sel;
 
     sel_timer_lock(sel);
     if (runner->in_use) {
@@ -802,7 +802,7 @@ sel_free_runner(sel_runner_t *runner)
 int
 sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data)
 {
-    selector_t *sel = runner->sel;
+    struct selector_s *sel = runner->sel;
 
     sel_timer_lock(sel);
     if (runner->in_use) {
@@ -827,7 +827,7 @@ sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data)
 }
 
 static void
-process_runners(selector_t *sel)
+process_runners(struct selector_s *sel)
 {
     while (sel->runner_head) {
 	sel_runner_t *runner = sel->runner_head;
@@ -847,7 +847,7 @@ process_runners(selector_t *sel)
 }
 
 static void
-handle_selector_call(selector_t *sel, int i, volatile fd_set *fdset,
+handle_selector_call(struct selector_s *sel, int i, volatile fd_set *fdset,
 		     sel_fd_handler_t handler)
 {
     void             *data;
@@ -887,7 +887,7 @@ handle_selector_call(selector_t *sel, int i, volatile fd_set *fdset,
  * 	  <  0  when error
  */
 static int
-process_fds(selector_t	            *sel,
+process_fds(struct selector_s	    *sel,
 	    volatile struct timeval *timeout)
 {
     fd_set      tmp_read_set;
@@ -932,7 +932,7 @@ out:
 
 #ifdef HAVE_EPOLL_PWAIT
 static int
-process_fds_epoll(selector_t *sel, struct timeval *tvtimeout)
+process_fds_epoll(struct selector_s *sel, struct timeval *tvtimeout)
 {
     int rv, fd;
     struct epoll_event event;
@@ -981,7 +981,7 @@ process_fds_epoll(selector_t *sel, struct timeval *tvtimeout)
 #endif
 
 int
-sel_select(selector_t      *sel,
+sel_select(struct selector_s *sel,
 	   sel_send_sig_cb send_sig,
 	   long            thread_id,
 	   void            *cb_data,
@@ -1020,7 +1020,7 @@ sel_select(selector_t      *sel,
    sets, then scan for any available I/O to process.  It also monitors
    the time and call the timeout handlers periodically. */
 int
-sel_select_loop(selector_t      *sel,
+sel_select_loop(struct selector_s *sel,
 		sel_send_sig_cb send_sig,
 		long            thread_id,
 		void            *cb_data)
@@ -1040,14 +1040,14 @@ sel_select_loop(selector_t      *sel,
 
 /* Initialize the select code. */
 int
-sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
+sel_alloc_selector_thread(struct selector_s **new_selector, int wake_sig,
 			  sel_lock_t *(*sel_lock_alloc)(void *cb_data),
 			  void (*sel_lock_free)(sel_lock_t *),
 			  void (*sel_lock)(sel_lock_t *),
 			  void (*sel_unlock)(sel_lock_t *),
 			  void *cb_data)
 {
-    selector_t *sel;
+    struct selector_s *sel;
     unsigned int i;
 
     sel = malloc(sizeof(*sel));
@@ -1120,14 +1120,14 @@ sel_alloc_selector_thread(selector_t **new_selector, int wake_sig,
 }
 
 int
-sel_alloc_selector_nothread(selector_t **new_selector)
+sel_alloc_selector_nothread(struct selector_s **new_selector)
 {
     return sel_alloc_selector_thread(new_selector, 0, NULL, NULL, NULL, NULL,
 				     NULL);
 }
 
 int
-sel_free_selector(selector_t *sel)
+sel_free_selector(struct selector_s *sel)
 {
     sel_timer_t *elem;
 

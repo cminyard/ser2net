@@ -791,7 +791,7 @@ handle_net_send(port_info_t *port)
 }
 
 void
-send_timeout(selector_t  *sel,
+send_timeout(struct selector_s  *sel,
 	     sel_timer_t *timer,
 	     void        *data)
 {
@@ -2971,7 +2971,7 @@ closeit:
 }
 
 static void
-timer_shutdown_done(selector_t *sel, sel_timer_t *timer, void *cb_data)
+timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
 {
     port_info_t *port = cb_data;
 
@@ -3109,7 +3109,7 @@ shutdown_one_netcon(net_info_t *netcon, char *reason)
 }
 
 void
-got_timeout(selector_t  *sel,
+got_timeout(struct selector_s *sel,
 	    sel_timer_t *timer,
 	    void        *data)
 {

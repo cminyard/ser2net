@@ -63,7 +63,7 @@ struct thread_info *threads;
 #endif
 
 
-selector_t *ser2net_sel;
+struct selector_s *ser2net_sel;
 char *rfc2217_signature = "ser2net";
 
 static char *help_string =
