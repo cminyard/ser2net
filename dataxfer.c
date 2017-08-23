@@ -891,13 +891,13 @@ handle_dev_fd_read(struct devio *io)
     if (port->closeon) {
 	int i;
 
-	for (i = 0; i < count; i++) {
+	for (i = curend; i < curend + count; i++) {
 	    if (port->dev_to_net.buf[i] == port->closeon[port->closeon_pos]) {
 		port->closeon_pos++;
 		if (port->closeon_pos >= port->closeon_len) {
 		    port->close_on_output_done = true;
 		    /* Ignore everything after the closeon string */
-		    count = i + 1;
+		    count = i - curend + 1;
 		    break;
 		}
 	    } else {
@@ -922,15 +922,15 @@ handle_dev_fd_read(struct devio *io)
     if (port->enabled == PORT_TELNET) {
 	int i, j;
 
-	/* Double the IACs on a telnet stream.  This will fit because
+	/* Double the IACs on a telnet stream.  This will always fit because
 	   we only use half the buffer for telnet connections. */
-	for (i = 0; i < count; i++) {
+	for (i = curend; i < curend + count; i++) {
 	    if (port->dev_to_net.buf[i] == TN_IAC) {
-		for (j = count; j > i; j--)
-		    port->dev_to_net.buf[j + 1] = port->dev_to_net.buf[j];
+		for (j = curend + count; j > i; j--)
+		    port->dev_to_net.buf[j] = port->dev_to_net.buf[j - 1];
+		/* Last copy above will duplicate the IAC */
 		count++;
 		i++;
-		port->dev_to_net.buf[i] = TN_IAC;
 	    }
 	}
     }
