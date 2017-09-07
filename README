@@ -4,7 +4,7 @@ information about using the program.
 
 Note that ser2net supports RFC 2217 (remote control of serial port
 parameters), but you must have a compliant client.  The only one I
-know if is kermit (http://www.columbia.edu/kermit).
+know of is kermit (http://www.columbia.edu/kermit).
 
 ser2net supports making connections to IPMI SOL (serial over LAN)
 capable systems.  This way, if you have a system with SOL, you can use
@@ -34,8 +34,8 @@ If you don't want to compile with threads, you can add
 
 If you want the opposite of ser2net (you want to connect to a "local"
 serial port device that is really remote) then Cyclades has provided
-a tool for this at http://www.coker.com.au/cyclades.  It is capable
-of connecting to ser2net using RFC2217.
+a tool for this at https://sourceforge.net/projects/cyclades-serial/.
+It is capable of connecting to ser2net using RFC2217.
 
 If you check this out from git, you won't have all the configure
 programs and files, because those are generated.  Do:
