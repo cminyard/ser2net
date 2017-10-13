@@ -727,8 +727,8 @@ handle_net_send_one(port_info_t *port, net_info_t *netcon)
 {
     int count = 0;
 
-    if (netcon->sending_tn_data)
-	/* We are sending telnet data, stop the reader for now. */
+    if (netcon->sending_tn_data || netcon->banner)
+	/* We are sending telnet or banner data, stop the reader for now. */
 	goto no_send;
 
  retry_write:
@@ -1377,10 +1377,8 @@ telnet_output_ready(void *cb_data)
     port_info_t *port = netcon->port;
 
     /* If we are currently sending some data, wait until it is done.
-       it might have IACs in it, and we don't want to split those. */
+       It might have IACs in it, and we don't want to split those. */
     if (buffer_cursize(&port->dev_to_net) != 0)
-	return;
-    if (netcon->banner && buffer_cursize(netcon->banner) != 0)
 	return;
 
     netcon->sending_tn_data = true;
@@ -1784,7 +1782,7 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
     unsigned int len;
     struct timeval tv;
 
-    if (!str)
+    if (!str || *str == '\0')
 	return NULL;
     gettimeofday(&tv, NULL);
 
@@ -2007,17 +2005,16 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 		    telnet_cmd_handler,
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
-	/* May not have been set if we have banner output. */
 	sel_set_fd_write_handler(ser2net_sel, netcon->fd,
 				 SEL_FD_HANDLER_ENABLED);
     } else {
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
-	if (i_am_first)
-	    io_enable_read_handler(port);
 	if (netcon->banner)
 	    sel_set_fd_write_handler(ser2net_sel, netcon->fd,
 				     SEL_FD_HANDLER_ENABLED);
+	else if (i_am_first)
+	    io_enable_read_handler(port);
     }
 
     if (i_am_first)
@@ -2031,14 +2028,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     }
 
     reset_timer(netcon);
-
-    /*
-     * If we have a banner, start the write here to avoid data from
-     * the port getting read first and going on before the banner.
-     * This happens on UDP connections on the first packet.
-     */
-    if (netcon->banner)
-	handle_net_fd_banner_write(port, netcon);
 
     return 0;
 }
