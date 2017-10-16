@@ -744,10 +744,8 @@ handle_net_send_one(port_info_t *port, net_info_t *netcon)
 	if (errno == EAGAIN || errno == EWOULDBLOCK) {
 	    /* This was due to O_NONBLOCK, we need to shut off the reader
 	       and start the writer monitor. */
-	    port->io.f->read_handler_enable(&port->io, 0);
-	    sel_set_fd_write_handler(ser2net_sel, netcon->fd,
-				     SEL_FD_HANDLER_ENABLED);
-	    port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
+	    count = 0;
+	    goto no_send;
 	} else if (errno == EPIPE) {
 	    shutdown_one_netcon(netcon, "EPIPE");
 	} else {
