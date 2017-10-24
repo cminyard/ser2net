@@ -301,7 +301,7 @@
 	three at the same time independently.
 
 	* readconfig.c: Improved an error report.
-	
+
 2009-10-22  Corey Minyard <minyard@acm.org>
 
 	* ser2net.c: Set up routing errors to stderr before reading the
@@ -323,18 +323,18 @@
 	for the timeout parameter.
 
 	* README - Minor doc cleanup.
-	
+
 2009-07-15  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Move to version 2.6.
-	
+
 2009-06-30  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c, devcfg.c, devcfg.h, readconfig.h, utils.h: Add the
 	a TRACEFILE option to trace all I/O to a file., and separate
 	out the defconfig into a separate structure to avoid passing a
 	boatload of things to the config.
-	
+
 2009-06-30  Sebastian Andrzej Siewior <bigeasy@linutronix.de>
 
 	* controller.c: Fix use after free in controller
@@ -364,7 +364,7 @@
 	break.
 
 2007-11-16  Robert Edmonds <edmonds@debian.org>,Corey Minyard <minyard@acm.org>
-	
+
 	* ser2net.c, ser2net.8: Add a '-P' option to specific that a
 	pidfile be created.
 
@@ -410,8 +410,8 @@
 
 	* configure.in: Move to version 2.3.
 
-2005-12-29  Aurelien Jarno <aurel32@debian.org>	
-	
+2005-12-29  Aurelien Jarno <aurel32@debian.org>
+
 	* devcfg.c: Don't include "termio.h", but do include
 	"sys/ioctl.h".
 
@@ -439,7 +439,7 @@
 2005-07-07  Rajiv Aaron Manglani <rajav at gentoo.org>
 
 	* configure.in: Make the use of tcp wrappers optional.
-	
+
 2005-06-13  Yura Kalinichenko <yuk@iceb.vinnitsa.com>
 
 	* controller.c, devcfg.c, ser2net.8, ser2net.conf: Added 57600
@@ -514,23 +514,23 @@
 	option.
 
 	* selector.c, ser2net.c: Cleaned up some compile warnings.
-	
+
 2003-10-14  Corey Minyard <minyard@acm.org>
 
 	* configure.in: Moved to version 2.0.
 
 	* datafer.c, devcfg.c, devcfg.h, readconfig.c, utils.h: Added
 	banner support.
-	
+
 	* ser2net.h, ser2net.conf: Added documentation for banner support.
-	
+
 	* dataxfer.c, telnet.c, telnet.h: Created a more generic telnet
 	command handler and split it off from dataxfer.c
 
 	* controller.c: Moved to the new telnet command handler.
 
 	* dataxfer.c: Added watching the CD, RI, etc. lines.
-	
+
 2003-10-13  Corey Minyard <minyard@acm.org>
 
 	* dataxfer.c: Added a lot of the com port control handling.
@@ -589,7 +589,7 @@
 	Added the ability to reread the configuration file on a SIGHUP.
 
 	* configure.in, ser2net.spec: Moved to version 1.6
-	
+
 2002-02-20  Przemyslaw Czerpak (druzus@polbox.com),
 	Corey Minyard <minyard@acm.org>
 
@@ -642,16 +642,16 @@
 	Boese to add CLOCAL and XON/XOFF support as serial port options.
 
 2001-07-03  Corey Minyard <minyard@acm.org>
-	
+
 	* Makefile.am, ser2net.1, ser2net.8, ser2net.spec - Moved ser2net
 	to /usr/sbin, renamed the makefile to have a .8 extension and
 	put it in /usr/share/man.
 
 	* controller.c - Fixed problems with telnet handling in the
 	control interface.
-	
+
 	* Updated to version 1.4
-	
+
 2001-06-29  Corey Minyard <minyard@acm.org>
 
 	* ser2net.spec - Actually put the changed version number in
@@ -681,13 +681,13 @@
 	and added it to the control port as well.
 
 2001-06-15  Corey Minyard <minyard@acm.org>
-	
+
 	* controller.c - Made sure the monitor port was set to null
 	when the port exited.
 
 	* ser2net.c, ser2net.1 - Added a "-d" option to send debug
 	output to the console and modified "-n" to just not detach.
-	
+
 2001-06-05  Corey Minyard <minyard@acm.org>
 
 	* ser2net.c, controller.c - added a way to query the version from

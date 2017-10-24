@@ -1,5 +1,5 @@
 #!/bin/sh
-# Startup script for ser2ner
+# Startup script for ser2net
 #
 # chkconfig: 2345 95 20
 # description: Make serial ports available to network via TCP/IP.
@@ -10,7 +10,7 @@
 [ -f /usr/sbin/ser2net ] || exit 0
 
 start() {
-    echo -n  "Starting ser2net: " 
+    echo -n  "Starting ser2net: "
     daemon ser2net
     RETVAL=$?
     echo
@@ -23,7 +23,7 @@ start() {
 stop() {
     echo -n "Shutting down ser2net "
     if test "x`pidof ser2net`" != x
-    then 
+    then
 	killproc ser2net
     else
         success "ser2net shutdown"
@@ -37,11 +37,11 @@ case "$1" in
 	start)
 	    start
 	    ;;
-	
+
 	stop)
 	    stop
 	    ;;
-	
+
 	status)
 	    status ser2net
 	    ;;
@@ -55,7 +55,7 @@ case "$1" in
 		start
 	    fi
 	    ;;
-	
+
 	*)
 	    echo "Usage: ser2net {start|stop|restart|condrestart|status}"
 	    exit 1

@@ -2321,7 +2321,7 @@ check_port_new_fd(port_info_t *port, net_info_t *netcon)
     if (netcon->fd != -1) {
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
-	
+
 	net_write(netcon->new_fd, err, strlen(err), 0,
 		  (struct sockaddr *) &netcon->new_remote,
 		  netcon->new_raddrlen);
