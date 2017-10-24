@@ -1914,23 +1914,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	    return -1;
 	}
 
-#ifdef HAVE_TCPD_H
-	{
-	    struct request_info req;
-
-	    request_init(&req, RQ_DAEMON, progname, RQ_FILE, netcon->fd, NULL);
-	    fromhost(&req);
-
-	    if (!hosts_access(&req)) {
-		char *err = "Access denied\r\n";
-		net_write(netcon->fd, err, strlen(err),
-			  0, netcon->udpraddr, netcon->udpraddrlen);
-		close(netcon->fd);
-		netcon->fd = -1;
-		return -1;
-	    }
-	}
-#endif /* HAVE_TCPD_H */
     }
  end_net_config:
 
@@ -2093,6 +2076,22 @@ handle_port_accept(port_info_t *port, int new_fd, net_info_t *netcon)
     setup_port(port, netcon, false);
 }
 
+static const char *
+check_tcpd_ok(int new_fd)
+{
+#ifdef HAVE_TCPD_H
+    struct request_info req;
+
+    request_init(&req, RQ_DAEMON, progname, RQ_FILE, new_fd, NULL);
+    fromhost(&req);
+
+    if (!hosts_access(&req))
+	return "Access denied\r\n";
+#endif
+
+    return NULL;
+}
+
 typedef struct rotator
 {
     /* Rotators use the ports_lock for mutex. */
@@ -2122,7 +2121,7 @@ handle_rot_port_read(int fd, void *data)
     int i, new_fd;
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
-    const char *err = "No free port found\r\n";
+    const char *err;
 
     /* FIXME - handle remote address interactions? */
     new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
@@ -2132,6 +2131,10 @@ handle_rot_port_read(int fd, void *data)
 		   rot->portname);
 	return;
     }
+
+    err = check_tcpd_ok(new_fd);
+    if (err)
+	goto out_err;
 
     LOCK(ports_lock);
     i = rot->curr_port;
@@ -2151,6 +2154,8 @@ handle_rot_port_read(int fd, void *data)
     } while (i != rot->curr_port);
     UNLOCK(ports_lock);
 
+    err = "No free port found\r\n";
+ out_err:
     write_ignore_fail(new_fd, err, strlen(err));
     close(new_fd);
 }
@@ -2346,7 +2351,7 @@ static void
 handle_accept_port_read(int fd, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    char *err = NULL;
+    const char *err = NULL;
     int i, new_fd;
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
@@ -2367,6 +2372,10 @@ handle_accept_port_read(int fd, void *data)
 	    syslog(LOG_ERR, "Could not accept on port %s: %m", port->portname);
 	goto out;
     }
+
+    err = check_tcpd_ok(new_fd);
+    if (err)
+	goto out_err;
 
     if (!port_remaddr_ok(port, (struct sockaddr *) &addr, addrlen)) {
 	err = "Access denied\r\n";
