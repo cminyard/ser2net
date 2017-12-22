@@ -349,6 +349,12 @@ struct port_info
     struct devio io; /* For handling I/O operation to the device */
     void (*dev_write_handler)(port_info_t *);
 
+    /*
+     * devname as specified on the line, not the substituted version.  Only
+     *non-null if devname was substituted.
+     */
+    char *orig_devname;
+
 #if HAVE_DECL_TIOCSRS485
     struct serial_rs485 *rs485conf;
 #endif
@@ -1428,7 +1434,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    void (*op)(void *data, char val), void *data, int isfilename)
 {
     char val;
-    char *t;
+    char *t, *s2;
 
     while (*s) {
 	if (*s == '\\') {
@@ -1449,17 +1455,23 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case '\'': op(data, '\''); break;
 	    case '"': op(data, '"'); break;
 
-	    case 'd':
+	    case 'd': /* Actual device name */
+	    case 'o': /* Device name on config line */
 		/* ser2net device name. */
+		if (*s == 'o' && port->orig_devname)
+		    s2 = port->orig_devname;
+		else
+		    s2 = port->io.devname;
+
 		if (isfilename) {
 		    /* Can't have '/' in a filename. */
-		    t = strrchr(port->io.devname, '/');
+		    t = strrchr(s2, '/');
 		    if (t)
 			t++;
 		    else
-			t = port->io.devname;
+			t = s2;
 		} else
-		    t = port->io.devname;
+		    t = s2;
 		for (; *t; t++)
 		    op(data, *t);
 		break;
@@ -2788,6 +2800,8 @@ free_port(port_info_t *port)
 	free(port->closeon);
     if (port->netcons)
 	free(port->netcons);
+    if (port->orig_devname)
+	free(port->orig_devname);
     free(port);
 }
 
@@ -3442,6 +3456,12 @@ portconfig(struct absout *eout,
 	if (str_type != DEVNAME) {
 	    free(new_port->io.devname);
 	    new_port->io.devname = NULL;
+	} else {
+	    new_port->orig_devname = strdup(devname);
+	    if (!new_port->orig_devname) {
+		eout->out(eout, "unable to allocate original device name");
+		goto errout;
+	    }
 	}
     }
     if (!new_port->io.devname)
@@ -3783,7 +3803,11 @@ showport(struct controller_info *cntlr, port_info_t *port)
 	}
     }
 
-    controller_outputf(cntlr, "  device: %s\r\n", port->io.devname);
+    if (port->orig_devname)
+	controller_outputf(cntlr, "  device: %s (%s)\r\n", port->io.devname,
+			   port->orig_devname);
+    else
+	controller_outputf(cntlr, "  device: %s\r\n", port->io.devname);
 
     controller_outputf(cntlr, "  device config: ");
     if (port->enabled == PORT_RAWLP) {

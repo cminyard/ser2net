@@ -545,6 +545,8 @@ escape sequences and a large number of other escape sequences, too:
 .br
 \ed - The device name (/dev/ttyS0, etc.)
 .br
+\eo - The device as specified on the config line (before DEVICE subsitution)
+.br
 \ep - Network port number
 .br
 \eB - The serial port parameters (eg 9600N81)
@@ -566,8 +568,6 @@ escape sequences and a large number of other escape sequences, too:
 \eU -> microseconds in the current second
 .br
 \ep -> local port number
-.br
-\ed -> local device name
 .br
 \eI -> remote IP address (in dot format)
 .br
@@ -591,9 +591,9 @@ discouraged as it may change in the future.
 
 These sequences may be used to make the filename unique per open and
 identify which port/device the filename was for.  Note that in
-filenames when using \ed, everything up to and including last / in the
-device name is removed, because you can't have a / in a filename.  So
-in a filename /dev/ttyS0 would become just ttyS0.
+filenames when using \ed or \eo, everything up to and including last /
+in the device name is removed, because you can't have a / in a
+filename.  So in a filename /dev/ttyS0 would become just ttyS0.
 
 .SH UDP
 UDP handling is a bit different than you might imagine, because it's
