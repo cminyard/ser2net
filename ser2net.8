@@ -599,7 +599,7 @@ filename.  So in a filename /dev/ttyS0 would become just ttyS0.
 UDP handling is a bit different than you might imagine, because it's
 hard for ser2net to know where to send the data to.  To handle this,
 UDP ports still have the concept of a "connection".  If a UDP port is
-not connected, then if it received a packet the remote address for
+not connected, then if it receives a packet the remote address for
 that packet is set to the remote end of the "connection".  It will do
 all the normal new connection operations.  ser2net will then ignore
 packets from other addresses until a disconnect occurs.
@@ -610,7 +610,7 @@ have two basic options:
 Set a timeout, if the remote end isn't heard from before the
 timeout, then the port is disconnected and something else can
 connect.  This means anything that is using the port must
-periodically send a packet (empty is find) to ser2net to
+periodically send a packet (empty is fine) to ser2net to
 keep the connection alive.
 
 Use the kickolduser option on the port, any new connection that
