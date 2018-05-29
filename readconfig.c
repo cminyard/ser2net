@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <syslog.h>
 #include <stdarg.h>
-#include <values.h>
+#include <limits.h>
 
 #include "dataxfer.h"
 #include "readconfig.h"
