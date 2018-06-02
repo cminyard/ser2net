@@ -21,6 +21,7 @@
 #define _SER2NET_BUFFER_H
 
 #include <sys/socket.h>
+#include "netio.h"
 
 struct devio;
 
@@ -33,8 +34,7 @@ struct sbuf {
 
 int buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr);
 
-int buffer_sendto(int fd, const struct sockaddr *addr, socklen_t addrlen,
-		  struct sbuf *buf, int *buferr);
+int buffer_net_send(struct netio *net, struct sbuf *buf, int *buferr);
 
 int buffer_write(int fd, struct sbuf *buf, int *buferr);
 
@@ -47,6 +47,8 @@ int buffer_init(struct sbuf *buf, unsigned char *data, unsigned int datalen);
 #define buffer_left(buf) ((buf)->maxsize - (buf)->cursize)
 
 #define buffer_cursize(buf) ((buf)->cursize)
+
+#define buffer_curptr(bufp) ((bufp)->buf + (bufp)->pos)
 
 #define buffer_reset(buf) \
     do {			\
