@@ -33,7 +33,7 @@
 #include "locking.h"
 
 int
-strisallzero(char *str)
+strisallzero(const char *str)
 {
     if (*str == '\0')
 	return 0;
