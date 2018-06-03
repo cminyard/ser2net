@@ -145,22 +145,22 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 }
 
 int
-process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
+process_telnet_data(unsigned char *outdata, unsigned char *indata,
+		    unsigned int inlen, telnet_data_t *td)
 {
-    unsigned int i, j, ret = 0;
+    unsigned int i, j;
 
     /* If it's a telnet port, get the commands out of the stream. */
-    for (i = 0, j = 0; i < len; i++) {
+    for (i = 0, j = 0; i < inlen; i++) {
 	if (td->telnet_cmd_pos != 0) {
 	    unsigned char tn_byte;
 
-	    tn_byte = data[i];
+	    tn_byte = indata[i];
 
 	    if ((td->telnet_cmd_pos == 1) && (tn_byte == TN_IAC)) {
 		/* Two IACs in a row causes one IAC to be sent, so
 		   just let this one go through. */
-		data[j++] = data[i];
-		ret++;
+		outdata[j++] = tn_byte;
 		td->telnet_cmd_pos = 0;
 		continue;
 	    }
@@ -211,16 +211,15 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 			td->suboption_iac = 1;
 		}
 	    }
-	} else if (data[i] == TN_IAC) {
+	} else if (indata[i] == TN_IAC) {
 	    td->telnet_cmd[td->telnet_cmd_pos++] = TN_IAC;
 	    td->suboption_iac = 0;
 	} else {
-	    data[j++] = data[i];
-	    ret++;
+	    outdata[j++] = indata[i];
 	}
     }
 
-    return ret;
+    return j;
 }
 
 void

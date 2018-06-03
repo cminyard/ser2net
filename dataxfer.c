@@ -1042,6 +1042,7 @@ handle_net_fd_read(struct netio *net, int readerr,
 
     if (port->enabled == PORT_TELNET) {
 	unsigned int bytesleft = process_telnet_data(buf + bufpos,
+						     buf + bufpos,
 						     buflen - bufpos,
 						     &netcon->tn_data);
 

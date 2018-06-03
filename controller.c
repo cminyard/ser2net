@@ -572,8 +572,9 @@ handle_tcp_fd_read(int fd, void *data)
 	goto out;
     }
     read_start = cntlr->inbuf_count;
-    read_count = process_telnet_data
-	(cntlr->inbuf + read_start, read_count, &cntlr->tn_data);
+    read_count = process_telnet_data(cntlr->inbuf + read_start,
+				     cntlr->inbuf + read_start,
+				     read_count, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
