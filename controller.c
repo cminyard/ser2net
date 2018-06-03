@@ -26,6 +26,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <syslog.h>
+#include <assert.h>
 
 #include "ser2net.h"
 #include "controller.h"
@@ -534,6 +535,7 @@ handle_tcp_fd_read(int fd, void *data)
     controller_info_t *cntlr = (controller_info_t *) data;
     int read_count;
     int read_start;
+    unsigned int bytesleft;
     int i;
 
     LOCK(cntlr->lock);
@@ -572,13 +574,16 @@ handle_tcp_fd_read(int fd, void *data)
 	goto out;
     }
     read_start = cntlr->inbuf_count;
+    bytesleft = read_count;
     read_count = process_telnet_data(cntlr->inbuf + read_start,
+				     INBUF_SIZE,
 				     cntlr->inbuf + read_start,
-				     read_count, &cntlr->tn_data);
+				     &bytesleft, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }
+    assert(bytesleft == 0);
     cntlr->inbuf_count += read_count;
 
     for (i = read_start; i < cntlr->inbuf_count; i++) {

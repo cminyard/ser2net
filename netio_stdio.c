@@ -45,6 +45,9 @@ struct stdiona_data {
     bool user_set_read_enabled;
     bool user_read_enabled_setting;
 
+    unsigned int max_read_size;
+    unsigned char *read_data;
+
     bool data_pending;
     unsigned int data_pending_len;
     unsigned int data_pos;
@@ -135,7 +138,7 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     UNLOCK(nadata->lock);
 
     if (in_read)
-	count = net->read_callback(net, 0, nadata->data_pos,
+	count = net->read_callback(net, 0, nadata->read_data + nadata->data_pos,
 				   nadata->data_pending_len);
     LOCK(nadata->lock);
     nadata->deferred_op_pending = false;
@@ -225,7 +228,7 @@ stdion_read_ready(int fd, void *cbdata)
     UNLOCK(nadata->lock);
 
  retry:
-    rv = read(0, net->read_data, net->max_read_size);
+    rv = read(0, nadata->read_data, nadata->max_read_size);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
@@ -238,7 +241,7 @@ stdion_read_ready(int fd, void *cbdata)
 	rv = -1;
     } else {
 	nadata->data_pending_len = rv;
-	count = net->read_callback(net, 0, 0, rv);
+	count = net->read_callback(net, 0, nadata->read_data, rv);
     }
 
     LOCK(nadata->lock);
@@ -330,6 +333,7 @@ stdiona_free(struct netio_acceptor *acceptor)
     sel_free_runner(nadata->connect_runner);
 
     free(nadata->net);
+    free(nadata->read_data);
     free(nadata);
     free(acceptor);
 }
@@ -358,12 +362,10 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
 	goto out_nomem;
     memset(net, 0, sizeof(*net));
 
-    if (max_read_size) {
-	net->max_read_size = max_read_size;
-	net->read_data = malloc(max_read_size);
-	if (!net->read_data)
-	    goto out_nomem;
-    }
+    nadata->max_read_size = max_read_size;
+    nadata->read_data = malloc(max_read_size);
+    if (!nadata->read_data)
+	goto out_nomem;
 
     err = sel_alloc_runner(ser2net_sel, &nadata->deferred_op_runner);
     if (err)
@@ -402,13 +404,12 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
 		sel_free_runner(nadata->deferred_op_runner);
 	    if (nadata->connect_runner)
 		sel_free_runner(nadata->connect_runner);
+	    if (nadata->read_data)
+		free(nadata->read_data);
 	    free(nadata);
 	}
-	if (net) {
-	    if (net->read_data)
-		free(net->read_data);
+	if (net)
 	    free(net);
-	}
     } else {
 	*acceptor = acc;
     }

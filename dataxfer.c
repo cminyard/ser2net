@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <fcntl.h>
+#include <assert.h>
 
 #include "ser2net.h"
 #include "dataxfer.h"
@@ -900,12 +901,6 @@ handle_dev_fd_read(struct devio *io)
     UNLOCK(port->lock);
 }
 
-static void
-done_with_write(port_info_t *port)
-{
-    port->net_to_dev.buf = NULL;
-}
-
 /* The serial port has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
@@ -924,7 +919,6 @@ dev_fd_write(port_info_t *port, struct sbuf *buf)
 
     if (buffer_cursize(buf) == 0) {
 	/* We are done writing, turn the reader back on. */
-	done_with_write(port);
 	enable_all_net_read(port);
 	port->io.f->write_handler_enable(&port->io, 0);
 	port->net_to_dev_state = PORT_WAITING_INPUT;
@@ -979,12 +973,11 @@ handle_dev_fd_devstr_write(port_info_t *port)
 /* Data is ready to read on the network port. */
 static unsigned int
 handle_net_fd_read(struct netio *net, int readerr,
-		   unsigned int startpos, unsigned int buflen)
+		   unsigned char *buf, unsigned int buflen)
 {
     net_info_t *netcon = net->user_data;
     port_info_t *port = netcon->port;
-    unsigned char *buf = net->read_data;
-    unsigned int bufpos = startpos;
+    unsigned int bufpos = 0;
     unsigned int rv = 0;
     char *reason;
     int count;
@@ -1006,18 +999,17 @@ handle_net_fd_read(struct netio *net, int readerr,
 	goto out_shutdown;
     }
 
-    netcon->bytes_received += buflen - startpos;
+    netcon->bytes_received += buflen;
 
     if (port->net_monitor != NULL)
-	controller_write(port->net_monitor, (char *) buf + startpos,
-			 buflen - startpos);
+	controller_write(port->net_monitor, (char *) buf, buflen);
 
     if (port->tw)
 	/* Do write tracing, ignore errors. */
-	do_trace(port, port->tw, buf + startpos, buflen - startpos, NET);
+	do_trace(port, port->tw, buf, buflen, NET);
     if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->tb, buf + startpos, buflen - startpos, NET);
+	do_trace(port, port->tb, buf, buflen, NET);
 
     if (netcon->in_urgent) {
 	/* We are in urgent data, just read until we get a mark. */
@@ -1041,29 +1033,32 @@ handle_net_fd_read(struct netio *net, int readerr,
 	goto out_data_handled;
 
     if (port->enabled == PORT_TELNET) {
-	unsigned int bytesleft = process_telnet_data(buf + bufpos,
-						     buf + bufpos,
-						     buflen - bufpos,
-						     &netcon->tn_data);
+	unsigned int bytesleft = buflen - bufpos;
+
+	port->net_to_dev.cursize = process_telnet_data(port->net_to_dev.buf,
+						       port->net_to_dev.maxsize,
+						       buf + bufpos,
+						       &bytesleft,
+						       &netcon->tn_data);
 
 	if (netcon->tn_data.error) {
 	    shutdown_one_netcon(netcon, "telnet output error");
 	    goto out_unlock;
 	}
-	if (bytesleft == 0)
+	if (port->net_to_dev.cursize == 0)
 	    /* We are out of characters; they were all processed.  We
 	       don't want to continue with 0, because that will mess
 	       up the other processing and it's not necessary. */
 	    goto out_data_handled;
 
-	port->net_to_dev.cursize = bytesleft;
+	assert(bytesleft == 0);
     } else {
+	assert(buflen - bufpos <= port->net_to_dev.maxsize);
+	memcpy(port->net_to_dev.buf, buf + bufpos, buflen - bufpos);
 	port->net_to_dev.cursize = buflen - bufpos;
     }
 
-    port->net_to_dev.buf = buf;
-    port->net_to_dev.maxsize = net->max_read_size;
-    port->net_to_dev.pos = bufpos;
+    port->net_to_dev.pos = 0;
 
 
     /*
@@ -1104,9 +1099,7 @@ handle_net_fd_read(struct netio *net, int readerr,
 	port->net_to_dev.pos += count;
     }
 
-    if (port->net_to_dev.cursize == 0) {
-	done_with_write(port);
-    } else {
+    if (port->net_to_dev.cursize != 0) {
 	/* We didn't write all the data, shut off the reader and
 	   start the write monitor. */
     stop_read_start_write:
@@ -1118,7 +1111,7 @@ handle_net_fd_read(struct netio *net, int readerr,
     reset_timer(netcon);
 
  out_data_handled:
-    rv = buflen - startpos;
+    rv = buflen;
 
  out_unlock:
     UNLOCK(port->lock);
@@ -2938,6 +2931,12 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
+    if (buffer_init(&new_port->net_to_dev, NULL, new_port->net_to_dev.maxsize))
+    {
+	eout->out(eout, "Could not allocate net to dev buffer");
+	goto errout;
+    }
+
     /*
      * Don't handle the remaddr default until here, we don't want to
      * mess with it if the user has set it, because the user may set
@@ -3530,7 +3529,7 @@ com_port_will(void *cb_data)
     port_info_t *port = netcon->port;
     unsigned char data[3];
 
-    if (! port->allow_2217)
+    if (!port->allow_2217)
 	return 0;
 
     /* The remote end turned on RFC2217 handling. */
