@@ -144,24 +144,13 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
     td->output_ready(td->cb_data);
 }
 
-static int
-delete_char(unsigned char *data, int pos, int len)
-{
-    int i;
-
-    for (i = pos; i < len - 1; i++) {
-	data[i] = data[i + 1];
-    }
-    return len - 1;
-}
-
 int
 process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 {
-    int i;
+    unsigned int i, j, ret = 0;
 
     /* If it's a telnet port, get the commands out of the stream. */
-    for (i = 0; i < len;) {
+    for (i = 0, j = 0; i < len; i++) {
 	if (td->telnet_cmd_pos != 0) {
 	    unsigned char tn_byte;
 
@@ -170,25 +159,22 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 	    if ((td->telnet_cmd_pos == 1) && (tn_byte == TN_IAC)) {
 		/* Two IACs in a row causes one IAC to be sent, so
 		   just let this one go through. */
-		i++;
+		data[j++] = data[i];
+		ret++;
 		td->telnet_cmd_pos = 0;
 		continue;
 	    }
 
-	    len = delete_char(data, i, len);
-
 	    if (td->telnet_cmd_pos == 1) {
 		/* These are two byte commands, so we have
 		   everything we need to handle the command. */
-		td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
-		td->telnet_cmd_pos++;
+		td->telnet_cmd[td->telnet_cmd_pos++] = tn_byte;
 		if (tn_byte < TN_SB) {
 		    handle_telnet_cmd(td);
 		    td->telnet_cmd_pos = 0;
 		}
 	    } else if (td->telnet_cmd_pos == 2) {
-		td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
-		td->telnet_cmd_pos++;
+		td->telnet_cmd[td->telnet_cmd_pos++] = tn_byte;
 		if (td->telnet_cmd[1] != TN_SB) {
 		    /* It's a will/won't/do/don't */
 		    handle_telnet_cmd(td);
@@ -220,23 +206,21 @@ process_telnet_data(unsigned char *data, int len, telnet_data_t *td)
 			   suboption. */
 			td->telnet_cmd_pos = MAX_TELNET_CMD_SIZE;
 
-		    td->telnet_cmd[td->telnet_cmd_pos] = tn_byte;
-		    td->telnet_cmd_pos++;
+		    td->telnet_cmd[td->telnet_cmd_pos++] = tn_byte;
 		    if (tn_byte == TN_IAC)
 			td->suboption_iac = 1;
 		}
 	    }
 	} else if (data[i] == TN_IAC) {
-	    td->telnet_cmd[td->telnet_cmd_pos] = TN_IAC;
-	    len = delete_char(data, i, len);
-	    td->telnet_cmd_pos++;
+	    td->telnet_cmd[td->telnet_cmd_pos++] = TN_IAC;
 	    td->suboption_iac = 0;
 	} else {
-	    i++;
+	    data[j++] = data[i];
+	    ret++;
 	}
     }
 
-    return len;
+    return ret;
 }
 
 void
