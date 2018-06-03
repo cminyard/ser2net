@@ -35,11 +35,8 @@
 #include "locking.h"
 #include "utils.h"
 
-struct tcpna_data;
-
 struct tcpn_data {
     struct netio *net;
-    struct tcpna_data *nadata;
 
     DEFINE_LOCK(, lock);
 
@@ -88,7 +85,6 @@ struct port_remaddr
 
 struct tcpna_data {
     struct netio_acceptor *acceptor;
-    struct tcpn_data *tcpns;
 
     char *name;
 
@@ -156,27 +152,11 @@ static void
 tcpn_finish_close(struct tcpn_data *ndata)
 {
     struct netio *net = ndata->net;
-    struct tcpna_data *nadata = ndata->nadata;
-    struct tcpn_data *tndata, *prev_tndata;
 
     close(ndata->fd);
 
     if (net->close_done)
 	net->close_done(net);
-
-    LOCK(nadata->lock);
-
-    /* Remove it from the list. */
-    prev_tndata = NULL;
-    tndata = nadata->tcpns;
-    while (tndata != ndata)
-	tndata = tndata->next;
-    if (prev_tndata)
-	prev_tndata->next = ndata->next;
-    else
-	nadata->tcpns = NULL;
-
-    UNLOCK(nadata->lock);
 
     sel_free_runner(ndata->deferred_read_runner);
     free(ndata->read_data);
@@ -446,7 +426,6 @@ tcpna_readhandler(int fd, void *cbdata)
     socklen_t addrlen = sizeof(addr);
     struct netio *net = NULL;
     struct tcpn_data *ndata = NULL;
-    struct tcpn_data *tndata;
     const char *errstr;
     int optval, err;
 
@@ -490,7 +469,6 @@ tcpna_readhandler(int fd, void *cbdata)
 
     INIT_LOCK(ndata->lock);
     ndata->net = net;
-    ndata->nadata = nadata;
     ndata->fd = new_fd;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
     ndata->raddrlen = addrlen;
@@ -509,18 +487,6 @@ tcpna_readhandler(int fd, void *cbdata)
 
     sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
 			tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared);
-
-    /* Stick it on the end of the list. */
-    LOCK(nadata->lock);
-    tndata = nadata->tcpns;
-    if (!tndata) {
-	nadata->tcpns = ndata;
-    } else {
-	while (tndata->next)
-	    tndata = tndata->next;
-	tndata->next = ndata;
-    }
-    UNLOCK(nadata->lock);
 
     nadata->acceptor->new_connection(nadata->acceptor, net);
     return;
@@ -610,26 +576,11 @@ tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 }
 
 static void
-tcpna_tcpn_close_done(struct netio *net)
-{
-    struct tcpn_data *ndata = net->internal_data;
-    struct tcpna_data *nadata = ndata->nadata;
-
-    wake_waiter(nadata->accept_waiter);
-}
-
-static void
 tcpna_free(struct netio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acceptor->internal_data;
 
     tcpna_shutdown(acceptor);
-
-    while (nadata->tcpns) {
-	nadata->tcpns->net->close_done = tcpna_tcpn_close_done;
-	nadata->tcpns->net->close(nadata->tcpns->net);
-	wait_for_waiter(nadata->accept_waiter);
-    }
 
     while (nadata->remaddrs) {
 	struct port_remaddr *r;
