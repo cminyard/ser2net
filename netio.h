@@ -35,18 +35,10 @@ struct netio {
        consumed, read will automatically be disabled.  Read is also
        disabled if an error is reported. */
     unsigned int (*read_callback)(struct netio *net, int readerr,
-				  unsigned int pos, unsigned int buflen);
+				  unsigned char *buf, unsigned int buflen);
     void (*write_callback)(struct netio *net);
     void (*urgent_callback)(struct netio *net);
     void (*close_done)(struct netio *net);
-
-    /* User should set to the maximum value that read_callback may
-       return.  Set before startup() is called and do not change
-       afterwards.  This must be at least the size of read_data. */
-    unsigned int max_read_size;
-
-    /* The buffer used by read, supplied by the user. */
-    unsigned char *read_data;
 
     /*
      * Set by the network port for calling by the user.

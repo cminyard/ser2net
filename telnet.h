@@ -90,8 +90,9 @@ void telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len);
    it.  The leftover length is returned by this function, and the
    telnet data will be removed from data.  This will set td->error to
    true if an output error occurs (out of space).*/
-int process_telnet_data(unsigned char *outdata, unsigned char *indata,
-			unsigned int inlen, telnet_data_t *td);
+unsigned int process_telnet_data(unsigned char *outdata, unsigned int outlen,
+				 unsigned char *indata, unsigned int *inlen,
+				 telnet_data_t *td);
 
 /* Used to send an option.  The option should *not* contain the inital
    "255 250" nor the tailing "255 240" and should *not* double

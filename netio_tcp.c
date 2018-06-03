@@ -54,6 +54,14 @@ struct tcpn_data {
     unsigned int data_pending_len;
     unsigned int data_pos;
 
+    /* User should set to the maximum value that read_callback may
+       return.  Set before startup() is called and do not change
+       afterwards.  This must be at least the size of read_data. */
+    unsigned int max_read_size;
+
+    /* The buffer used by read, supplied by the user. */
+    unsigned char *read_data;
+
     /*
      * Used to run read callbacks from the selector to avoid running
      * it directly from user calls.
@@ -171,8 +179,7 @@ tcpn_finish_close(struct tcpn_data *ndata)
     UNLOCK(nadata->lock);
 
     sel_free_runner(ndata->deferred_read_runner);
-    if (net->read_data)
-	free(net->read_data);
+    free(ndata->read_data);
     free(ndata);
     free(net);
 }
@@ -241,7 +248,7 @@ tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
     unsigned int count;
 
     /* No lock needed, this data cannot be changed here. */
-    count = net->read_callback(net, 0, ndata->data_pos,
+    count = net->read_callback(net, 0, ndata->read_data + ndata->data_pos,
 			       ndata->data_pending_len);
     LOCK(ndata->lock);
     ndata->deferred_read_pending = false;
@@ -331,20 +338,20 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     }
 
  retry:
-    rv = read(fd, net->read_data, net->max_read_size);
+    rv = read(fd, ndata->read_data, ndata->max_read_size);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->read_callback(net, errno, 0, 0);
+	    net->read_callback(net, errno, NULL, 0);
     } else if (rv == 0) {
-	net->read_callback(net, EPIPE, 0, 0);
+	net->read_callback(net, EPIPE, NULL, 0);
 	rv = -1;
     } else {
 	ndata->data_pending_len = rv;
-	count = net->read_callback(net, 0, 0, rv);
+	count = net->read_callback(net, 0, ndata->read_data, rv);
     }
 
     LOCK(ndata->lock);
@@ -489,12 +496,10 @@ tcpna_readhandler(int fd, void *cbdata)
     ndata->raddrlen = addrlen;
     memcpy(ndata->raddr, &addr, addrlen);
 
-    net->max_read_size = nadata->max_read_size;
-    if (net->max_read_size) {
-	net->read_data = malloc(net->max_read_size);
-	if (!net->read_data)
-	    goto out_nomem;
-    }
+    ndata->max_read_size = nadata->max_read_size;
+    ndata->read_data = malloc(ndata->max_read_size);
+    if (!ndata->read_data)
+	goto out_nomem;
     net->internal_data = ndata;
     net->write = tcpn_write;
     net->raddr_to_str = tcpn_raddr_to_str;
@@ -525,13 +530,12 @@ tcpna_readhandler(int fd, void *cbdata)
     if (ndata) {
 	if (ndata->deferred_read_runner)
 	    sel_free_runner(ndata->deferred_read_runner);
+	if (ndata->read_data)
+	    free(ndata->read_data);
 	free(ndata);
     }
-    if (net) {
-	if (net->read_data)
-	    free(net->read_data);
+    if (net)
 	free(net);
-    }
 
     syslog(LOG_ERR, "Out of memory allocating for tcp port %s", nadata->name);
 }
