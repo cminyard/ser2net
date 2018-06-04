@@ -780,16 +780,25 @@ handle_dev_fd_read(struct devio *io)
     int count;
     int curend;
     bool send_now = false;
+    unsigned int readcount;
 
     LOCK(port->lock);
     curend = port->dev_to_net.cursize;
+    readcount = port->dev_to_net.maxsize - curend;
     if (port->enabled == PORT_TELNET) {
+	if (readcount == 1) {
+	    /* We don't want a zero read, so just ignore this, as we have
+	       data to send. */
+	    send_now = true;
+	    count = 0;
+	    goto do_send;
+	}
 	/* Leave room for IACs. */
 	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-				 (port->dev_to_net.maxsize - curend) / 2);
+				 readcount / 2);
     } else {
 	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-				 port->dev_to_net.maxsize - curend);
+				 readcount);
     }
 
     if (count <= 0) {
