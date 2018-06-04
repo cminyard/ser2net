@@ -2768,20 +2768,28 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if ((rv = cmpstrint(pos, "dev-to-net-bufsize=", &val, eout))) {
 	if (rv == -1)
 	    return -1;
+	if (val < 2)
+	    val = 2;
 	port->dev_to_net.maxsize = val;
     } else if ((rv = cmpstrint(pos, "net-to-dev-bufsize=", &val, eout))) {
 	if (rv == -1)
 	    return -1;
+	if (val < 2)
+	    val = 2;
 	port->net_to_dev.maxsize = val;
     } else if ((rv = cmpstrint(pos, "dev-to-tcp-bufsize=", &val, eout))) {
 	/* deprecated */
 	if (rv == -1)
 	    return -1;
+	if (val < 2)
+	    val = 2;
 	port->dev_to_net.maxsize = val;
     } else if ((rv = cmpstrint(pos, "tcp-to-dev-bufsize=", &val, eout))) {
 	/* deprecated */
 	if (rv == -1)
 	    return -1;
+	if (val < 2)
+	    val = 2;
 	port->net_to_dev.maxsize = val;
     } else if ((rv = cmpstrint(pos, "max-connections=", &val, eout))) {
 	if (rv == -1)
