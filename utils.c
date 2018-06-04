@@ -193,6 +193,7 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
     }
 }
 
+/* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
 open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 	    void (*writehndlr)(int, void *), void *data,
