@@ -265,7 +265,7 @@ tcpn_set_read_callback_enable(struct netio *net, bool enabled)
 	else
 	    op = SEL_FD_HANDLER_DISABLED;
 
-	ndata->read_enabled = true;
+	ndata->read_enabled = enabled;
 	sel_set_fd_read_handler(ser2net_sel, ndata->fd, op);
     }
     UNLOCK(ndata->lock);
@@ -307,8 +307,8 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 
     if (urgent) {
 	/* We should have urgent data, a DATA MARK in the stream.  Read
-	   then urgent data (whose contents are irrelevant) then discard
-	   user data until we find the DATA_MARK command. */
+	   the urgent data (whose contents are irrelevant) then inform
+	   the user. */
 	for (;;) {
 	    rv = recv(fd, &c, 1, MSG_OOB);
 	    if (rv == 0 || (rv < 0 && errno != EINTR))
@@ -525,10 +525,12 @@ tcpna_startup(struct netio_acceptor *acceptor)
     }
     nadata->acceptfds = open_socket(nadata->ai, tcpna_readhandler, NULL, nadata,
 				    &nadata->nr_acceptfds, tcpna_fd_cleared);
-    if (nadata->acceptfds == NULL)
+    if (nadata->acceptfds == NULL) {
 	rv = errno;
-    else
+    } else {
 	nadata->setup = true;
+	nadata->enabled = true;
+    }
 
  out_unlock:
     UNLOCK(nadata->lock);
@@ -546,8 +548,10 @@ tcpna_shutdown(struct netio_acceptor *acceptor)
 	for (i = 0; i < nadata->nr_acceptfds; i++) {
 	    sel_clear_fd_handlers(ser2net_sel, nadata->acceptfds[i].fd);
 	    wait_for_waiter(nadata->accept_waiter);
+	    close(nadata->acceptfds[i].fd);
 	}
 	nadata->setup = false;
+	nadata->enabled = false;
     }
     UNLOCK(nadata->lock);
 	

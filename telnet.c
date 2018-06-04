@@ -49,7 +49,7 @@ handle_telnet_cmd(telnet_data_t *td)
 
     if (size < 2)
 	return;
-
+ 
     if (cmd_str[1] < TN_SB) { /* A one-byte command. */
 	td->cmd_handler(td->cb_data, cmd_str[1]);
     } else if (cmd_str[1] == TN_SB) { /* Option */
