@@ -68,14 +68,25 @@ static int
 stdion_write(struct netio *net, int *count,
 	     const void *buf, unsigned int buflen)
 {
-    int rv = write(0, buf, buflen);
+    int rv, err = 0;
 
-    if (rv < 0)
-	return errno;
+ retry:
+    rv = write(0, buf, buflen);
+    if (rv < 0) {
+	if (errno == EINTR)
+	    goto retry;
+	if (errno == EWOULDBLOCK || errno == EAGAIN)
+	    rv = 0; /* Handle like a it wrote zero bytes. */
+	else
+	    err = errno;
+    } else if (rv == 0) {
+	err = EPIPE;
+    }
 
-    if (count)
+    if (!err && count)
 	*count = rv;
-    return 0;
+
+    return err;
 }
 
 static int

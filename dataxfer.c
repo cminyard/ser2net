@@ -670,21 +670,9 @@ handle_net_send_one(port_info_t *port, net_info_t *netcon)
 	/* We are sending telnet or banner data, stop the reader for now. */
 	goto no_send;
 
- retry_write:
     err = netcon->net->write(netcon->net, &count,
 			     port->dev_to_net.buf, port->dev_to_net.cursize);
     switch (err) {
-    case EINTR:
-	goto retry_write;
-
-    case EAGAIN:
-#if EAGAIN != EWOULDBLOCK
-    case EWOULDBLOCK:
-#endif
-	/* This was due to O_NONBLOCK or such, we need to shut off
-	   the reader and start the writer monitor. */
-	goto no_send;
-
     case EPIPE:
 	shutdown_one_netcon(netcon, "EPIPE");
 	break;
