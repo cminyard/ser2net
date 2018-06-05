@@ -2027,7 +2027,7 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_netio_acceptor(rot->portname, 0, &rot->acceptor);
+    rv = str_to_netio_acceptor(rot->portname, 64, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
@@ -2871,9 +2871,7 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    err = str_to_netio_acceptor(new_port->portname,
-				new_port->net_to_dev.maxsize,
-				&new_port->acceptor);
+    err = str_to_netio_acceptor(new_port->portname, 64, &new_port->acceptor);
     if (err) {
 	eout->out(eout, "Invalid port name/number");
 	goto errout;
