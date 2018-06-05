@@ -111,10 +111,6 @@ struct net_info {
     unsigned int write_pos;		/* Our current position in the
 					   output buffer where we need
 					   to start writing next. */
-    bool data_to_write;			/* There is data to write on
-					   this network port. */
-
-    void (*write_handler)(port_info_t *, net_info_t *);
 
     /* Data for the telnet processing */
     telnet_data_t tn_data;
@@ -655,67 +651,30 @@ any_net_data_to_write(port_info_t *port)
     net_info_t *netcon;
 
     for_each_connection(port, netcon) {
-	if (netcon->data_to_write)
+	if (!netcon->net)
+	    continue;
+	if (netcon->write_pos < port->dev_to_net.cursize)
 	    return true;
     }
     return false;
 }
 
 static void
-handle_net_send_one(port_info_t *port, net_info_t *netcon)
-{
-    int count = 0, err;
-
-    if (netcon->sending_tn_data || netcon->banner)
-	/* We are sending telnet or banner data, stop the reader for now. */
-	goto no_send;
-
-    err = netcon->net->write(netcon->net, &count,
-			     port->dev_to_net.buf, port->dev_to_net.cursize);
-    switch (err) {
-    case EPIPE:
-	shutdown_one_netcon(netcon, "EPIPE");
-	break;
-
-    case 0:
-	netcon->bytes_sent += count;
-	if (port->dev_to_net.cursize != count) {
-	    /* We didn't write all the data, shut off the reader and
-               start the write monitor. */
-	no_send:
-	    netcon->write_pos = count;
-	    netcon->data_to_write = true;
-	    port->io.f->read_handler_enable(&port->io, 0);
-	    netcon->net->set_write_callback_enable(netcon->net, true);
-	    port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
-	} else if (port->close_on_output_done) {
-	    shutdown_one_netcon(netcon, "closeon sequence found");
-	}
-	break;
-
-    default:
-	/* Some other bad error. */
-	syslog(LOG_ERR, "The network write for port %s had error: %m",
-	       port->portname);
-	shutdown_one_netcon(netcon, "network write error");
-	break;
-    }
-
-    reset_timer(netcon);
-}
-
-static void
-handle_net_send(port_info_t *port)
+start_net_send(port_info_t *port)
 {
     net_info_t *netcon;
 
+    if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR)
+	return;
+
+    port->io.f->read_handler_enable(&port->io, 0);
     for_each_connection(port, netcon) {
 	if (!netcon->net)
 	    continue;
-	handle_net_send_one(port, netcon);
+	netcon->write_pos = 0;
+	netcon->net->set_write_callback_enable(netcon->net, true);
     }
-    if (!any_net_data_to_write(port))
-	port->dev_to_net.cursize = 0;
+    port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
 }
 
 void
@@ -734,7 +693,7 @@ send_timeout(struct selector_s  *sel,
 
     port->send_timer_running = false;
     if (port->dev_to_net.cursize > 0)
-	handle_net_send(port);
+	start_net_send(port);
     UNLOCK(port->lock);
 }
 
@@ -771,6 +730,9 @@ handle_dev_fd_read(struct devio *io)
     unsigned int readcount;
 
     LOCK(port->lock);
+    if (port->dev_to_net_state != PORT_WAITING_INPUT)
+	goto out_unlock;
+
     curend = port->dev_to_net.cursize;
     readcount = port->dev_to_net.maxsize - curend;
     if (port->enabled == PORT_TELNET) {
@@ -871,7 +833,7 @@ handle_dev_fd_read(struct devio *io)
     if (send_now || port->dev_to_net.cursize == port->dev_to_net.maxsize ||
 		port->chardelay == 0) {
     send_it:
-	handle_net_send(port);
+	start_net_send(port);
     } else {
 	struct timeval then;
 	int delay;
@@ -1126,111 +1088,140 @@ void io_enable_read_handler(port_info_t *port)
 }
 
 /*
- * The network fd has room to write some data.  This is only activated
- * if a write fails to complete, it is deactivated as soon as writing
- * is available again.
+ * Returns -1 on something causing the netcon to shut down, 0 if the
+ * write was incomplete, and 1 if the write was completed.
  */
-static void
+static int
+send_telnet_data(port_info_t *port, net_info_t *netcon)
+{
+    telnet_data_t *td = &netcon->tn_data;
+    int reterr, buferr;
+
+    if (!netcon->sending_tn_data)
+	return 1;
+
+    reterr = buffer_net_send(netcon->net, &td->out_telnet_cmd, &buferr);
+    /* Returns 0 on EAGAIN */
+    if (reterr == -1) {
+	if (buferr == EPIPE) {
+	    shutdown_one_netcon(netcon, "EPIPE");
+	    return -1;
+	} else {
+	    /* Some other bad error. */
+	    syslog(LOG_ERR, "The network write for port %s had error: %s",
+		   port->portname, strerror(buferr));
+	    shutdown_one_netcon(netcon, "network write error");
+	    return -1;
+	}
+    }
+
+    if (buffer_cursize(&td->out_telnet_cmd) > 0)
+	/* If we have more telnet command data to send, don't
+	   send any real data. */
+	return 0;
+
+    netcon->sending_tn_data = false;
+    return 1;
+}
+
+/*
+ * Write some network data from a buffer.  Returns -1 on something
+ * causing the netcon to shut down, 0 if the write was incomplete, and
+ * 1 if the write was completed.
+ */
+static int
 net_fd_write(port_info_t *port, net_info_t *netcon,
 	     struct sbuf *buf, unsigned int *pos)
 {
-    telnet_data_t *td = &netcon->tn_data;
-    int buferr, reterr, to_send, count = 0;
-
-    if (netcon->sending_tn_data) {
-    send_tn_data:
-	reterr = buffer_net_send(netcon->net, &td->out_telnet_cmd, &buferr);
-	/* Returns 0 on EAGAIN */
-	if (reterr == -1) {
-	    if (buferr == EPIPE) {
-		shutdown_one_netcon(netcon, "EPIPE");
-		return;
-	    } else {
-		/* Some other bad error. */
-		syslog(LOG_ERR, "The network write for port %s had error: %s",
-		       port->portname, strerror(buferr));
-		shutdown_one_netcon(netcon, "network write error");
-		return;
-	    }
-	}
-
-	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
-	    /* If we have more telnet command data to send, don't
-	       send any real data. */
-	    return;
-	}
-	netcon->sending_tn_data = false;
-	if (!any_net_data_to_write(port))
-	    io_enable_read_handler(port);
-    }
+    int reterr, to_send, count = 0;
 
     to_send = buf->cursize - *pos;
-    if (to_send <= 0) {
+    if (to_send <= 0)
 	/* Don't send empty packets, that can confuse UDP clients. */
-	netcon->net->set_write_callback_enable(netcon->net, false);
-	port->dev_to_net_state = PORT_WAITING_INPUT;
-	return;
-    }
+	return 1;
 
+    /* Can't use buffer send operation here, multiple writers can send
+       from the buffers. */
     reterr = netcon->net->write(netcon->net, &count, buf->buf + *pos, to_send);
     if (reterr == EPIPE) {
 	shutdown_one_netcon(netcon, "EPIPE");
-	return;
+	return -1;
     } else if (reterr) {
 	/* Some other bad error. */
 	syslog(LOG_ERR, "The network write for port %s had error: %m",
 	       port->portname);
 	shutdown_one_netcon(netcon, "network write error");
-	return;
+	return -1;
     }
     *pos += count;
 
-    if (*pos >= buf->cursize) {
-	netcon->data_to_write = false;
+    if (*pos < buf->cursize)
+	return 0;
 
-	/* Start telnet data write when the data write is done. */
-	if (buffer_cursize(&td->out_telnet_cmd) > 0) {
-	    netcon->sending_tn_data = true;
-	    goto send_tn_data;
-	}
-
-	if (any_net_data_to_write(port))
-	    goto out;
-
-	port->dev_to_net.cursize = 0;
-
-	/* We are done writing, turn the reader back on. */
-	io_enable_read_handler(port);
-	netcon->net->set_write_callback_enable(netcon->net, false);
-	port->dev_to_net_state = PORT_WAITING_INPUT;
-
-	if (port->close_on_output_done) {
-	    shutdown_one_netcon(netcon, "closeon sequence found");
-	    return;
-	}
-    }
- out:
-    reset_timer(netcon);
+    return 1;
 }
 
 /* The network fd has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_net_fd_write(port_info_t *port, net_info_t *netcon)
-{
-    net_fd_write(port, netcon,
-		 &port->dev_to_net, &netcon->write_pos);
-}
-
-static void
-handle_net_fd_write_mux(struct netio *net)
+handle_net_fd_write(struct netio *net)
 {
     net_info_t *netcon = net->user_data;
     port_info_t *port = netcon->port;
+    int rv;
 
     LOCK(port->lock);
-    netcon->write_handler(port, netcon);
+ send_tn_data:
+    rv = send_telnet_data(port, netcon);
+    if (rv <= 0)
+	goto out_unlock;
+
+    if (netcon->banner) {
+	rv = net_fd_write(port, netcon, netcon->banner, &netcon->banner->pos);
+	if (rv <= 0)
+	    goto out_unlock;
+
+	free(netcon->banner->buf);
+	free(netcon->banner);
+	netcon->banner = NULL;
+    }
+
+    if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR) {
+	rv = net_fd_write(port, netcon,
+			  &port->dev_to_net, &netcon->write_pos);
+
+	if (rv <= 0)
+	    goto out_unlock;
+
+	/* Start telnet data write when the data write is done. */
+	if (buffer_cursize(&netcon->tn_data.out_telnet_cmd) > 0) {
+	    netcon->sending_tn_data = true;
+	    goto send_tn_data;
+	}
+
+	if (any_net_data_to_write(port))
+	    goto out_unlock;
+
+	port->dev_to_net.cursize = 0;
+
+	/* We are done writing on this port, turn the reader back on. */
+	io_enable_read_handler(port);
+	port->dev_to_net_state = PORT_WAITING_INPUT;
+
+	if (port->close_on_output_done) {
+	    shutdown_one_netcon(netcon, "closeon sequence found");
+	    rv = -1;
+	    goto out_unlock;
+	}
+    }
+
+ out_unlock:
+    if (rv > 0)
+	netcon->net->set_write_callback_enable(netcon->net, false);
+
+    if (rv >= 0)
+	reset_timer(netcon);
     UNLOCK(port->lock);
 }
 
@@ -1271,21 +1262,7 @@ handle_net_fd_urgent(struct netio *net)
     UNLOCK(port->lock);
 }
 
-static void port_net_closed(struct netio *net);
-
-static void
-handle_net_fd_banner_write(port_info_t *port, net_info_t *netcon)
-{
-    net_fd_write(port, netcon, netcon->banner, &netcon->banner->pos);
-    if (netcon->banner->pos >= netcon->banner->cursize) {
-	netcon->write_handler = handle_net_fd_write;
-	free(netcon->banner->buf);
-	free(netcon->banner);
-	netcon->banner = NULL;
-
-	handle_net_fd_write(port, netcon);
-    }
-}
+static void handle_net_fd_closed(struct netio *net);
 
 static void
 telnet_cmd_handler(void *cb_data, unsigned char cmd)
@@ -1833,10 +1810,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	}
 	netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
     }
-    if (netcon->banner)
-	netcon->write_handler = handle_net_fd_banner_write;
-    else
-	netcon->write_handler = handle_net_fd_write;
 
     if (num_connected_net(port, true) == 1) {
 	/* We are first, set things up on the device. */
@@ -1873,15 +1846,16 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	port->io.f->except_handler_enable(&port->io, 1);
 	if (port->devstr)
 	    port->io.f->write_handler_enable(&port->io, 1);
+	io_enable_read_handler(port);
 	port->dev_to_net_state = PORT_WAITING_INPUT;
 	i_am_first = true;
     }
 
     netcon->net->user_data = netcon;
     netcon->net->read_callback = handle_net_fd_read;
-    netcon->net->write_callback = handle_net_fd_write_mux;
+    netcon->net->write_callback = handle_net_fd_write;
     netcon->net->urgent_callback = handle_net_fd_urgent;
-    netcon->net->close_done = port_net_closed;
+    netcon->net->close_done = handle_net_fd_closed;
 
     netcon->net->set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
@@ -1897,8 +1871,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
 	if (netcon->banner)
 	    netcon->net->set_write_callback_enable(netcon->net, true);
-	else if (i_am_first)
-	    io_enable_read_handler(port);
     }
 
     if (i_am_first)
@@ -2454,11 +2426,13 @@ static void shutdown_port_timer(sel_runner_t *runner, void *cb_data)
 static void
 start_shutdown_port(port_info_t *port, char *reason)
 {
-    if (port->dev_to_net_state == PORT_CLOSING)
+    if (port->dev_to_net_state == PORT_CLOSING ||
+		port->dev_to_net_state == PORT_UNCONNECTED)
 	return;
 
     port->close_on_output_done = false;
 
+    port->io.f->read_handler_enable(&port->io, false);
     port->acceptor->set_accept_callback_enable(port->acceptor, false);
 
     footer_trace(port, "port", reason);
@@ -2491,7 +2465,6 @@ netcon_finish_shutdown(net_info_t *netcon)
     netcon->bytes_sent = 0;
     netcon->sending_tn_data = false;
     netcon->write_pos = 0;
-    netcon->data_to_write = false;
     if (netcon->banner) {
 	free(netcon->banner->buf);
 	free(netcon->banner);
@@ -2508,7 +2481,7 @@ netcon_finish_shutdown(net_info_t *netcon)
 }
 
 static void
-port_net_closed(struct netio *net)
+handle_net_fd_closed(struct netio *net)
 {
     net_info_t *netcon = net->user_data;
 
