@@ -3146,7 +3146,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
 
     for_each_connection(port, netcon) {
-	if (port->net_to_dev_state != PORT_UNCONNECTED) {
+	if (netcon->net) {
 	    netcon->net->raddr_to_str(netcon->net, NULL,
 				      buffer, sizeof(buffer));
 	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
