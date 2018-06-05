@@ -133,29 +133,36 @@ tcpn_write(struct netio *net, int *count,
 }
 
 static int
-tcpn_raddr_to_str(struct netio *net, int *pos,
+tcpn_raddr_to_str(struct netio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
     struct tcpn_data *ndata = net->internal_data;
     char portstr[NI_MAXSERV];
     int err;
+    int pos = 0;
+
+    if (epos)
+	pos = *epos;
 
     err = getnameinfo(ndata->raddr, ndata->raddrlen,
-		      buf + *pos, buflen - *pos,
+		      buf + pos, buflen - pos,
 		      portstr, sizeof(portstr), NI_NUMERICHOST);
     if (err) {
-	snprintf(buf + *pos, buflen - *pos, 
+	snprintf(buf + pos, buflen - pos,
 		 "unknown:%s\n", gai_strerror(err));
 	return EINVAL;
     }
 
-    *pos += strlen(buf + *pos);
-    if (buflen - *pos > 2) {
-	buf[*pos] = ':';
-	(*pos)++;
+    pos += strlen(buf + pos);
+    if (buflen - pos > 2) {
+	buf[pos] = ':';
+	pos++;
     }
-    strncpy(buf + *pos, portstr, buflen - *pos);
-    *pos += strlen(buf + *pos);
+    strncpy(buf + pos, portstr, buflen - pos);
+    pos += strlen(buf + pos);
+
+    if (epos)
+	*epos = pos;
 
     return 0;
 }

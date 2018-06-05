@@ -90,10 +90,22 @@ stdion_write(struct netio *net, int *count,
 }
 
 static int
-stdion_raddr_to_str(struct netio *net, int *pos,
+stdion_raddr_to_str(struct netio *net, int *epos,
 		    char *buf, unsigned int buflen)
 {
-    strncpy(buf, "stdio", buflen);
+    int pos = 0;
+
+    if (epos)
+	pos = *epos;
+
+    strncpy(buf + pos, "stdio", buflen - pos - 1);
+    /* Fix stupid no-nil issue with strncpy. */
+    buf[buflen - 1] = '\0';
+    pos += strlen(buf + pos);
+
+    if (epos)
+	*epos = pos;
+
     return 0;
 }
 
