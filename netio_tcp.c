@@ -43,6 +43,7 @@ struct tcpn_data {
     int fd;
     bool read_enabled;
     bool in_read;
+    bool in_write;
 
     bool user_set_read_enabled;
     bool user_read_enabled_setting;
@@ -170,7 +171,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
     struct tcpn_data *ndata = cbdata;
 
     LOCK(ndata->lock);
-    if (ndata->deferred_read_pending) {
+    if (ndata->deferred_read_pending || ndata->in_write) {
 	ndata->deferred_close = true;
 	UNLOCK(ndata->lock);
     } else {
@@ -352,7 +353,20 @@ tcpn_write_ready(int fd, void *cbdata)
     struct tcpn_data *ndata = cbdata;
     struct netio *net = ndata->net;
 
+    LOCK(ndata->lock);
+    ndata->in_write = true;
+    UNLOCK(ndata->lock);
+
     net->write_callback(net);
+
+    LOCK(ndata->lock);
+    ndata->in_write = false;
+    if (ndata->deferred_close && !ndata->deferred_read_pending) {
+	UNLOCK(ndata->lock);
+	tcpn_finish_close(ndata);
+	return;
+    }
+    UNLOCK(ndata->lock);
 }
 
 static void
