@@ -1161,6 +1161,21 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     return 1;
 }
 
+static bool
+finish_dev_to_net_write(port_info_t *port)
+{
+    if (any_net_data_to_write(port))
+	return false;
+
+    port->dev_to_net.cursize = 0;
+
+    /* We are done writing on this port, turn the reader back on. */
+    io_enable_read_handler(port);
+    port->dev_to_net_state = PORT_WAITING_INPUT;
+
+    return true;
+}
+
 /* The network fd has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
@@ -1200,19 +1215,12 @@ handle_net_fd_write(struct netio *net)
 	    goto send_tn_data;
 	}
 
-	if (any_net_data_to_write(port))
-	    goto out_unlock;
-
-	port->dev_to_net.cursize = 0;
-
-	/* We are done writing on this port, turn the reader back on. */
-	io_enable_read_handler(port);
-	port->dev_to_net_state = PORT_WAITING_INPUT;
-
-	if (port->close_on_output_done) {
-	    shutdown_one_netcon(netcon, "closeon sequence found");
-	    rv = -1;
-	    goto out_unlock;
+	if (finish_dev_to_net_write(port)) {
+	    if (port->close_on_output_done) {
+		shutdown_one_netcon(netcon, "closeon sequence found");
+		rv = -1;
+		goto out_unlock;
+	    }
 	}
     }
 
@@ -2484,8 +2492,15 @@ static void
 handle_net_fd_closed(struct netio *net)
 {
     net_info_t *netcon = net->user_data;
+    port_info_t *port = netcon->port;
 
     netcon->net = NULL;
+
+    LOCK(port->lock);
+    if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR)
+	finish_dev_to_net_write(port);
+    UNLOCK(port->lock);
+
     netcon_finish_shutdown(netcon);
 }
 
