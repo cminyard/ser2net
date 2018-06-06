@@ -10,10 +10,7 @@ void
 netio_set_callbacks(struct netio *net,
 		    const struct netio_callbacks *cbs, void *user_data)
 {
-    net->read_callback = cbs->read_callback;
-    net->write_callback = cbs->write_callback;
-    net->urgent_callback = cbs->urgent_callback;
-    net->close_done = cbs->close_done;
+    net->cbs = cbs;
     net->user_data = user_data;
 }
 
@@ -116,7 +113,8 @@ int str_to_netio_acceptor(const char *str,
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_netio_acceptor_alloc(max_read_size, cbs, user_data, acceptor);
+	err = stdio_netio_acceptor_alloc(max_read_size, cbs, user_data,
+					 acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {

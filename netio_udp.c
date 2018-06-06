@@ -304,9 +304,9 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
     struct netio *net = ndata->net;
 
-    if (net->close_done) {
+    if (net->cbs->close_done) {
 	UNLOCK(nadata->lock);
-	net->close_done(net);
+	net->cbs->close_done(net);
 	LOCK(nadata->lock);
     }
 
@@ -406,8 +406,9 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
     if (ndata) {
 	struct netio *net = ndata->net;
 
-	count = net->read_callback(net, 0, nadata->read_data + nadata->data_pos,
-				   nadata->data_pending_len);
+	count = net->cbs->read_callback(net, 0,
+					nadata->read_data + nadata->data_pos,
+					nadata->data_pending_len);
     }
 
     LOCK(nadata->lock);
@@ -427,8 +428,8 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 	struct netio_acceptor *acceptor = nadata->acceptor;
 
 	nadata->in_shutdown = false;
-	if (acceptor->shutdown_done)
-	    acceptor->shutdown_done(acceptor);
+	if (acceptor->cbs->shutdown_done)
+	    acceptor->cbs->shutdown_done(acceptor);
     }
 
     if (nadata->closed && nadata->nr_accept_close_waiting == 0) {
@@ -516,8 +517,8 @@ udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
     ndata->user_set_read_enabled = false;
     UNLOCK(nadata->lock);
 
-    count = net->read_callback(net, 0, nadata->read_data,
-			       nadata->data_pending_len);
+    count = net->cbs->read_callback(net, 0, nadata->read_data,
+				    nadata->data_pending_len);
 
     LOCK(nadata->lock);
     udpn_finish_read(ndata, count);
@@ -530,7 +531,7 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 
     ndata->in_write = true;
     UNLOCK(nadata->lock);
-    net->write_callback(net);
+    net->cbs->write_callback(net);
     LOCK(nadata->lock);
     ndata->in_write = false;
 
@@ -658,11 +659,8 @@ udpna_readhandler(int fd, void *cbdata)
 	ndata->in_write = false;
 	ndata->user_set_read_enabled = false;
 	net = ndata->net;
+	net->cbs = NULL;
 	net->user_data = NULL;
-	net->read_callback = NULL;
-	net->write_callback = NULL;
-	net->urgent_callback = NULL;
-	net->close_done = NULL;
 	goto restart_net;
     }
 
@@ -709,7 +707,7 @@ udpna_readhandler(int fd, void *cbdata)
     nadata->in_new_connection = true;
     UNLOCK(nadata->lock);
 
-    nadata->acceptor->new_connection(nadata->acceptor, net);
+    nadata->acceptor->cbs->new_connection(nadata->acceptor, net);
 
     LOCK(nadata->lock);
     nadata->in_new_connection = false;
@@ -718,8 +716,8 @@ udpna_readhandler(int fd, void *cbdata)
 	struct netio_acceptor *acceptor = nadata->acceptor;
 
 	nadata->in_shutdown = false;
-	if (acceptor->shutdown_done)
-	    acceptor->shutdown_done(acceptor);
+	if (acceptor->cbs->shutdown_done)
+	    acceptor->cbs->shutdown_done(acceptor);
     }
     udpna_check_finish_free(nadata);
     goto out_unlock;
@@ -845,8 +843,7 @@ udp_netio_acceptor_alloc(const char *name,
     if (err)
 	goto out_err;
 
-    acc->new_connection = cbs->new_connection;
-    acc->shutdown_done = cbs->shutdown_done;
+    acc->cbs = cbs;
     acc->user_data = user_data;
 
     acc->internal_data = nadata;
