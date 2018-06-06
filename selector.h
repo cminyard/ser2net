@@ -159,6 +159,9 @@ int sel_select_loop(struct selector_s *sel,
 		    long            thread_id,
 		    void            *cb_data);
 
+/* Wake all threads in all select loops. */
+void sel_wake_all(struct selector_s *sel);
+
 typedef void (*ipmi_sel_add_read_fds_cb)(struct selector_s *sel,
 					 int            *num_fds,
 					 fd_set         *fdset,
