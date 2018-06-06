@@ -119,7 +119,7 @@ stdion_finish_close(struct stdiona_data *nadata)
 {
     struct netio *net = nadata->net;
 
-    if (net->cbs->close_done)
+    if (net->cbs && net->cbs->close_done)
 	net->cbs->close_done(net);
 }
 
@@ -398,6 +398,22 @@ stdiona_free(struct netio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
+static const struct netio_functions netio_stdio_funcs = {
+    .write = stdion_write,
+    .raddr_to_str = stdion_raddr_to_str,
+    .close = stdion_close,
+    .set_read_callback_enable = stdion_set_read_callback_enable,
+    .set_write_callback_enable = stdion_set_write_callback_enable
+};
+
+static const struct netio_acceptor_functions netio_acc_stdio_funcs = {
+    .add_remaddr = stdiona_add_remaddr,
+    .startup = stdiona_startup,
+    .shutdown = stdiona_shutdown,
+    .set_accept_callback_enable = stdiona_set_accept_callback_enable,
+    .free = stdiona_free
+};
+
 int
 stdio_netio_acceptor_alloc(unsigned int max_read_size,
 			   const struct netio_acceptor_callbacks *cbs,
@@ -441,22 +457,14 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     acc->user_data = user_data;
 
     acc->internal_data = nadata;
-    acc->add_remaddr = stdiona_add_remaddr;
-    acc->startup = stdiona_startup;
-    acc->shutdown = stdiona_shutdown;
-    acc->set_accept_callback_enable = stdiona_set_accept_callback_enable;
-    acc->free = stdiona_free;
+    acc->funcs = &netio_acc_stdio_funcs;
 
     INIT_LOCK(nadata->lock);
     nadata->acceptor = acc;
 
     nadata->net = net;
     net->internal_data = nadata;
-    net->write = stdion_write;
-    net->raddr_to_str = stdion_raddr_to_str;
-    net->close = stdion_close;
-    net->set_read_callback_enable = stdion_set_read_callback_enable;
-    net->set_write_callback_enable = stdion_set_write_callback_enable;
+    net->funcs = &netio_stdio_funcs;
 
     acc->exit_on_close = true;
 

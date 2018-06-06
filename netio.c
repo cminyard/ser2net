@@ -29,28 +29,28 @@ netio_set_user_data(struct netio *net, void *user_data)
 int netio_write(struct netio *net, int *count,
 		const void *buf, unsigned int buflen)
 {
-    return net->write(net, count, buf, buflen);
+    return net->funcs->write(net, count, buf, buflen);
 }
 
 int netio_raddr_to_str(struct netio *net, int *pos,
 		       char *buf, unsigned int buflen)
 {
-    return net->raddr_to_str(net, pos, buf, buflen);
+    return net->funcs->raddr_to_str(net, pos, buf, buflen);
 }
 
 void netio_close(struct netio *net)
 {
-    net->close(net);
+    net->funcs->close(net);
 }
 
 void netio_set_read_callback_enable(struct netio *net, bool enabled)
 {
-    net->set_read_callback_enable(net, enabled);
+    net->funcs->set_read_callback_enable(net, enabled);
 }
 
 void netio_set_write_callback_enable(struct netio *net, bool enabled)
 {
-    net->set_write_callback_enable(net, enabled);
+    net->funcs->set_write_callback_enable(net, enabled);
 }
 
 void *
@@ -68,32 +68,32 @@ netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
 
 int netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str)
 {
-    return acceptor->add_remaddr(acceptor, str);
+    return acceptor->funcs->add_remaddr(acceptor, str);
 }
 
 int
 netio_acc_startup(struct netio_acceptor *acceptor)
 {
-    return acceptor->startup(acceptor);
+    return acceptor->funcs->startup(acceptor);
 }
 
 int
 netio_acc_shutdown(struct netio_acceptor *acceptor)
 {
-    return acceptor->shutdown(acceptor);
+    return acceptor->funcs->shutdown(acceptor);
 }
 
 void
 netio_acc_set_accept_callback_enable(struct netio_acceptor *acceptor,
 				     bool enabled)
 {
-    acceptor->set_accept_callback_enable(acceptor, enabled);
+    acceptor->funcs->set_accept_callback_enable(acceptor, enabled);
 }
 
 void
 netio_acc_free(struct netio_acceptor *acceptor)
 {
-    acceptor->free(acceptor);
+    acceptor->funcs->free(acceptor);
 }
 
 bool

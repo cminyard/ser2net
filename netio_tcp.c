@@ -178,7 +178,7 @@ tcpn_finish_close(struct tcpn_data *ndata)
 
     close(ndata->fd);
 
-    if (net->cbs->close_done)
+    if (net->cbs && net->cbs->close_done)
 	net->cbs->close_done(net);
 
     sel_free_runner(ndata->deferred_read_runner);
@@ -453,6 +453,14 @@ check_tcpd_ok(int new_fd)
     return NULL;
 }
 
+static const struct netio_functions netio_tcp_funcs = {
+    .write = tcpn_write,
+    .raddr_to_str = tcpn_raddr_to_str,
+    .close = tcpn_close,
+    .set_read_callback_enable = tcpn_set_read_callback_enable,
+    .set_write_callback_enable = tcpn_set_write_callback_enable
+};
+
 static void
 tcpna_readhandler(int fd, void *cbdata)
 {
@@ -514,12 +522,9 @@ tcpna_readhandler(int fd, void *cbdata)
     ndata->read_data = malloc(ndata->max_read_size);
     if (!ndata->read_data)
 	goto out_nomem;
+
     net->internal_data = ndata;
-    net->write = tcpn_write;
-    net->raddr_to_str = tcpn_raddr_to_str;
-    net->close = tcpn_close;
-    net->set_read_callback_enable = tcpn_set_read_callback_enable;
-    net->set_write_callback_enable = tcpn_set_write_callback_enable;
+    net->funcs = &netio_tcp_funcs;
 
     if (sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
 			    tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared))
@@ -689,6 +694,14 @@ tcpna_free(struct netio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
+static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
+    .add_remaddr = tcpna_add_remaddr,
+    .startup = tcpna_startup,
+    .shutdown = tcpna_shutdown,
+    .set_accept_callback_enable = tcpna_set_accept_callback_enable,
+    .free = tcpna_free
+};
+
 int
 tcp_netio_acceptor_alloc(const char *name,
 			 struct addrinfo *ai,
@@ -723,13 +736,8 @@ tcp_netio_acceptor_alloc(const char *name,
 
     acc->cbs = cbs;
     acc->user_data = user_data;
-
+    acc->funcs = &netio_acc_tcp_funcs;
     acc->internal_data = nadata;
-    acc->add_remaddr = tcpna_add_remaddr;
-    acc->startup = tcpna_startup;
-    acc->shutdown = tcpna_shutdown;
-    acc->set_accept_callback_enable = tcpna_set_accept_callback_enable;
-    acc->free = tcpna_free;
 
     INIT_LOCK(nadata->lock);
     nadata->acceptor = acc;

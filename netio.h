@@ -70,7 +70,9 @@ struct netio_callbacks {
 /*
  * Set the callback data for the net.  This must be done in the
  * new_connection callback for the acceptor before any other operation
- * is done on the netio.  May be called again if the netio is not enabled.
+ * is done on the netio.  The only exception is that netio_close() may
+ * be called with callbacks not set.  This function may be called
+ * again if the netio is not enabled.
  */
 void netio_set_callbacks(struct netio *net,
 			 const struct netio_callbacks *cbs, void *user_data);
