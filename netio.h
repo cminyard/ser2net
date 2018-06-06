@@ -175,6 +175,12 @@ void netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
 int netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str);
 
 /*
+ * Check that the remote address of onet is acceptable to acceptor.
+ */
+bool netio_acc_check_remaddr(struct netio_acceptor *acceptor,
+			     struct netio *onet);
+
+/*
  * An acceptor is allocated without opening any sockets.  This
  * actually starts up the acceptor, allocating the sockets and
  * such.  It is started with accepts enabled.

@@ -423,7 +423,6 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     int err = 0;
     struct netio_acceptor *acc;
     struct stdiona_data *nadata;
-    struct netio *net = NULL;
 
     nadata = malloc(sizeof(*nadata));
     if (!nadata)
@@ -431,7 +430,6 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     memset(nadata, 0, sizeof(*nadata));
 
     acc = &nadata->acceptor;
-    net = &nadata->net;
 
     nadata->max_read_size = max_read_size;
     nadata->read_data = malloc(max_read_size);
@@ -449,12 +447,12 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     acc->cbs = cbs;
     acc->user_data = user_data;
     acc->funcs = &netio_acc_stdio_funcs;
+    acc->type = NETIO_TYPE_STDIO;
 
     INIT_LOCK(nadata->lock);
 
-    net->funcs = &netio_stdio_funcs;
-
-    acc->exit_on_close = true;
+    nadata->net.funcs = &netio_stdio_funcs;
+    nadata->net.type = NETIO_TYPE_STDIO;
 
     *acceptor = acc;
     return 0;
