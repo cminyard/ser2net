@@ -733,6 +733,7 @@ handle_accept_port_read(int fd, void *data)
     socklen_t         len;
     char              *err = NULL;
     int               optval;
+    int               rv;
 
     LOCK(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
@@ -777,7 +778,7 @@ handle_accept_port_read(int fd, void *data)
 
     if (fcntl(cntlr->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
 	close(cntlr->tcpfd);
-	syslog(LOG_ERR, "Could not fcntl the tcp port: %m");
+	syslog(LOG_ERR, "Could not fcntl the control port: %m");
 	goto errout;
     }
 
@@ -785,7 +786,7 @@ handle_accept_port_read(int fd, void *data)
     if (setsockopt(cntlr->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
 		   sizeof(optval)) == -1) {
 	close(cntlr->tcpfd);
-	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on the tcp port: %m");
+	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on the control port: %m");
 	goto errout;
     }
 
@@ -793,13 +794,19 @@ handle_accept_port_read(int fd, void *data)
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
 
-    sel_set_fd_handlers(ser2net_sel,
-			cntlr->tcpfd,
-			cntlr,
-			handle_tcp_fd_read,
-			handle_tcp_fd_write,
-			handle_tcp_fd_except,
-			controller_fd_cleared);
+    rv = sel_set_fd_handlers(ser2net_sel,
+			     cntlr->tcpfd,
+			     cntlr,
+			     handle_tcp_fd_read,
+			     handle_tcp_fd_write,
+			     handle_tcp_fd_except,
+			     controller_fd_cleared);
+    if (rv) {
+	close(cntlr->tcpfd);
+	syslog(LOG_ERR, "Could not set FD handlers on the control port: %s",
+	       strerror(rv));
+	goto errout;
+    }
 
     cntlr->next = controllers;
     controllers = cntlr;
