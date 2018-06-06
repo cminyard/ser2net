@@ -814,6 +814,8 @@ int
 udp_netio_acceptor_alloc(const char *name,
 			 struct addrinfo *ai,
 			 unsigned int max_read_size,
+			 const struct netio_acceptor_callbacks *cbs,
+			 void *user_data,
 			 struct netio_acceptor **acceptor)
 {
     int err = ENOMEM;
@@ -841,6 +843,10 @@ udp_netio_acceptor_alloc(const char *name,
     err = sel_alloc_runner(ser2net_sel, &nadata->deferred_op_runner);
     if (err)
 	goto out_err;
+
+    acc->new_connection = cbs->new_connection;
+    acc->shutdown_done = cbs->shutdown_done;
+    acc->user_data = user_data;
 
     acc->internal_data = nadata;
     acc->add_remaddr = udpna_add_remaddr;
