@@ -20,9 +20,6 @@
 /* This code handles the actual transfer of data between the serial
    ports and the TCP ports. */
 
-/* FIXME - handle datagram immediate shutdown on a reconfig.  Search
-   for is_dgram in the diffs. */
-
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
@@ -1903,18 +1900,32 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 
 /* Returns with the port locked, if non-NULL. */
 static port_info_t *
-find_rotator_port(char *portname, struct netio *net)
+find_rotator_port(char *portname, struct netio *net, unsigned int *netconnum)
 {
     port_info_t *port = ports;
 
     while (port) {
 	if (strcmp(port->portname, portname) == 0) {
+	    unsigned int i;
+
 	    LOCK(port->lock);
-	    if (port->dev_to_net_state != PORT_DISABLED &&
-			port->dev_to_net_state != PORT_CLOSING &&
-			port->net_to_dev_state == PORT_UNCONNECTED &&
-			!is_device_already_inuse(port))
-		return port;
+	    if (port->enabled == PORT_DISABLED)
+		goto next;
+	    if (port->dev_to_net_state == PORT_CLOSING)
+		goto next;
+	    if (!netio_acc_check_remaddr(port->acceptor, net))
+		goto next;
+	    if (port->net_to_dev_state == PORT_UNCONNECTED &&
+		is_device_already_inuse(port))
+		goto next;
+
+	    for (i = 0; i < port->max_connections; i++) {
+		if (!port->netcons[i].net) {
+		    *netconnum = i;
+		    return port;
+		}
+	    }
+	next:
 	    UNLOCK(port->lock);
 	}
 	port = port->next;
@@ -1959,19 +1970,15 @@ handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
     LOCK(ports_lock);
     i = rot->curr_port;
     do {
-	port_info_t *port = find_rotator_port(rot->portv[i], net);
+	unsigned int netconnum;
+	port_info_t *port = find_rotator_port(rot->portv[i], net, &netconnum);
 
 	if (++i >= rot->portc)
 	    i = 0;
 	if (port) {
 	    rot->curr_port = i;
 	    UNLOCK(ports_lock);
-	    /* FIXME - make rotator work with multi-connection ports,
-	       remote address checking.  Also, rotator won't currently
-	       work without a way to move a net from one acceptor to
-	       another, or splitting the net completely from the
-	       acceptor and allowing the net read buffer to be set. */
-	    handle_new_net(port, net, &(port->netcons[0]));
+	    handle_new_net(port, net, &port->netcons[netconnum]);
 	    UNLOCK(port->lock);
 	    return;
 	}
@@ -2056,6 +2063,13 @@ add_rotator(char *portname, char *ports, int lineno)
     rot->next = rotators;
     rotators = rot;
 
+    rv = netio_acc_startup(rot->acceptor);
+    if (rv) {
+	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
+	       strerror(rv));
+	goto out;
+    }
+
  out:
     if (rv)
 	free_rotator(rot);
@@ -2119,8 +2133,6 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
     /* We raced, the shutdown should disable the accept read
        until the shutdown is complete. */
     if (port->dev_to_net_state == PORT_CLOSING)
-	/* FIXME - this is no longer ok, need to figure out a new way
-	   to do this. */
 	goto out;
 
     for (i = 0; i < port->max_connections; i++) {
