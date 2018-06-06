@@ -40,7 +40,7 @@
 struct udpna_data;
 
 struct udpn_data {
-    struct netio *net;
+    struct netio net;
     struct udpna_data *nadata;
 
     /*
@@ -68,16 +68,10 @@ struct udpn_data {
     struct udpn_data *next;
 };
 
-struct port_remaddr
-{
-    struct sockaddr_storage addr;
-    socklen_t addrlen;
-    bool is_port_set;
-    struct port_remaddr *next;
-};
+#define net_to_ndata(net) container_of(net, struct udpn_data, net);
 
 struct udpna_data {
-    struct netio_acceptor *acceptor;
+    struct netio_acceptor acceptor;
     struct udpn_data *udpns;
 
     DEFINE_LOCK(, lock);
@@ -121,6 +115,8 @@ struct udpna_data {
 
     struct port_remaddr *remaddrs;
 };
+
+#define acc_to_nadata(acc) container_of(acc, struct udpna_data, acceptor);
 
 static void udpna_deferred_op(sel_runner_t *runner, void *cbdata);
 
@@ -206,8 +202,6 @@ static void udpna_do_free(struct udpna_data *nadata)
 	free(nadata->fds);
     if (nadata->read_data)
 	free(nadata->read_data);
-    if (nadata->acceptor)
-	free(nadata->acceptor);
     free(nadata);
 }
 
@@ -243,7 +237,7 @@ static int
 udpn_write(struct netio *net, int *count,
 	   const void *buf, unsigned int buflen)
 {
-    struct udpn_data *ndata = net->internal_data;
+    struct udpn_data *ndata = net_to_ndata(net);
     int rv, err = 0;
 
  retry:
@@ -269,7 +263,7 @@ static int
 udpn_raddr_to_str(struct netio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
-    struct udpn_data *ndata = net->internal_data;
+    struct udpn_data *ndata = net_to_ndata(net);
     char portstr[NI_MAXSERV];
     int err, pos = 0;
 
@@ -302,7 +296,7 @@ udpn_raddr_to_str(struct netio *net, int *epos,
 static void
 udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
 
     if (net->cbs && net->cbs->close_done) {
 	UNLOCK(nadata->lock);
@@ -317,7 +311,6 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
     UNLOCK(nadata->lock);
 
     free(ndata);
-    free(net);
 }
 
 static void
@@ -404,7 +397,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
     UNLOCK(nadata->lock);
 
     if (ndata) {
-	struct netio *net = ndata->net;
+	struct netio *net = &ndata->net;
 
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
@@ -425,7 +418,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 	goto retry;
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
-	struct netio_acceptor *acceptor = nadata->acceptor;
+	struct netio_acceptor *acceptor = &nadata->acceptor;
 
 	nadata->in_shutdown = false;
 	if (acceptor->cbs->shutdown_done)
@@ -443,7 +436,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 static void
 udpn_close(struct netio *net)
 {
-    struct udpn_data *ndata = net->internal_data;
+    struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
 
     LOCK(nadata->lock);
@@ -458,7 +451,7 @@ udpn_close(struct netio *net)
 static void
 udpn_set_read_callback_enable(struct netio *net, bool enabled)
 {
-    struct udpn_data *ndata = net->internal_data;
+    struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
     bool my_data_pending;
 
@@ -489,7 +482,7 @@ udpn_set_read_callback_enable(struct netio *net, bool enabled)
 static void
 udpn_set_write_callback_enable(struct netio *net, bool enabled)
 {
-    struct udpn_data *ndata = net->internal_data;
+  struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
 
     LOCK(nadata->lock);
@@ -506,7 +499,7 @@ udpn_set_write_callback_enable(struct netio *net, bool enabled)
 static void
 udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
     unsigned int count;
 
     if (!ndata->read_enabled)
@@ -527,7 +520,7 @@ udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 static void
 udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
 
     ndata->in_write = true;
     UNLOCK(nadata->lock);
@@ -542,7 +535,7 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 static int
 udpna_add_remaddr(struct netio_acceptor *acceptor, const char *str)
 {
-    struct udpna_data *nadata = acceptor->internal_data;
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
     struct port_remaddr *r, *r2;
     struct addrinfo *ai;
     bool is_port_set;
@@ -612,7 +605,6 @@ static void
 udpna_readhandler(int fd, void *cbdata)
 {
     struct udpna_data *nadata = cbdata;
-    struct netio *net = NULL;
     struct udpn_data *ndata, *tndata;
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
@@ -666,29 +658,21 @@ udpna_readhandler(int fd, void *cbdata)
 	ndata->in_read = false;
 	ndata->in_write = false;
 	ndata->user_set_read_enabled = false;
-	net = ndata->net;
-	net->cbs = NULL;
-	net->user_data = NULL;
+	ndata->net.cbs = NULL;
+	ndata->net.user_data = NULL;
 	goto restart_net;
     }
 
     /* New connection. */
-    net = malloc(sizeof(*net));
-    if (!net)
-	goto out_nomem;
-    memset(net, 0, sizeof(*net));
-
     ndata = malloc(sizeof(*ndata));
     if (!ndata)
 	goto out_nomem;
     memset(ndata, 0, sizeof(*ndata));
 
-    ndata->net = net;
     ndata->nadata = nadata;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
-    net->internal_data = ndata;
-    net->funcs = &netio_udp_funcs;
+    ndata->net.funcs = &netio_udp_funcs;
 
     /* Stick it on the end of the list. */
     tndata = nadata->udpns;
@@ -711,13 +695,13 @@ udpna_readhandler(int fd, void *cbdata)
     nadata->in_new_connection = true;
     UNLOCK(nadata->lock);
 
-    nadata->acceptor->cbs->new_connection(nadata->acceptor, net);
+    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &ndata->net);
 
     LOCK(nadata->lock);
     nadata->in_new_connection = false;
 
     if (nadata->in_shutdown) {
-	struct netio_acceptor *acceptor = nadata->acceptor;
+	struct netio_acceptor *acceptor = &nadata->acceptor;
 
 	nadata->in_shutdown = false;
 	if (acceptor->cbs->shutdown_done)
@@ -729,8 +713,6 @@ udpna_readhandler(int fd, void *cbdata)
  out_nomem:
     if (ndata)
 	free(ndata);
-    if (net)
-	free(net);
     syslog(LOG_ERR, "Out of memory allocating for udp port %s", nadata->name);
  out_unlock_enable:
     udpna_fd_read_enable(nadata);
@@ -743,7 +725,7 @@ udpna_readhandler(int fd, void *cbdata)
 static int
 udpna_startup(struct netio_acceptor *acceptor)
 {
-    struct udpna_data *nadata = acceptor->internal_data;
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
     LOCK(nadata->lock);
@@ -768,7 +750,7 @@ udpna_startup(struct netio_acceptor *acceptor)
 static int
 udpna_shutdown(struct netio_acceptor *acceptor)
 {
-    struct udpna_data *nadata = acceptor->internal_data;
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
     LOCK(nadata->lock);
@@ -791,7 +773,7 @@ udpna_shutdown(struct netio_acceptor *acceptor)
 static void
 udpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 {
-    struct udpna_data *nadata = acceptor->internal_data;
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
 
     LOCK(nadata->lock);
     nadata->enabled = true;
@@ -801,7 +783,7 @@ udpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 static void
 udpna_free(struct netio_acceptor *acceptor)
 {
-    struct udpna_data *nadata = acceptor->internal_data;
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
 
     LOCK(nadata->lock);
 
@@ -830,13 +812,8 @@ udp_netio_acceptor_alloc(const char *name,
 			 struct netio_acceptor **acceptor)
 {
     int err = ENOMEM;
-    struct netio_acceptor *acc = NULL;
-    struct udpna_data *nadata = NULL;
-
-    acc = malloc(sizeof(*acc));
-    if (!acc)
-	goto out_err;
-    memset(acc, 0, sizeof(*acc));
+    struct netio_acceptor *acc;
+    struct udpna_data *nadata;
 
     nadata = malloc(sizeof(*nadata));
     if (!nadata)
@@ -855,14 +832,12 @@ udp_netio_acceptor_alloc(const char *name,
     if (err)
 	goto out_err;
 
+    acc = &nadata->acceptor;
     acc->cbs = cbs;
     acc->user_data = user_data;
-
-    acc->internal_data = nadata;
     acc->funcs = &netio_acc_udp_funcs;
 
     INIT_LOCK(nadata->lock);
-    nadata->acceptor = acc;
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
 
@@ -870,8 +845,6 @@ udp_netio_acceptor_alloc(const char *name,
     return 0;
 
  out_err:
-    if (acc)
-	free(acc);
     if (nadata) {
 	if (nadata->name)
 	    free(nadata->name);

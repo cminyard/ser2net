@@ -65,9 +65,12 @@ struct stdiona_data {
     sel_runner_t *deferred_op_runner;
     bool deferred_close; /* A close is pending the running running. */
 
-    struct netio *net;
-    struct netio_acceptor *acceptor;
+    struct netio net;
+    struct netio_acceptor acceptor;
 };
+
+#define net_to_nadata(net) container_of(net, struct stdiona_data, net);
+#define acc_to_nadata(acc) container_of(acc, struct stdiona_data, acceptor);
 
 static int
 stdion_write(struct netio *net, int *count,
@@ -117,7 +120,7 @@ stdion_raddr_to_str(struct netio *net, int *epos,
 static void
 stdion_finish_close(struct stdiona_data *nadata)
 {
-    struct netio *net = nadata->net;
+    struct netio *net = &nadata->net;
 
     if (net->cbs && net->cbs->close_done)
 	net->cbs->close_done(net);
@@ -156,7 +159,7 @@ static void
 stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct netio *net = nadata->net;
+    struct netio *net = &nadata->net;
     unsigned int count;
     bool in_read;
 
@@ -184,7 +187,7 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 static void
 stdion_close(struct netio *net)
 {
-    struct stdiona_data *nadata = net->internal_data;
+    struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
     nadata->deferred_close = true;
@@ -198,7 +201,7 @@ stdion_close(struct netio *net)
 static void
 stdion_set_read_callback_enable(struct netio *net, bool enabled)
 {
-    struct stdiona_data *nadata = net->internal_data;
+    struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
     if (nadata->in_read || (nadata->data_pending && !enabled)) {
@@ -242,7 +245,7 @@ static void
 stdion_read_ready(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct netio *net = nadata->net;
+    struct netio *net = &nadata->net;
     int rv;
     unsigned int count = 0;
 
@@ -283,7 +286,7 @@ static void
 stdion_write_ready(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct netio *net = nadata->net;
+    struct netio *net = &nadata->net;
 
     net->cbs->write_callback(net);
 }
@@ -299,7 +302,7 @@ stdiona_do_connect(sel_runner_t *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
-    nadata->acceptor->cbs->new_connection(nadata->acceptor, nadata->net);
+    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &nadata->net);
 }
 
 static void
@@ -308,16 +311,14 @@ stdiona_finish_free(struct stdiona_data *nadata)
     sel_free_runner(nadata->deferred_op_runner);
     sel_free_runner(nadata->connect_runner);
 
-    free(nadata->net);
     free(nadata->read_data);
-    free(nadata->acceptor);
     free(nadata);
 }
 
 static void stdiona_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct netio_acceptor *acceptor = nadata->acceptor;
+    struct netio_acceptor *acceptor = &nadata->acceptor;
 
     nadata->in_shutdown = false;
     if (acceptor->cbs->shutdown_done && nadata->report_shutdown)
@@ -331,7 +332,7 @@ static void stdiona_fd_cleared(int fd, void *cbdata)
 static int
 stdiona_startup(struct netio_acceptor *acceptor)
 {
-    struct stdiona_data *nadata = acceptor->internal_data;
+    struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
     LOCK(nadata->lock);
@@ -345,8 +346,7 @@ stdiona_startup(struct netio_acceptor *acceptor)
 	if (rv)
 	    goto out_unlock;
 	nadata->enabled = true;
-	sel_run(nadata->connect_runner, stdiona_do_connect,
-		acceptor->internal_data);
+	sel_run(nadata->connect_runner, stdiona_do_connect, nadata);
     }
  out_unlock:
     UNLOCK(nadata->lock);
@@ -357,7 +357,7 @@ stdiona_startup(struct netio_acceptor *acceptor)
 static int
 stdiona_shutdown(struct netio_acceptor *acceptor)
 {
-    struct stdiona_data *nadata = acceptor->internal_data;
+    struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
     LOCK(nadata->lock);
@@ -383,7 +383,7 @@ stdiona_set_accept_callback_enable(struct netio_acceptor *acceptor,
 static void
 stdiona_free(struct netio_acceptor *acceptor)
 {
-    struct stdiona_data *nadata = acceptor->internal_data;
+    struct stdiona_data *nadata = acc_to_nadata(acceptor);
 
     LOCK(nadata->lock);
     nadata->in_free = true;
@@ -421,24 +421,17 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
 			   struct netio_acceptor **acceptor)
 {
     int err = 0;
-    struct netio_acceptor *acc = NULL;
-    struct stdiona_data *nadata = NULL;
+    struct netio_acceptor *acc;
+    struct stdiona_data *nadata;
     struct netio *net = NULL;
-
-    acc = malloc(sizeof(*acc));
-    if (!acc)
-	goto out_nomem;
-    memset(acc, 0, sizeof(*acc));
 
     nadata = malloc(sizeof(*nadata));
     if (!nadata)
 	goto out_nomem;
     memset(nadata, 0, sizeof(*nadata));
 
-    net = malloc(sizeof(*net));
-    if (!net)
-	goto out_nomem;
-    memset(net, 0, sizeof(*net));
+    acc = &nadata->acceptor;
+    net = &nadata->net;
 
     nadata->max_read_size = max_read_size;
     nadata->read_data = malloc(max_read_size);
@@ -447,64 +440,37 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
 
     err = sel_alloc_runner(ser2net_sel, &nadata->deferred_op_runner);
     if (err)
-	goto out;
+	goto out_err;
 
     err = sel_alloc_runner(ser2net_sel, &nadata->connect_runner);
     if (err)
-	goto out;
+	goto out_err;
 
     acc->cbs = cbs;
     acc->user_data = user_data;
-
-    acc->internal_data = nadata;
     acc->funcs = &netio_acc_stdio_funcs;
 
     INIT_LOCK(nadata->lock);
-    nadata->acceptor = acc;
 
-    nadata->net = net;
-    net->internal_data = nadata;
     net->funcs = &netio_stdio_funcs;
 
     acc->exit_on_close = true;
 
- out:
-    if (err) {
-	if (acc)
-	    free(acc);
-	if (nadata) {
-	    if (nadata->deferred_op_runner)
-		sel_free_runner(nadata->deferred_op_runner);
-	    if (nadata->connect_runner)
-		sel_free_runner(nadata->connect_runner);
-	    if (nadata->read_data)
-		free(nadata->read_data);
-	    free(nadata);
-	}
-	if (net)
-	    free(net);
-    } else {
-	*acceptor = acc;
-    }
-    return err;
+    *acceptor = acc;
+    return 0;
 
  out_nomem:
     err = ENOMEM;
-    goto out;
-}
 
-#if 0
-    if (port->is_stdio) {
-	if (is_device_already_inuse(port)) {
-	    if (eout)
-		eout->out(eout, "Port's device already in use");
-	    return -1;
-	} else {
-	    port->acceptfds = NULL;
-	    port->netcons[0].fd = 0; /* stdin */
-	    if (setup_port(port, &(port->netcons[0]), false) == -1)
-		return -1;
-	}
-	return 0;
+ out_err:
+    if (nadata) {
+	if (nadata->deferred_op_runner)
+	    sel_free_runner(nadata->deferred_op_runner);
+	if (nadata->connect_runner)
+	    sel_free_runner(nadata->connect_runner);
+	if (nadata->read_data)
+	    free(nadata->read_data);
+	free(nadata);
     }
-#endif
+    return err;
+}
