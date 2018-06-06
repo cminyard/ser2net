@@ -117,6 +117,13 @@ stdion_raddr_to_str(struct netio *net, int *epos,
     return 0;
 }
 
+static socklen_t
+stdion_get_raddr(struct netio *net,
+		 struct sockaddr *addr, socklen_t addrlen)
+{
+    return 0;
+}
+
 static void
 stdion_finish_close(struct stdiona_data *nadata)
 {
@@ -291,12 +298,6 @@ stdion_write_ready(int fd, void *cbdata)
     net->cbs->write_callback(net);
 }
 
-static int
-stdiona_add_remaddr(struct netio_acceptor *acceptor, const char *str)
-{
-    return ENOTSUP;
-}
-
 static void
 stdiona_do_connect(sel_runner_t *runner, void *cbdata)
 {
@@ -401,13 +402,13 @@ stdiona_free(struct netio_acceptor *acceptor)
 static const struct netio_functions netio_stdio_funcs = {
     .write = stdion_write,
     .raddr_to_str = stdion_raddr_to_str,
+    .get_raddr = stdion_get_raddr,
     .close = stdion_close,
     .set_read_callback_enable = stdion_set_read_callback_enable,
     .set_write_callback_enable = stdion_set_write_callback_enable
 };
 
 static const struct netio_acceptor_functions netio_acc_stdio_funcs = {
-    .add_remaddr = stdiona_add_remaddr,
     .startup = stdiona_startup,
     .shutdown = stdiona_shutdown,
     .set_accept_callback_enable = stdiona_set_accept_callback_enable,

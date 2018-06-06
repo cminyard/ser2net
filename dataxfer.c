@@ -201,6 +201,7 @@ struct port_info
     char               *portname;       /* The name given for the port. */
     struct netio_acceptor *acceptor;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
+    struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
 
     int wait_acceptor_shutdown;
     bool acceptor_reinit_on_shutdown;
@@ -1907,13 +1908,18 @@ find_rotator_port(char *portname, struct netio *net, unsigned int *netconnum)
     while (port) {
 	if (strcmp(port->portname, portname) == 0) {
 	    unsigned int i;
+	    struct sockaddr_storage addr;
+	    socklen_t socklen;
 
 	    LOCK(port->lock);
 	    if (port->enabled == PORT_DISABLED)
 		goto next;
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
-	    if (!netio_acc_check_remaddr(port->acceptor, net))
+	    socklen = netio_get_raddr(net, (struct sockaddr *) &addr,
+				      sizeof(addr));
+	    if (!remaddr_check(port->remaddrs,
+			       (struct sockaddr *) &addr, socklen))
 		goto next;
 	    if (port->net_to_dev_state == PORT_UNCONNECTED &&
 		is_device_already_inuse(port))
@@ -2123,6 +2129,8 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
     port_info_t *port = netio_acceptor_get_user_data(acceptor);
     const char *err = NULL;
     int i;
+    struct sockaddr_storage addr;
+    socklen_t socklen;
 
     LOCK(ports_lock); /* For is_device_already_inuse() */
     LOCK(port->lock);
@@ -2134,6 +2142,14 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
        until the shutdown is complete. */
     if (port->dev_to_net_state == PORT_CLOSING)
 	goto out;
+
+    socklen = netio_get_raddr(net, (struct sockaddr *) &addr,
+			      sizeof(addr));
+    if (!remaddr_check(port->remaddrs,
+		       (struct sockaddr *) &addr, socklen)) {
+	err = "Accessed denied due to your net address\r\n";
+	goto out_err;
+    }
 
     for (i = 0; i < port->max_connections; i++) {
 	if (!port->netcons[i].net)
@@ -2154,6 +2170,7 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
 	err = "Port's device already in use\r\n";
 
     if (err) {
+    out_err:
 	UNLOCK(port->lock);
 	UNLOCK(ports_lock);
 	netio_write(net, NULL, err, strlen(err));
@@ -2253,6 +2270,7 @@ static void
 free_port(port_info_t *port)
 {
     net_info_t *netcon;
+    struct port_remaddr *r;
 
     for_each_connection(port, netcon) {
 	char *err = "Port was deleted\n\r";
@@ -2265,6 +2283,11 @@ free_port(port_info_t *port)
     }
 
     FREE_LOCK(port->lock);
+    while (port->remaddrs) {
+	r = port->remaddrs;
+	port->remaddrs = r->next;
+	free(r);
+    }
     if (port->acceptor)
 	netio_acc_free(port->acceptor);
     if (port->dev_to_net.buf)
@@ -2725,7 +2748,7 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
     remstr = strtok_r(str, ";", &strtok_data);
     /* Note that we ignore an empty remaddr. */
     while (remstr && *remstr) {
-	err = netio_acc_add_remaddr(port->acceptor, remstr);
+	err = remaddr_append(&port->remaddrs, remstr);
 	if (err) {
 	    eout->out(eout, "Error adding remote address '%s': %s\n", remstr,
 		      strerror(err));

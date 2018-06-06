@@ -100,8 +100,6 @@ struct tcpna_data {
 					   TCP port. */
     unsigned int   nr_acceptfds;
     unsigned int   nr_accept_close_waiting;
-
-    struct port_remaddr *remaddrs;
 };
 
 #define acc_to_nadata(acc) container_of(acc, struct tcpna_data, acceptor);
@@ -165,6 +163,19 @@ tcpn_raddr_to_str(struct netio *net, int *epos,
 	*epos = pos;
 
     return 0;
+}
+
+static socklen_t
+tcpn_get_raddr(struct netio *net,
+	       struct sockaddr *addr, socklen_t addrlen)
+{
+    struct tcpn_data *ndata = net_to_ndata(net);
+
+    if (addrlen > ndata->raddrlen)
+	addrlen = ndata->raddrlen;
+
+    memcpy(addr, ndata->raddr, addrlen);
+    return addrlen;
 }
 
 static void
@@ -392,34 +403,6 @@ tcpn_except_ready(int fd, void *cbdata)
     tcpn_handle_incoming(fd, cbdata, true);
 }
 
-static int
-tcpna_add_remaddr(struct netio_acceptor *acceptor, const char *str)
-{
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    int err;
-
-    LOCK(nadata->lock);
-    err = netio_append_remaddr(&nadata->remaddrs, str, false);
-    UNLOCK(nadata->lock);
-
-    return err;
-}
-
-static bool
-tcpna_check_remaddr(struct netio_acceptor *acceptor, struct netio *net)
-{
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    struct tcpn_data *ndata = net_to_ndata(net);
-    bool rv;
-
-    /* netio.c already checked that the types match. */
-    LOCK(nadata->lock);
-    rv = netio_check_remaddr(nadata->remaddrs, ndata->raddr, ndata->raddrlen);
-    UNLOCK(nadata->lock);
-
-    return rv;
-}
-
 static const char *
 check_tcpd_ok(int new_fd)
 {
@@ -439,6 +422,7 @@ check_tcpd_ok(int new_fd)
 static const struct netio_functions netio_tcp_funcs = {
     .write = tcpn_write,
     .raddr_to_str = tcpn_raddr_to_str,
+    .get_raddr = tcpn_get_raddr,
     .close = tcpn_close,
     .set_read_callback_enable = tcpn_set_read_callback_enable,
     .set_write_callback_enable = tcpn_set_write_callback_enable
@@ -464,11 +448,6 @@ tcpna_readhandler(int fd, void *cbdata)
     }
 
     errstr = check_tcpd_ok(new_fd);
-    if (!errstr) {
-	if (!netio_check_remaddr(nadata->remaddrs, (struct sockaddr *) &addr,
-				 addrlen))
-	    errstr = "Access denied due to remote address\r\n";
-    }
     if (errstr) {
 	write_ignore_fail(new_fd, errstr, strlen(errstr));
 	close(new_fd);
@@ -531,14 +510,6 @@ tcpna_readhandler(int fd, void *cbdata)
 static void
 tcpna_finish_free(struct tcpna_data *nadata)
 {
-    while (nadata->remaddrs) {
-	struct port_remaddr *r;
-
-	r = nadata->remaddrs;
-	nadata->remaddrs = r->next;
-	free(r);
-    }
-
     if (nadata->name)
 	free(nadata->name);
     if (nadata->ai)
@@ -674,8 +645,6 @@ tcpna_free(struct netio_acceptor *acceptor)
 }
 
 static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
-    .add_remaddr = tcpna_add_remaddr,
-    .check_remaddr = tcpna_check_remaddr,
     .startup = tcpna_startup,
     .shutdown = tcpna_shutdown,
     .set_accept_callback_enable = tcpna_set_accept_callback_enable,

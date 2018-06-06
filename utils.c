@@ -142,9 +142,70 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
     return 0;
 }
 
+int
+remaddr_append(struct port_remaddr **list, const char *str)
+{
+    struct port_remaddr *r, *r2;
+    struct addrinfo *ai = NULL;
+    bool is_port_set;
+    bool is_dgram;
+    int err;
+
+    err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
+    if (err)
+	return err;
+
+    /* We don't care about is_dgram, but we want to allow it. */
+
+    r = malloc(sizeof(*r));
+    if (!r) {
+	err = ENOMEM;
+	goto out;
+    }
+
+    memcpy(&r->addr, ai->ai_addr, ai->ai_addrlen);
+    r->addrlen = ai->ai_addrlen;
+    r->is_port_set = is_port_set;
+    r->next = NULL;
+
+    r2 = *list;
+    if (!r2) {
+	*list = r;
+    } else {
+	while (r2->next)
+	    r2 = r2->next;
+	r2->next = r;
+    }
+
+ out:
+    if (ai)
+	freeaddrinfo(ai);
+
+    return err;
+}
+
 bool
-sockaddr_equal(struct sockaddr *a1, socklen_t l1,
-	       struct sockaddr *a2, socklen_t l2,
+remaddr_check(const struct port_remaddr *list,
+	      const struct sockaddr *addr, socklen_t len)
+{
+    const struct port_remaddr *r = list;
+
+    if (!r)
+	return true;
+
+    while (r) {
+	if (sockaddr_equal(addr, len, (struct sockaddr *) &r->addr, r->addrlen,
+			   r->is_port_set))
+	    return true;
+	r = r->next;
+    }
+
+    return false;
+}
+
+bool
+sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
+	       const struct sockaddr *a2, socklen_t l2,
 	       bool compare_ports)
 {
     if (l1 != l2)
