@@ -164,6 +164,11 @@ struct netio_acceptor {
     void (*new_connection)(struct netio_acceptor *acceptor, struct netio *net);
 
     /*
+     * The shutdown operation is complete.  May be NULL.
+     */
+    void (*shutdown_done)(struct netio_acceptor *acceptor);
+
+    /*
      * FIXME - this is set by the stdio netio so that ser2net knows to
      * close when the connection is complete.  This should be done some
      * other way.
@@ -197,10 +202,11 @@ struct netio_acceptor {
     int (*startup)(struct netio_acceptor *acceptor);
 
     /*
-     * Closes all sockets and disables everything.  This blocks until
-     * shutdown is complete and all callbacks have returned.
+     * Closes all sockets and disables everything.  shutdown_complete()
+     * will be called if successful after the shutdown is complete.
      *
-     * Returns a standard errno on an error, zero otherwise.
+     * Returns a EAGAIN if the acceptor is already shut down, zero
+     * otherwise.
      */
     int (*shutdown)(struct netio_acceptor *acceptor);
 
@@ -212,7 +218,7 @@ struct netio_acceptor {
 
     /*
      * Free the network acceptor.  If the network acceptor is started
-     * up, this shuts it down first.
+     * up, this shuts it down first and shutdown_complete() is NOT called.
      */
     void (*free)(struct netio_acceptor *acceptor);
 

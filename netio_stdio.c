@@ -41,6 +41,9 @@ struct stdiona_data {
 
     bool read_enabled;
     bool in_read;
+    bool in_free;
+    bool in_shutdown;
+    bool report_shutdown;
 
     bool user_set_read_enabled;
     bool user_read_enabled_setting;
@@ -282,16 +285,6 @@ stdion_write_ready(int fd, void *cbdata)
     net->write_callback(net);
 }
 
-static void stdion_fd_cleared(int fd, void *cbdata)
-{
-    struct stdiona_data *nadata = cbdata;
-    struct netio *net = nadata->net;
-
-    if (net->close_done)
-	net->close_done(net);
-}
-
-
 static int
 stdiona_add_remaddr(struct netio_acceptor *acceptor, const char *str)
 {
@@ -306,37 +299,76 @@ stdiona_do_connect(sel_runner_t *runner, void *cbdata)
     nadata->acceptor->new_connection(nadata->acceptor, nadata->net);
 }
 
+static void
+stdiona_finish_free(struct stdiona_data *nadata)
+{
+    sel_free_runner(nadata->deferred_op_runner);
+    sel_free_runner(nadata->connect_runner);
+
+    free(nadata->net);
+    free(nadata->read_data);
+    free(nadata->acceptor);
+    free(nadata);
+}
+
+static void stdiona_fd_cleared(int fd, void *cbdata)
+{
+    struct stdiona_data *nadata = cbdata;
+    struct netio_acceptor *acceptor = nadata->acceptor;
+
+    nadata->in_shutdown = false;
+    if (acceptor->shutdown_done && nadata->report_shutdown)
+	acceptor->shutdown_done(acceptor);
+
+    if (nadata->in_free)
+	stdiona_finish_free(nadata);
+}
+
+
 static int
 stdiona_startup(struct netio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acceptor->internal_data;
+    int rv = 0;
 
     LOCK(nadata->lock);
+    if (nadata->in_shutdown) {
+	rv = EAGAIN;
+	goto out_unlock;
+    }
     if (!nadata->enabled) {
+	rv = sel_set_fd_handlers(ser2net_sel, 0, nadata, stdion_read_ready,
+				 stdion_write_ready, NULL, stdiona_fd_cleared);
+	if (rv)
+	    goto out_unlock;
 	nadata->enabled = true;
-	sel_set_fd_handlers(ser2net_sel, 0, nadata, stdion_read_ready,
-			    stdion_write_ready, NULL, stdion_fd_cleared);
 	sel_run(nadata->connect_runner, stdiona_do_connect,
 		acceptor->internal_data);
     }
+ out_unlock:
     UNLOCK(nadata->lock);
 
-    return 0;
+    return rv;
 }
 
 static int
 stdiona_shutdown(struct netio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acceptor->internal_data;
+    int rv = 0;
 
     LOCK(nadata->lock);
     if (nadata->enabled) {
 	nadata->enabled = false;
+	nadata->report_shutdown = true;
+	nadata->in_shutdown = true;
 	sel_clear_fd_handlers(ser2net_sel, 0);
+    } else {
+	rv = EAGAIN;
     }
     UNLOCK(nadata->lock);
     
-    return 0;
+    return rv;
 }
 
 static void
@@ -350,15 +382,17 @@ stdiona_free(struct netio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acceptor->internal_data;
 
-    stdiona_shutdown(acceptor);
-
-    sel_free_runner(nadata->deferred_op_runner);
-    sel_free_runner(nadata->connect_runner);
-
-    free(nadata->net);
-    free(nadata->read_data);
-    free(nadata);
-    free(acceptor);
+    LOCK(nadata->lock);
+    nadata->in_free = true;
+    if (nadata->enabled) {
+	nadata->enabled = false;
+	sel_clear_fd_handlers(ser2net_sel, 0);
+    } else {
+	UNLOCK(nadata->lock);
+	stdiona_finish_free(nadata);
+	return;
+    }
+    UNLOCK(nadata->lock);
 }
 
 int
