@@ -205,6 +205,7 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
     struct opensocks *fds;
     unsigned int curr_fd = 0;
     unsigned int max_fds = 0;
+    int rv;
 
     for (rp = ai; rp != NULL; rp = rp->ai_next)
 	max_fds++;
@@ -243,8 +244,10 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd].fd, 1) != 0)
 	    goto next;
 
-	sel_set_fd_handlers(ser2net_sel, fds[curr_fd].fd, data,
-			    readhndlr, writehndlr, NULL, fd_handler_cleared);
+	rv = sel_set_fd_handlers(ser2net_sel, fds[curr_fd].fd, data,
+				 readhndlr, writehndlr, NULL, fd_handler_cleared);
+	if (rv)
+	    goto next;
 	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd].fd,
 				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
