@@ -415,6 +415,8 @@ finish_shutdown_cleanly(void)
 
     sol_shutdown(); /* Free's the selector. */
 
+    shutdown_dataxfer();
+
     free_longstrs();
     free_tracefiles();
     free_rs485confs();
@@ -655,6 +657,14 @@ main(int argc, char *argv[])
     }
 
     setup_signals();
+
+    err = init_dataxfer();
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize dataxfer: '%s'\n",
+		strerror(err));
+	exit(1);
+    }
 
     err = sol_init();
     if (err) {

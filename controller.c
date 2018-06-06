@@ -853,7 +853,7 @@ controller_init(char *controller_port)
     bool is_port_set;
 
     if (!controller_shutdown_waiter) {
-	controller_shutdown_waiter = alloc_waiter();
+	controller_shutdown_waiter = alloc_waiter(ser2net_sel);
 	if (!controller_shutdown_waiter)
 	    return ENOMEM;
     }
@@ -871,7 +871,7 @@ controller_init(char *controller_port)
 	return CONTROLLER_INVALID_TCP_SPEC;
 
     if (!accept_waiter) {
-	accept_waiter = alloc_waiter();
+	accept_waiter = alloc_waiter(ser2net_sel);
 	if (!accept_waiter) {
 	    syslog(LOG_ERR, "Unable to allocate controller accept waiter");
 	    return CONTROLLER_CANT_OPEN_PORT;
@@ -898,7 +898,7 @@ controller_shutdown(void)
 	return;
     for (i = 0; i < nr_acceptfds; i++) {
 	sel_clear_fd_handlers(ser2net_sel, acceptfds[i].fd);
-	wait_for_waiter(accept_waiter);
+	wait_for_waiter(accept_waiter, 1);
 	close(acceptfds[i].fd);
     }
     free(acceptfds);
@@ -923,7 +923,7 @@ free_controllers(void)
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
 	LOCK(controllers->lock);
 	shutdown_controller(controllers); /* Releases the lock. */
-	wait_for_waiter(controller_shutdown_waiter);
+	wait_for_waiter(controller_shutdown_waiter, 1);
     }
     if (controller_shutdown_waiter)
 	free_waiter(controller_shutdown_waiter);
