@@ -304,7 +304,7 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
     struct netio *net = ndata->net;
 
-    if (net->cbs->close_done) {
+    if (net->cbs && net->cbs->close_done) {
 	UNLOCK(nadata->lock);
 	net->cbs->close_done(net);
 	LOCK(nadata->lock);
@@ -600,6 +600,14 @@ udpna_writehandler(int fd, void *cbdata)
     UNLOCK(nadata->lock);
 }
 
+static const struct netio_functions netio_udp_funcs = {
+    .write = udpn_write,
+    .raddr_to_str = udpn_raddr_to_str,
+    .close = udpn_close,
+    .set_read_callback_enable = udpn_set_read_callback_enable,
+    .set_write_callback_enable = udpn_set_write_callback_enable
+};
+
 static void
 udpna_readhandler(int fd, void *cbdata)
 {
@@ -680,11 +688,7 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
     net->internal_data = ndata;
-    net->write = udpn_write;
-    net->raddr_to_str = udpn_raddr_to_str;
-    net->close = udpn_close;
-    net->set_read_callback_enable = udpn_set_read_callback_enable;
-    net->set_write_callback_enable = udpn_set_write_callback_enable;
+    net->funcs = &netio_udp_funcs;
 
     /* Stick it on the end of the list. */
     tndata = nadata->udpns;
@@ -809,6 +813,14 @@ udpna_free(struct netio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
+static const struct netio_acceptor_functions netio_acc_udp_funcs = {
+    .add_remaddr = udpna_add_remaddr,
+    .startup = udpna_startup,
+    .shutdown = udpna_shutdown,
+    .set_accept_callback_enable = udpna_set_accept_callback_enable,
+    .free = udpna_free
+};
+
 int
 udp_netio_acceptor_alloc(const char *name,
 			 struct addrinfo *ai,
@@ -847,11 +859,7 @@ udp_netio_acceptor_alloc(const char *name,
     acc->user_data = user_data;
 
     acc->internal_data = nadata;
-    acc->add_remaddr = udpna_add_remaddr;
-    acc->startup = udpna_startup;
-    acc->shutdown = udpna_shutdown;
-    acc->set_accept_callback_enable = udpna_set_accept_callback_enable;
-    acc->free = udpna_free;
+    acc->funcs = &netio_acc_udp_funcs;
 
     INIT_LOCK(nadata->lock);
     nadata->acceptor = acc;
