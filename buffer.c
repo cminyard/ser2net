@@ -40,7 +40,7 @@ do_write(struct devio *io, struct netio *net, int fd, void  *buf, size_t buflen,
 	int count;
 
 	write_count = -1;
-	err = net->write(net, &count, buf, buflen);
+	err = netio_write(net, &count, buf, buflen);
 	if (!err)
 	    write_count = count;
     } else {

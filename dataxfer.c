@@ -629,7 +629,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    netcon->net->raddr_to_str(netcon->net, &len, buf, sizeof(buf));
+    netio_raddr_to_str(netcon->net, &len, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
     hf_out(port, buf, len);
@@ -675,7 +675,7 @@ start_net_send(port_info_t *port)
 	if (!netcon->net)
 	    continue;
 	netcon->write_pos = 0;
-	netcon->net->set_write_callback_enable(netcon->net, true);
+	netio_set_write_callback_enable(netcon->net, true);
     }
     port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
 }
@@ -707,7 +707,7 @@ disable_all_net_read(port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net)
-	    netcon->net->set_read_callback_enable(netcon->net, false);
+	    netio_set_read_callback_enable(netcon->net, false);
     }
 }
 
@@ -718,7 +718,7 @@ enable_all_net_read(port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net)
-	    netcon->net->set_read_callback_enable(netcon->net, true);
+	    netio_set_read_callback_enable(netcon->net, true);
     }
 }
 
@@ -1145,7 +1145,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 
     /* Can't use buffer send operation here, multiple writers can send
        from the buffers. */
-    reterr = netcon->net->write(netcon->net, &count, buf->buf + *pos, to_send);
+    reterr = netio_write(netcon->net, &count, buf->buf + *pos, to_send);
     if (reterr == EPIPE) {
 	shutdown_one_netcon(netcon, "EPIPE");
 	return -1;
@@ -1229,7 +1229,7 @@ handle_net_fd_write(struct netio *net)
 
  out_unlock:
     if (rv > 0)
-	netcon->net->set_write_callback_enable(netcon->net, false);
+	netio_set_write_callback_enable(netcon->net, false);
 
     if (rv >= 0)
 	reset_timer(netcon);
@@ -1298,7 +1298,7 @@ telnet_output_ready(void *cb_data)
 	return;
 
     netcon->sending_tn_data = true;
-    netcon->net->set_write_callback_enable(netcon->net, true);
+    netio_set_write_callback_enable(netcon->net, true);
 }
 
 /* Checks to see if some other port has the same device in use.  Must
@@ -1623,8 +1623,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    netcon = first_live_net_con(port);
 		if (!netcon)
 		    break;
-		if (netcon->net->raddr_to_str(netcon->net, NULL,
-					      ip, sizeof(ip)))
+		if (netio_raddr_to_str(netcon->net, NULL, ip, sizeof(ip)))
 		    break;
 		for (ipp = ip; *ipp; ipp++)
 		    op(data, *ipp);
@@ -1829,8 +1828,8 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	if (port->io.f->setup(&port->io, port->portname, &errstr,
 			      &port->bps, &port->bpc) == -1) {
 	    if (errstr)
-		netcon->net->write(netcon->net, NULL, errstr, strlen(errstr));
-	    netcon->net->close(netcon->net);
+		netio_write(netcon->net, NULL, errstr, strlen(errstr));
+	    netio_close(netcon->net);
 	    netcon->net = NULL;
 	    return -1;
 	}
@@ -1868,7 +1867,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     netcon->net->urgent_callback = handle_net_fd_urgent;
     netcon->net->close_done = handle_net_fd_closed;
 
-    netcon->net->set_read_callback_enable(netcon->net, true);
+    netio_set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
@@ -1876,12 +1875,12 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 		    telnet_cmd_handler,
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
-	netcon->net->set_write_callback_enable(netcon->net, true);
+	netio_set_write_callback_enable(netcon->net, true);
     } else {
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
 	if (netcon->banner)
-	    netcon->net->set_write_callback_enable(netcon->net, true);
+	    netio_set_write_callback_enable(netcon->net, true);
     }
 
     if (i_am_first)
@@ -1977,8 +1976,8 @@ handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
     UNLOCK(ports_lock);
 
     err = "No free port found\r\n";
-    net->write(net, NULL, err, strlen(err));
-    net->close(net);
+    netio_write(net, NULL, err, strlen(err));
+    netio_close(net);
 }
 
 static void
@@ -2055,8 +2054,8 @@ kick_old_user(port_info_t *port, net_info_t *netcon, struct netio *new_net)
 
     /* If another user is waiting for a kick, kick that user. */
     if (netcon->new_net) {
-	netcon->new_net->write(netcon->new_net, NULL, err, strlen(err));
-	netcon->new_net->close(netcon->new_net);
+	netio_write(netcon->new_net, NULL, err, strlen(err));
+	netio_close(netcon->new_net);
     }
 
     /* Wait it to be unconnected and clean, restart the process. */
@@ -2077,8 +2076,8 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
 
-	netcon->new_net->write(netcon->new_net, NULL, err, strlen(err));
-	netcon->new_net->close(netcon->new_net);
+	netio_write(netcon->new_net, NULL, err, strlen(err));
+	netio_close(netcon->new_net);
 	netcon->new_net = NULL;
 	return;
     }
@@ -2130,8 +2129,8 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
     if (err) {
 	UNLOCK(port->lock);
 	UNLOCK(ports_lock);
-	net->write(net, NULL, err, strlen(err));
-	net->close(net);
+	netio_write(net, NULL, err, strlen(err));
+	netio_close(net);
 	return;
     }
 
@@ -2231,8 +2230,8 @@ free_port(port_info_t *port)
     for_each_connection(port, netcon) {
 	char *err = "Port was deleted\n\r";
 	if (netcon->new_net) {
-	    netcon->new_net->write(netcon->new_net, NULL,err, strlen(err));
-	    netcon->new_net->close(netcon->new_net);
+	    netio_write(netcon->new_net, NULL,err, strlen(err));
+	    netio_close(netcon->new_net);
 	}
 	if (netcon->runshutdown)
 	    sel_free_runner(netcon->runshutdown);
@@ -2567,7 +2566,7 @@ static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
 	struct netio *net = netcon->net;
 
 	netcon->net = NULL;
-	net->close(net);
+	netio_close(net);
     } else {
 	netcon_finish_shutdown(netcon);
     }
@@ -3159,7 +3158,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	netcon = &(port->netcons[0]);
 
     if (port->net_to_dev_state != PORT_UNCONNECTED) {
-	netcon->net->raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
+	netio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	count = controller_outputf(cntlr, "%s", buffer);
     } else {
 	count = controller_outputf(cntlr, "unconnected");
@@ -3212,8 +3211,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
-	    netcon->net->raddr_to_str(netcon->net, NULL,
-				      buffer, sizeof(buffer));
+	    netio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
 	    controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
 			       netcon->bytes_received);
