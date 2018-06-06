@@ -490,9 +490,11 @@ setup_signals(void)
     if (err)
 	goto out;
 
-    sel_set_fd_handlers(ser2net_sel, sig_fd_watch, NULL, sig_fd_read_handler,
-			NULL, NULL, NULL);
-    sel_set_fd_read_handler(ser2net_sel, sig_fd_watch, SEL_FD_HANDLER_ENABLED);
+    err = sel_set_fd_handlers(ser2net_sel, sig_fd_watch, NULL,
+			      sig_fd_read_handler, NULL, NULL, NULL);
+    if (!err)
+	sel_set_fd_read_handler(ser2net_sel, sig_fd_watch,
+				SEL_FD_HANDLER_ENABLED);
 
  out:
     if (err) {

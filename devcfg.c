@@ -960,9 +960,14 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
     }
 #endif
 
-    sel_set_fd_handlers(ser2net_sel, d->devfd, io,
-			io->read_disabled ? NULL : do_read,
-			do_write, do_except, devfd_fd_cleared);
+    rv = sel_set_fd_handlers(ser2net_sel, d->devfd, io,
+			     io->read_disabled ? NULL : do_read,
+			     do_write, do_except, devfd_fd_cleared);
+    if (rv) {
+	*errstr = strerror(rv);
+	return -1;
+    }
+
     return 0;
 }
 
