@@ -58,11 +58,23 @@
 #define EPOLL_CTL_MOD 0
 #endif
 
+struct sel_runner_s
+{
+    struct selector_s *sel;
+    sel_runner_func_t func;
+    void *cb_data;
+    int in_use;
+    sel_runner_t *next;
+};
+
 typedef struct fd_state_s
 {
     int               deleted;
     unsigned int      use_count;
     sel_fd_cleared_cb done;
+    sel_runner_t      done_runner;
+    int               tmp_fd;
+    void              *done_cbdata;
 } fd_state_t;
 
 /* The control structure for each file descriptor. */
@@ -145,7 +157,7 @@ heap_cmp_key(heap_val_t *v1, heap_val_t *v2)
 
 /* Used to build a list of threads that may need to be woken if a
    timer on the top of the heap changes, or an FD is added/removed.
-   See wake_sel_thread() for more info. */
+   See i_wake_sel_thread() for more info. */
 typedef struct sel_wait_list_s
 {
     /* The thread to wake up. */
@@ -161,15 +173,6 @@ typedef struct sel_wait_list_s
 
     struct sel_wait_list_s *next, *prev;
 } sel_wait_list_t;
-
-struct sel_runner_s
-{
-    struct selector_s *sel;
-    sel_runner_func_t func;
-    void *cb_data;
-    int in_use;
-    sel_runner_t *next;
-};
 
 struct selector_s
 {
@@ -193,7 +196,7 @@ struct selector_s
     theap_t timer_heap;
 
     /* This is a list of items waiting to be woken up because they are
-       sitting in a select.  See wake_sel_thread() for more info. */
+       sitting in a select.  See i_wake_sel_thread() for more info. */
     sel_wait_list_t wait_list;
 
     void *timer_lock;
@@ -253,7 +256,7 @@ sel_fd_unlock(struct selector_s *sel)
    this after we have calculated the timeout, but before we have
    called select, thus only things in the wait list matter. */
 static void
-wake_sel_thread(struct selector_s *sel)
+i_wake_sel_thread(struct selector_s *sel)
 {
     sel_wait_list_t *item;
 
@@ -267,10 +270,18 @@ wake_sel_thread(struct selector_s *sel)
     }
 }
 
+void
+sel_wake_all(struct selector_s *sel)
+{
+    sel_timer_lock(sel);
+    i_wake_sel_thread(sel);
+    sel_timer_unlock(sel);
+}
+
 static void
 wake_fd_sel_thread(struct selector_s *sel)
 {
-    wake_sel_thread(sel);
+    sel_wake_all(sel);
     sel_fd_unlock(sel);
 }
 
@@ -279,7 +290,7 @@ wake_timer_sel_thread(struct selector_s *sel, volatile sel_timer_t *old_top)
 {
     if (old_top != theap_get_top(&sel->timer_heap))
 	/* If the top value changed, restart the waiting thread. */
-	wake_sel_thread(sel);
+	i_wake_sel_thread(sel);
 }
 
 /* Wait list management.  These *must* be called with the timer list
@@ -348,6 +359,16 @@ sel_update_epoll(struct selector_s *sel, int fd, int op)
 }
 #endif
 
+static void
+finish_oldstate(sel_runner_t *runner, void *cbdata)
+{
+    fd_state_t *oldstate = cbdata;
+
+    if (oldstate->done)
+	oldstate->done(oldstate->tmp_fd, oldstate->done_cbdata);
+    free(oldstate);
+}
+
 /* Set the handlers for a file descriptor. */
 int
 sel_set_fd_handlers(struct selector_s *sel,
@@ -369,6 +390,8 @@ sel_set_fd_handlers(struct selector_s *sel,
     state->deleted = 0;
     state->use_count = 0;
     state->done = done;
+    memset(&state->done_runner, 0, sizeof(state->done_runner));
+    state->done_runner.sel = sel;
 
     sel_fd_lock(sel);
     fdc = (fd_control_t *) &(sel->fds[fd]);
@@ -400,9 +423,9 @@ sel_set_fd_handlers(struct selector_s *sel,
     if (oldstate) {
 	oldstate->deleted = 1;
 	if (oldstate->use_count == 0) {
-	    if (oldstate->done)
-		oldstate->done(fd, olddata);
-	    free(oldstate);
+	    oldstate->tmp_fd = fd;
+	    oldstate->done_cbdata = olddata;
+	    sel_run(&oldstate->done_runner, finish_oldstate, oldstate);
 	}
     }
     return 0;
@@ -446,9 +469,9 @@ sel_clear_fd_handlers(struct selector_s *sel,
     if (oldstate) {
 	oldstate->deleted = 1;
 	if (oldstate->use_count == 0) {
-	    if (oldstate->done)
-		oldstate->done(fd, olddata);
-	    free(oldstate);
+	    oldstate->tmp_fd = fd;
+	    oldstate->done_cbdata = olddata;
+	    sel_run(&oldstate->done_runner, finish_oldstate, oldstate);
 	}
     }
 }
@@ -717,22 +740,22 @@ sel_get_monotonic_time(struct timeval *tv)
  */
 static void
 process_timers(struct selector_s       *sel,
+	       unsigned int            count,
 	       volatile struct timeval *timeout)
 {
     struct timeval now;
     sel_timer_t    *timer;
-    int            called = 0;
 
     timer = theap_get_top(&sel->timer_heap);
     sel_get_monotonic_time(&now);
     while (timer && cmp_timeval(&now, &timer->val.timeout) >= 0) {
-	called = 1;
 	theap_remove(&(sel->timer_heap), timer);
 	timer->val.in_heap = 0;
 	timer->val.stopped = 1;
 	timer->val.in_handler = 1;
 	sel_timer_unlock(sel);
 	timer->val.handler(sel, timer, timer->val.user_data);
+	count++;
 	sel_timer_lock(sel);
 	timer->val.in_handler = 0;
 	if (timer->val.done_handler) {
@@ -754,7 +777,7 @@ process_timers(struct selector_s       *sel,
 	timer = theap_get_top(&sel->timer_heap);
     }
 
-    if (called) {
+    if (count) {
 	/* If called, set the timeout to zero. */
 	timeout->tv_sec = 0;
 	timeout->tv_usec = 0;
@@ -826,9 +849,11 @@ sel_run(sel_runner_t *runner, sel_runner_func_t func, void *cb_data)
     return 0;
 }
 
-static void
+static unsigned int
 process_runners(struct selector_s *sel)
 {
+    int count = 0;
+
     while (sel->runner_head) {
 	sel_runner_t *runner = sel->runner_head;
 	sel_runner_func_t func;
@@ -842,8 +867,11 @@ process_runners(struct selector_s *sel)
 	cb_data = runner->cb_data;
 	sel_timer_unlock(sel);
 	func(runner, cb_data);
+	count++;
 	sel_timer_lock(sel);
     }
+
+    return count;
 }
 
 static void
@@ -990,10 +1018,12 @@ sel_select(struct selector_s *sel,
     int             err;
     struct timeval  loc_timeout;
     sel_wait_list_t wait_entry;
+    unsigned int    count;
 
     sel_timer_lock(sel);
-    process_runners(sel);
-    process_timers(sel, (struct timeval *)(&loc_timeout));
+    count = process_runners(sel);
+    /* If count is non-zero or any timers are processed, timeout is set to 0. */
+    process_timers(sel, count, (struct timeval *)(&loc_timeout));
     if (timeout) {
 	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
 	    memcpy(&loc_timeout, timeout, sizeof(loc_timeout));
