@@ -32,8 +32,8 @@
  * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
  * If a2->sin_port is zero, then the port comparison is ignored.
  */
-bool sockaddr_equal(struct sockaddr *a1, socklen_t l1,
-		    struct sockaddr *a2, socklen_t l2,
+bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
+		    const struct sockaddr *a2, socklen_t l2,
 		    bool compare_ports);
 
 /* Returns true if the string is a numeric zero, false if not. */
@@ -49,6 +49,21 @@ int scan_int(char *str);
  * The mandatory second part is the port number or a service name. */
 int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 		      bool *is_port_set);
+
+struct port_remaddr
+{
+    struct sockaddr_storage addr;
+    socklen_t addrlen;
+    bool is_port_set;
+    struct port_remaddr *next;
+};
+
+/* Add a remaddr to the given list, return 0 on success or errno on fail. */
+int remaddr_append(struct port_remaddr **list, const char *str);
+
+/* Check that the given address matches something in the list. */
+bool remaddr_check(const struct port_remaddr *list,
+		   const struct sockaddr *addr, socklen_t len);
 
 struct opensocks
 {

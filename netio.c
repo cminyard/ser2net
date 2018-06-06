@@ -27,29 +27,41 @@ netio_set_user_data(struct netio *net, void *user_data)
     net->user_data = user_data;
 }
 
-int netio_write(struct netio *net, int *count,
-		const void *buf, unsigned int buflen)
+int
+netio_write(struct netio *net, int *count,
+	    const void *buf, unsigned int buflen)
 {
     return net->funcs->write(net, count, buf, buflen);
 }
 
-int netio_raddr_to_str(struct netio *net, int *pos,
+int
+netio_raddr_to_str(struct netio *net, int *pos,
 		       char *buf, unsigned int buflen)
 {
     return net->funcs->raddr_to_str(net, pos, buf, buflen);
 }
 
-void netio_close(struct netio *net)
+socklen_t
+netio_get_raddr(struct netio *net,
+		struct sockaddr *addr, socklen_t addrlen)
+{
+    return net->funcs->get_raddr(net, addr, addrlen);
+}
+
+void
+netio_close(struct netio *net)
 {
     net->funcs->close(net);
 }
 
-void netio_set_read_callback_enable(struct netio *net, bool enabled)
+void
+netio_set_read_callback_enable(struct netio *net, bool enabled)
 {
     net->funcs->set_read_callback_enable(net, enabled);
 }
 
-void netio_set_write_callback_enable(struct netio *net, bool enabled)
+void
+netio_set_write_callback_enable(struct netio *net, bool enabled)
 {
     net->funcs->set_write_callback_enable(net, enabled);
 }
@@ -65,22 +77,6 @@ netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
 			     void *user_data)
 {
     acceptor->user_data = user_data;
-}
-
-int
-netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str)
-{
-    return acceptor->funcs->add_remaddr(acceptor, str);
-}
-
-bool
-netio_acc_check_remaddr(struct netio_acceptor *acceptor, struct netio *onet)
-{
-    if (acceptor->type != onet->type)
-	return false;
-    if (!acceptor->funcs->check_remaddr)
-	return true;
-    return acceptor->funcs->check_remaddr(acceptor, onet);
 }
 
 int
@@ -147,69 +143,4 @@ int str_to_netio_acceptor(const char *str,
     }
 
     return err;
-}
-
-int
-netio_append_remaddr(struct port_remaddr **list, const char *str,
-		     bool do_dgram)
-{
-    struct port_remaddr *r, *r2;
-    struct addrinfo *ai;
-    bool is_port_set;
-    bool is_dgram;
-    int err;
-
-    err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
-    if (err)
-	return err;
-
-    if (is_dgram != do_dgram) {
-	err = EINVAL;
-	goto out;
-    }
-
-    r = malloc(sizeof(*r));
-    if (!r) {
-	err = ENOMEM;
-	goto out;
-    }
-
-    memcpy(&r->addr, ai->ai_addr, ai->ai_addrlen);
-    r->addrlen = ai->ai_addrlen;
-    r->is_port_set = is_port_set;
-    r->next = NULL;
-
-    r2 = *list;
-    if (!r2) {
-	*list = r;
-    } else {
-	while (r2->next)
-	    r2 = r2->next;
-	r2->next = r;
-    }
-
- out:
-    if (ai)
-	freeaddrinfo(ai);
-
-    return err;
-}
-
-bool
-netio_check_remaddr(struct port_remaddr *list,
-		    struct sockaddr *addr, socklen_t len)
-{
-    struct port_remaddr *r = list;
-
-    if (!r)
-	return true;
-
-    while (r) {
-	if (sockaddr_equal(addr, len, (struct sockaddr *) &r->addr, r->addrlen,
-			   r->is_port_set))
-	    return true;
-	r = r->next;
-    }
-
-    return false;
 }

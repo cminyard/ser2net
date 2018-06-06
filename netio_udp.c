@@ -112,8 +112,6 @@ struct udpna_data {
 
     unsigned int read_disable_count;
     unsigned int write_disable_count;
-
-    struct port_remaddr *remaddrs;
 };
 
 #define acc_to_nadata(acc) container_of(acc, struct udpna_data, acceptor);
@@ -183,14 +181,6 @@ static void udpna_do_free(struct udpna_data *nadata)
 
     for (i = 0; i < nadata->nr_fds; i++)
 	close(nadata->fds[i].fd);
-
-    while (nadata->remaddrs) {
-	struct port_remaddr *r;
-
-	r = nadata->remaddrs;
-	nadata->remaddrs = r->next;
-	free(r);
-    }
 
     if (nadata->deferred_op_runner)
 	sel_free_runner(nadata->deferred_op_runner);
@@ -291,6 +281,19 @@ udpn_raddr_to_str(struct netio *net, int *epos,
 	*epos = pos;
 
     return 0;
+}
+
+static socklen_t
+udpn_get_raddr(struct netio *net,
+	       struct sockaddr *addr, socklen_t addrlen)
+{
+    struct udpn_data *ndata = net_to_ndata(net);
+
+    if (addrlen > ndata->raddrlen)
+	addrlen = ndata->raddrlen;
+
+    memcpy(addr, ndata->raddr, addrlen);
+    return addrlen;
 }
 
 static void
@@ -532,34 +535,6 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 	udpn_add_to_closed(nadata, ndata);
 }
 
-static int
-udpna_add_remaddr(struct netio_acceptor *acceptor, const char *str)
-{
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
-    int err;
-
-    LOCK(nadata->lock);
-    err = netio_append_remaddr(&nadata->remaddrs, str, true);
-    UNLOCK(nadata->lock);
-
-    return err;
-}
-
-static bool
-udpna_check_remaddr(struct netio_acceptor *acceptor, struct netio *net)
-{
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
-    struct udpn_data *ndata = net_to_ndata(net);
-    bool rv;
-
-    /* netio.c already checked that the types match. */
-    LOCK(nadata->lock);
-    rv = netio_check_remaddr(nadata->remaddrs, ndata->raddr, ndata->raddrlen);
-    UNLOCK(nadata->lock);
-
-    return rv;
-}
-
 static void
 udpna_writehandler(int fd, void *cbdata)
 {
@@ -584,6 +559,7 @@ udpna_writehandler(int fd, void *cbdata)
 static const struct netio_functions netio_udp_funcs = {
     .write = udpn_write,
     .raddr_to_str = udpn_raddr_to_str,
+    .get_raddr = udpn_get_raddr,
     .close = udpn_close,
     .set_read_callback_enable = udpn_set_read_callback_enable,
     .set_write_callback_enable = udpn_set_write_callback_enable
@@ -609,14 +585,6 @@ udpna_readhandler(int fd, void *cbdata)
 	/* FIXME - There is no really good way to report this error. */
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
 	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
-	goto out_unlock;
-    }
-
-    if (!netio_check_remaddr(nadata->remaddrs, (struct sockaddr *) &addr,
-			     addrlen)) {
-	char *errstr = "Access denied due to remote address\r\n";
-	sendto(fd, errstr, strlen(errstr), 0,
-	       (struct sockaddr *) &addr, addrlen);
 	goto out_unlock;
     }
 
@@ -793,8 +761,6 @@ udpna_free(struct netio_acceptor *acceptor)
 }
 
 static const struct netio_acceptor_functions netio_acc_udp_funcs = {
-    .add_remaddr = udpna_add_remaddr,
-    .check_remaddr = udpna_check_remaddr,
     .startup = udpna_startup,
     .shutdown = udpna_shutdown,
     .set_accept_callback_enable = udpna_set_accept_callback_enable,

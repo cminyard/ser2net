@@ -121,6 +121,11 @@ int netio_raddr_to_str(struct netio *net, int *pos,
 		       char *buf, unsigned int buflen);
 
 /*
+ * Return the remote address for the connection.
+ */
+socklen_t netio_get_raddr(struct netio *net,
+			  struct sockaddr *addr, socklen_t addrlen);
+/*
  * Close the netio.  Note that the close operation is not complete
  * until close_done() is called.
  */
@@ -161,24 +166,6 @@ void *netio_acceptor_get_user_data(struct netio_acceptor *acceptor);
  */
 void netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
 				  void *user_data);
-
-/*
- * Add an allowed remote address to the acceptor.  If no remote
- * addresses are added, connections are accepted from anywhere.
- * Otherwise, only connections that match the given remote address
- * are allowed.  If no port is given in the string, then any port
- * from the remote address is allowed.  Otherwise only the given
- * port is allowed.
- *
- * Returns a standard errno on an error, zero otherwise.
- */
-int netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str);
-
-/*
- * Check that the remote address of onet is acceptable to acceptor.
- */
-bool netio_acc_check_remaddr(struct netio_acceptor *acceptor,
-			     struct netio *onet);
 
 /*
  * An acceptor is allocated without opening any sockets.  This
