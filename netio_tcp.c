@@ -30,6 +30,7 @@
 #include <syslog.h>
 
 #include "netio.h"
+#include "netio_internal.h"
 #include "selector.h"
 #include "ser2net.h"
 #include "locking.h"

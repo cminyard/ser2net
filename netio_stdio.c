@@ -25,9 +25,11 @@
 #include <errno.h>
 #include <syslog.h>
 #include "ser2net.h"
+
+#include "netio.h"
+#include "netio_internal.h"
 #include "utils.h"
 #include "locking.h"
-#include "netio.h"
 #include "selector.h"
 
 struct stdiona_data;

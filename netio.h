@@ -68,50 +68,6 @@ struct netio_callbacks {
 };
 
 /*
- * This structure represents a network connection, return from the
- * acceptor callback in netio_acceptor.
- */
-struct netio {
-    /*
-     * This is available to the user of this function, the netio code
-     * does not touch it.
-     */
-    void *user_data;
-
-    unsigned int (*read_callback)(struct netio *net, int readerr,
-				  unsigned char *buf, unsigned int buflen);
-
-    void (*write_callback)(struct netio *net);
-
-    void (*urgent_callback)(struct netio *net);
-
-    void (*close_done)(struct netio *net);
-
-
-    /*
-     * The following functions are set by the netio code for use by
-     * the user.  DO NOT MODIFY THESE!
-     */
-
-    int (*write)(struct netio *net, int *count,
-		 const void *buf, unsigned int buflen);
-
-    int (*raddr_to_str)(struct netio *net, int *pos,
-			char *buf, unsigned int buflen);
-
-    void (*close)(struct netio *net);
-
-    void (*set_read_callback_enable)(struct netio *net, bool enabled);
-
-    void (*set_write_callback_enable)(struct netio *net, bool enabled);
-
-    /*
-     * Internal to the netio code.  The user should *NOT* touch this.
-     */
-    void *internal_data;
-};
-
-/*
  * Set the callback data for the net.  This must be done in the
  * new_connection callback for the acceptor before any other operation
  * is done on the netio.  May be called again if the netio is not enabled.
@@ -194,50 +150,6 @@ struct netio_acceptor_callbacks {
 };
 
 /*
- * This function handles accepts on network I/O code and calls back the
- * user for the new connection.
- */
-struct netio_acceptor {
-    /*
-     * This is available to the user of this function, the netio code
-     * does not touch it.
-     */
-    void *user_data;
-
-    void (*new_connection)(struct netio_acceptor *acceptor, struct netio *net);
-
-    void (*shutdown_done)(struct netio_acceptor *acceptor);
-
-    /*
-     * FIXME - this is set by the stdio netio so that ser2net knows to
-     * close when the connection is complete.  This should be done some
-     * other way.
-     */
-    bool exit_on_close;
-
-    /*
-     * The following functions are set by the netio code for use by
-     * the user.  DO NOT MODIFY THESE!
-     */
-
-    int (*add_remaddr)(struct netio_acceptor *acceptor, const char *str);
-
-    int (*startup)(struct netio_acceptor *acceptor);
-
-    int (*shutdown)(struct netio_acceptor *acceptor);
-
-    void (*set_accept_callback_enable)(struct netio_acceptor *acceptor,
-				       bool enabled);
-
-    void (*free)(struct netio_acceptor *acceptor);
-
-    /*
-     * Internal to the netio code.  The user should *NOT* touch this.
-     */
-    void *internal_data;
-};
-
-/*
  * Return the user data supplied to the allocator.
  */
 void *netio_acceptor_get_user_data(struct netio_acceptor *acceptor);
@@ -289,6 +201,11 @@ void netio_acc_set_accept_callback_enable(struct netio_acceptor *acceptor,
  * up, this shuts it down first and shutdown_complete() is NOT called.
  */
 void netio_acc_free(struct netio_acceptor *acceptor);
+
+/*
+ * Returns if the acceptor requests exit on close.  A hack for stdio.
+ */
+bool netio_acc_exit_on_close(struct netio_acceptor *acceptor);
 
 /*
  * Convert a string representation of a network address into a network
