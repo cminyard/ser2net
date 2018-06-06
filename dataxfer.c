@@ -205,6 +205,9 @@ struct port_info
     struct netio_acceptor *acceptor;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
 
+    int wait_acceptor_shutdown;
+    bool acceptor_reinit_on_shutdown;
+
     unsigned int max_connections;	/* Maximum number of TCP connections
 					   we can accept at a time for this
 					   port. */
@@ -2153,25 +2156,53 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
     return err;
 }
 
-int
+static void
+port_reinit_now(port_info_t *port)
+{
+    if (port->enabled != PORT_DISABLED) {
+	net_info_t *netcon;
+
+	port->dev_to_net_state = PORT_UNCONNECTED;
+	port->acceptor->set_accept_callback_enable(port->acceptor, true);
+	for_each_connection(port, netcon)
+	    check_port_new_net(port, netcon);
+    }
+}
+
+static waiter_t *acceptor_shutdown_wait;
+
+static void
+handle_port_shutdown_done(struct netio_acceptor *acceptor)
+{
+    port_info_t *port = acceptor->user_data;
+
+    LOCK(port->lock);
+    while (port->wait_acceptor_shutdown--)
+	wake_waiter(acceptor_shutdown_wait);
+
+    if (port->acceptor_reinit_on_shutdown) {
+	port->acceptor_reinit_on_shutdown = false;
+	port_reinit_now(port);
+    }
+    UNLOCK(port->lock);
+}
+
+static bool
 change_port_state(struct absout *eout, port_info_t *port, int state,
 		  bool is_reconfig)
 {
-    int rv = 0;
-
-    if (port->enabled == state) {
-	UNLOCK(port->lock);
-	return 0;
-    }
+    if (port->enabled == state)
+	return false;
 
     if (state == PORT_DISABLED) {
 	port->enabled = PORT_DISABLED; /* Stop accepts */
-	UNLOCK(port->lock);
-
-	port->acceptor->shutdown(port->acceptor);
+	if (port->wait_acceptor_shutdown || port->acceptor_reinit_on_shutdown)
+	    /* Shutdown is already running. */
+	    return true;
+	return port->acceptor->shutdown(port->acceptor) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
-	    rv = startup_port(eout, port, is_reconfig);
+	    int rv = startup_port(eout, port, is_reconfig);
 	    if (!rv) {
 		if (state == PORT_RAWLP)
 		    port->io.read_disabled = 1;
@@ -2180,10 +2211,16 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 		port->enabled = state;
 	    }
 	}
-	UNLOCK(port->lock);
     }
 
-    return rv;
+    return false;
+}
+
+static void
+wait_for_port_shutdown(port_info_t *port, unsigned int *count)
+{
+    port->wait_acceptor_shutdown++;
+    (*count)++;
 }
 
 static void
@@ -2245,7 +2282,10 @@ free_port(port_info_t *port)
     free(port);
 }
 
-static void
+/*
+ * Returns true if this requested a net shutdown, false if not.
+ */
+static bool
 switchout_port(struct absout *eout, port_info_t *new_port,
 	       port_info_t *curr, port_info_t *prev)
 {
@@ -2278,13 +2318,14 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     new_port->next = curr->next;
     UNLOCK(curr->lock);
     free_port(curr);
-    change_port_state(eout, new_port, new_state, true); /* releases lock */
+
+    return change_port_state(eout, new_port, new_state, true);
 }
 
 static void
 finish_shutdown_port(port_info_t *port)
 {
-    net_info_t *netcon;
+    bool reinit_now = true;
 
     /* At this point nothing can happen on the port, so no need for a lock */
 
@@ -2348,18 +2389,32 @@ finish_shutdown_port(port_info_t *port)
 	    curr->new_config = NULL;
 	    LOCK(curr->lock);
 	    LOCK(port->lock);
-	    switchout_port(NULL, port, curr, prev); /* Releases locks */
+	    /* Releases curr->lock */
+	    if (switchout_port(NULL, port, curr, prev)) {
+		/*
+		 * This is an unusual case.  We have switched out the
+		 * port and it requested a shutdown, but we really
+		 * can't wait here in this thread for the shutdown to
+		 * complete.  So we mark that we are waiting and do
+		 * the startup later in the callback.
+		 */
+		port->acceptor_reinit_on_shutdown = true;
+		reinit_now = false;
+		UNLOCK(port->lock);
+	    } else {
+		UNLOCK(ports_lock);
+		goto reinit_port;
+	    }
 	}
 	UNLOCK(ports_lock);
     }
 
-    /* Wait until here to let anything start on the port. */
-    LOCK(port->lock);
-    port->dev_to_net_state = PORT_UNCONNECTED;
-    port->acceptor->set_accept_callback_enable(port->acceptor, true);
-    for_each_connection(port, netcon)
-	check_port_new_net(port, netcon);
-    UNLOCK(port->lock);
+    if (reinit_now) {
+	LOCK(port->lock);
+    reinit_port:
+	port_reinit_now(port);
+	UNLOCK(port->lock);
+    }
 }
 
 static void
@@ -2812,6 +2867,7 @@ portconfig(struct absout *eout,
     net_info_t *netcon;
     enum str_type str_type;
     int err;
+    unsigned int shutdown_count = 0;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -2879,6 +2935,7 @@ portconfig(struct absout *eout,
 
     new_port->acceptor->user_data = new_port;
     new_port->acceptor->new_connection = handle_port_accept;
+    new_port->acceptor->shutdown_done = handle_port_shutdown_done;
 
     if (strcmp(state, "raw") == 0) {
 	new_port->enabled = PORT_RAW;
@@ -2975,7 +3032,10 @@ portconfig(struct absout *eout,
 	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
 		/* Port is disconnected, switch it now. */
 		LOCK(new_port->lock);
-		switchout_port(eout, new_port, curr, prev); /* releases locks */
+		/* releases curr->lock */
+		if (switchout_port(eout, new_port, curr, prev))
+		    wait_for_port_shutdown(new_port, &shutdown_count);
+		UNLOCK(new_port->lock);
 	    } else {
 		/* Mark it to be replaced later. */
 		if (curr->new_config != NULL)
@@ -3018,6 +3078,8 @@ portconfig(struct absout *eout,
  out:
     UNLOCK(ports_lock);
 
+    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
+
     return 0;
 
 errout_unlock:
@@ -3031,6 +3093,7 @@ void
 clear_old_port_config(int curr_config)
 {
     port_info_t *curr, *prev;
+    unsigned int shutdown_count = 0;
 
     prev = NULL;
     curr = ports;
@@ -3040,8 +3103,9 @@ clear_old_port_config(int curr_config)
 	    /* The port was removed, remove it. */
 	    LOCK(curr->lock);
 	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
-		/* releases lock */
-		change_port_state(NULL, curr, PORT_DISABLED, false);
+		if (change_port_state(NULL, curr, PORT_DISABLED, false))
+		    wait_for_port_shutdown(curr, &shutdown_count);
+		UNLOCK(curr->lock);
 		if (prev == NULL) {
 		    ports = curr->next;
 		    free_port(curr);
@@ -3053,8 +3117,9 @@ clear_old_port_config(int curr_config)
 		}
 	    } else {
 		curr->config_num = -1;
-		/* releases lock */
-		change_port_state(NULL, curr, PORT_DISABLED, false);
+		if (change_port_state(NULL, curr, PORT_DISABLED, false))
+		    wait_for_port_shutdown(curr, &shutdown_count);
+		UNLOCK(curr->lock);
 		prev = curr;
 		curr = curr->next;
 	    }
@@ -3064,6 +3129,8 @@ clear_old_port_config(int curr_config)
 	}
     }
     UNLOCK(ports_lock);
+
+    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
 }
 
 #define REMOTEADDR_COLUMN_WIDTH \
@@ -3381,11 +3448,12 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     port_info_t *port;
     int         new_enable;
     struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
+    unsigned int shutdown_count = 0;
 
     port = find_port_by_num(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
-	goto out;
+	return;
     }
 
     if (strcmp(enable, "off") == 0) {
@@ -3401,12 +3469,13 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 	goto out_unlock;
     }
 
-    change_port_state(&eout, port, new_enable, false); /* releases lock */
- out:
-    return;
+    if (change_port_state(&eout, port, new_enable, false))
+	wait_for_port_shutdown(port, &shutdown_count);
 
  out_unlock:
     UNLOCK(port->lock);
+
+    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
 }
 
 #if HAVE_DECL_TIOCSRS485
@@ -3718,6 +3787,7 @@ void
 shutdown_ports(void)
 {
     port_info_t *port = ports, *next;
+    unsigned int shutdown_count = 0;
 
     /* No need for a lock here, nothing can reconfigure the port list at
        this point. */
@@ -3725,16 +3795,35 @@ shutdown_ports(void)
 	port->config_num = -1;
 	next = port->next;
 	LOCK(port->lock);
-	change_port_state(NULL, port, PORT_DISABLED, false);
-	LOCK(port->lock);
+	if (change_port_state(NULL, port, PORT_DISABLED, false))
+	    wait_for_port_shutdown(port, &shutdown_count);
+	UNLOCK(port->lock);
 	shutdown_port(port, "program shutdown");
 	UNLOCK(port->lock);
 	port = next;
     }
+
+    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
 }
 
 int
 check_ports_shutdown(void)
 {
     return ports == NULL;
+}
+
+int
+init_dataxfer(void)
+{
+    acceptor_shutdown_wait = alloc_waiter(ser2net_sel);
+    if (!acceptor_shutdown_wait)
+	return ENOMEM;
+
+    return 0;
+}
+
+void
+shutdown_dataxfer(void)
+{
+    free_waiter(acceptor_shutdown_wait);
 }

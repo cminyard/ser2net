@@ -21,11 +21,13 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <limits.h>
 
 #include "ser2net.h"
 #include "utils.h"
@@ -555,21 +557,28 @@ int str_to_argv(const char *s, int *r_argc, char ***r_argv, char *seps)
 #include <assert.h>
 
 #ifdef USE_PTHREADS
-struct waiter_s {
-    int set;
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
+struct waiter_timeout {
+    struct timeval tv;
+    struct waiter_timeout *prev;
+    struct waiter_timeout *next;
 };
 
-waiter_t *alloc_waiter(void)
+struct waiter_s {
+    struct selector_s *sel;
+    unsigned int count;
+    pthread_mutex_t lock;
+    struct waiter_timeout *wts;
+};
+
+waiter_t *alloc_waiter(struct selector_s *sel)
 {
     waiter_t *waiter;
 
     waiter = malloc(sizeof(waiter_t));
     if (waiter) {
 	memset(waiter, 0, sizeof(*waiter));
+	waiter->sel = sel;
 	pthread_mutex_init(&waiter->lock, NULL);
-	pthread_cond_init(&waiter->cond, NULL);
     }
     return waiter;
 }
@@ -577,34 +586,71 @@ waiter_t *alloc_waiter(void)
 void free_waiter(waiter_t *waiter)
 {
     assert(waiter);
-    assert(waiter->set == 0);
+    assert(waiter->count == 0);
+    assert(waiter->wts == NULL);
     pthread_mutex_destroy(&waiter->lock);
-    pthread_cond_destroy(&waiter->cond);
     free(waiter);
 }
 
-void wait_for_waiter(waiter_t *waiter)
+static void
+wake_thread_send_sig(long thread_id, void *cb_data)
 {
+    pthread_t        *id = (void *) thread_id;
+
+    pthread_kill(*id, ser2net_wake_sig);
+}
+
+void wait_for_waiter(waiter_t *waiter, unsigned int count)
+{
+    pthread_t self = pthread_self();
+    struct waiter_timeout wt;
+
+    wt.tv.tv_sec = LONG_MAX;
+    wt.next = NULL;
+    wt.prev = NULL;
     pthread_mutex_lock(&waiter->lock);
-    if (!waiter->set)
-	pthread_cond_wait(&waiter->cond, &waiter->lock);
-    waiter->set = 0;
+    if (!waiter->wts) {
+	waiter->wts = &wt;
+    } else {
+	waiter->wts->next->prev = &wt;
+	wt.next = waiter->wts;
+	waiter->wts = &wt;
+    }
+    while (waiter->count < count) {
+	pthread_mutex_unlock(&waiter->lock);
+	sel_select(waiter->sel, wake_thread_send_sig, (long) &self, NULL, NULL);
+	pthread_mutex_lock(&waiter->lock);
+    }
+    waiter->count -= count;
+    if (wt.next)
+	wt.next->prev = wt.prev;
+    if (waiter->wts == &wt)
+	waiter->wts = wt.next;
+    else
+	wt.prev->next = wt.next;
     pthread_mutex_unlock(&waiter->lock);
 }
 
 void wake_waiter(waiter_t *waiter)
 {
+    struct waiter_timeout *wt;
+
     pthread_mutex_lock(&waiter->lock);
-    pthread_cond_signal(&waiter->cond);
-    waiter->set = 1;
+    waiter->count++;
+    wt = waiter->wts;
+    while (wt) {
+	wt->tv.tv_sec = 0;
+	wt = wt->next;
+    }
+    sel_wake_all(waiter->sel);
     pthread_mutex_unlock(&waiter->lock);
 }
 #else
 struct waiter_s {
-    int set;
+    unsigned int count;
 };
 
-waiter_t *alloc_waiter(void)
+waiter_t *alloc_waiter(struct selector_s *sel)
 {
     waiter_t *waiter;
 
@@ -617,18 +663,19 @@ waiter_t *alloc_waiter(void)
 void free_waiter(waiter_t *waiter)
 {
     assert(waiter);
-    assert(waiter->set == 0);
+    assert(waiter->count == 0);
     free(waiter);
 }
 
-void wait_for_waiter(waiter_t *waiter)
+void wait_for_waiter(waiter_t *waiter, unsigned int count)
 {
-    assert(waiter->set == 1);
-    waiter->set = 0;
+    while (waiter->count < count) {
+	sel_select(waiter->sel, wake_thread_send_sig, long (&self), NULL, NULL);
+    waiter->count -= count;
 }
 
 void wake_waiter(waiter_t *waiter)
 {
-    waiter->set = 1;
+    waiter->count++;
 }
 #endif

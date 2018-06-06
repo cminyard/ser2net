@@ -25,6 +25,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include "selector.h"
 
 /*
  * Compare two sockaddr structure and return TRUE if they are equal
@@ -134,9 +135,9 @@ void str_to_argv_free(int argc, char **argv);
 
 /* Tools to wait for events. */
 typedef struct waiter_s waiter_t;
-waiter_t *alloc_waiter(void);
+waiter_t *alloc_waiter(struct selector_s *sel);
 void free_waiter(waiter_t *waiter);
-void wait_for_waiter(waiter_t *waiter);
+void wait_for_waiter(waiter_t *waiter, unsigned int count);
 void wake_waiter(waiter_t *waiter);
 
 struct absout {
