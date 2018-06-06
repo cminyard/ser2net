@@ -37,7 +37,7 @@
 #include "utils.h"
 
 struct tcpn_data {
-    struct netio *net;
+    struct netio net;
 
     DEFINE_LOCK(, lock);
 
@@ -77,16 +77,10 @@ struct tcpn_data {
     struct tcpn_data *next;
 };
 
-struct port_remaddr
-{
-    struct sockaddr_storage addr;
-    socklen_t addrlen;
-    bool is_port_set;
-    struct port_remaddr *next;
-};
+#define net_to_ndata(net) container_of(net, struct tcpn_data, net);
 
 struct tcpna_data {
-    struct netio_acceptor *acceptor;
+    struct netio_acceptor acceptor;
 
     char *name;
 
@@ -110,11 +104,13 @@ struct tcpna_data {
     struct port_remaddr *remaddrs;
 };
 
+#define acc_to_nadata(acc) container_of(acc, struct tcpna_data, acceptor);
+
 static int
 tcpn_write(struct netio *net, int *count,
 	   const void *buf, unsigned int buflen)
 {
-    struct tcpn_data *ndata = net->internal_data;
+    struct tcpn_data *ndata = net_to_ndata(net);
     int rv, err = 0;
 
  retry:
@@ -140,7 +136,7 @@ static int
 tcpn_raddr_to_str(struct netio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
-    struct tcpn_data *ndata = net->internal_data;
+    struct tcpn_data *ndata = net_to_ndata(net);
     char portstr[NI_MAXSERV];
     int err;
     int pos = 0;
@@ -174,7 +170,7 @@ tcpn_raddr_to_str(struct netio *net, int *epos,
 static void
 tcpn_finish_close(struct tcpn_data *ndata)
 {
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
 
     close(ndata->fd);
 
@@ -184,7 +180,6 @@ tcpn_finish_close(struct tcpn_data *ndata)
     sel_free_runner(ndata->deferred_read_runner);
     free(ndata->read_data);
     free(ndata);
-    free(net);
 }
 
 static void
@@ -205,7 +200,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
 static void
 tcpn_close(struct netio *net)
 {
-    struct tcpn_data *ndata = net->internal_data;
+    struct tcpn_data *ndata = net_to_ndata(net);
 
     sel_clear_fd_handlers(ser2net_sel, ndata->fd);
 }
@@ -247,7 +242,7 @@ static void
 tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
     unsigned int count;
 
     /* No lock needed, this data cannot be changed here. */
@@ -267,7 +262,7 @@ tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 static void
 tcpn_set_read_callback_enable(struct netio *net, bool enabled)
 {
-    struct tcpn_data *ndata = net->internal_data;
+    struct tcpn_data *ndata = net_to_ndata(net);
 
     LOCK(ndata->lock);
     if (ndata->in_read || (ndata->data_pending && !enabled)) {
@@ -297,7 +292,7 @@ tcpn_set_read_callback_enable(struct netio *net, bool enabled)
 static void
 tcpn_set_write_callback_enable(struct netio *net, bool enabled)
 {
-    struct tcpn_data *ndata = net->internal_data;
+    struct tcpn_data *ndata = net_to_ndata(net);
     int op;
 
     if (enabled)
@@ -312,7 +307,7 @@ static void
 tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
     unsigned int count = 0;
     int c;
     int rv;
@@ -373,7 +368,7 @@ static void
 tcpn_write_ready(int fd, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = ndata->net;
+    struct netio *net = &ndata->net;
 
     LOCK(ndata->lock);
     ndata->in_write = true;
@@ -400,7 +395,7 @@ tcpn_except_ready(int fd, void *cbdata)
 static int
 tcpna_add_remaddr(struct netio_acceptor *acceptor, const char *str)
 {
-    struct tcpna_data *nadata = acceptor->internal_data;
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
     struct port_remaddr *r, *r2;
     struct addrinfo *ai;
     bool is_port_set;
@@ -468,7 +463,6 @@ tcpna_readhandler(int fd, void *cbdata)
     int new_fd;
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
-    struct netio *net = NULL;
     struct tcpn_data *ndata = NULL;
     const char *errstr;
     int optval, err;
@@ -497,11 +491,6 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    net = malloc(sizeof(*net));
-    if (!net)
-	goto out_nomem;
-    memset(net, 0, sizeof(*net));
-
     ndata = malloc(sizeof(*ndata));
     if (!ndata)
 	goto out_nomem;
@@ -512,7 +501,6 @@ tcpna_readhandler(int fd, void *cbdata)
 	goto out_nomem;
 
     INIT_LOCK(ndata->lock);
-    ndata->net = net;
     ndata->fd = new_fd;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
     ndata->raddrlen = addrlen;
@@ -523,14 +511,14 @@ tcpna_readhandler(int fd, void *cbdata)
     if (!ndata->read_data)
 	goto out_nomem;
 
-    net->internal_data = ndata;
-    net->funcs = &netio_tcp_funcs;
+    ndata->net.funcs = &netio_tcp_funcs;
 
     if (sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
-			    tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared))
+			    tcpn_write_ready, tcpn_except_ready,
+			    tcpn_fd_cleared))
 	goto out_nomem;
 
-    nadata->acceptor->cbs->new_connection(nadata->acceptor, net);
+    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &ndata->net);
     return;
 
  out_nomem:
@@ -542,8 +530,6 @@ tcpna_readhandler(int fd, void *cbdata)
 	    free(ndata->read_data);
 	free(ndata);
     }
-    if (net)
-	free(net);
 
     syslog(LOG_ERR, "Out of memory allocating for tcp port %s", nadata->name);
 }
@@ -565,7 +551,6 @@ tcpna_finish_free(struct tcpna_data *nadata)
 	freeaddrinfo(nadata->ai);
     if (nadata->acceptfds)
 	free(nadata->acceptfds);
-    free(nadata->acceptor);
     free(nadata);
 }
 
@@ -573,7 +558,7 @@ static void
 tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
-    struct netio_acceptor *acceptor = nadata->acceptor;
+    struct netio_acceptor *acceptor = &nadata->acceptor;
     unsigned int num_left;
 
     close(fd);
@@ -594,7 +579,7 @@ tcpna_fd_cleared(int fd, void *cbdata)
 static int
 tcpna_startup(struct netio_acceptor *acceptor)
 {
-    struct tcpna_data *nadata = acceptor->internal_data;
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
     LOCK(nadata->lock);
@@ -644,7 +629,7 @@ _tcpna_shutdown(struct tcpna_data *nadata)
 static int
 tcpna_shutdown(struct netio_acceptor *acceptor)
 {
-    struct tcpna_data *nadata = acceptor->internal_data;
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv;
 
     LOCK(nadata->lock);
@@ -659,7 +644,7 @@ tcpna_shutdown(struct netio_acceptor *acceptor)
 static void
 tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 {
-    struct tcpna_data *nadata = acceptor->internal_data;
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
     unsigned int i;
     int op;
 
@@ -680,7 +665,7 @@ tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 static void
 tcpna_free(struct netio_acceptor *acceptor)
 {
-    struct tcpna_data *nadata = acceptor->internal_data;
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
 
     LOCK(nadata->lock);
     nadata->in_free = true;
@@ -710,51 +695,36 @@ tcp_netio_acceptor_alloc(const char *name,
 			 void *user_data,
 			 struct netio_acceptor **acceptor)
 {
-    int err = 0;
-    struct netio_acceptor *acc = NULL;
-    struct tcpna_data *nadata = NULL;
-
-    acc = malloc(sizeof(*acc));
-    if (!acc) {
-	err = ENOMEM;
-	goto out;
-    }
-    memset(acc, 0, sizeof(*acc));
+    struct netio_acceptor *acc;
+    struct tcpna_data *nadata;
 
     nadata = malloc(sizeof(*nadata));
-    if (!nadata) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!nadata)
+	goto out_nomem;
     memset(nadata, 0, sizeof(*nadata));
 
     nadata->name = strdup(name);
-    if (!nadata->name) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!nadata->name)
+	goto out_nomem;
+
+    acc = &nadata->acceptor;
 
     acc->cbs = cbs;
     acc->user_data = user_data;
     acc->funcs = &netio_acc_tcp_funcs;
-    acc->internal_data = nadata;
 
     INIT_LOCK(nadata->lock);
-    nadata->acceptor = acc;
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
 
- out:
-    if (err) {
-	if (acc)
-	    free(acc);
-	if (nadata) {
-	    if (nadata->name)
-		free(nadata->name);
-	    free(nadata);
-	}
-    } else {
-	*acceptor = acc;
+    *acceptor = acc;
+    return 0;
+
+ out_nomem:
+    if (nadata) {
+	if (nadata->name)
+	    free(nadata->name);
+	free(nadata);
     }
-    return err;
+    return ENOMEM;
 }
