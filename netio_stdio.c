@@ -397,6 +397,8 @@ stdiona_free(struct netio_acceptor *acceptor)
 
 int
 stdio_netio_acceptor_alloc(unsigned int max_read_size,
+			   const struct netio_acceptor_callbacks *cbs,
+			   void *user_data,
 			   struct netio_acceptor **acceptor)
 {
     int err = 0;
@@ -431,6 +433,10 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     err = sel_alloc_runner(ser2net_sel, &nadata->connect_runner);
     if (err)
 	goto out;
+
+    acc->new_connection = cbs->new_connection;
+    acc->shutdown_done = cbs->shutdown_done;
+    acc->user_data = user_data;
 
     acc->internal_data = nadata;
     acc->add_remaddr = stdiona_add_remaddr;

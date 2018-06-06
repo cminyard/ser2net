@@ -5,6 +5,29 @@
 #include "netio.h"
 #include "utils.h"
 
+void
+netio_set_callbacks(struct netio *net,
+		    const struct netio_callbacks *cbs, void *user_data)
+{
+    net->read_callback = cbs->read_callback;
+    net->write_callback = cbs->write_callback;
+    net->urgent_callback = cbs->urgent_callback;
+    net->close_done = cbs->close_done;
+    net->user_data = user_data;
+}
+
+void *
+netio_get_user_data(struct netio *net)
+{
+    return net->user_data;
+}
+
+void
+netio_set_user_data(struct netio *net, void *user_data)
+{
+    net->user_data = user_data;
+}
+
 int netio_write(struct netio *net, int *count,
 		const void *buf, unsigned int buflen)
 {
@@ -30,6 +53,19 @@ void netio_set_read_callback_enable(struct netio *net, bool enabled)
 void netio_set_write_callback_enable(struct netio *net, bool enabled)
 {
     net->set_write_callback_enable(net, enabled);
+}
+
+void *
+netio_acceptor_get_user_data(struct netio_acceptor *acceptor)
+{
+    return acceptor->user_data;
+}
+
+void
+netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
+			     void *user_data)
+{
+    acceptor->user_data = user_data;
 }
 
 int netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str)
@@ -65,6 +101,8 @@ netio_acc_free(struct netio_acceptor *acceptor)
 
 int str_to_netio_acceptor(const char *str,
 			  unsigned int max_read_size,
+			  const struct netio_acceptor_callbacks *cbs,
+			  void *user_data,
 			  struct netio_acceptor **acceptor)
 {
     int err;
@@ -72,18 +110,18 @@ int str_to_netio_acceptor(const char *str,
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_netio_acceptor_alloc(max_read_size, acceptor);
+	err = stdio_netio_acceptor_alloc(max_read_size, cbs, user_data, acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_netio_acceptor_alloc(str, ai, max_read_size,
-					       acceptor);
+		err = udp_netio_acceptor_alloc(str, ai, max_read_size, cbs,
+					       user_data, acceptor);
 	    } else {
-		err = tcp_netio_acceptor_alloc(str, ai, max_read_size,
-					       acceptor);
+		err = tcp_netio_acceptor_alloc(str, ai, max_read_size, cbs,
+					       user_data, acceptor);
 	    }
 
 	    if (err) {

@@ -937,7 +937,7 @@ static unsigned int
 handle_net_fd_read(struct netio *net, int readerr,
 		   unsigned char *buf, unsigned int buflen)
 {
-    net_info_t *netcon = net->user_data;
+    net_info_t *netcon = netio_get_user_data(net);
     port_info_t *port = netcon->port;
     unsigned int bufpos = 0;
     unsigned int rv = 0;
@@ -1185,7 +1185,7 @@ finish_dev_to_net_write(port_info_t *port)
 static void
 handle_net_fd_write(struct netio *net)
 {
-    net_info_t *netcon = net->user_data;
+    net_info_t *netcon = netio_get_user_data(net);
     port_info_t *port = netcon->port;
     int rv;
 
@@ -1240,7 +1240,7 @@ handle_net_fd_write(struct netio *net)
 static void
 handle_net_fd_urgent(struct netio *net)
 {
-    net_info_t *netcon = net->user_data;
+    net_info_t *netcon = netio_get_user_data(net);
     port_info_t *port = netcon->port;
     int val;
     int cmd_pos;
@@ -1806,6 +1806,13 @@ recalc_port_chardelay(port_info_t *port)
 	port->chardelay = port->chardelay_min;
 }
 
+static const struct netio_callbacks port_callbacks = {
+    .read_callback = handle_net_fd_read,
+    .write_callback = handle_net_fd_write,
+    .urgent_callback = handle_net_fd_urgent,
+    .close_done = handle_net_fd_closed
+};
+
 /* Called to set up a new connection's file descriptor. */
 static int
 setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
@@ -1861,11 +1868,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	i_am_first = true;
     }
 
-    netcon->net->user_data = netcon;
-    netcon->net->read_callback = handle_net_fd_read;
-    netcon->net->write_callback = handle_net_fd_write;
-    netcon->net->urgent_callback = handle_net_fd_urgent;
-    netcon->net->close_done = handle_net_fd_closed;
+    netio_set_callbacks(netcon->net, &port_callbacks, netcon);
 
     netio_set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
@@ -1949,7 +1952,7 @@ static rotator_t *rotators = NULL;
 static void
 handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
 {
-    rotator_t *rot = acceptor->user_data;
+    rotator_t *rot = netio_acceptor_get_user_data(acceptor);
     int i;
     const char *err;
 
@@ -1992,9 +1995,9 @@ static void
 free_rotator(rotator_t *rot)
 {
     if (rot->acceptor) {
-	rot->acceptor->shutdown(rot->acceptor);
+	netio_acc_shutdown(rot->acceptor);
 	wait_for_waiter(rotator_shutdown_wait, 1);
-	rot->acceptor->free(rot->acceptor);
+	netio_acc_free(rot->acceptor);
     }
     if (rot->portname)
 	free(rot->portname);
@@ -2017,6 +2020,11 @@ free_rotators(void)
     rotators = NULL;
 }
 
+static const struct netio_acceptor_callbacks rotator_cbs = {
+    .new_connection = handle_rot_accept,
+    .shutdown_done = handle_rot_shutdown_done
+};
+
 int
 add_rotator(char *portname, char *ports, int lineno)
 {
@@ -2038,15 +2046,12 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_netio_acceptor(rot->portname, 64, &rot->acceptor);
+    rv = str_to_netio_acceptor(rot->portname, 64, &rotator_cbs, rot,
+			       &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
     }
-
-    rot->acceptor->user_data = rot;
-    rot->acceptor->new_connection = handle_rot_accept;
-    rot->acceptor->shutdown_done = handle_rot_shutdown_done;
 
     rot->next = rotators;
     rotators = rot;
@@ -2101,7 +2106,7 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 static void
 handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
 {
-    port_info_t *port = acceptor->user_data;
+    port_info_t *port = netio_acceptor_get_user_data(acceptor);
     const char *err = NULL;
     int i;
 
@@ -2155,7 +2160,7 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
 static int
 startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 {
-    int err = port->acceptor->startup(port->acceptor);
+    int err = netio_acc_startup(port->acceptor);
 
     if (err && eout) {
 	eout->out(eout, "Unable to startup network port %s: %s",
@@ -2172,7 +2177,7 @@ port_reinit_now(port_info_t *port)
 	net_info_t *netcon;
 
 	port->dev_to_net_state = PORT_UNCONNECTED;
-	port->acceptor->set_accept_callback_enable(port->acceptor, true);
+	netio_acc_set_accept_callback_enable(port->acceptor, true);
 	for_each_connection(port, netcon)
 	    check_port_new_net(port, netcon);
     }
@@ -2183,7 +2188,7 @@ static waiter_t *acceptor_shutdown_wait;
 static void
 handle_port_shutdown_done(struct netio_acceptor *acceptor)
 {
-    port_info_t *port = acceptor->user_data;
+    port_info_t *port = netio_acceptor_get_user_data(acceptor);
 
     LOCK(port->lock);
     while (port->wait_acceptor_shutdown--)
@@ -2208,7 +2213,7 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 	if (port->wait_acceptor_shutdown || port->acceptor_reinit_on_shutdown)
 	    /* Shutdown is already running. */
 	    return true;
-	return port->acceptor->shutdown(port->acceptor) == 0;
+	return netio_acc_shutdown(port->acceptor) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
 	    int rv = startup_port(eout, port, is_reconfig);
@@ -2249,7 +2254,7 @@ free_port(port_info_t *port)
 
     FREE_LOCK(port->lock);
     if (port->acceptor)
-	port->acceptor->free(port->acceptor);
+	netio_acc_free(port->acceptor);
     if (port->dev_to_net.buf)
 	free(port->dev_to_net.buf);
     if (port->net_to_dev.buf)
@@ -2308,8 +2313,8 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     tmp_acceptor = new_port->acceptor;
     new_port->acceptor = curr->acceptor;
     curr->acceptor = tmp_acceptor;
-    curr->acceptor->user_data = curr;
-    new_port->acceptor->user_data = new_port;
+    netio_acceptor_set_user_data(curr->acceptor, curr);
+    netio_acceptor_set_user_data(new_port->acceptor, new_port);
 
     for (i = 0; i < new_port->max_connections; i++) {
 	if (i >= curr->max_connections)
@@ -2349,7 +2354,7 @@ finish_shutdown_port(port_info_t *port)
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
-    if (port->acceptor->exit_on_close)
+    if (netio_acc_exit_on_close(port->acceptor))
 	/* This was a zero port (for stdin/stdout), this is only
 	   allowed with one port at a time, and we shut down when it
 	   closes. */
@@ -2505,7 +2510,7 @@ start_shutdown_port(port_info_t *port, char *reason)
     port->close_on_output_done = false;
 
     port->io.f->read_handler_enable(&port->io, false);
-    port->acceptor->set_accept_callback_enable(port->acceptor, false);
+    netio_acc_set_accept_callback_enable(port->acceptor, false);
 
     footer_trace(port, "port", reason);
 
@@ -2555,7 +2560,7 @@ netcon_finish_shutdown(net_info_t *netcon)
 static void
 handle_net_fd_closed(struct netio *net)
 {
-    net_info_t *netcon = net->user_data;
+    net_info_t *netcon = netio_get_user_data(net);
     port_info_t *port = netcon->port;
 
     netcon->net = NULL;
@@ -2708,7 +2713,7 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
     remstr = strtok_r(str, ";", &strtok_data);
     /* Note that we ignore an empty remaddr. */
     while (remstr && *remstr) {
-	err = port->acceptor->add_remaddr(port->acceptor, remstr);
+	err = netio_acc_add_remaddr(port->acceptor, remstr);
 	if (err) {
 	    eout->out(eout, "Error adding remote address '%s': %s\n", remstr,
 		      strerror(err));
@@ -2862,6 +2867,11 @@ myconfig(void *data, struct absout *eout, const char *pos)
     return 0;
 }
 
+static const struct netio_acceptor_callbacks port_acceptor_cbs = {
+    .new_connection = handle_port_accept,
+    .shutdown_done = handle_port_shutdown_done
+};
+
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
@@ -2936,15 +2946,13 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    err = str_to_netio_acceptor(new_port->portname, 64, &new_port->acceptor);
+    err = str_to_netio_acceptor(new_port->portname, 64,
+				&port_acceptor_cbs, new_port,
+				&new_port->acceptor);
     if (err) {
 	eout->out(eout, "Invalid port name/number");
 	goto errout;
     }
-
-    new_port->acceptor->user_data = new_port;
-    new_port->acceptor->new_connection = handle_port_accept;
-    new_port->acceptor->shutdown_done = handle_port_shutdown_done;
 
     if (strcmp(state, "raw") == 0) {
 	new_port->enabled = PORT_RAW;

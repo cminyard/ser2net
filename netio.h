@@ -31,23 +31,9 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-/*
- * This structure represents a network connection, return from the
- * acceptor callback in netio_acceptor.
- */
-struct netio {
-    /*
-     * This is available to the user of this function, the netio code
-     * does not touch it.
-     */
-    void *user_data;
+struct netio;
 
-    /*
-     * The following functions must be set up by the netio user in the
-     * accept callback.  After returning from the accept callback, these
-     * may be called at any time until close_done() is called.
-     */
-
+struct netio_callbacks {
     /*
      * Called when data is read from the I/O device.
      *
@@ -79,6 +65,27 @@ struct netio {
      * Called when a close operation completes.  May be NULL.
      */
     void (*close_done)(struct netio *net);
+};
+
+/*
+ * This structure represents a network connection, return from the
+ * acceptor callback in netio_acceptor.
+ */
+struct netio {
+    /*
+     * This is available to the user of this function, the netio code
+     * does not touch it.
+     */
+    void *user_data;
+
+    unsigned int (*read_callback)(struct netio *net, int readerr,
+				  unsigned char *buf, unsigned int buflen);
+
+    void (*write_callback)(struct netio *net);
+
+    void (*urgent_callback)(struct netio *net);
+
+    void (*close_done)(struct netio *net);
 
 
     /*
@@ -103,6 +110,24 @@ struct netio {
      */
     void *internal_data;
 };
+
+/*
+ * Set the callback data for the net.  This must be done in the
+ * new_connection callback for the acceptor before any other operation
+ * is done on the netio.  May be called again if the netio is not enabled.
+ */
+void netio_set_callbacks(struct netio *net,
+			 const struct netio_callbacks *cbs, void *user_data);
+
+/*
+ * Return the user data supplied in netio_set_callbacks().
+ */
+void *netio_get_user_data(struct netio *net);
+
+/*
+ * Set the user data.  May be called if the netio is not enabled.
+ */
+void netio_set_user_data(struct netio *net, void *user_data);
 
 /*
  * Write data to the netio.  This should only be called from the
@@ -154,6 +179,19 @@ void netio_set_read_callback_enable(struct netio *net, bool enabled);
  */
 void netio_set_write_callback_enable(struct netio *net, bool enabled);
 
+struct netio_acceptor;
+
+struct netio_acceptor_callbacks {
+    /*
+     * A new net connection for the acceptor is in net.
+     */
+    void (*new_connection)(struct netio_acceptor *acceptor, struct netio *net);
+
+    /*
+     * The shutdown operation is complete.  May be NULL.
+     */
+    void (*shutdown_done)(struct netio_acceptor *acceptor);
+};
 
 /*
  * This function handles accepts on network I/O code and calls back the
@@ -166,19 +204,8 @@ struct netio_acceptor {
      */
     void *user_data;
 
-    /*
-     * The following functions must be set up by the netio user before
-     * calling startup().
-     */
-
-    /*
-     * A new net connection for the acceptor is in net.
-     */
     void (*new_connection)(struct netio_acceptor *acceptor, struct netio *net);
 
-    /*
-     * The shutdown operation is complete.  May be NULL.
-     */
     void (*shutdown_done)(struct netio_acceptor *acceptor);
 
     /*
@@ -209,6 +236,17 @@ struct netio_acceptor {
      */
     void *internal_data;
 };
+
+/*
+ * Return the user data supplied to the allocator.
+ */
+void *netio_acceptor_get_user_data(struct netio_acceptor *acceptor);
+
+/*
+ * Set the user data.  May be called if the acceptor is not enabled.
+ */
+void netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
+				  void *user_data);
 
 /*
  * Add an allowed remote address to the acceptor.  If no remote
@@ -258,6 +296,8 @@ void netio_acc_free(struct netio_acceptor *acceptor);
  * connections.
  */
 int str_to_netio_acceptor(const char *str, unsigned int max_read_size,
+			  const struct netio_acceptor_callbacks *cbs,
+			  void *user_data,
 			  struct netio_acceptor **acceptor);
 
 /*
@@ -266,12 +306,18 @@ int str_to_netio_acceptor(const char *str, unsigned int max_read_size,
 int tcp_netio_acceptor_alloc(const char *name,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
+			     const struct netio_acceptor_callbacks *cbs,
+			     void *user_data,
 			     struct netio_acceptor **acceptor);
 int udp_netio_acceptor_alloc(const char *name,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
+			     const struct netio_acceptor_callbacks *cbs,
+			     void *user_data,
 			     struct netio_acceptor **acceptor);
 int stdio_netio_acceptor_alloc(unsigned int max_read_size,
+			       const struct netio_acceptor_callbacks *cbs,
+			       void *user_data,
 			       struct netio_acceptor **acceptor);
 
 #endif /* SER2NET_NETIO_H */
