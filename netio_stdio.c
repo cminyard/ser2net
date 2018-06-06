@@ -402,7 +402,7 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     int err = 0;
     struct netio_acceptor *acc = NULL;
     struct stdiona_data *nadata = NULL;
-    struct netio *net;
+    struct netio *net = NULL;
 
     acc = malloc(sizeof(*acc));
     if (!acc)
