@@ -93,15 +93,18 @@ struct tcpna_data {
 
     DEFINE_LOCK(, lock);
 
-    bool setup;
-    bool enabled;
+    bool setup;			/* Network sockets are allocated. */
+    bool enabled;		/* Accepts are being handled. */
+    bool in_free;		/* Currently being freed. */
+    bool in_shutdown;		/* Currently being shut down. */
+    bool report_shutdown;	/* call shutdown_done() when shutdown ends. */
 
     struct addrinfo    *ai;		/* The address list for the portname. */
     struct opensocks   *acceptfds;	/* The file descriptor used to
 					   accept connections on the
 					   TCP port. */
     unsigned int   nr_acceptfds;
-    waiter_t       *accept_waiter;      /* Wait for accept changes. */
+    unsigned int   nr_accept_close_waiting;
 
     struct port_remaddr *remaddrs;
 };
@@ -517,8 +520,9 @@ tcpna_readhandler(int fd, void *cbdata)
     net->set_read_callback_enable = tcpn_set_read_callback_enable;
     net->set_write_callback_enable = tcpn_set_write_callback_enable;
 
-    sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
-			tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared);
+    if (sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
+			    tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared))
+	goto out_nomem;
 
     nadata->acceptor->new_connection(nadata->acceptor, net);
     return;
@@ -538,11 +542,47 @@ tcpna_readhandler(int fd, void *cbdata)
     syslog(LOG_ERR, "Out of memory allocating for tcp port %s", nadata->name);
 }
 
-static void tcpna_fd_cleared(int fd, void *cbdata)
+static void
+tcpna_finish_free(struct tcpna_data *nadata)
+{
+    while (nadata->remaddrs) {
+	struct port_remaddr *r;
+
+	r = nadata->remaddrs;
+	nadata->remaddrs = r->next;
+	free(r);
+    }
+
+    if (nadata->name)
+	free(nadata->name);
+    if (nadata->ai)
+	freeaddrinfo(nadata->ai);
+    if (nadata->acceptfds)
+	free(nadata->acceptfds);
+    free(nadata->acceptor);
+    free(nadata);
+}
+
+static void
+tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
+    struct netio_acceptor *acceptor = nadata->acceptor;
+    unsigned int num_left;
 
-    wake_waiter(nadata->accept_waiter);
+    close(fd);
+
+    LOCK(nadata->lock);
+    num_left = --nadata->nr_accept_close_waiting;
+    UNLOCK(nadata->lock);
+
+    if (num_left == 0) {
+	nadata->in_shutdown = false;
+	if (acceptor->shutdown_done && nadata->report_shutdown)
+	    acceptor->shutdown_done(acceptor);
+	if (nadata->in_free)
+	    tcpna_finish_free(nadata);
+    }
 }
 
 static int
@@ -552,9 +592,14 @@ tcpna_startup(struct netio_acceptor *acceptor)
     int rv = 0;
 
     LOCK(nadata->lock);
-    if (nadata->setup) {
+    if (nadata->in_shutdown) {
+	rv = EAGAIN;
 	goto out_unlock;
     }
+
+    if (nadata->setup)
+	goto out_unlock;
+
     nadata->acceptfds = open_socket(nadata->ai, tcpna_readhandler, NULL, nadata,
 				    &nadata->nr_acceptfds, tcpna_fd_cleared);
     if (nadata->acceptfds == NULL) {
@@ -562,6 +607,7 @@ tcpna_startup(struct netio_acceptor *acceptor)
     } else {
 	nadata->setup = true;
 	nadata->enabled = true;
+	nadata->report_shutdown = false;
     }
 
  out_unlock:
@@ -570,24 +616,38 @@ tcpna_startup(struct netio_acceptor *acceptor)
 }
 
 static int
+_tcpna_shutdown(struct tcpna_data *nadata)
+{
+    unsigned int i;
+    int rv = 0;
+
+    if (nadata->setup) {
+	nadata->in_shutdown = true;
+	nadata->nr_accept_close_waiting = nadata->nr_acceptfds;
+	for (i = 0; i < nadata->nr_acceptfds; i++)
+	    sel_clear_fd_handlers(ser2net_sel, nadata->acceptfds[i].fd);
+	nadata->setup = false;
+	nadata->enabled = false;
+    } else {
+	rv = EAGAIN;
+    }
+	
+    return rv;
+}
+
+static int
 tcpna_shutdown(struct netio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acceptor->internal_data;
-    unsigned int i;
+    int rv;
 
     LOCK(nadata->lock);
-    if (nadata->setup) {
-	for (i = 0; i < nadata->nr_acceptfds; i++) {
-	    sel_clear_fd_handlers(ser2net_sel, nadata->acceptfds[i].fd);
-	    wait_for_waiter(nadata->accept_waiter);
-	    close(nadata->acceptfds[i].fd);
-	}
-	nadata->setup = false;
-	nadata->enabled = false;
-    }
+    rv = _tcpna_shutdown(nadata);
+    if (!rv)
+	nadata->report_shutdown = true;
     UNLOCK(nadata->lock);
 	
-    return 0;
+    return rv;
 }
 
 static void
@@ -616,26 +676,16 @@ tcpna_free(struct netio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acceptor->internal_data;
 
-    tcpna_shutdown(acceptor);
-
-    while (nadata->remaddrs) {
-	struct port_remaddr *r;
-
-	r = nadata->remaddrs;
-	nadata->remaddrs = r->next;
-	free(r);
+    LOCK(nadata->lock);
+    nadata->in_free = true;
+    if (!nadata->in_shutdown && _tcpna_shutdown(nadata)) {
+	if (nadata->nr_accept_close_waiting == 0) {
+	    UNLOCK(nadata->lock);
+	    tcpna_finish_free(nadata);
+	    return;
+	}
     }
-
-    if (nadata->accept_waiter)
-	free_waiter(nadata->accept_waiter);
-    if (nadata->name)
-	free(nadata->name);
-    if (nadata->ai)
-	freeaddrinfo(nadata->ai);
-    if (nadata->acceptfds)
-	free(nadata->acceptfds);
-    free(nadata);
-    free(acceptor);
+    UNLOCK(nadata->lock);
 }
 
 int
@@ -664,12 +714,6 @@ tcp_netio_acceptor_alloc(const char *name,
 
     nadata->name = strdup(name);
     if (!nadata->name) {
-	err = ENOMEM;
-	goto out;
-    }
-
-    nadata->accept_waiter = alloc_waiter();
-    if (!nadata->accept_waiter) {
 	err = ENOMEM;
 	goto out;
     }
