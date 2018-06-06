@@ -396,40 +396,28 @@ static int
 tcpna_add_remaddr(struct netio_acceptor *acceptor, const char *str)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    struct port_remaddr *r, *r2;
-    struct addrinfo *ai;
-    bool is_port_set;
     int err;
 
-    err = scan_network_port(str, &ai, NULL, &is_port_set);
-    if (err)
-	return err;
+    LOCK(nadata->lock);
+    err = netio_append_remaddr(&nadata->remaddrs, str, false);
+    UNLOCK(nadata->lock);
 
-    r = malloc(sizeof(*r));
-    if (!r) {
-	err = ENOMEM;
-	goto out;
-    }
+    return err;
+}
 
-    memcpy(&r->addr, ai->ai_addr, ai->ai_addrlen);
-    r->addrlen = ai->ai_addrlen;
-    r->is_port_set = is_port_set;
-    r->next = NULL;
+static bool
+tcpna_check_remaddr(struct netio_acceptor *acceptor, struct netio *net)
+{
+    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpn_data *ndata = net_to_ndata(net);
+    bool rv;
 
-    r2 = nadata->remaddrs;
-    if (!r2) {
-	nadata->remaddrs = r;
-    } else {
-	while (r2->next)
-	    r2 = r2->next;
-	r2->next = r;
-    }
+    /* netio.c already checked that the types match. */
+    LOCK(nadata->lock);
+    rv = netio_check_remaddr(nadata->remaddrs, ndata->raddr, ndata->raddrlen);
+    UNLOCK(nadata->lock);
 
- out:
-    if (ai)
-	freeaddrinfo(ai);
-    
-    return 0;
+    return rv;
 }
 
 static const char *
@@ -476,6 +464,11 @@ tcpna_readhandler(int fd, void *cbdata)
     }
 
     errstr = check_tcpd_ok(new_fd);
+    if (!errstr) {
+	if (!netio_check_remaddr(nadata->remaddrs, (struct sockaddr *) &addr,
+				 addrlen))
+	    errstr = "Access denied due to remote address\r\n";
+    }
     if (errstr) {
 	write_ignore_fail(new_fd, errstr, strlen(errstr));
 	close(new_fd);
@@ -512,6 +505,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	goto out_nomem;
 
     ndata->net.funcs = &netio_tcp_funcs;
+    ndata->net.type = NETIO_TYPE_TCP;
 
     if (sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
 			    tcpn_write_ready, tcpn_except_ready,
@@ -681,6 +675,7 @@ tcpna_free(struct netio_acceptor *acceptor)
 
 static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
     .add_remaddr = tcpna_add_remaddr,
+    .check_remaddr = tcpna_check_remaddr,
     .startup = tcpna_startup,
     .shutdown = tcpna_shutdown,
     .set_accept_callback_enable = tcpna_set_accept_callback_enable,
@@ -712,6 +707,7 @@ tcp_netio_acceptor_alloc(const char *name,
     acc->cbs = cbs;
     acc->user_data = user_data;
     acc->funcs = &netio_acc_tcp_funcs;
+    acc->type = NETIO_TYPE_TCP;
 
     INIT_LOCK(nadata->lock);
     nadata->ai = ai;
