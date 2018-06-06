@@ -422,6 +422,9 @@ finish_shutdown_cleanly(void)
     if (pid_file)
 	unlink(pid_file);
 
+    if (config_port)
+	free(config_port);
+
     exit(1);
 }
 
