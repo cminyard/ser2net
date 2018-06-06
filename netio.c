@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include "netio.h"
+#include "netio_internal.h"
 #include "utils.h"
 
 void
@@ -98,6 +99,11 @@ netio_acc_free(struct netio_acceptor *acceptor)
     acceptor->free(acceptor);
 }
 
+bool
+netio_acc_exit_on_close(struct netio_acceptor *acceptor)
+{
+    return acceptor->exit_on_close;
+}
 
 int str_to_netio_acceptor(const char *str,
 			  unsigned int max_read_size,
