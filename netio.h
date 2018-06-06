@@ -86,54 +86,16 @@ struct netio {
      * the user.  DO NOT MODIFY THESE!
      */
 
-    /*
-     * Write data to the netio.  This should only be called from the
-     * write callback for most general usage.  Writes buflen bytes
-     * from buf.
-     *
-     * Returns errno on error, or 0 on success.  This will NEVER return
-     * EAGAIN, EWOULDBLOCK, or EINTR.  Those are handled internally.
-     *
-     * On a non-error return, count is set to the number of bytes
-     * consumed by the write call, with may be less than buflen.  If
-     * it is less than buflen, then not all the data was written.
-     * Note that count may be set to zero.  This can happen on an
-     * EAGAIN type situation.
-     */
     int (*write)(struct netio *net, int *count,
 		 const void *buf, unsigned int buflen);
 
-    /*
-     * Convert the remote address for this network connection to a
-     * string.  The string starts at buf + *pos and goes to buf +
-     * buflen.  If pos is NULL, then zero is used.  The string is
-     * NIL terminated.
-     *
-     * Returns an errno on an error, and a string error will be put
-     * into the buffer.
-     *
-     * In all cases, if pos is non-NULL it will be updated to be the
-     * NIL char after the last byte of the string, where you would
-     * want to put any new data into the string.
-     */
     int (*raddr_to_str)(struct netio *net, int *pos,
 			char *buf, unsigned int buflen);
 
-    /*
-     * Close the netio.  Note that the close operation is not complete
-     * until close_done() is called.
-     */
     void (*close)(struct netio *net);
 
-    /*
-     * Enable or disable data to be read from the network connection.
-     */
     void (*set_read_callback_enable)(struct netio *net, bool enabled);
 
-    /*
-     * Enable the write_callback when data can be written on the
-     * network connection.
-     */
     void (*set_write_callback_enable)(struct netio *net, bool enabled);
 
     /*
@@ -141,6 +103,57 @@ struct netio {
      */
     void *internal_data;
 };
+
+/*
+ * Write data to the netio.  This should only be called from the
+ * write callback for most general usage.  Writes buflen bytes
+ * from buf.
+ *
+ * Returns errno on error, or 0 on success.  This will NEVER return
+ * EAGAIN, EWOULDBLOCK, or EINTR.  Those are handled internally.
+ *
+ * On a non-error return, count is set to the number of bytes
+ * consumed by the write call, with may be less than buflen.  If
+ * it is less than buflen, then not all the data was written.
+ * Note that count may be set to zero.  This can happen on an
+ * EAGAIN type situation.
+ */
+int netio_write(struct netio *net, int *count,
+		const void *buf, unsigned int buflen);
+
+/*
+ * Convert the remote address for this network connection to a
+ * string.  The string starts at buf + *pos and goes to buf +
+ * buflen.  If pos is NULL, then zero is used.  The string is
+ * NIL terminated.
+ *
+ * Returns an errno on an error, and a string error will be put
+ * into the buffer.
+ *
+ * In all cases, if pos is non-NULL it will be updated to be the
+ * NIL char after the last byte of the string, where you would
+ * want to put any new data into the string.
+ */
+int netio_raddr_to_str(struct netio *net, int *pos,
+		       char *buf, unsigned int buflen);
+
+/*
+ * Close the netio.  Note that the close operation is not complete
+ * until close_done() is called.
+ */
+void netio_close(struct netio *net);
+
+/*
+ * Enable or disable data to be read from the network connection.
+ */
+void netio_set_read_callback_enable(struct netio *net, bool enabled);
+
+/*
+ * Enable the write_callback when data can be written on the
+ * network connection.
+ */
+void netio_set_write_callback_enable(struct netio *net, bool enabled);
+
 
 /*
  * This function handles accepts on network I/O code and calls back the
@@ -180,46 +193,15 @@ struct netio_acceptor {
      * the user.  DO NOT MODIFY THESE!
      */
 
-    /*
-     * Add an allowed remote address to the acceptor.  If no remote
-     * addresses are added, connections are accepted from anywhere.
-     * Otherwise, only connections that match the given remote address
-     * are allowed.  If no port is given in the string, then any port
-     * from the remote address is allowed.  Otherwise only the given
-     * port is allowed.
-     *
-     * Returns a standard errno on an error, zero otherwise.
-     */
     int (*add_remaddr)(struct netio_acceptor *acceptor, const char *str);
 
-    /*
-     * An acceptor is allocated without opening any sockets.  This
-     * actually starts up the acceptor, allocating the sockets and
-     * such.  It is started with accepts enabled.
-     *
-     * Returns a standard errno on an error, zero otherwise.
-     */
     int (*startup)(struct netio_acceptor *acceptor);
 
-    /*
-     * Closes all sockets and disables everything.  shutdown_complete()
-     * will be called if successful after the shutdown is complete.
-     *
-     * Returns a EAGAIN if the acceptor is already shut down, zero
-     * otherwise.
-     */
     int (*shutdown)(struct netio_acceptor *acceptor);
 
-    /*
-     * Enable the accept callback when connections come in.
-     */
     void (*set_accept_callback_enable)(struct netio_acceptor *acceptor,
 				       bool enabled);
 
-    /*
-     * Free the network acceptor.  If the network acceptor is started
-     * up, this shuts it down first and shutdown_complete() is NOT called.
-     */
     void (*free)(struct netio_acceptor *acceptor);
 
     /*
@@ -227,6 +209,48 @@ struct netio_acceptor {
      */
     void *internal_data;
 };
+
+/*
+ * Add an allowed remote address to the acceptor.  If no remote
+ * addresses are added, connections are accepted from anywhere.
+ * Otherwise, only connections that match the given remote address
+ * are allowed.  If no port is given in the string, then any port
+ * from the remote address is allowed.  Otherwise only the given
+ * port is allowed.
+ *
+ * Returns a standard errno on an error, zero otherwise.
+ */
+int netio_acc_add_remaddr(struct netio_acceptor *acceptor, const char *str);
+
+/*
+ * An acceptor is allocated without opening any sockets.  This
+ * actually starts up the acceptor, allocating the sockets and
+ * such.  It is started with accepts enabled.
+ *
+ * Returns a standard errno on an error, zero otherwise.
+ */
+int netio_acc_startup(struct netio_acceptor *acceptor);
+
+/*
+ * Closes all sockets and disables everything.  shutdown_complete()
+ * will be called if successful after the shutdown is complete.
+ *
+ * Returns a EAGAIN if the acceptor is already shut down, zero
+ * otherwise.
+ */
+int netio_acc_shutdown(struct netio_acceptor *acceptor);
+
+/*
+ * Enable the accept callback when connections come in.
+ */
+void netio_acc_set_accept_callback_enable(struct netio_acceptor *acceptor,
+					  bool enabled);
+
+/*
+ * Free the network acceptor.  If the network acceptor is started
+ * up, this shuts it down first and shutdown_complete() is NOT called.
+ */
+void netio_acc_free(struct netio_acceptor *acceptor);
 
 /*
  * Convert a string representation of a network address into a network
