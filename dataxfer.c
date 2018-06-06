@@ -1980,11 +1980,20 @@ handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
     netio_close(net);
 }
 
+static waiter_t *rotator_shutdown_wait;
+
+static void
+handle_rot_shutdown_done(struct netio_acceptor *acceptor)
+{
+    wake_waiter(rotator_shutdown_wait);
+}
+
 static void
 free_rotator(rotator_t *rot)
 {
     if (rot->acceptor) {
 	rot->acceptor->shutdown(rot->acceptor);
+	wait_for_waiter(rotator_shutdown_wait, 1);
 	rot->acceptor->free(rot->acceptor);
     }
     if (rot->portname)
@@ -2037,6 +2046,7 @@ add_rotator(char *portname, char *ports, int lineno)
 
     rot->acceptor->user_data = rot;
     rot->acceptor->new_connection = handle_rot_accept;
+    rot->acceptor->shutdown_done = handle_rot_shutdown_done;
 
     rot->next = rotators;
     rotators = rot;
@@ -3817,11 +3827,18 @@ init_dataxfer(void)
     if (!acceptor_shutdown_wait)
 	return ENOMEM;
 
+    rotator_shutdown_wait = alloc_waiter(ser2net_sel);
+    if (!rotator_shutdown_wait) {
+	free_waiter(rotator_shutdown_wait);
+	return ENOMEM;
+    }
+
     return 0;
 }
 
 void
 shutdown_dataxfer(void)
 {
+    free_waiter(rotator_shutdown_wait);
     free_waiter(acceptor_shutdown_wait);
 }
