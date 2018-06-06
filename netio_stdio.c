@@ -119,8 +119,8 @@ stdion_finish_close(struct stdiona_data *nadata)
 {
     struct netio *net = nadata->net;
 
-    if (net->close_done)
-	net->close_done(net);
+    if (net->cbs->close_done)
+	net->cbs->close_done(net);
 }
 
 /* Must be called with ndata->lock held */
@@ -166,8 +166,9 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     UNLOCK(nadata->lock);
 
     if (in_read)
-	count = net->read_callback(net, 0, nadata->read_data + nadata->data_pos,
-				   nadata->data_pending_len);
+	count = net->cbs->read_callback(net, 0,
+					nadata->read_data + nadata->data_pos,
+					nadata->data_pending_len);
     LOCK(nadata->lock);
     nadata->deferred_op_pending = false;
     if (nadata->deferred_close) {
@@ -263,13 +264,13 @@ stdion_read_ready(int fd, void *cbdata)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->read_callback(net, errno, 0, 0);
+	    net->cbs->read_callback(net, errno, 0, 0);
     } else if (rv == 0) {
-	net->read_callback(net, EPIPE, 0, 0);
+	net->cbs->read_callback(net, EPIPE, 0, 0);
 	rv = -1;
     } else {
 	nadata->data_pending_len = rv;
-	count = net->read_callback(net, 0, nadata->read_data, rv);
+	count = net->cbs->read_callback(net, 0, nadata->read_data, rv);
     }
 
     LOCK(nadata->lock);
@@ -284,7 +285,7 @@ stdion_write_ready(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct netio *net = nadata->net;
 
-    net->write_callback(net);
+    net->cbs->write_callback(net);
 }
 
 static int
@@ -298,7 +299,7 @@ stdiona_do_connect(sel_runner_t *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
-    nadata->acceptor->new_connection(nadata->acceptor, nadata->net);
+    nadata->acceptor->cbs->new_connection(nadata->acceptor, nadata->net);
 }
 
 static void
@@ -319,8 +320,8 @@ static void stdiona_fd_cleared(int fd, void *cbdata)
     struct netio_acceptor *acceptor = nadata->acceptor;
 
     nadata->in_shutdown = false;
-    if (acceptor->shutdown_done && nadata->report_shutdown)
-	acceptor->shutdown_done(acceptor);
+    if (acceptor->cbs->shutdown_done && nadata->report_shutdown)
+	acceptor->cbs->shutdown_done(acceptor);
 
     if (nadata->in_free)
 	stdiona_finish_free(nadata);
@@ -436,8 +437,7 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     if (err)
 	goto out;
 
-    acc->new_connection = cbs->new_connection;
-    acc->shutdown_done = cbs->shutdown_done;
+    acc->cbs = cbs;
     acc->user_data = user_data;
 
     acc->internal_data = nadata;

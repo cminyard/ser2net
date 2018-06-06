@@ -178,8 +178,8 @@ tcpn_finish_close(struct tcpn_data *ndata)
 
     close(ndata->fd);
 
-    if (net->close_done)
-	net->close_done(net);
+    if (net->cbs->close_done)
+	net->cbs->close_done(net);
 
     sel_free_runner(ndata->deferred_read_runner);
     free(ndata->read_data);
@@ -251,8 +251,8 @@ tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
     unsigned int count;
 
     /* No lock needed, this data cannot be changed here. */
-    count = net->read_callback(net, 0, ndata->read_data + ndata->data_pos,
-			       ndata->data_pending_len);
+    count = net->cbs->read_callback(net, 0, ndata->read_data + ndata->data_pos,
+				    ndata->data_pending_len);
     LOCK(ndata->lock);
     ndata->deferred_read_pending = false;
     if (ndata->deferred_close) {
@@ -337,7 +337,7 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	    if (rv == 0 || (rv < 0 && errno != EINTR))
 		break;
 	}
-	net->urgent_callback(net);
+	net->cbs->urgent_callback(net);
     }
 
  retry:
@@ -348,13 +348,13 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->read_callback(net, errno, NULL, 0);
+	    net->cbs->read_callback(net, errno, NULL, 0);
     } else if (rv == 0) {
-	net->read_callback(net, EPIPE, NULL, 0);
+	net->cbs->read_callback(net, EPIPE, NULL, 0);
 	rv = -1;
     } else {
 	ndata->data_pending_len = rv;
-	count = net->read_callback(net, 0, ndata->read_data, rv);
+	count = net->cbs->read_callback(net, 0, ndata->read_data, rv);
     }
 
     LOCK(ndata->lock);
@@ -379,7 +379,7 @@ tcpn_write_ready(int fd, void *cbdata)
     ndata->in_write = true;
     UNLOCK(ndata->lock);
 
-    net->write_callback(net);
+    net->cbs->write_callback(net);
 
     LOCK(ndata->lock);
     ndata->in_write = false;
@@ -525,7 +525,7 @@ tcpna_readhandler(int fd, void *cbdata)
 			    tcpn_write_ready, tcpn_except_ready, tcpn_fd_cleared))
 	goto out_nomem;
 
-    nadata->acceptor->new_connection(nadata->acceptor, net);
+    nadata->acceptor->cbs->new_connection(nadata->acceptor, net);
     return;
 
  out_nomem:
@@ -579,8 +579,8 @@ tcpna_fd_cleared(int fd, void *cbdata)
 
     if (num_left == 0) {
 	nadata->in_shutdown = false;
-	if (acceptor->shutdown_done && nadata->report_shutdown)
-	    acceptor->shutdown_done(acceptor);
+	if (acceptor->cbs->shutdown_done && nadata->report_shutdown)
+	    acceptor->cbs->shutdown_done(acceptor);
 	if (nadata->in_free)
 	    tcpna_finish_free(nadata);
     }
@@ -721,8 +721,7 @@ tcp_netio_acceptor_alloc(const char *name,
 	goto out;
     }
 
-    acc->new_connection = cbs->new_connection;
-    acc->shutdown_done = cbs->shutdown_done;
+    acc->cbs = cbs;
     acc->user_data = user_data;
 
     acc->internal_data = nadata;
