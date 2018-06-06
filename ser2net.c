@@ -275,7 +275,7 @@ op_loop(void *dummy)
 	sel_select(ser2net_sel, wake_thread_send_sig, (long) &self, NULL, NULL);
 
     /* Join the threads only in the first thread.  You cannot join the
-       first thread.  Finish thw shutdown in the first thread. */
+       first thread.  Finish the shutdown in the first thread. */
     if (self == threads[0].id) {
 	int i;
 
