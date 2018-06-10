@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 
 /*
- * serialecho - Emulate a serial device in loopback or pipe
+ * serialsim - Emulate a serial device in a loopback and/or pipe
  *
  * This attempts to emulate a basic serial device.  It uses the baud
  * rate and sends the bytes through the loopback as approximately the
@@ -17,6 +17,10 @@
  * You may create an arbitrary number of devices by setting the
  * nr_echo ports and nr_pipe_ports module parameters.  The default is
  * four for both.
+ *
+ * This driver supports modifying the modem control lines and
+ * injecting various serial errors.  It also supports a simulated null
+ * modem between the two pipes, or in a loopback on the echo device.
  */
 
 #include <linux/module.h>
