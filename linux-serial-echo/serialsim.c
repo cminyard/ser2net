@@ -21,6 +21,62 @@
  * This driver supports modifying the modem control lines and
  * injecting various serial errors.  It also supports a simulated null
  * modem between the two pipes, or in a loopback on the echo device.
+ *
+ * By default a pipe or echo comes up in null modem configuration,
+ * meaning that the DTR line is hooked to the DSR and CD lines on the
+ * other side and the RTS line on one side is hooked to the CTS line
+ * on the other side.
+ *
+ * The RTS and CTS lines don't currently do anything for flow control.
+ *
+ * You can modify null modem and control the lines individually
+ * through an interface in /sys/class/tty/ttyECHO<n>/ctrl,
+ * /sys/class/tty/ttyPipeA<n>/ctrl, and
+ * /sys/class/tty/ttyPipeB<n>/ctrl.  The following may be written to
+ * those files:
+ *
+ *  [+-]nullmodem - enable/disable null modem
+ *  [+-]cd        - enable/disable Carrier Detect (no effect if +nullmodem)
+ *  [+-]dsr       - enable/disable Data Set Ready (no effect if +nullmodem)
+ *  [+-]cts       - enable/disable Clear To Send (no effect if +nullmodem)
+ *  [+-]ring      - enable/disable Ring
+ *  frame         - inject a frame error on the next byte
+ *  parity        - inject a parity error on the next byte
+ *  overrun       - inject an overrun error on the next byte
+ *
+ * The contents of the above files has the following format:
+ *
+ *  tty[Echo|PipeA|PipeB]<n>: <mctrl values>
+ *
+ * where <mctrl values> is the modem control values above (not frame,
+ * parity, or overrun) with the following added:
+ *
+ *  [+-]dtr - value of the Data Terminal Ready
+ *  [+-]rts - value of the Request To Send
+ *
+ * The above values are not settable through this interface, they are
+ * set through the serial port interface itself.
+ *
+ * So, for instance, ttyEcho0 comes up in the following state:
+ *
+ *  # cat /sys/class/tty/ttyEcho0/ctrl
+ *  ttyEcho0: +nullmodem -cd -dsr -cts -ring -dtr -rts
+ *
+ * If something connects, it will become:
+ *
+ *  ttyEcho0: +nullmodem +cd +dsr +cts -ring +dtr +rts
+ *
+ * To enable ring:
+ *
+ *  # echo "+ring" >/sys/class/tty/ttyEcho0/ctrl
+ *  # cat /sys/class/tty/ttyEcho0/ctrl
+ *  ttyEcho0: +nullmodem +cd +dsr +cts +ring +dtr +rts
+ *
+ * Now disable NULL modem and the CD line:
+ *
+ *  # echo "-nullmodem -cd" >/sys/class/tty/ttyEcho0/ctrl
+ *  # cat /sys/class/tty/ttyEcho0/ctrl
+ *  ttyEcho0: -nullmodem -cd -dsr -cts +ring -dtr -rts
  */
 
 #include <linux/module.h>
@@ -44,12 +100,12 @@
 #define PORT_SERIALPIPEB 72551
 
 #ifdef CONFIG_HIGH_RES_TIMERS
-#define SERIALECHO_WAKES_PER_SEC	1000
+#define SERIALSIM_WAKES_PER_SEC	1000
 #else
-#define SERIALECHO_WAKES_PER_SEC	HZ
+#define SERIALSIM_WAKES_PER_SEC	HZ
 #endif
 
-#define SERIALECHO_XBUFSIZE	32
+#define SERIALSIM_XBUFSIZE	32
 
 /* For things to send on the line, in flags field. */
 #define DO_FRAME_ERR		0x01
@@ -57,14 +113,14 @@
 #define DO_OVERRUN_ERR		0x04
 #define DO_BREAK		0x08
 
-struct serialecho_intf {
+struct serialsim_intf {
 	struct uart_port port;
 
 	/*
 	 * This is my transmit buffer, my thread picks this up and
 	 * injects them into the other port's uart.
 	 */
-	unsigned char xmitbuf[SERIALECHO_XBUFSIZE];
+	unsigned char xmitbuf[SERIALSIM_XBUFSIZE];
 	struct circ_buf buf;
 
 	/* Error flags to send. */
@@ -90,7 +146,7 @@ struct serialecho_intf {
 	 * The serial echo port on the other side of this pipe (or points
 	 * to myself in loopback mode.
 	 */
-	struct serialecho_intf *ointf;
+	struct serialsim_intf *ointf;
 
 	unsigned int div;
 	unsigned int bytes_per_interval;
@@ -101,18 +157,18 @@ struct serialecho_intf {
 };
 
 #define circ_sbuf_space(buf) CIRC_SPACE((buf)->head, (buf)->tail, \
-					SERIALECHO_XBUFSIZE)
+					SERIALSIM_XBUFSIZE)
 #define circ_sbuf_empty(buf) ((buf)->head == (buf)->tail)
-#define circ_sbuf_next(idx) (((idx) + 1) % SERIALECHO_XBUFSIZE)
+#define circ_sbuf_next(idx) (((idx) + 1) % SERIALSIM_XBUFSIZE)
 
-static struct serialecho_intf *serialecho_port_to_intf(struct uart_port *port)
+static struct serialsim_intf *serialsim_port_to_intf(struct uart_port *port)
 {
-	return container_of(port, struct serialecho_intf, port);
+	return container_of(port, struct serialsim_intf, port);
 }
 
-static unsigned int serialecho_tx_empty(struct uart_port *port)
+static unsigned int serialsim_tx_empty(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	if (circ_sbuf_empty(&intf->buf))
 		return TIOCSER_TEMT;
@@ -123,7 +179,7 @@ static unsigned int serialecho_tx_empty(struct uart_port *port)
  * We have to lock multiple locks, make sure to do it in the same order all
  * the time.
  */
-static void serialecho_null_modem_lock_irq(struct serialecho_intf *intf) {
+static void serialsim_null_modem_lock_irq(struct serialsim_intf *intf) {
 	spin_lock_irq(&intf->port.lock);
 	if (intf == intf->ointf) {
 		spin_lock(&intf->mctrl_lock);
@@ -136,7 +192,7 @@ static void serialecho_null_modem_lock_irq(struct serialecho_intf *intf) {
 	}
 }
 
-static void serialecho_null_modem_unlock_irq(struct serialecho_intf *intf)
+static void serialsim_null_modem_unlock_irq(struct serialsim_intf *intf)
 {
 	if (intf == intf->ointf) {
 		spin_unlock(&intf->mctrl_lock);
@@ -149,9 +205,9 @@ static void serialecho_null_modem_unlock_irq(struct serialecho_intf *intf)
 }
 
 /*
- * This must be called holdnig intf->port.lock and intf->mctrl_lock.
+ * This must be called holding intf->port.lock and intf->mctrl_lock.
  */
-static void _serialecho_set_modem_lines(struct serialecho_intf *intf,
+static void _serialsim_set_modem_lines(struct serialsim_intf *intf,
 					unsigned int mask,
 					unsigned int new_mctrl)
 {
@@ -185,7 +241,7 @@ static void _serialecho_set_modem_lines(struct serialecho_intf *intf,
  * Must be called holding intf->port.lock, intf->mctrl_lock, and
  * intf->ointf.mctrl_lock.
  */
-static void serialecho_handle_null_modem_update(struct serialecho_intf *intf)
+static void serialsim_handle_null_modem_update(struct serialsim_intf *intf)
 {
 	unsigned int mctrl = 0;
 
@@ -195,12 +251,12 @@ static void serialecho_handle_null_modem_update(struct serialecho_intf *intf)
 	if (intf->ointf->mctrl & TIOCM_RTS)
 		mctrl |= TIOCM_CTS;
 
-	_serialecho_set_modem_lines(intf, NULL_MODEM_MCTRL, mctrl);
+	_serialsim_set_modem_lines(intf, NULL_MODEM_MCTRL, mctrl);
 }
 
-static void serialecho_set_null_modem(struct serialecho_intf *intf, bool val)
+static void serialsim_set_null_modem(struct serialsim_intf *intf, bool val)
 {
-	serialecho_null_modem_lock_irq(intf);
+	serialsim_null_modem_lock_irq(intf);
 
 	if (!!val == !!intf->do_null_modem)
 		goto out_unlock;
@@ -213,13 +269,13 @@ static void serialecho_set_null_modem(struct serialecho_intf *intf, bool val)
 	/* Enabling NULL modem. */
 	intf->do_null_modem = true;
 
-	serialecho_handle_null_modem_update(intf);
+	serialsim_handle_null_modem_update(intf);
 
 out_unlock:
-	serialecho_null_modem_unlock_irq(intf);
+	serialsim_null_modem_unlock_irq(intf);
 }
 
-static void serialecho_set_modem_lines(struct serialecho_intf *intf,
+static void serialsim_set_modem_lines(struct serialsim_intf *intf,
 				       unsigned int mask,
 				       unsigned int new_mctrl)
 {
@@ -231,7 +287,7 @@ static void serialecho_set_modem_lines(struct serialecho_intf *intf,
 	if (intf->do_null_modem)
 		mask &= ~NULL_MODEM_MCTRL;
 
-	_serialecho_set_modem_lines(intf, mask, new_mctrl);
+	_serialsim_set_modem_lines(intf, mask, new_mctrl);
 
 	spin_unlock(&intf->mctrl_lock);
 	spin_unlock_irq(&intf->port.lock);
@@ -239,16 +295,17 @@ static void serialecho_set_modem_lines(struct serialecho_intf *intf,
 
 static void mctrl_tasklet(unsigned long data)
 {
-	struct serialecho_intf *intf = (void *) data;
+	struct serialsim_intf *intf = (void *) data;
 
-	serialecho_null_modem_lock_irq(intf);
-	serialecho_handle_null_modem_update(intf);
-	serialecho_null_modem_unlock_irq(intf);
+	serialsim_null_modem_lock_irq(intf);
+	if (intf->do_null_modem)
+		serialsim_handle_null_modem_update(intf);
+	serialsim_null_modem_unlock_irq(intf);
 }
 
-static void serialecho_set_mctrl(struct uart_port *port, unsigned int mctrl)
+static void serialsim_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	spin_lock(&intf->mctrl_lock);
 	intf->mctrl &= ~(TIOCM_RTS | TIOCM_DTR);
@@ -264,9 +321,9 @@ static void serialecho_set_mctrl(struct uart_port *port, unsigned int mctrl)
 	tasklet_schedule(&intf->ointf->mctrl_tasklet);
 }
 
-static unsigned int serialecho_get_mctrl(struct uart_port *port)
+static unsigned int serialsim_get_mctrl(struct uart_port *port)
 { 
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	unsigned int rv;
 
 	spin_lock(&intf->mctrl_lock);
@@ -276,14 +333,14 @@ static unsigned int serialecho_get_mctrl(struct uart_port *port)
 	return rv;
 }
 
-static void serialecho_stop_tx(struct uart_port *port)
+static void serialsim_stop_tx(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	intf->tx_enabled = true;
 }
 
-static void serialecho_set_baud_rate(struct serialecho_intf *intf,
+static void serialsim_set_baud_rate(struct serialsim_intf *intf,
 				     unsigned int baud, unsigned int cflag)
 {
 	unsigned int bits_per_char;
@@ -297,12 +354,12 @@ static void serialecho_set_baud_rate(struct serialecho_intf *intf,
 	if (cflag & CSTOPB)
 		bits_per_char++;
 
-	intf->div = SERIALECHO_WAKES_PER_SEC * bits_per_char;
+	intf->div = SERIALSIM_WAKES_PER_SEC * bits_per_char;
 	intf->bytes_per_interval = baud / intf->div;
 	intf->per_interval_residual = baud % intf->div;
 }
 
-static void serialecho_transfer_data(struct serialecho_intf *intf)
+static void serialsim_transfer_data(struct serialsim_intf *intf)
 {
 	struct uart_port *port = &intf->port;
 	struct circ_buf *cbuf = &port->state->xmit;
@@ -320,7 +377,7 @@ static void serialecho_transfer_data(struct serialecho_intf *intf)
 		uart_write_wakeup(port);
 }
 
-static unsigned int serialecho_get_flag(struct serialecho_intf *intf,
+static unsigned int serialsim_get_flag(struct serialsim_intf *intf,
 					unsigned int *status)
 {
 	unsigned int flags = intf->flags;
@@ -352,7 +409,7 @@ static unsigned int serialecho_get_flag(struct serialecho_intf *intf,
 	return TTY_NORMAL;
 }
 
-static void serialecho_set_flags(struct serialecho_intf *intf,
+static void serialsim_set_flags(struct serialsim_intf *intf,
 				 unsigned int status)
 {
 	spin_lock_irq(&intf->port.lock);
@@ -360,12 +417,12 @@ static void serialecho_set_flags(struct serialecho_intf *intf,
 	spin_unlock_irq(&intf->port.lock);
 }
 
-static void serialecho_thread_delay(void)
+static void serialsim_thread_delay(void)
 {
 #ifdef CONFIG_HIGH_RES_TIMERS
 	ktime_t timeout;
 
-	timeout = ns_to_ktime(1000000000 / SERIALECHO_WAKES_PER_SEC);
+	timeout = ns_to_ktime(1000000000 / SERIALSIM_WAKES_PER_SEC);
 	set_current_state(TASK_INTERRUPTIBLE);
 	schedule_hrtimeout(&timeout, HRTIMER_MODE_REL);
 #else
@@ -373,9 +430,9 @@ static void serialecho_thread_delay(void)
 #endif
 }
 
-static int serialecho_thread(void *data)
+static int serialsim_thread(void *data)
 {
-	struct serialecho_intf *intf = data;
+	struct serialsim_intf *intf = data;
 	struct uart_port *port = &intf->port;
 	struct uart_port *oport = &intf->ointf->port;
 	struct circ_buf *tbuf = &intf->buf;
@@ -384,7 +441,7 @@ static int serialecho_thread(void *data)
 	while (!kthread_should_stop()) {
 		unsigned int to_send;
 		unsigned int div;
-		unsigned char buf[SERIALECHO_XBUFSIZE];
+		unsigned char buf[SERIALSIM_XBUFSIZE];
 		unsigned int pos = 0;
 		unsigned int flag;
 		unsigned int status = 0;
@@ -396,7 +453,7 @@ static int serialecho_thread(void *data)
 		}
 
 		/* Move the data into the transmit buffer. */
-		serialecho_transfer_data(intf);
+		serialsim_transfer_data(intf);
 
 		/* Send the data to the other side. */
 		to_send = intf->bytes_per_interval;
@@ -417,7 +474,7 @@ static int serialecho_thread(void *data)
 		spin_unlock_irq(&port->lock);
 
 		spin_lock_irq(&oport->lock);
-		flag = serialecho_get_flag(intf->ointf, &status);
+		flag = serialsim_get_flag(intf->ointf, &status);
 		if (intf->ointf->rx_enabled) {
 			for (to_send = 0; to_send < pos; to_send++) {
 				oport->icount.rx++;
@@ -433,30 +490,30 @@ static int serialecho_thread(void *data)
 		if (pos)
 			tty_flip_buffer_push(&oport->state->port);
 	do_delay:
-		serialecho_thread_delay();
+		serialsim_thread_delay();
 	}
 
 	return 0;
 }
 
-static void serialecho_start_tx(struct uart_port *port)
+static void serialsim_start_tx(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	intf->tx_enabled = true;
 }
 
-static void serialecho_stop_rx(struct uart_port *port)
+static void serialsim_stop_rx(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	intf->rx_enabled = false;
 }
 
-static void serialecho_break_ctl(struct uart_port *port, int break_state)
+static void serialsim_break_ctl(struct uart_port *port, int break_state)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
-	struct serialecho_intf *ointf = intf->ointf;
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
+	struct serialsim_intf *ointf = intf->ointf;
 
 	spin_lock_irq(&ointf->port.lock);
 	if (!break_state && ointf->flags & DO_BREAK) {
@@ -469,17 +526,17 @@ static void serialecho_break_ctl(struct uart_port *port, int break_state)
 	spin_unlock_irq(&ointf->port.lock);
 }
 
-static int serialecho_startup(struct uart_port *port)
+static int serialsim_startup(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	int rv = 0;
 
-	intf->thread = kthread_run(serialecho_thread, intf,
+	intf->thread = kthread_run(serialsim_thread, intf,
 				   "%s%d", intf->threadname, port->line);
 	if (IS_ERR(intf->thread)) {
 		rv = PTR_ERR(intf->thread);
 		intf->thread = NULL;
-		pr_err("serialecho: Could not start thread: %d", rv);
+		pr_err("serialsim: Could not start thread: %d", rv);
 	} else {
 		unsigned long flags;
 
@@ -487,16 +544,16 @@ static int serialecho_startup(struct uart_port *port)
 		intf->tx_enabled = false;
 		intf->rx_enabled = true;
 
-		serialecho_set_baud_rate(intf, 9600, CS8);
+		serialsim_set_baud_rate(intf, 9600, CS8);
 		spin_unlock_irqrestore(&port->lock, flags);
 	}
 
 	return rv;
 }
 
-static void serialecho_shutdown(struct uart_port *port)
+static void serialsim_shutdown(struct uart_port *port)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
@@ -505,21 +562,21 @@ static void serialecho_shutdown(struct uart_port *port)
 	kthread_stop(intf->thread);
 }
 
-static void serialecho_release_port(struct uart_port *port)
+static void serialsim_release_port(struct uart_port *port)
 {
 }
 
 static void
-serialecho_set_termios(struct uart_port *port, struct ktermios *termios,
+serialsim_set_termios(struct uart_port *port, struct ktermios *termios,
 	        struct ktermios *old)
 {
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	unsigned int baud = uart_get_baud_rate(port, termios, old,
 					       10, 100000000);
 	unsigned long flags;
 
 	spin_lock_irqsave(&port->lock, flags);
-	serialecho_set_baud_rate(intf, baud, termios->c_cflag);
+	serialsim_set_baud_rate(intf, baud, termios->c_cflag);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
@@ -553,15 +610,13 @@ static void serialpipeb_config_port(struct uart_port *port, int type)
 	port->type = PORT_SERIALPIPEB;
 }
 
-static struct serialecho_intf *serialecho_ports;
-static struct serialecho_intf *serialpipe_ports;
+static struct serialsim_intf *serialecho_ports;
+static struct serialsim_intf *serialpipe_ports;
 
 static unsigned int nr_echo_ports = 4;
 module_param(nr_echo_ports, uint, 0444);
 MODULE_PARM_DESC(nr_echo_ports,
 		 "The number of echo ports to create.  Defaults to 4");
-
-static struct serialecho_intf *serialecho_ports;
 
 static unsigned int nr_pipe_ports = 4;
 module_param(nr_pipe_ports, uint, 0444);
@@ -597,14 +652,51 @@ static unsigned int parse_modem_line(char op, unsigned int flag,
 	return flag;
 }
 
-static ssize_t serialecho_ctrl_op(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *val, size_t count)
+static void serialsim_ctrl_append(char **val, int *left, char *n, bool enabled)
+{
+	int count;
+
+	count = snprintf(*val, *left, " %c%s", enabled ? '+' : '-', n);
+	*left -= count;
+	*val += count;
+}
+
+static ssize_t serialsim_ctrl_read(struct device *dev,
+				   struct device_attribute *attr,
+				   char *buf)
 {
 	struct tty_port *tport = dev_get_drvdata(dev);
 	struct uart_state *state = container_of(tport, struct uart_state, port);
 	struct uart_port *port = state->uart_port;
-	struct serialecho_intf *intf = serialecho_port_to_intf(port);
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
+	unsigned int mctrl = intf->mctrl;
+	char *val = buf;
+	int left = PAGE_SIZE;
+	int count;
+
+	count = snprintf(val, left, "%s:", dev->kobj.name);
+	val += count;
+	left -= count;
+	serialsim_ctrl_append(&val, &left, "nullmodem", intf->do_null_modem);
+	serialsim_ctrl_append(&val, &left, "cd", mctrl & TIOCM_CAR);
+	serialsim_ctrl_append(&val, &left, "dsr", mctrl & TIOCM_DSR);
+	serialsim_ctrl_append(&val, &left, "cts", mctrl & TIOCM_CTS);
+	serialsim_ctrl_append(&val, &left, "ring", mctrl & TIOCM_RNG);
+	serialsim_ctrl_append(&val, &left, "dtr", mctrl & TIOCM_DTR);
+	serialsim_ctrl_append(&val, &left, "rts", mctrl & TIOCM_RTS);
+	*val++ = '\n';
+
+	return val - buf;
+}
+
+static ssize_t serialsim_ctrl_write(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *val, size_t count)
+{
+	struct tty_port *tport = dev_get_drvdata(dev);
+	struct uart_state *state = container_of(tport, struct uart_state, port);
+	struct uart_port *port = state->uart_port;
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	char *str = kstrndup(val, count, GFP_KERNEL);
 	char *p, *s = str;
 	int rv = count;
@@ -656,11 +748,11 @@ static ssize_t serialecho_ctrl_op(struct device *dev,
 	}
 
 	if (flags)
-		serialecho_set_flags(intf, flags);
+		serialsim_set_flags(intf, flags);
 	if (nullmodem)
-		serialecho_set_null_modem(intf, nullmodem == '+');
+		serialsim_set_null_modem(intf, nullmodem == '+');
 	if (mctrl_mask)
-		serialecho_set_modem_lines(intf, mctrl_mask, mctrl);
+		serialsim_set_modem_lines(intf, mctrl_mask, mctrl);
 
 out:
 	kfree(str);
@@ -668,62 +760,62 @@ out:
 	return rv;
 }
 
-static DEVICE_ATTR(ctrl, S_IWUSR | S_IWGRP,
-		   NULL, serialecho_ctrl_op);
+static DEVICE_ATTR(ctrl, S_IWUSR |S_IRUSR | S_IWGRP | S_IRGRP,
+		   serialsim_ctrl_read, serialsim_ctrl_write);
 
-static struct attribute *serialecho_dev_attrs[] = {
+static struct attribute *serialsim_dev_attrs[] = {
 	&dev_attr_ctrl.attr,
 	NULL,
 };
 
-static struct attribute_group serialecho_dev_attr_group = {
-	.attrs = serialecho_dev_attrs,
+static struct attribute_group serialsim_dev_attr_group = {
+	.attrs = serialsim_dev_attrs,
 };
 
 static const struct uart_ops serialecho_ops = {
-	.tx_empty =		serialecho_tx_empty,
-	.set_mctrl =		serialecho_set_mctrl,
-	.get_mctrl =		serialecho_get_mctrl,
-	.stop_tx =		serialecho_stop_tx,
-	.start_tx =		serialecho_start_tx,
-	.stop_rx =		serialecho_stop_rx,
-	.break_ctl =		serialecho_break_ctl,
-	.startup =		serialecho_startup,
-	.shutdown =		serialecho_shutdown,
-	.release_port =		serialecho_release_port,
-	.set_termios =		serialecho_set_termios,
+	.tx_empty =		serialsim_tx_empty,
+	.set_mctrl =		serialsim_set_mctrl,
+	.get_mctrl =		serialsim_get_mctrl,
+	.stop_tx =		serialsim_stop_tx,
+	.start_tx =		serialsim_start_tx,
+	.stop_rx =		serialsim_stop_rx,
+	.break_ctl =		serialsim_break_ctl,
+	.startup =		serialsim_startup,
+	.shutdown =		serialsim_shutdown,
+	.release_port =		serialsim_release_port,
+	.set_termios =		serialsim_set_termios,
 	.type =			serialecho_type,
 	.config_port =		serialecho_config_port
 };
 
 static const struct uart_ops serialpipea_ops = {
-	.tx_empty =		serialecho_tx_empty,
-	.set_mctrl =		serialecho_set_mctrl,
-	.get_mctrl =		serialecho_get_mctrl,
-	.stop_tx =		serialecho_stop_tx,
-	.start_tx =		serialecho_start_tx,
-	.stop_rx =		serialecho_stop_rx,
-	.break_ctl =		serialecho_break_ctl,
-	.startup =		serialecho_startup,
-	.shutdown =		serialecho_shutdown,
-	.release_port =		serialecho_release_port,
-	.set_termios =		serialecho_set_termios,
+	.tx_empty =		serialsim_tx_empty,
+	.set_mctrl =		serialsim_set_mctrl,
+	.get_mctrl =		serialsim_get_mctrl,
+	.stop_tx =		serialsim_stop_tx,
+	.start_tx =		serialsim_start_tx,
+	.stop_rx =		serialsim_stop_rx,
+	.break_ctl =		serialsim_break_ctl,
+	.startup =		serialsim_startup,
+	.shutdown =		serialsim_shutdown,
+	.release_port =		serialsim_release_port,
+	.set_termios =		serialsim_set_termios,
 	.type =			serialpipea_type,
 	.config_port =		serialpipea_config_port
 };
 
 static const struct uart_ops serialpipeb_ops = {
-	.tx_empty =		serialecho_tx_empty,
-	.set_mctrl =		serialecho_set_mctrl,
-	.get_mctrl =		serialecho_get_mctrl,
-	.stop_tx =		serialecho_stop_tx,
-	.start_tx =		serialecho_start_tx,
-	.stop_rx =		serialecho_stop_rx,
-	.break_ctl =		serialecho_break_ctl,
-	.startup =		serialecho_startup,
-	.shutdown =		serialecho_shutdown,
-	.release_port =		serialecho_release_port,
-	.set_termios =		serialecho_set_termios,
+	.tx_empty =		serialsim_tx_empty,
+	.set_mctrl =		serialsim_set_mctrl,
+	.get_mctrl =		serialsim_get_mctrl,
+	.stop_tx =		serialsim_stop_tx,
+	.start_tx =		serialsim_start_tx,
+	.stop_rx =		serialsim_stop_rx,
+	.break_ctl =		serialsim_break_ctl,
+	.startup =		serialsim_startup,
+	.shutdown =		serialsim_shutdown,
+	.release_port =		serialsim_release_port,
+	.set_termios =		serialsim_set_termios,
 	.type =			serialpipeb_type,
 	.config_port =		serialpipeb_config_port
 };
@@ -747,7 +839,7 @@ static struct uart_driver serialpipeb_driver = {
 };
 
 
-static int __init serialecho_init(void)
+static int __init serialsim_init(void)
 {
 	unsigned int i;
 	int rv;
@@ -756,7 +848,7 @@ static int __init serialecho_init(void)
 				   sizeof(*serialecho_ports),
 				   GFP_KERNEL);
 	if (!serialecho_ports) {
-		pr_err("serialecho: Unable to allocate echo ports.\n");
+		pr_err("serialsim: Unable to allocate echo ports.\n");
 		rv = ENOMEM;
 		goto out;
 	}
@@ -766,7 +858,7 @@ static int __init serialecho_init(void)
 				   GFP_KERNEL);
 	if (!serialpipe_ports) {
 		kfree(serialecho_ports);
-		pr_err("serialecho: Unable to allocate pipe ports.\n");
+		pr_err("serialsim: Unable to allocate pipe ports.\n");
 		rv = ENOMEM;
 		goto out;
 	}
@@ -776,7 +868,7 @@ static int __init serialecho_init(void)
 	if (rv) {
 		kfree(serialecho_ports);
 		kfree(serialpipe_ports);
-		pr_err("serialecho: Unable to register driver.\n");
+		pr_err("serialsim: Unable to register driver.\n");
 		goto out;
 	}
 
@@ -786,7 +878,7 @@ static int __init serialecho_init(void)
 		uart_unregister_driver(&serialecho_driver);
 		kfree(serialecho_ports);
 		kfree(serialpipe_ports);
-		pr_err("serialecho: Unable to register driver.\n");
+		pr_err("serialsim: Unable to register driver.\n");
 		goto out;
 	}
 
@@ -797,12 +889,12 @@ static int __init serialecho_init(void)
 		uart_unregister_driver(&serialecho_driver);
 		kfree(serialecho_ports);
 		kfree(serialpipe_ports);
-		pr_err("serialecho: Unable to register driver.\n");
+		pr_err("serialsim: Unable to register driver.\n");
 		goto out;
 	}
 
 	for (i = 0; i < nr_echo_ports; i++) {
-		struct serialecho_intf *intf = &serialecho_ports[i];
+		struct serialsim_intf *intf = &serialecho_ports[i];
 		struct uart_port *port = &intf->port;
 
 		intf->buf.buf = intf->xmitbuf;
@@ -817,18 +909,18 @@ static int __init serialecho_init(void)
 		port->flags = UPF_BOOT_AUTOCONF;
 		port->ops = &serialecho_ops;
 		spin_lock_init(&port->lock);
-		port->attr_group = &serialecho_dev_attr_group;
+		port->attr_group = &serialsim_dev_attr_group;
 		rv = uart_add_one_port(&serialecho_driver, port);
 		if (rv)
-			pr_err("serialecho: Unable to add uart port %d: %d\n",
+			pr_err("serialsim: Unable to add uart port %d: %d\n",
 			       i, rv);
 		else
 			intf->registered = true;
 	}
 
 	for (i = 0; i < nr_pipe_ports * 2; i += 2) {
-		struct serialecho_intf *intfa = &serialpipe_ports[i];
-		struct serialecho_intf *intfb = &serialpipe_ports[i + 1];
+		struct serialsim_intf *intfa = &serialpipe_ports[i];
+		struct serialsim_intf *intfb = &serialpipe_ports[i + 1];
 		struct uart_port *porta = &intfa->port;
 		struct uart_port *portb = &intfb->port;
 
@@ -853,10 +945,10 @@ static int __init serialecho_init(void)
 		porta->flags = UPF_BOOT_AUTOCONF;
 		porta->ops = &serialpipea_ops;
 		spin_lock_init(&porta->lock);
-		porta->attr_group = &serialecho_dev_attr_group;
+		porta->attr_group = &serialsim_dev_attr_group;
 		rv = uart_add_one_port(&serialpipea_driver, porta);
 		if (rv) {
-			pr_err("serialecho: Unable to add uart pipe aport %d: %d\n",
+			pr_err("serialsim: Unable to add uart pipe aport %d: %d\n",
 			       i, rv);
 			continue;
 		} else {
@@ -867,11 +959,11 @@ static int __init serialecho_init(void)
 		portb->line = i / 2;
 		portb->flags = UPF_BOOT_AUTOCONF;
 		portb->ops = &serialpipeb_ops;
-		portb->attr_group = &serialecho_dev_attr_group;
+		portb->attr_group = &serialsim_dev_attr_group;
 		spin_lock_init(&portb->lock);
 		rv = uart_add_one_port(&serialpipeb_driver, portb);
 		if (rv) {
-			pr_err("serialecho: Unable to add uart pipe b port %d: %d\n",
+			pr_err("serialsim: Unable to add uart pipe b port %d: %d\n",
 			       i, rv);
 			intfa->registered = false;
 			uart_remove_one_port(&serialpipea_driver, porta);
@@ -881,17 +973,17 @@ static int __init serialecho_init(void)
 	}
 	rv = 0;
 
-	pr_info("serialecho ready\n");
+	pr_info("serialsim ready\n");
 out:
 	return rv;
 }
 
-static void __exit serialecho_exit(void)
+static void __exit serialsim_exit(void)
 {
 	unsigned int i;
 
 	for (i = 0; i < nr_echo_ports; i++) {
-		struct serialecho_intf *intf = &serialecho_ports[i];
+		struct serialsim_intf *intf = &serialecho_ports[i];
 		struct uart_port *port = &intf->port;
 
 		if (intf->registered)
@@ -900,8 +992,8 @@ static void __exit serialecho_exit(void)
 	}
 
 	for (i = 0; i < nr_pipe_ports * 2; i += 2) {
-		struct serialecho_intf *intfa = &serialpipe_ports[i];
-		struct serialecho_intf *intfb = &serialpipe_ports[i + 1];
+		struct serialsim_intf *intfa = &serialpipe_ports[i];
+		struct serialsim_intf *intfb = &serialpipe_ports[i + 1];
 		struct uart_port *porta = &intfa->port;
 		struct uart_port *portb = &intfb->port;
 
@@ -919,11 +1011,11 @@ static void __exit serialecho_exit(void)
 	kfree(serialecho_ports);
 	kfree(serialpipe_ports);
 
-	pr_info("serialecho unloaded\n");
+	pr_info("serialsim unloaded\n");
 }
 
-module_init(serialecho_init);
-module_exit(serialecho_exit);
+module_init(serialsim_init);
+module_exit(serialsim_exit);
 
 MODULE_AUTHOR("Corey Minyard");
 MODULE_DESCRIPTION("Serial echo device");
