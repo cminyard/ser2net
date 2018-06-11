@@ -101,6 +101,9 @@
  *			 errors are TTY_BREAK, TTY_FRAME, TTY_PARITY,
  *			 and TTY_OVERRUN.
  *
+ * TIOCSERGREMTERMIOS  - Return the termios structure for the other side
+ *			 of the pipe.
+ *
  * Note that unlike the sysfs interface, these ioctls affect the other
  * end.  So setting nullmodem on the ttyPipeB0 interface sets whether
  * the DTR/RTS lines on ttyPipeB0 affect ttyPipeA0.
@@ -181,6 +184,8 @@ struct serialsim_intf {
 	unsigned int div;
 	unsigned int bytes_per_interval;
 	unsigned int per_interval_residual;
+
+	struct ktermios termios;
 
 	const char *threadname;
 	struct task_struct *thread;
@@ -609,6 +614,7 @@ serialsim_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	spin_lock_irqsave(&port->lock, flags);
 	serialsim_set_baud_rate(intf, baud, termios->c_cflag);
+	intf->termios = *termios;
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
@@ -669,6 +675,19 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 		else
 			serialsim_set_flags(intf, arg);
 		break;
+
+	case TIOCSERGREMTERMIOS:
+	{
+		struct ktermios otermios;
+
+		spin_lock_irq(&intf->ointf->port.lock);
+		otermios = intf->ointf->termios;
+		spin_unlock_irq(&intf->ointf->port.lock);
+		if (kernel_termios_to_user_termio((struct termio __user *) arg,
+						  &otermios))
+			rv = -EFAULT;
+		break;
+	}
 
 	default:
 		rv = -ENOIOCTLCMD;
