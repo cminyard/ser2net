@@ -77,6 +77,33 @@
  *  # echo "-nullmodem -cd" >/sys/class/tty/ttyEcho0/ctrl
  *  # cat /sys/class/tty/ttyEcho0/ctrl
  *  ttyEcho0: -nullmodem -cd -dsr -cts +ring -dtr -rts
+ *
+ * Note that these settings are for the side you are modifying.  So if
+ * you set nullmodem on ttyPipeA0, that controls whether the DTR/RTS
+ * lines from ttyPipeB0 affect ttyPipeA0.  It doesn't affect ttyPipeB's
+ * modem control lines.
+ *
+ * The PIPEA and PIPEB devices also have the ability to set these
+ * values for the other end via an ioctl.  The following ioctls are
+ * available:
+ *  TIOCSERSNULLMODEM  - Set the null modem value, the arg is a boolean.
+ *
+ *  TIOCSERSREMMCTRL   - Set the modem control lines, bits 16-31
+ *			 of the arg is a 16-bit mask telling which values
+ *			 to set, bits 0-15 are the actual values.  Settable
+ *			 values are TIOCM_CAR, TIOCM_CTS, TIOCM_DSR, and
+ *			 TIOC_RNG.  If NULLMODEM is set to true, then only
+ *			 TIOC_RNG is settable, the DTR and RTS lines from
+ *			 the other end set the other lines.
+ *
+ * TIOCSERSREMERR      - Send an error or errors on the next sent byte.
+ *			 arg is a bitwise OR of (1 << TTY_xxx).  Allowed
+ *			 errors are TTY_BREAK, TTY_FRAME, TTY_PARITY,
+ *			 and TTY_OVERRUN.
+ *
+ * Note that unlike the sysfs interface, these ioctls affect the other
+ * end.  So setting nullmodem on the ttyPipeB0 interface sets whether
+ * the DTR/RTS lines on ttyPipeB0 affect ttyPipeA0.
  */
 
 #include <linux/module.h>
@@ -95,6 +122,8 @@
 #include <linux/ctype.h>
 #include <linux/string.h>
 
+#include "serialsim.h"
+
 #define PORT_SERIALECHO 72549
 #define PORT_SERIALPIPEA 72550
 #define PORT_SERIALPIPEB 72551
@@ -108,10 +137,11 @@
 #define SERIALSIM_XBUFSIZE	32
 
 /* For things to send on the line, in flags field. */
-#define DO_FRAME_ERR		0x01
-#define DO_PARITY_ERR		0x02
-#define DO_OVERRUN_ERR		0x04
-#define DO_BREAK		0x08
+#define DO_FRAME_ERR		(1 << TTY_FRAME)
+#define DO_PARITY_ERR		(1 << TTY_PARITY)
+#define DO_OVERRUN_ERR		(1 << TTY_OVERRUN)
+#define DO_BREAK		(1 << TTY_BREAK)
+#define FLAGS_MASK (DO_FRAME_ERR | DO_PARITY_ERR | DO_OVERRUN_ERR | DO_BREAK)
 
 struct serialsim_intf {
 	struct uart_port port;
@@ -303,13 +333,15 @@ static void mctrl_tasklet(unsigned long data)
 	serialsim_null_modem_unlock_irq(intf);
 }
 
+#define SETTABLE_MCTRL (TIOCM_RTS | TIOCM_DTR)
+
 static void serialsim_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
 	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
 	spin_lock(&intf->mctrl_lock);
-	intf->mctrl &= ~(TIOCM_RTS | TIOCM_DTR);
-	intf->mctrl |= mctrl & (TIOCM_RTS | TIOCM_DTR);
+	intf->mctrl &= ~SETTABLE_MCTRL;
+	intf->mctrl |= mctrl & SETTABLE_MCTRL;
 	spin_unlock(&intf->mctrl_lock);
 
 	/*
@@ -610,6 +642,41 @@ static void serialpipeb_config_port(struct uart_port *port, int type)
 	port->type = PORT_SERIALPIPEB;
 }
 
+static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
+			    unsigned long arg)
+{
+	int rv = 0;
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
+	unsigned int mask;
+
+	switch (cmd) {
+	case TIOCSERSNULLMODEM:
+		serialsim_set_null_modem(intf, !!arg);
+		break;
+
+	case TIOCSERSREMMCTRL:
+		mask = (arg >> 16) & 0xffff;
+		arg &= 0xffff;
+		if (mask & ~LOCAL_MCTRL || arg & ~LOCAL_MCTRL)
+			rv = -EINVAL;
+		else
+			serialsim_set_modem_lines(intf, mask, arg);
+		break;
+
+	case TIOCSERSREMERR:
+		if (arg & ~FLAGS_MASK)
+			rv = -EINVAL;
+		else
+			serialsim_set_flags(intf, arg);
+		break;
+
+	default:
+		rv = -ENOIOCTLCMD;
+	}
+
+	return rv;
+}
+
 static struct serialsim_intf *serialecho_ports;
 static struct serialsim_intf *serialpipe_ports;
 
@@ -801,7 +868,8 @@ static const struct uart_ops serialpipea_ops = {
 	.release_port =		serialsim_release_port,
 	.set_termios =		serialsim_set_termios,
 	.type =			serialpipea_type,
-	.config_port =		serialpipea_config_port
+	.config_port =		serialpipea_config_port,
+	.ioctl =		serialpipe_ioctl
 };
 
 static const struct uart_ops serialpipeb_ops = {
@@ -817,7 +885,8 @@ static const struct uart_ops serialpipeb_ops = {
 	.release_port =		serialsim_release_port,
 	.set_termios =		serialsim_set_termios,
 	.type =			serialpipeb_type,
-	.config_port =		serialpipeb_config_port
+	.config_port =		serialpipeb_config_port,
+	.ioctl =		serialpipe_ioctl
 };
 
 static struct uart_driver serialecho_driver = {
