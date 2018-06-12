@@ -933,7 +933,7 @@ handle_dev_fd_devstr_write(port_info_t *port)
 /* Data is ready to read on the network port. */
 static unsigned int
 handle_net_fd_read(struct netio *net, int readerr,
-		   unsigned char *buf, unsigned int buflen)
+		   unsigned char *buf, unsigned int buflen, unsigned int flags)
 {
     net_info_t *netcon = netio_get_user_data(net);
     port_info_t *port = netcon->port;

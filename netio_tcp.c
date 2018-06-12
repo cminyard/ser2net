@@ -258,7 +258,7 @@ tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 
     /* No lock needed, this data cannot be changed here. */
     count = net->cbs->read_callback(net, 0, ndata->read_data + ndata->data_pos,
-				    ndata->data_pending_len);
+				    ndata->data_pending_len, 0);
     LOCK(ndata->lock);
     ndata->deferred_read_pending = false;
     if (ndata->deferred_close) {
@@ -354,13 +354,13 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, NULL, 0);
+	    net->cbs->read_callback(net, errno, NULL, 0, 0);
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, NULL, 0);
+	net->cbs->read_callback(net, EPIPE, NULL, 0, 0);
 	rv = -1;
     } else {
 	ndata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, ndata->read_data, rv);
+	count = net->cbs->read_callback(net, 0, ndata->read_data, rv, 0);
     }
 
     LOCK(ndata->lock);
