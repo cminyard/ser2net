@@ -404,7 +404,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
-					nadata->data_pending_len);
+					nadata->data_pending_len, 0);
     }
 
     LOCK(nadata->lock);
@@ -514,7 +514,7 @@ udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
     UNLOCK(nadata->lock);
 
     count = net->cbs->read_callback(net, 0, nadata->read_data,
-				    nadata->data_pending_len);
+				    nadata->data_pending_len, 0);
 
     LOCK(nadata->lock);
     udpn_finish_read(ndata, count);

@@ -46,9 +46,13 @@ struct netio_callbacks {
      * The user must return the number of bytes consumed.  If the full
      * number of bytes is not consumed, read will automatically be
      * disabled.  Read is also disabled if an error is reported.
+     *
+     * Flags are per-type options, they generally don't matter except
+     * for some specific situations.
      */
     unsigned int (*read_callback)(struct netio *net, int readerr,
-				  unsigned char *buf, unsigned int buflen);
+				  unsigned char *buf, unsigned int buflen,
+				  unsigned int flags);
 
     /*
      * Called when the user may write to the netio.

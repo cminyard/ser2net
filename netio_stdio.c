@@ -32,8 +32,6 @@
 #include "locking.h"
 #include "selector.h"
 
-struct stdiona_data;
-
 struct stdiona_data {
     DEFINE_LOCK(, lock);
 
@@ -49,6 +47,12 @@ struct stdiona_data {
 
     bool user_set_read_enabled;
     bool user_read_enabled_setting;
+
+    /*
+     * If non-zero, this is the PID of the other process and we are
+     * in client mode.
+     */
+    int opid;
 
     unsigned int max_read_size;
     unsigned char *read_data;
@@ -178,7 +182,7 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     if (in_read)
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
-					nadata->data_pending_len);
+					nadata->data_pending_len, 0);
     LOCK(nadata->lock);
     nadata->deferred_op_pending = false;
     if (nadata->deferred_close) {
@@ -274,13 +278,13 @@ stdion_read_ready(int fd, void *cbdata)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, 0, 0);
+	    net->cbs->read_callback(net, errno, 0, 0, 0);
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, 0, 0);
+	net->cbs->read_callback(net, EPIPE, 0, 0, 0);
 	rv = -1;
     } else {
 	nadata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, nadata->read_data, rv);
+	count = net->cbs->read_callback(net, 0, nadata->read_data, rv, 0);
     }
 
     LOCK(nadata->lock);
@@ -309,10 +313,12 @@ stdiona_do_connect(sel_runner_t *runner, void *cbdata)
 static void
 stdiona_finish_free(struct stdiona_data *nadata)
 {
-    sel_free_runner(nadata->deferred_op_runner);
-    sel_free_runner(nadata->connect_runner);
-
-    free(nadata->read_data);
+    if (nadata->deferred_op_runner)
+	sel_free_runner(nadata->deferred_op_runner);
+    if (nadata->connect_runner)
+	sel_free_runner(nadata->connect_runner);
+    if (nadata->read_data)
+	free(nadata->read_data);
     free(nadata);
 }
 
@@ -415,22 +421,16 @@ static const struct netio_acceptor_functions netio_acc_stdio_funcs = {
     .free = stdiona_free
 };
 
-int
-stdio_netio_acceptor_alloc(unsigned int max_read_size,
-			   const struct netio_acceptor_callbacks *cbs,
-			   void *user_data,
-			   struct netio_acceptor **acceptor)
+static int
+stdio_nadata_setup(unsigned int max_read_size, struct stdiona_data **new_nadata)
 {
     int err = 0;
-    struct netio_acceptor *acc;
     struct stdiona_data *nadata;
 
     nadata = malloc(sizeof(*nadata));
     if (!nadata)
 	goto out_nomem;
     memset(nadata, 0, sizeof(*nadata));
-
-    acc = &nadata->acceptor;
 
     nadata->max_read_size = max_read_size;
     nadata->read_data = malloc(max_read_size);
@@ -445,31 +445,44 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     if (err)
 	goto out_err;
 
-    acc->cbs = cbs;
-    acc->user_data = user_data;
-    acc->funcs = &netio_acc_stdio_funcs;
-    acc->type = NETIO_TYPE_STDIO;
-
     INIT_LOCK(nadata->lock);
 
     nadata->net.funcs = &netio_stdio_funcs;
     nadata->net.type = NETIO_TYPE_STDIO;
 
-    *acceptor = acc;
     return 0;
 
  out_nomem:
     err = ENOMEM;
 
  out_err:
-    if (nadata) {
-	if (nadata->deferred_op_runner)
-	    sel_free_runner(nadata->deferred_op_runner);
-	if (nadata->connect_runner)
-	    sel_free_runner(nadata->connect_runner);
-	if (nadata->read_data)
-	    free(nadata->read_data);
-	free(nadata);
-    }
+    if (nadata)
+	stdiona_finish_free(nadata);
+
     return err;
+}
+
+int
+stdio_netio_acceptor_alloc(unsigned int max_read_size,
+			   const struct netio_acceptor_callbacks *cbs,
+			   void *user_data,
+			   struct netio_acceptor **acceptor)
+{
+    int err;
+    struct netio_acceptor *acc;
+    struct stdiona_data *nadata = NULL;
+
+    err = stdio_nadata_setup(max_read_size, &nadata);
+    if (err)
+	return err;
+
+    acc = &nadata->acceptor;
+    acc->type = NETIO_TYPE_STDIO;
+
+    acc->cbs = cbs;
+    acc->user_data = user_data;
+    acc->funcs = &netio_acc_stdio_funcs;
+
+    *acceptor = acc;
+    return 0;
 }
