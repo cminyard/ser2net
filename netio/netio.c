@@ -3,9 +3,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "utils/utils.h"
 #include "netio.h"
 #include "netio_internal.h"
-#include "utils.h"
 
 void
 netio_set_callbacks(struct netio *net,
@@ -111,6 +111,7 @@ netio_acc_exit_on_close(struct netio_acceptor *acceptor)
 }
 
 int str_to_netio_acceptor(const char *str,
+			  struct selector_s *sel,
 			  unsigned int max_read_size,
 			  const struct netio_acceptor_callbacks *cbs,
 			  void *user_data,
@@ -121,7 +122,7 @@ int str_to_netio_acceptor(const char *str,
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_netio_acceptor_alloc(max_read_size, cbs, user_data,
+	err = stdio_netio_acceptor_alloc(sel, max_read_size, cbs, user_data,
 					 acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
@@ -129,10 +130,10 @@ int str_to_netio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_netio_acceptor_alloc(str, ai, max_read_size, cbs,
+		err = udp_netio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    } else {
-		err = tcp_netio_acceptor_alloc(str, ai, max_read_size, cbs,
+		err = tcp_netio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    }
 
@@ -145,11 +146,13 @@ int str_to_netio_acceptor(const char *str,
     return err;
 }
 
-int str_to_netio(const char *str,
-		 unsigned int max_read_size,
-		 const struct netio_callbacks *cbs,
-		 void *user_data,
-		 struct netio **netio)
+int
+str_to_netio(const char *str,
+	     struct selector_s *sel,
+	     unsigned int max_read_size,
+	     const struct netio_callbacks *cbs,
+	     void *user_data,
+	     struct netio **netio)
 {
     int err;
     struct addrinfo *ai = NULL;
@@ -162,7 +165,7 @@ int str_to_netio(const char *str,
 	err = str_to_argv(str + 6, &argc, &argv, NULL);
 	if (err)
 	    return err;
-	err = stdio_netio_alloc(argv, max_read_size, cbs, user_data,
+	err = stdio_netio_alloc(argv, sel, max_read_size, cbs, user_data,
 				netio);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
@@ -170,10 +173,10 @@ int str_to_netio(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_netio_alloc(ai, max_read_size, cbs,
+		err = udp_netio_alloc(ai, sel, max_read_size, cbs,
 				      user_data, netio);
 	    } else {
-		err = tcp_netio_alloc(ai, max_read_size, cbs,
+		err = tcp_netio_alloc(ai, sel, max_read_size, cbs,
 				      user_data, netio);
 	    }
 

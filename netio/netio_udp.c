@@ -32,10 +32,9 @@
 
 #include "netio.h"
 #include "netio_internal.h"
-#include "selector.h"
-#include "ser2net.h"
-#include "locking.h"
-#include "utils.h"
+#include "utils/selector.h"
+#include "utils/locking.h"
+#include "utils/utils.h"
 
 struct udpna_data;
 
@@ -73,6 +72,8 @@ struct udpn_data {
 struct udpna_data {
     struct netio_acceptor acceptor;
     struct udpn_data *udpns;
+
+    struct selector_s *sel;
 
     DEFINE_LOCK(, lock);
 
@@ -126,7 +127,7 @@ udpna_fd_read_enable(struct udpna_data *nadata) {
     nadata->read_disable_count--;
     if (nadata->read_disable_count == 0) {
 	for (i = 0; i < nadata->nr_fds; i++)
-	    sel_set_fd_read_handler(ser2net_sel, nadata->fds[i].fd,
+	    sel_set_fd_read_handler(nadata->sel, nadata->fds[i].fd,
 				    SEL_FD_HANDLER_ENABLED);
     }
 }
@@ -137,7 +138,7 @@ udpna_fd_read_disable(struct udpna_data *nadata) {
 
     if (nadata->read_disable_count == 0) {
 	for (i = 0; i < nadata->nr_fds; i++)
-	    sel_set_fd_read_handler(ser2net_sel, nadata->fds[i].fd,
+	    sel_set_fd_read_handler(nadata->sel, nadata->fds[i].fd,
 				    SEL_FD_HANDLER_DISABLED);
     }
     nadata->read_disable_count++;
@@ -149,7 +150,7 @@ udpna_disable_write(struct udpna_data *nadata)
     unsigned int i;
 
     for (i = 0; i < nadata->nr_fds; i++)
-	sel_set_fd_write_handler(ser2net_sel, nadata->fds[i].fd,
+	sel_set_fd_write_handler(nadata->sel, nadata->fds[i].fd,
 				 SEL_FD_HANDLER_DISABLED);
 }
 
@@ -168,7 +169,7 @@ udpna_fd_write_enable(struct udpna_data *nadata) {
     nadata->write_disable_count--;
     if (nadata->write_disable_count == 0 && nadata->udpns) {
 	for (i = 0; i < nadata->nr_fds; i++)
-	    sel_set_fd_write_handler(ser2net_sel, nadata->fds[i].fd,
+	    sel_set_fd_write_handler(nadata->sel, nadata->fds[i].fd,
 				     SEL_FD_HANDLER_ENABLED);
     }
 }
@@ -220,7 +221,7 @@ static void udpna_check_finish_free(struct udpna_data *nadata)
 
     nadata->nr_accept_close_waiting = nadata->nr_fds;
     for (i = 0; i < nadata->nr_fds; i++)
-	sel_clear_fd_handlers(ser2net_sel, nadata->fds[i].fd);
+	sel_clear_fd_handlers(nadata->sel, nadata->fds[i].fd);
 }
 
 static int
@@ -700,7 +701,7 @@ udpna_startup(struct netio_acceptor *acceptor)
 
     LOCK(nadata->lock);
     if (!nadata->fds) {
-	nadata->fds = open_socket(ser2net_sel, nadata->ai, udpna_readhandler,
+	nadata->fds = open_socket(nadata->sel, nadata->ai, udpna_readhandler,
 				  udpna_writehandler,
 				  nadata, &nadata->nr_fds, udpna_fd_cleared);
 	if (nadata->fds == NULL) {
@@ -774,6 +775,7 @@ static const struct netio_acceptor_functions netio_acc_udp_funcs = {
 
 int
 udp_netio_acceptor_alloc(const char *name,
+			 struct selector_s *sel,
 			 struct addrinfo *ai,
 			 unsigned int max_read_size,
 			 const struct netio_acceptor_callbacks *cbs,
@@ -788,6 +790,7 @@ udp_netio_acceptor_alloc(const char *name,
     if (!nadata)
 	goto out_err;
     memset(nadata, 0, sizeof(*nadata));
+    nadata->sel = sel;
 
     nadata->name = strdup(name);
     if (!nadata->name)
@@ -797,7 +800,7 @@ udp_netio_acceptor_alloc(const char *name,
     if (!nadata->read_data)
 	goto out_err;
 
-    err = sel_alloc_runner(ser2net_sel, &nadata->deferred_op_runner);
+    err = sel_alloc_runner(nadata->sel, &nadata->deferred_op_runner);
     if (err)
 	goto out_err;
 
@@ -830,6 +833,7 @@ udp_netio_acceptor_alloc(const char *name,
 
 int
 udp_netio_alloc(struct addrinfo *ai,
+		struct selector_s *sel,
 		unsigned int max_read_size,
 		const struct netio_callbacks *cbs,
 		void *user_data,
@@ -860,8 +864,8 @@ udp_netio_alloc(struct addrinfo *ai,
     memset(ndata, 0, sizeof(*ndata));
 
     /* Allocate a dummy network acceptor. */
-    err = udp_netio_acceptor_alloc("dummy", NULL, max_read_size, NULL, NULL,
-				   &acceptor);
+    err = udp_netio_acceptor_alloc("dummy", sel, NULL, max_read_size,
+				   NULL, NULL, &acceptor);
     if (err) {
 	close(new_fd);
 	free(ndata);
@@ -894,7 +898,7 @@ udp_netio_alloc(struct addrinfo *ai,
 
     ndata->myfd = new_fd;
 
-    err = sel_set_fd_handlers(ser2net_sel, new_fd, nadata,
+    err = sel_set_fd_handlers(nadata->sel, new_fd, nadata,
 			      udpna_readhandler, udpna_writehandler, NULL,
 			      udpna_fd_cleared);
     if (err) {

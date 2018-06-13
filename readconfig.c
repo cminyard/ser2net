@@ -30,9 +30,9 @@
 #include <stdarg.h>
 #include <limits.h>
 
+#include "utils/utils.h"
 #include "dataxfer.h"
 #include "readconfig.h"
-#include "utils.h"
 #include "telnet.h"
 #include "led.h"
 

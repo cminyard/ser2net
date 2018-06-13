@@ -21,7 +21,7 @@
 #define _SER2NET_BUFFER_H
 
 #include <sys/socket.h>
-#include "netio.h"
+#include "netio/netio.h"
 
 struct devio;
 

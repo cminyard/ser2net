@@ -23,7 +23,6 @@
 #include <string.h>
 #include "buffer.h"
 #include "devio.h"
-#include "netio.h"
 
 static int
 do_write(struct devio *io, struct netio *net, int fd, void  *buf, size_t buflen,

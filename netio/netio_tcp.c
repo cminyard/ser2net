@@ -31,13 +31,14 @@
 
 #include "netio.h"
 #include "netio_internal.h"
-#include "selector.h"
-#include "ser2net.h"
-#include "locking.h"
-#include "utils.h"
+#include "utils/selector.h"
+#include "utils/locking.h"
+#include "utils/utils.h"
 
 struct tcpn_data {
     struct netio net;
+
+    struct selector_s *sel;
 
     DEFINE_LOCK(, lock);
 
@@ -81,6 +82,8 @@ struct tcpn_data {
 
 struct tcpna_data {
     struct netio_acceptor acceptor;
+
+    struct selector_s *sel;
 
     char *name;
 
@@ -213,7 +216,7 @@ tcpn_close(struct netio *net)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
 
-    sel_clear_fd_handlers(ser2net_sel, ndata->fd);
+    sel_clear_fd_handlers(ndata->sel, ndata->fd);
 }
 
 /* Must be called with ndata->lock held */
@@ -242,9 +245,9 @@ tcpn_finish_read(struct tcpn_data *ndata, int err, unsigned int count)
 	ndata->read_enabled = true;
 
     if (ndata->read_enabled) {
-	sel_set_fd_read_handler(ser2net_sel, ndata->fd,
+	sel_set_fd_read_handler(ndata->sel, ndata->fd,
 				SEL_FD_HANDLER_ENABLED);
-	sel_set_fd_except_handler(ser2net_sel, ndata->fd,
+	sel_set_fd_except_handler(ndata->sel, ndata->fd,
 				  SEL_FD_HANDLER_ENABLED);
     }
 }
@@ -295,7 +298,7 @@ tcpn_set_read_callback_enable(struct netio *net, bool enabled)
 	    op = SEL_FD_HANDLER_DISABLED;
 
 	ndata->read_enabled = enabled;
-	sel_set_fd_read_handler(ser2net_sel, ndata->fd, op);
+	sel_set_fd_read_handler(ndata->sel, ndata->fd, op);
     }
     UNLOCK(ndata->lock);
 }
@@ -311,7 +314,7 @@ tcpn_set_write_callback_enable(struct netio *net, bool enabled)
     else
 	op = SEL_FD_HANDLER_DISABLED;
 
-    sel_set_fd_write_handler(ser2net_sel, ndata->fd, op);
+    sel_set_fd_write_handler(ndata->sel, ndata->fd, op);
 }
 
 static void
@@ -327,8 +330,8 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     if (!ndata->read_enabled)
 	goto out_unlock;
     ndata->read_enabled = false;
-    sel_set_fd_read_handler(ser2net_sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_except_handler(ser2net_sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_read_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_except_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     ndata->in_read = true;
     ndata->user_set_read_enabled = false;
     ndata->data_pos = 0;
@@ -430,7 +433,8 @@ static const struct netio_functions netio_tcp_funcs = {
 };
 
 static int 
-tcpn_finish_setup(int new_fd, struct sockaddr *addr, socklen_t addrlen,
+tcpn_finish_setup(int new_fd, struct selector_s *sel,
+		  struct sockaddr *addr, socklen_t addrlen,
 		  unsigned int max_read_size,
 		  struct tcpn_data **new_ndata)
 {
@@ -449,8 +453,9 @@ tcpn_finish_setup(int new_fd, struct sockaddr *addr, socklen_t addrlen,
     if (!ndata)
 	goto out_nomem;
     memset(ndata, 0, sizeof(*ndata));
+    ndata->sel = sel;
 
-    err = sel_alloc_runner(ser2net_sel, &ndata->deferred_read_runner);
+    err = sel_alloc_runner(ndata->sel, &ndata->deferred_read_runner);
     if (err)
 	goto out_nomem;
 
@@ -468,7 +473,7 @@ tcpn_finish_setup(int new_fd, struct sockaddr *addr, socklen_t addrlen,
     ndata->net.funcs = &netio_tcp_funcs;
     ndata->net.type = NETIO_TYPE_TCP;
 
-    if (sel_set_fd_handlers(ser2net_sel, new_fd, ndata, tcpn_read_ready,
+    if (sel_set_fd_handlers(ndata->sel, new_fd, ndata, tcpn_read_ready,
 			    tcpn_write_ready, tcpn_except_ready,
 			    tcpn_fd_cleared))
 	goto out_nomem;
@@ -512,7 +517,8 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    err = tcpn_finish_setup(new_fd, (struct sockaddr *) &addr, addrlen,
+    err = tcpn_finish_setup(new_fd, nadata->sel,
+			    (struct sockaddr *) &addr, addrlen,
 			    nadata->max_read_size, &ndata);
     if (err) {
 	syslog(LOG_ERR, "Error setting up tcp port %s: %s", nadata->name,
@@ -573,7 +579,7 @@ tcpna_startup(struct netio_acceptor *acceptor)
     if (nadata->setup)
 	goto out_unlock;
 
-    nadata->acceptfds = open_socket(ser2net_sel,
+    nadata->acceptfds = open_socket(nadata->sel,
 				    nadata->ai, tcpna_readhandler, NULL, nadata,
 				    &nadata->nr_acceptfds, tcpna_fd_cleared);
     if (nadata->acceptfds == NULL) {
@@ -599,7 +605,7 @@ _tcpna_shutdown(struct tcpna_data *nadata)
 	nadata->in_shutdown = true;
 	nadata->nr_accept_close_waiting = nadata->nr_acceptfds;
 	for (i = 0; i < nadata->nr_acceptfds; i++)
-	    sel_clear_fd_handlers(ser2net_sel, nadata->acceptfds[i].fd);
+	    sel_clear_fd_handlers(nadata->sel, nadata->acceptfds[i].fd);
 	nadata->setup = false;
 	nadata->enabled = false;
     } else {
@@ -639,7 +645,7 @@ tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
     LOCK(nadata->lock);
     if (nadata->enabled != enabled) {
 	for (i = 0; i < nadata->nr_acceptfds; i++)
-	    sel_set_fd_read_handler(ser2net_sel, nadata->acceptfds[i].fd, op);
+	    sel_set_fd_read_handler(nadata->sel, nadata->acceptfds[i].fd, op);
 	nadata->enabled = enabled;
     }
     UNLOCK(nadata->lock);
@@ -671,6 +677,7 @@ static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
 
 int
 tcp_netio_acceptor_alloc(const char *name,
+			 struct selector_s *sel,
 			 struct addrinfo *ai,
 			 unsigned int max_read_size,
 			 const struct netio_acceptor_callbacks *cbs,
@@ -684,6 +691,8 @@ tcp_netio_acceptor_alloc(const char *name,
     if (!nadata)
 	goto out_nomem;
     memset(nadata, 0, sizeof(*nadata));
+
+    nadata->sel = sel;
 
     nadata->name = strdup(name);
     if (!nadata->name)
@@ -714,6 +723,7 @@ tcp_netio_acceptor_alloc(const char *name,
 
 int
 tcp_netio_alloc(struct addrinfo *ai,
+		struct selector_s *sel,
 		unsigned int max_read_size,
 		const struct netio_callbacks *cbs,
 		void *user_data,
@@ -743,7 +753,7 @@ tcp_netio_alloc(struct addrinfo *ai,
 	return E2BIG;
     }
 
-    err = tcpn_finish_setup(new_fd, ai->ai_addr, ai->ai_addrlen,
+    err = tcpn_finish_setup(new_fd, sel, ai->ai_addr, ai->ai_addrlen,
 			    max_read_size, &ndata);
     if (err)
 	return err;

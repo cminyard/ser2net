@@ -34,6 +34,17 @@
 #include "locking.h"
 
 int
+cmpstrval(const char *s, const char *prefix, unsigned int *end)
+{
+    int len = strlen(prefix);
+
+    if (strncmp(s, prefix, len))
+	return 0;
+    *end = len;
+    return 1;
+}
+
+int
 strisallzero(const char *str)
 {
     if (*str == '\0')

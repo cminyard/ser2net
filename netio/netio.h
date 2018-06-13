@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include "utils/selector.h"
 
 struct netio;
 
@@ -216,27 +217,42 @@ bool netio_acc_exit_on_close(struct netio_acceptor *acceptor);
  * acceptor.  max_read_size is the internal read buffer size for the
  * connections.
  */
-int str_to_netio_acceptor(const char *str, unsigned int max_read_size,
+int str_to_netio_acceptor(const char *str, struct selector_s *sel,
+			  unsigned int max_read_size,
 			  const struct netio_acceptor_callbacks *cbs,
 			  void *user_data,
 			  struct netio_acceptor **acceptor);
 
 /*
+ * Convert a string representation of a network address into a
+ * client netio.
+ */
+int str_to_netio(const char *str,
+		 struct selector_s *sel,
+		 unsigned int max_read_size,
+		 const struct netio_callbacks *cbs,
+		 void *user_data,
+		 struct netio **netio);
+
+/*
  * Allocators for different I/O types.
  */
 int tcp_netio_acceptor_alloc(const char *name,
+			     struct selector_s *sel,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
 			     const struct netio_acceptor_callbacks *cbs,
 			     void *user_data,
 			     struct netio_acceptor **acceptor);
 int udp_netio_acceptor_alloc(const char *name,
+			     struct selector_s *sel,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
 			     const struct netio_acceptor_callbacks *cbs,
 			     void *user_data,
 			     struct netio_acceptor **acceptor);
-int stdio_netio_acceptor_alloc(unsigned int max_read_size,
+int stdio_netio_acceptor_alloc(struct selector_s *sel,
+			       unsigned int max_read_size,
 			       const struct netio_acceptor_callbacks *cbs,
 			       void *user_data,
 			       struct netio_acceptor **acceptor);
@@ -244,12 +260,14 @@ int stdio_netio_acceptor_alloc(unsigned int max_read_size,
 /* Client allocators. */
 
 int tcp_netio_alloc(struct addrinfo *ai,
+		    struct selector_s *sel,
 		    unsigned int max_read_size,
 		    const struct netio_callbacks *cbs,
 		    void *user_data,
 		    struct netio **new_netio);
 
 int udp_netio_alloc(struct addrinfo *ai,
+		    struct selector_s *sel,
 		    unsigned int max_read_size,
 		    const struct netio_callbacks *cbs,
 		    void *user_data,
@@ -257,6 +275,7 @@ int udp_netio_alloc(struct addrinfo *ai,
 
 /* Run a program (in argv[0]) and attach to it's stdio. */
 int stdio_netio_alloc(char *const argv[],
+		      struct selector_s *sel,
 		      unsigned int max_read_size,
 		      const struct netio_callbacks *cbs,
 		      void *user_data,

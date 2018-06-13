@@ -42,9 +42,9 @@
 #include <OpenIPMI/ipmi_sol.h>
 #include <OpenIPMI/ipmi_debug.h>
 
+#include "utils/selector.h"
+#include "utils/utils.h"
 #include "ser2net.h"
-#include "selector.h"
-#include "utils.h"
 #include "dataxfer.h"
 
 static os_handler_t *os_hnd;
