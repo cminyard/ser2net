@@ -54,6 +54,11 @@ struct netio_callbacks {
 				  unsigned char *buf, unsigned int buflen,
 				  unsigned int flags);
 
+    /* Flags for read callbacks. */
+
+/* For stdin client netio, data is from stderr instead of stdout. */    
+#define NETIO_ERR_OUTPUT	1
+
     /*
      * Called when the user may write to the netio.
      */
@@ -235,6 +240,15 @@ int stdio_netio_acceptor_alloc(unsigned int max_read_size,
 			       const struct netio_acceptor_callbacks *cbs,
 			       void *user_data,
 			       struct netio_acceptor **acceptor);
+
+/* Client allocators. */
+
+/* Run a program (in argv[0]) and attach to it's stdio. */
+int stdio_netio_alloc(char *const argv[],
+		      unsigned int max_read_size,
+		      const struct netio_callbacks *cbs,
+		      void *user_data,
+		      struct netio **new_netio);
 
 #endif /* SER2NET_NETIO_H */
 
