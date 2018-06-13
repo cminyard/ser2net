@@ -24,6 +24,7 @@
 #include <string.h>
 #include <errno.h>
 #include <syslog.h>
+#include <fcntl.h>
 #include "ser2net.h"
 
 #include "netio.h"
@@ -38,6 +39,7 @@ struct stdiona_data {
     sel_runner_t *connect_runner;
 
     bool enabled;
+    int old_flags;
 
     bool read_enabled;
     bool in_read;
@@ -358,6 +360,8 @@ stdiona_fd_cleared(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct netio_acceptor *acceptor = &nadata->acceptor;
 
+    fcntl(0, F_SETFL, nadata->old_flags);
+
     nadata->in_shutdown = false;
     if (acceptor->cbs->shutdown_done && nadata->report_shutdown)
 	acceptor->cbs->shutdown_done(acceptor);
@@ -379,6 +383,17 @@ stdiona_startup(struct netio_acceptor *acceptor)
 	goto out_unlock;
     }
     if (!nadata->enabled) {
+	rv = fcntl(0, F_GETFL, 0);
+	if (rv == -1) {
+	    rv = errno;
+	    goto out_unlock;
+	}
+	nadata->old_flags = rv;
+	if (fcntl(0, F_SETFL, O_NONBLOCK) == -1) {
+	    rv = errno;
+	    goto out_unlock;
+	}
+
 	rv = sel_set_fd_handlers(ser2net_sel, 0, nadata, stdion_read_ready,
 				 stdion_write_ready, NULL, stdiona_fd_cleared);
 	if (rv)
