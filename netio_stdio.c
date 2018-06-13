@@ -54,8 +54,15 @@ struct stdiona_data {
      */
     int opid;
 
+    /* In client mode, the other end of the stdio pipes from the client. */
+    int ostdin;
+    int ostdout;
+    int ostderr;
+    unsigned int oio_count;
+
     unsigned int max_read_size;
     unsigned char *read_data;
+    unsigned int read_flags;
 
     bool data_pending;
     unsigned int data_pending_len;
@@ -80,10 +87,11 @@ static int
 stdion_write(struct netio *net, int *count,
 	     const void *buf, unsigned int buflen)
 {
+    struct stdiona_data *nadata = net_to_nadata(net);
     int rv, err = 0;
 
  retry:
-    rv = write(0, buf, buflen);
+    rv = write(nadata->ostdin, buf, buflen);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
@@ -162,8 +170,13 @@ stdion_finish_read(struct stdiona_data *nadata, int err, unsigned int count)
     else
 	nadata->read_enabled = true;
 
-    if (nadata->read_enabled)
-	sel_set_fd_read_handler(ser2net_sel, 0, SEL_FD_HANDLER_ENABLED);
+    if (nadata->read_enabled) {
+	sel_set_fd_read_handler(ser2net_sel, nadata->ostdout,
+				SEL_FD_HANDLER_ENABLED);
+	if (nadata->ostderr != -1)
+	    sel_set_fd_read_handler(ser2net_sel, nadata->ostderr,
+				    SEL_FD_HANDLER_ENABLED);
+    }
 }
 
 static void
@@ -182,7 +195,8 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     if (in_read)
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
-					nadata->data_pending_len, 0);
+					nadata->data_pending_len,
+					nadata->read_flags);
     LOCK(nadata->lock);
     nadata->deferred_op_pending = false;
     if (nadata->deferred_close) {
@@ -202,7 +216,11 @@ stdion_close(struct netio *net)
 
     LOCK(nadata->lock);
     nadata->deferred_close = true;
-    if (!nadata->deferred_op_pending) {
+    if (nadata->opid) {
+	sel_clear_fd_handlers(ser2net_sel, nadata->ostdin);
+	sel_clear_fd_handlers(ser2net_sel, nadata->ostdout);
+	sel_clear_fd_handlers(ser2net_sel, nadata->ostderr);
+    } else if (!nadata->deferred_op_pending) {
 	nadata->deferred_op_pending = true;
 	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
     }
@@ -234,7 +252,9 @@ stdion_set_read_callback_enable(struct netio *net, bool enabled)
 	    op = SEL_FD_HANDLER_DISABLED;
 
 	nadata->read_enabled = true;
-	sel_set_fd_read_handler(ser2net_sel, 0, op);
+	sel_set_fd_read_handler(ser2net_sel, nadata->ostdout, op);
+	if (nadata->ostderr != -1)
+	    sel_set_fd_read_handler(ser2net_sel, nadata->ostderr, op);
     }
     UNLOCK(nadata->lock);
 }
@@ -242,6 +262,7 @@ stdion_set_read_callback_enable(struct netio *net, bool enabled)
 static void
 stdion_set_write_callback_enable(struct netio *net, bool enabled)
 {
+    struct stdiona_data *nadata = net_to_nadata(net);
     int op;
 
     if (enabled)
@@ -249,7 +270,7 @@ stdion_set_write_callback_enable(struct netio *net, bool enabled)
     else
 	op = SEL_FD_HANDLER_DISABLED;
 
-    sel_set_fd_write_handler(ser2net_sel, 0, op);
+    sel_set_fd_write_handler(ser2net_sel, nadata->ostdin, op);
 }
 
 static void
@@ -264,27 +285,36 @@ stdion_read_ready(int fd, void *cbdata)
     if (!nadata->read_enabled)
 	goto out_unlock;
     nadata->read_enabled = false;
-    sel_set_fd_read_handler(ser2net_sel, 0, SEL_FD_HANDLER_DISABLED);
+    sel_set_fd_read_handler(ser2net_sel, nadata->ostdout,
+			    SEL_FD_HANDLER_DISABLED);
+    if (nadata->ostderr != -1)
+	sel_set_fd_read_handler(ser2net_sel, nadata->ostderr,
+				SEL_FD_HANDLER_DISABLED);
+    if (fd == nadata->ostderr)
+	nadata->read_flags = NETIO_ERR_OUTPUT;
+    else
+	nadata->read_flags = 0;
     nadata->in_read = true;
     nadata->user_set_read_enabled = false;
     nadata->data_pos = 0;
     UNLOCK(nadata->lock);
 
  retry:
-    rv = read(0, nadata->read_data, nadata->max_read_size);
+    rv = read(fd, nadata->read_data, nadata->max_read_size);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, 0, 0, 0);
+	    net->cbs->read_callback(net, errno, 0, 0, nadata->read_flags);
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, 0, 0, 0);
+	net->cbs->read_callback(net, EPIPE, 0, 0, nadata->read_flags);
 	rv = -1;
     } else {
 	nadata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, nadata->read_data, rv, 0);
+	count = net->cbs->read_callback(net, 0, nadata->read_data, rv,
+					nadata->read_flags);
     }
 
     LOCK(nadata->lock);
@@ -322,7 +352,8 @@ stdiona_finish_free(struct stdiona_data *nadata)
     free(nadata);
 }
 
-static void stdiona_fd_cleared(int fd, void *cbdata)
+static void
+stdiona_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
     struct netio_acceptor *acceptor = &nadata->acceptor;
@@ -450,6 +481,8 @@ stdio_nadata_setup(unsigned int max_read_size, struct stdiona_data **new_nadata)
     nadata->net.funcs = &netio_stdio_funcs;
     nadata->net.type = NETIO_TYPE_STDIO;
 
+    *new_nadata = nadata;
+
     return 0;
 
  out_nomem:
@@ -476,6 +509,10 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
     if (err)
 	return err;
 
+    nadata->ostdin = 0;
+    nadata->ostdout = 0;
+    nadata->ostderr = -1;
+
     acc = &nadata->acceptor;
     acc->type = NETIO_TYPE_STDIO;
 
@@ -485,4 +522,141 @@ stdio_netio_acceptor_alloc(unsigned int max_read_size,
 
     *acceptor = acc;
     return 0;
+}
+
+static void
+stdio_client_fd_cleared(int fd, void *cbdata)
+{
+    struct stdiona_data *nadata = cbdata;
+
+    LOCK(nadata->lock);
+    nadata->oio_count--;
+    if (nadata->oio_count == 0) {
+	UNLOCK(nadata->lock);
+	stdion_finish_close(nadata);
+	close(nadata->ostdin);
+	close(nadata->ostdout);
+	close(nadata->ostderr);
+	stdiona_finish_free(nadata);
+    } else {
+	UNLOCK(nadata->lock);
+    }
+}
+
+int
+stdio_netio_alloc(char *const argv[],
+		  unsigned int max_read_size,
+		  const struct netio_callbacks *cbs,
+		  void *user_data,
+		  struct netio **new_netio)
+{
+    int err;
+    struct stdiona_data *nadata = NULL;
+    int stdinpipe[2] = {-1, -1};
+    int stdoutpipe[2] = {-1, -1};
+    int stderrpipe[2] = {-1, -1};
+
+    err = stdio_nadata_setup(max_read_size, &nadata);
+    if (err)
+	return err;
+
+    err = pipe(stdinpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    err = pipe(stdoutpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    err = pipe(stderrpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    nadata->ostdin = stdinpipe[1];
+    nadata->ostdout = stdoutpipe[0];
+    nadata->ostderr = stderrpipe[0];
+    err = sel_set_fd_handlers(ser2net_sel, nadata->ostdout, nadata,
+			      stdion_read_ready, NULL, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    err = sel_set_fd_handlers(ser2net_sel, nadata->ostderr, nadata,
+			      stdion_read_ready, NULL, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    err = sel_set_fd_handlers(ser2net_sel, nadata->ostdin, nadata,
+			      NULL, stdion_write_ready, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    nadata->net.cbs = cbs;
+    nadata->net.user_data = user_data;
+    nadata->net.funcs = &netio_stdio_funcs;
+    nadata->net.type = NETIO_TYPE_STDIO;
+
+    nadata->opid = fork();
+    if (nadata->opid < 0) {
+	err = errno;
+	goto out_err;
+    }
+    if (nadata->opid == 0) {
+	close(stdinpipe[1]);
+	close(stdoutpipe[0]);
+	close(stderrpipe[0]);
+	dup2(stdinpipe[0], 0);
+	dup2(stdoutpipe[1], 1);
+	dup2(stderrpipe[1], 2);
+
+	execvp(argv[0], argv);
+	exit(1); /* Only reached on error. */
+    }
+
+    close(stdinpipe[0]);
+    close(stdoutpipe[1]);
+    close(stderrpipe[1]);
+
+    *new_netio = &nadata->net;
+
+    return 0;
+
+ out_err:
+    if (stdinpipe[0] != -1)
+	close(stdinpipe[0]);
+    if (stdoutpipe[1] != -1)
+	close(stdoutpipe[1]);
+    if (stderrpipe[1] != -1)
+	close(stderrpipe[1]);
+
+    if (nadata->oio_count) {
+	LOCK(nadata->lock);
+	if (nadata->oio_count > 0)
+	    sel_clear_fd_handlers(ser2net_sel, nadata->ostdout);
+	if (nadata->oio_count > 1)
+	    sel_clear_fd_handlers(ser2net_sel, nadata->ostderr);
+	if (nadata->oio_count > 2)
+	    sel_clear_fd_handlers(ser2net_sel, nadata->ostdin);
+	UNLOCK(nadata->lock);
+    } else {
+	if (stdinpipe[1] != -1)
+	    close(stdinpipe[1]);
+	if (stdoutpipe[0] != -1)
+	    close(stdoutpipe[0]);
+	if (stderrpipe[0] != -1)
+	    close(stderrpipe[0]);
+	stdiona_finish_free(nadata);
+    }
+    return err;
 }
