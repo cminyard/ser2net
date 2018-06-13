@@ -249,6 +249,12 @@ int tcp_netio_alloc(struct addrinfo *ai,
 		    void *user_data,
 		    struct netio **new_netio);
 
+int udp_netio_alloc(struct addrinfo *ai,
+		    unsigned int max_read_size,
+		    const struct netio_callbacks *cbs,
+		    void *user_data,
+		    struct netio **new_netio);
+
 /* Run a program (in argv[0]) and attach to it's stdio. */
 int stdio_netio_alloc(char *const argv[],
 		      unsigned int max_read_size,
