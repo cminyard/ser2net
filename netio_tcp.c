@@ -573,7 +573,8 @@ tcpna_startup(struct netio_acceptor *acceptor)
     if (nadata->setup)
 	goto out_unlock;
 
-    nadata->acceptfds = open_socket(nadata->ai, tcpna_readhandler, NULL, nadata,
+    nadata->acceptfds = open_socket(ser2net_sel,
+				    nadata->ai, tcpna_readhandler, NULL, nadata,
 				    &nadata->nr_acceptfds, tcpna_fd_cleared);
     if (nadata->acceptfds == NULL) {
 	rv = errno;
