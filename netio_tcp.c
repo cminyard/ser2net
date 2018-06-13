@@ -443,8 +443,13 @@ tcpna_readhandler(int fd, void *cbdata)
     new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
     if (new_fd == -1) {
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    syslog(LOG_ERR, "Could not accept on rotator %s: %m",
-		   nadata->name);
+	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
+	return;
+    }
+
+    if (fcntl(new_fd, F_SETFL, O_NONBLOCK) == -1) {
+	syslog(LOG_ERR, "Could not set nonblocking on %s: %m", nadata->name);
+	close(new_fd);
 	return;
     }
 
