@@ -429,45 +429,21 @@ static const struct netio_functions netio_tcp_funcs = {
     .set_write_callback_enable = tcpn_set_write_callback_enable
 };
 
-static void
-tcpna_readhandler(int fd, void *cbdata)
+static int 
+tcpn_finish_setup(int new_fd, struct sockaddr *addr, socklen_t addrlen,
+		  unsigned int max_read_size,
+		  struct tcpn_data **new_ndata)
 {
-    struct tcpna_data *nadata = cbdata;
-    int new_fd;
-    struct sockaddr_storage addr;
-    socklen_t addrlen = sizeof(addr);
-    struct tcpn_data *ndata = NULL;
-    const char *errstr;
-    int optval, err;
+    struct tcpn_data *ndata;
+    int err = 0, optval;
 
-    new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
-    if (new_fd == -1) {
-	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
-	return;
-    }
-
-    if (fcntl(new_fd, F_SETFL, O_NONBLOCK) == -1) {
-	syslog(LOG_ERR, "Could not set nonblocking on %s: %m", nadata->name);
-	close(new_fd);
-	return;
-    }
-
-    errstr = check_tcpd_ok(new_fd);
-    if (errstr) {
-	write_ignore_fail(new_fd, errstr, strlen(errstr));
-	close(new_fd);
-	return;
-    }
+    if (fcntl(new_fd, F_SETFL, O_NONBLOCK) == -1)
+	return errno;
 
     optval = 1;
     if (setsockopt(new_fd, SOL_SOCKET, SO_KEEPALIVE,
-		   (void *)&optval, sizeof(optval)) == -1) {
-	close(new_fd);
-	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on tcp port %s: %m",
-	       nadata->name);
-	return;
-    }
+		   (void *)&optval, sizeof(optval)) == -1)
+	return errno;
 
     ndata = malloc(sizeof(*ndata));
     if (!ndata)
@@ -482,9 +458,9 @@ tcpna_readhandler(int fd, void *cbdata)
     ndata->fd = new_fd;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
     ndata->raddrlen = addrlen;
-    memcpy(ndata->raddr, &addr, addrlen);
+    memcpy(ndata->raddr, addr, addrlen);
 
-    ndata->max_read_size = nadata->max_read_size;
+    ndata->max_read_size = max_read_size;
     ndata->read_data = malloc(ndata->max_read_size);
     if (!ndata->read_data)
 	goto out_nomem;
@@ -497,11 +473,10 @@ tcpna_readhandler(int fd, void *cbdata)
 			    tcpn_fd_cleared))
 	goto out_nomem;
 
-    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &ndata->net);
-    return;
+    *new_ndata = ndata;
+    return 0;
 
  out_nomem:
-    close(new_fd);
     if (ndata) {
 	if (ndata->deferred_read_runner)
 	    sel_free_runner(ndata->deferred_read_runner);
@@ -509,8 +484,44 @@ tcpna_readhandler(int fd, void *cbdata)
 	    free(ndata->read_data);
 	free(ndata);
     }
+    return ENOMEM;
+}
 
-    syslog(LOG_ERR, "Out of memory allocating for tcp port %s", nadata->name);
+static void
+tcpna_readhandler(int fd, void *cbdata)
+{
+    struct tcpna_data *nadata = cbdata;
+    int new_fd;
+    struct sockaddr_storage addr;
+    socklen_t addrlen = sizeof(addr);
+    struct tcpn_data *ndata = NULL;
+    const char *errstr;
+    int err;
+
+    new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
+    if (new_fd == -1) {
+	if (errno != EAGAIN && errno != EWOULDBLOCK)
+	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
+	return;
+    }
+
+    errstr = check_tcpd_ok(new_fd);
+    if (errstr) {
+	write_ignore_fail(new_fd, errstr, strlen(errstr));
+	close(new_fd);
+	return;
+    }
+
+    err = tcpn_finish_setup(new_fd, (struct sockaddr *) &addr, addrlen,
+			    nadata->max_read_size, &ndata);
+    if (err) {
+	syslog(LOG_ERR, "Error setting up tcp port %s: %s", nadata->name,
+	       strerror(err));
+	close(new_fd);
+	return;
+    }
+
+    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &ndata->net);
 }
 
 static void
@@ -698,4 +709,44 @@ tcp_netio_acceptor_alloc(const char *name,
 	free(nadata);
     }
     return ENOMEM;
+}
+
+int
+tcp_netio_alloc(struct addrinfo *ai,
+		unsigned int max_read_size,
+		const struct netio_callbacks *cbs,
+		void *user_data,
+		struct netio **new_netio)
+{
+    struct tcpn_data *ndata = NULL;
+    int err;
+    int new_fd;
+
+    new_fd = socket(ai->ai_family, SOCK_STREAM, 0);
+    if (ndata->fd == -1)
+	return errno;
+
+ retry:
+    err = connect(new_fd, ai->ai_addr, ai->ai_addrlen);
+    if (err == -1) {
+	ai = ai->ai_next;
+	if (ai)
+	    goto retry;
+	close(new_fd);
+	return errno;
+    }
+
+    if (ai->ai_addrlen > sizeof(struct sockaddr_storage)) {
+	/* How can this happen? */
+	close(new_fd);
+	return E2BIG;
+    }
+
+    err = tcpn_finish_setup(new_fd, ai->ai_addr, ai->ai_addrlen,
+			    max_read_size, &ndata);
+    if (err)
+	return err;
+
+    *new_netio = &ndata->net;
+    return 0;
 }
