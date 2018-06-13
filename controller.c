@@ -762,13 +762,14 @@ controller_init(char *controller_port)
     int rv;
 
     if (!controller_shutdown_waiter) {
-	controller_shutdown_waiter = alloc_waiter(ser2net_sel);
+	controller_shutdown_waiter = alloc_waiter(ser2net_sel,
+						  ser2net_wake_sig);
 	if (!controller_shutdown_waiter)
 	    return ENOMEM;
     }
 
     if (!accept_waiter) {
-	accept_waiter = alloc_waiter(ser2net_sel);
+	accept_waiter = alloc_waiter(ser2net_sel, ser2net_wake_sig);
 	if (!accept_waiter) {
 	    syslog(LOG_ERR, "Unable to allocate controller accept waiter");
 	    return CONTROLLER_CANT_OPEN_PORT;

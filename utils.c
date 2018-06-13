@@ -29,7 +29,6 @@
 #include <ctype.h>
 #include <limits.h>
 
-#include "ser2net.h"
 #include "utils.h"
 #include "selector.h"
 #include "locking.h"
@@ -258,7 +257,8 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
-open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
+open_socket(struct selector_s *sel,
+	    struct addrinfo *ai, void (*readhndlr)(int, void *),
 	    void (*writehndlr)(int, void *), void *data,
 	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
 {
@@ -307,11 +307,12 @@ open_socket(struct addrinfo *ai, void (*readhndlr)(int, void *),
 	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd].fd, 1) != 0)
 	    goto next;
 
-	rv = sel_set_fd_handlers(ser2net_sel, fds[curr_fd].fd, data,
-				 readhndlr, writehndlr, NULL, fd_handler_cleared);
+	rv = sel_set_fd_handlers(sel, fds[curr_fd].fd, data,
+				 readhndlr, writehndlr, NULL,
+				 fd_handler_cleared);
 	if (rv)
 	    goto next;
-	sel_set_fd_read_handler(ser2net_sel, fds[curr_fd].fd,
+	sel_set_fd_read_handler(sel, fds[curr_fd].fd,
 				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
 	continue;
@@ -377,10 +378,6 @@ void str_to_argv_free(int argc, char **argv)
 
     if (!argv)
 	return;
-    for (i = 0; i < argc; i++) {
-	if (argv[i])
-	    free(argv[i]);
-    }
     if (argv[argc + 1])
 	free(argv[argc + 1]);
     free(argv);
@@ -563,12 +560,13 @@ struct waiter_timeout {
 
 struct waiter_s {
     struct selector_s *sel;
+    int wake_sig;
     unsigned int count;
     pthread_mutex_t lock;
     struct waiter_timeout *wts;
 };
 
-waiter_t *alloc_waiter(struct selector_s *sel)
+waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
 {
     waiter_t *waiter;
 
@@ -590,18 +588,26 @@ void free_waiter(waiter_t *waiter)
     free(waiter);
 }
 
+struct wait_data {
+    pthread_t id;
+    int wake_sig;
+};
+
 static void
 wake_thread_send_sig(long thread_id, void *cb_data)
 {
-    pthread_t        *id = (void *) thread_id;
+    struct wait_data *w = cb_data;
 
-    pthread_kill(*id, ser2net_wake_sig);
+    pthread_kill(w->id, w->wake_sig);
 }
 
 void wait_for_waiter(waiter_t *waiter, unsigned int count)
 {
-    pthread_t self = pthread_self();
     struct waiter_timeout wt;
+    struct wait_data w;
+
+    w.id = pthread_self();
+    w.wake_sig = waiter->wake_sig;
 
     wt.tv.tv_sec = LONG_MAX;
     wt.next = NULL;
@@ -616,7 +622,7 @@ void wait_for_waiter(waiter_t *waiter, unsigned int count)
     }
     while (waiter->count < count) {
 	pthread_mutex_unlock(&waiter->lock);
-	sel_select(waiter->sel, wake_thread_send_sig, (long) &self, NULL, NULL);
+	sel_select(waiter->sel, wake_thread_send_sig, (long) &w, NULL, NULL);
 	pthread_mutex_lock(&waiter->lock);
     }
     waiter->count -= count;
@@ -648,7 +654,7 @@ struct waiter_s {
     unsigned int count;
 };
 
-waiter_t *alloc_waiter(struct selector_s *sel)
+waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
 {
     waiter_t *waiter;
 

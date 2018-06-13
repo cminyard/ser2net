@@ -700,7 +700,7 @@ udpna_startup(struct netio_acceptor *acceptor)
 
     LOCK(nadata->lock);
     if (!nadata->fds) {
-	nadata->fds = open_socket(nadata->ai, udpna_readhandler,
+	nadata->fds = open_socket(ser2net_sel, nadata->ai, udpna_readhandler,
 				  udpna_writehandler,
 				  nadata, &nadata->nr_fds, udpna_fd_cleared);
 	if (nadata->fds == NULL) {

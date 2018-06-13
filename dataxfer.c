@@ -3866,11 +3866,11 @@ check_ports_shutdown(void)
 int
 init_dataxfer(void)
 {
-    acceptor_shutdown_wait = alloc_waiter(ser2net_sel);
+    acceptor_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
     if (!acceptor_shutdown_wait)
 	return ENOMEM;
 
-    rotator_shutdown_wait = alloc_waiter(ser2net_sel);
+    rotator_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
     if (!rotator_shutdown_wait) {
 	free_waiter(rotator_shutdown_wait);
 	return ENOMEM;
