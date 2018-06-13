@@ -31,9 +31,9 @@
 #include <errno.h>
 #include <syslog.h>
 
+#include "utils/selector.h"
+#include "utils/utils.h"
 #include "ser2net.h"
-#include "selector.h"
-#include "utils.h"
 #include "dataxfer.h"
 #include "devio.h"
 
@@ -65,7 +65,7 @@ struct devcfg_data {
     int disablebreak;
 
 #if HAVE_DECL_TIOCSRS485
-    struct serial_rs485 *conf;
+    struct serial_rs485 *rs485conf;
 #endif
 };
 
@@ -534,6 +534,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 {
     struct termios *termctl = &d->termctl;
     char *str;
+    unsigned int end;
     char *pos;
     char *strtok_data;
     int  rv = 0, val;
@@ -589,6 +590,11 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	    d->disablebreak = 1;
 	} else if (strcmp(pos, "-NOBREAK") == 0) {
 	    d->disablebreak = 0;
+#if HAVE_DECL_TIOCSRS485
+	} else if (cmpstrval(pos, "rs485=", &end)) {
+	    /* get RS485 configuration. */
+	    d->rs485conf = find_rs485conf(pos + end);
+#endif
 	} else {
 	    if (otherconfig(data, eout, pos) == -1)
 		goto out;
@@ -597,9 +603,6 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	pos = strtok_r(NULL, " \t", &strtok_data);
     }
 
-#if HAVE_DECL_TIOCSRS485
-    d->conf = get_rs485_conf(data);
-#endif
  out:
     free(str);
     return rv;
@@ -948,9 +951,9 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
     }
 
 #if HAVE_DECL_TIOCSRS485
-    if (d->conf) {
-        if (d->conf->flags & SER_RS485_ENABLED) {
-            if (ioctl(d->devfd , TIOCSRS485, d->conf ) < 0) {
+    if (d->rs485conf) {
+        if (d->rs485conf->flags & SER_RS485_ENABLED) {
+            if (ioctl(d->devfd , TIOCSRS485, d->rs485conf ) < 0) {
                 syslog(LOG_ERR, "Could not set RS485 config for device %s port %s: %m",
                        io->devname,
                        name);

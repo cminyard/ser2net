@@ -20,7 +20,7 @@
 #ifndef DATAXFER
 #define DATAXFER
 
-#include "utils.h"
+#include "utils/utils.h"
 #include "controller.h"
 
 #ifdef USE_UUCP_LOCKING
@@ -125,8 +125,6 @@ int solcfg_init(struct devio *io, struct absout *eout, const char *instr,
 		int (*otherconfig)(void *data, struct absout *eout,
 				   const char *item),
 		void *data);
-
-struct serial_rs485 *get_rs485_conf(void *data);
 
 int add_rotator(char *portname, char *ports, int lineno);
 void free_rotators(void);

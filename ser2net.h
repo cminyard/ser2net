@@ -20,7 +20,7 @@
 #ifndef SER2NET_H
 #define SER2NET_H
 
-#include "selector.h"
+#include "utils/selector.h"
 
 /* The default rfc2217 signature if none is provided. */
 extern char *rfc2217_signature;

@@ -34,14 +34,14 @@
 #include <fcntl.h>
 #include <assert.h>
 
+#include "utils/utils.h"
+#include "netio/netio.h"
+#include "utils/locking.h"
 #include "ser2net.h"
-#include "dataxfer.h"
-#include "utils.h"
-#include "telnet.h"
 #include "devio.h"
-#include "netio.h"
+#include "dataxfer.h"
+#include "telnet.h"
 #include "buffer.h"
-#include "locking.h"
 #include "led.h"
 
 #define SERIAL "term"
@@ -322,10 +322,6 @@ struct port_info
      */
     char *orig_devname;
 
-#if HAVE_DECL_TIOCSRS485
-    struct serial_rs485 *rs485conf;
-#endif
-
     /*
      * LED to flash for serial traffic
      */
@@ -466,9 +462,6 @@ init_port_data(port_info_t *port)
     port->trace_read.fd = -1;
     port->trace_write.fd = -1;
     port->trace_both.fd = -1;
-#if HAVE_DECL_TIOCSRS485
-    port->rs485conf = NULL;
-#endif
 
     port->allow_2217 = find_default_int("remctl");
     port->telnet_brk_on_sync = find_default_int("telnet_brk_on_sync");
@@ -2059,8 +2052,8 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_netio_acceptor(rot->portname, 64, &rotator_cbs, rot,
-			       &rot->acceptor);
+    rv = str_to_netio_acceptor(rot->portname, ser2net_sel, 64,
+			       &rotator_cbs, rot, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
@@ -2704,16 +2697,6 @@ got_timeout(struct selector_s *sel,
     UNLOCK(port->lock);
 }
 
-static int cmpstrval(const char *s, const char *prefix, unsigned int *end)
-{
-    int len = strlen(prefix);
-
-    if (strncmp(s, prefix, len))
-	return 0;
-    *end = len;
-    return 1;
-}
-
 static int cmpstrint(const char *s, const char *prefix, int *val,
 		     struct absout *eout)
 {
@@ -2820,11 +2803,6 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if (cmpstrval(pos, "led-tx=", &end)) {
 	/* LED for UART TX traffic */
 	port->led_tx = find_led(pos + end);
-#if HAVE_DECL_TIOCSRS485
-    } else if (cmpstrval(pos, "rs485=", &end)) {
-	/* get RS485 configuration. */
-	port->rs485conf = find_rs485conf(pos + end);
-#endif
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
     } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
@@ -2981,7 +2959,7 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    err = str_to_netio_acceptor(new_port->portname, 64,
+    err = str_to_netio_acceptor(new_port->portname, ser2net_sel, 64,
 				&port_acceptor_cbs, new_port,
 				&new_port->acceptor);
     if (err) {
@@ -3528,15 +3506,6 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 
     wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
 }
-
-#if HAVE_DECL_TIOCSRS485
-struct serial_rs485 *get_rs485_conf(void *data)
-{
-    port_info_t *port = data;
-
-    return port->rs485conf;
-}
-#endif
 
 /* Start data monitoring on the given port, type may be either "tcp" or
    "term" and only one direction may be monitored.  This return NULL if

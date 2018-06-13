@@ -34,13 +34,13 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include "utils/utils.h"
+#include "utils/selector.h"
+#include "utils/locking.h"
 #include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
-#include "utils.h"
-#include "selector.h"
 #include "dataxfer.h"
-#include "locking.h"
 #include "led.h"
 
 static char *config_file = "/etc/ser2net.conf";

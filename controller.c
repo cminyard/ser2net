@@ -28,13 +28,14 @@
 #include <syslog.h>
 #include <assert.h>
 
+#include "utils/selector.h"
+#include "utils/utils.h"
+#include "utils/locking.h"
+
 #include "ser2net.h"
 #include "controller.h"
-#include "selector.h"
 #include "dataxfer.h"
-#include "utils.h"
 #include "telnet.h"
-#include "locking.h"
 
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
@@ -776,7 +777,7 @@ controller_init(char *controller_port)
 	}
     }
 
-    rv = str_to_netio_acceptor(controller_port, 64,
+    rv = str_to_netio_acceptor(controller_port, ser2net_sel, 64,
 			       &controller_netio_acceptor_callbacks, NULL,
 			       &controller_acceptor);
     if (rv) {

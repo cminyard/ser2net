@@ -28,8 +28,8 @@
 #include <errno.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include "../selector.h"
-#include "../utils.h"
+#include "utils/selector.h"
+#include "utils/utils.h"
 
 struct selector_s *sel;
 bool done;

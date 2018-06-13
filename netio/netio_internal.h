@@ -22,7 +22,7 @@
 
 #include <stddef.h>
 #include "netio.h"
-#include "utils.h"
+#include "utils/utils.h"
 
 enum netio_type {
     NETIO_TYPE_TCP,
