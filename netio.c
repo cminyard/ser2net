@@ -144,3 +144,44 @@ int str_to_netio_acceptor(const char *str,
 
     return err;
 }
+
+int str_to_netio(const char *str,
+		 unsigned int max_read_size,
+		 const struct netio_callbacks *cbs,
+		 void *user_data,
+		 struct netio **netio)
+{
+    int err;
+    struct addrinfo *ai = NULL;
+    bool is_dgram, is_port_set;
+
+    if (strncmp(str, "stdio,", 6) == 0) {
+	int argc;
+	char **argv;
+
+	err = str_to_argv(str + 6, &argc, &argv, NULL);
+	if (err)
+	    return err;
+	err = stdio_netio_alloc(argv, max_read_size, cbs, user_data,
+				netio);
+    } else {
+	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
+	if (!err) {
+	    if (!is_port_set) {
+		err = EINVAL;
+	    } else if (is_dgram) {
+		err = udp_netio_alloc(ai, max_read_size, cbs,
+				      user_data, netio);
+	    } else {
+		err = tcp_netio_alloc(ai, max_read_size, cbs,
+				      user_data, netio);
+	    }
+
+	    if (err) {
+		freeaddrinfo(ai);
+	    }
+	}
+    }
+
+    return err;
+}
