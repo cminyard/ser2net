@@ -5,4 +5,4 @@ noinst_PROGRAMS = sertest
 
 sertest_SOURCES = sertest.c
 
-sertest_LDADD = $(top_builddir)/selector.o -lreadline
+sertest_LDADD = $(top_builddir)/selector.o $(top_builddir)/utils.o -lreadline
