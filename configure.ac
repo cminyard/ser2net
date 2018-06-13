@@ -104,4 +104,4 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 AC_CONFIG_MACRO_DIR([m4])
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
-AC_OUTPUT([Makefile ser2net.spec])
+AC_OUTPUT([Makefile ser2net.spec tests/Makefile])
