@@ -25,116 +25,15 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <errno.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "../selector.h"
+#include "../utils.h"
 
 struct selector_s *sel;
 bool done;
 bool exit_nl = false;
-
-static char *skip_spaces(char *s)
-{
-    while (isspace(*s))
-	s++;
-    return s;
-}
-
-static bool isodigit(char c)
-{
-    return isdigit(c) && c != '8' && c != '9';
-}
-
-static int gettok(char **s, char **tok)
-{
-    char *t = skip_spaces(*s);
-    char *p = t;
-    char *o = t;
-    char inquote = '\0';
-    unsigned int escape = 0;
-    unsigned int base = 8;
-    char cval = 0;
-
-    if (!*t) {
-	*s = t;
-	*tok = NULL;
-	return 0;
-    }
-
-    for (; *p; p++) {
-	if (escape) {
-	    if (escape == 1) {
-		cval = 0;
-		if (isodigit(*p)) {
-		    base = 8;
-		    cval = *p - '0';
-		    escape++;
-		} else if (*p == 'x') {
-		    base = 16;
-		    escape++;
-		} else {
-		    switch (*p) {
-		    case 'a': *o++ = '\a'; break;
-		    case 'b': *o++ = '\b'; break;
-		    case 'f': *o++ = '\f'; break;
-		    case 'n': *o++ = '\n'; break;
-		    case 'r': *o++ = '\r'; break;
-		    case 't': *o++ = '\t'; break;
-		    case 'v': *o++ = '\v'; break;
-		    default:  *o++ = *p;
-		    }
-		    escape = 0;
-		}
-	    } else if (escape >= 2) {
-		if (base == 16 && isxdigit(*p) || isodigit(*p)) {
-		    if (isodigit(*p))
-			cval = cval * base + *p - '0';
-		    else if (isupper(*p))
-			cval = cval * base + *p - 'A';
-		    else
-			cval = cval * base + *p - 'a';
-		    if (escape >= 3) {
-			*o++ = cval;
-			escape = 0;
-		    } else {
-			escape++;
-		    }
-		} else {
-		    *o++ = cval;
-		    escape = 0;
-		    goto process_char;
-		}
-	    }
-	    continue;
-	}
-    process_char:
-	if (*p == inquote) {
-	    inquote = '\0';
-	} else if (!inquote && (*p == '\'' || *p == '"')) {
-	    inquote = *p;
-	} else if (*p == '\\') {
-	    escape = 1;
-	} else if (!inquote && isspace(*p)) {
-	    p++;
-	    break;
-	} else {
-	    *o++ = *p;
-	}
-    }
-
-    if (base == 8 && escape > 1 || base == 16 && escape > 2) {
-	*o++ = cval;
-	escape = 0;
-    }
-
-    *s = p;
-    if (inquote || escape)
-	return -1;
-
-    *o = '\0';
-    *tok = t;
-    return 0;
-}
 
 static bool tokeq(const char *t, const char *m)
 {
@@ -144,11 +43,9 @@ static bool tokeq(const char *t, const char *m)
 static void
 cmd_cb_handler(char *cmdline)
 {
-    char *tok = NULL;
     char *expansion;
     char **argv = NULL;
     unsigned int argc = 0;
-    unsigned int args = 0;
     int i;
 
     if (!cmdline) {
@@ -165,42 +62,13 @@ cmd_cb_handler(char *cmdline)
 
     add_history(expansion);
 
-    argv = malloc(sizeof(*argv) * 10);
-    if (!argv) {
-	printf("Out of memory allocating arguments\n");
-	return;
-    }
-    args = 10;
-		  
-    i = gettok(&cmdline, &tok);
-    while (tok && !i) {
-	if (argc >= args - 1) {
-	    char **nargv = realloc(argv, sizeof(*argv) * (args + 10));
-
-	    if (!nargv) {
-		printf("Out of memory allocating arguments\n");
-		goto out;
-	    }
-	    argv = nargv;
-	    args += 10;
-	}
-	argv[argc++] = tok;
-
-	i = gettok(&cmdline, &tok);
-    }
-
-    if (i) {
-	printf("Invalid quoting in string\n");
+    i = str_to_argv(cmdline, &argc, &argv, NULL);
+    if (i == ENOMEM) {
+	printf("Out of memory processing command line\n");
 	goto out;
     }
-
-    if (argc == 0)
-	return;
-
-    argv[argc] = NULL; /* NULL terminate the array. */
-
-    if (strcmp(argv[0], "exit") == 0) {
-	done = true;
+    if (i) {
+	printf("Invalid quoting in string\n");
 	goto out;
     }
 
@@ -209,8 +77,10 @@ cmd_cb_handler(char *cmdline)
 	printf(" '%s'", argv[i]);
     printf("\n");
 
+    str_to_argv_free(argc, argv);
+
  out:
-    free(argv);
+    return;
 }
 
 static void
