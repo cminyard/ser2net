@@ -587,6 +587,11 @@ udpna_readhandler(int fd, void *cbdata)
 	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
 	goto out_unlock;
     }
+    if (addrlen > sizeof(struct sockaddr_storage)) {
+	/* Shouldn't happen. */
+	syslog(LOG_ERR, "Address too long on %s: %d", nadata->name, addrlen);
+	goto out_unlock;
+    }
 
     udpna_fd_read_disable(nadata);
 
@@ -818,6 +823,86 @@ udp_netio_acceptor_alloc(const char *name,
 	if (nadata->deferred_op_runner)
 	    sel_free_runner(nadata->deferred_op_runner);
 	free(nadata);
+    }
+
+    return err;
+}
+
+int
+udp_netio_alloc(struct addrinfo *ai,
+		unsigned int max_read_size,
+		const struct netio_callbacks *cbs,
+		void *user_data,
+		struct netio **new_netio)
+{
+    struct udpn_data *ndata = NULL;
+    struct netio_acceptor *acceptor;
+    struct udpna_data *nadata = NULL;
+    int err;
+    int new_fd;
+
+    if (ai->ai_addrlen > sizeof(struct sockaddr_storage))
+	return EINVAL;
+
+    new_fd = socket(ai->ai_family, SOCK_DGRAM, 0);
+    if (new_fd == -1)
+	return errno;
+
+    if (fcntl(new_fd, F_SETFL, O_NONBLOCK) == -1) {
+	err = errno;
+	close(new_fd);
+	return err;
+    }
+
+    ndata = malloc(sizeof(*ndata));
+    if (!ndata)
+	return ENOMEM;
+    memset(ndata, 0, sizeof(*ndata));
+
+    /* Allocate a dummy network acceptor. */
+    err = udp_netio_acceptor_alloc("dummy", NULL, max_read_size, NULL, NULL,
+				   &acceptor);
+    if (err) {
+	close(new_fd);
+	free(ndata);
+	return err;
+    }
+    nadata = acc_to_nadata(acceptor);
+
+    nadata->fds = malloc(sizeof(*nadata->fds));
+    if (!nadata->fds) {
+	close(new_fd);
+	free(ndata);
+	udpna_do_free(nadata);
+	return ENOMEM;
+    }
+    nadata->fds->family = ai->ai_family;
+    nadata->fds->fd = new_fd;
+    nadata->nr_fds = 1;
+
+    nadata->closed = true; /* Free nadata when ndata is closed. */
+
+    ndata->nadata = nadata;
+    nadata->udpns = ndata;
+
+    ndata->raddr = (struct sockaddr *) &ndata->remote;
+    memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
+    ndata->raddrlen = ai->ai_addrlen;
+
+    ndata->net.funcs = &netio_udp_funcs;
+    ndata->net.type = NETIO_TYPE_UDP;
+
+    ndata->myfd = new_fd;
+
+    err = sel_set_fd_handlers(ser2net_sel, new_fd, nadata,
+			      udpna_readhandler, udpna_writehandler, NULL,
+			      udpna_fd_cleared);
+    if (err) {
+	close(new_fd);
+	free(ndata);
+	udpna_do_free(nadata);
+    } else {
+	*new_netio = &ndata->net;
     }
 
     return err;
