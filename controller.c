@@ -47,9 +47,7 @@ static char *progname = "ser2net-control";
 /* This file holds the code that runs the control port. */
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
-static struct addrinfo *cntrl_ai;
-static struct opensocks *acceptfds;/* File descriptors for the accept port. */
-static unsigned int nr_acceptfds;
+static struct netio_acceptor *controller_acceptor;
 static waiter_t *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -66,11 +64,7 @@ typedef struct controller_info {
     DEFINE_LOCK(, lock)
     int in_shutdown;
 
-    int            tcpfd;		/* When connected, the file
-                                           descriptor for the TCP
-                                           port used for I/O. */
-    struct sockaddr_storage remote;	/* The socket address of who
-					   is connected to this port. */
+    struct netio *net;
 
     unsigned char inbuf[INBUF_SIZE + 1];/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
@@ -132,7 +126,6 @@ shutdown_controller2(controller_info_t *cntlr)
 
     FREE_LOCK(cntlr->lock);
 
-    close(cntlr->tcpfd);
     if (cntlr->outbuf != NULL) {
 	free(cntlr->outbuf);
     }
@@ -185,8 +178,8 @@ shutdown_controller(controller_info_t *cntlr)
     cntlr->in_shutdown = 1;
     UNLOCK(cntlr->lock);
 
-    sel_clear_fd_handlers(ser2net_sel, cntlr->tcpfd);
-    /* The rest is handled in the done callback, which calls
+    netio_close(cntlr->net);
+    /* The rest is handled in the close_done callback, which calls
        shutdown_controller2. */
 }
 
@@ -255,10 +248,8 @@ controller_output(struct controller_info *cntlr,
 	cntlr->outbuf = newbuf;
 	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count = count;
-	sel_set_fd_read_handler(ser2net_sel, cntlr->tcpfd,
-				SEL_FD_HANDLER_DISABLED);
-	sel_set_fd_write_handler(ser2net_sel, cntlr->tcpfd,
-				 SEL_FD_HANDLER_ENABLED);
+	netio_set_read_callback_enable(cntlr->net, false);
+	netio_set_write_callback_enable(cntlr->net, true);
     }
 }
 
@@ -295,7 +286,7 @@ void controller_outs(struct controller_info *cntlr, char *s)
 void
 controller_write(struct controller_info *cntlr, const char *data, int count)
 {
-    write_ignore_fail(cntlr->tcpfd, data, count);
+    netio_write(cntlr->net, NULL, data, count);
 }
 
 static void
@@ -303,10 +294,8 @@ telnet_output_ready(void *cb_data)
 {
     struct controller_info *cntlr = cb_data;
 
-    sel_set_fd_read_handler(ser2net_sel, cntlr->tcpfd,
-			    SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_write_handler(ser2net_sel, cntlr->tcpfd,
-			     SEL_FD_HANDLER_ENABLED);
+    netio_set_read_callback_enable(cntlr->net, false);
+    netio_set_write_callback_enable(cntlr->net, true);
 }
 
 /* Called when a telnet command is received. */
@@ -529,10 +518,11 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 }
 
 /* Data is ready to read on the TCP port. */
-static void
-handle_tcp_fd_read(int fd, void *data)
+static unsigned int
+controller_read(struct netio *net, int readerr, unsigned char *buf,
+		unsigned int buflen, unsigned int flags)
 {
-    controller_info_t *cntlr = (controller_info_t *) data;
+    controller_info_t *cntlr = netio_get_user_data(net);
     int read_count;
     int read_start;
     unsigned int bytesleft;
@@ -542,50 +532,30 @@ handle_tcp_fd_read(int fd, void *data)
     if (cntlr->in_shutdown)
 	goto out_unlock;
 
-    if (cntlr->inbuf_count == INBUF_SIZE) {
-        char *err = "Input line too long\r\n";
-	controller_outs(cntlr, err);
-	cntlr->inbuf_count = 0;
-	goto out_unlock;
-    }
+    if (cntlr->inbuf_count == INBUF_SIZE)
+	goto inbuf_overflow;
 
-    read_count = read(fd,
-		      &(cntlr->inbuf[cntlr->inbuf_count]),
-		      INBUF_SIZE - cntlr->inbuf_count);
-
-    if (read_count < 0) {
-	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry by returning. */
-	    goto out_unlock;
-	}
-
-	if (errno == EAGAIN) {
-	    /* EAGAIN, is due to O_NONBLOCK, just ignore it. */
-	    goto out_unlock;
-	}
-
+    if (readerr) {
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "read error for controller port: %m");
-	shutdown_controller(cntlr); /* Releases the lock */
-	goto out;
-    } else if (read_count == 0) {
-	/* The other end closed the port, shut it down. */
+	syslog(LOG_ERR, "read error for controller port: %s",
+	       strerror(readerr));
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }
+
     read_start = cntlr->inbuf_count;
-    bytesleft = read_count;
+    bytesleft = buflen;
     read_count = process_telnet_data(cntlr->inbuf + read_start,
-				     INBUF_SIZE,
-				     cntlr->inbuf + read_start,
-				     &bytesleft, &cntlr->tn_data);
+				     INBUF_SIZE - read_start,
+				     buf, &bytesleft, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }
-    assert(bytesleft == 0);
-    cntlr->inbuf_count += read_count;
+    if (bytesleft)
+	goto inbuf_overflow;
 
+    cntlr->inbuf_count += read_count;
     for (i = read_start; i < cntlr->inbuf_count; i++) {
 	if (cntlr->inbuf[i] == 0x0) {
 	    /* Ignore nulls. */
@@ -630,18 +600,23 @@ handle_tcp_fd_read(int fd, void *data)
  out_unlock:
     UNLOCK(cntlr->lock);
  out:
-    return;
+    return buflen;
+
+ inbuf_overflow:
+    controller_outs(cntlr, "Input line too long\r\n");
+    cntlr->inbuf_count = 0;
+    goto out_unlock;
 }
 
 /* The TCP port has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_tcp_fd_write(int fd, void *data)
+controller_write_ready(struct netio *net)
 {
-    controller_info_t *cntlr = (controller_info_t *) data;
+    controller_info_t *cntlr = netio_get_user_data(net);
     telnet_data_t *td;
-    int write_count;
+    int err, write_count;
 
     LOCK(cntlr->lock);
     if (cntlr->in_shutdown)
@@ -651,7 +626,7 @@ handle_tcp_fd_write(int fd, void *data)
     if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	int buferr, reterr;
 
-	reterr = buffer_write(cntlr->tcpfd, &td->out_telnet_cmd, &buferr);
+	reterr = buffer_net_send(net, &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
 		goto out_fail;
@@ -666,33 +641,29 @@ handle_tcp_fd_write(int fd, void *data)
 	    goto out;
     }
 
-    write_count = write(cntlr->tcpfd,
-			&(cntlr->outbuf[cntlr->outbuf_pos]),
-			cntlr->outbuf_count);
-    if (write_count == -1) {
-	if (errno == EAGAIN) {
-	    /* This again was due to O_NONBLOCK, just ignore it. */
-	} else if (errno == EPIPE) {
-	    goto out_fail;
-	} else {
-	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The tcp write for controller had error: %m");
-	    goto out_fail;
-	}
+    err = netio_write(net, &write_count,
+		      &(cntlr->outbuf[cntlr->outbuf_pos]),
+		      cntlr->outbuf_count);
+    if (err == EAGAIN) {
+	/* This again was due to O_NONBLOCK, just ignore it. */
+    } else if (err == EPIPE) {
+	goto out_fail;
+    } else if (err) {
+	/* Some other bad error. */
+	syslog(LOG_ERR, "The tcp write for controller had error: %m");
+	goto out_fail;
+    }
+
+    cntlr->outbuf_count -= write_count;
+    if (cntlr->outbuf_count != 0) {
+	/* We didn't write all the data, continue writing. */
+	cntlr->outbuf_pos += write_count;
     } else {
-	cntlr->outbuf_count -= write_count;
-	if (cntlr->outbuf_count != 0) {
-	    /* We didn't write all the data, continue writing. */
-	    cntlr->outbuf_pos += write_count;
-	} else {
-	    /* We are done writing, turn the reader back on. */
-	    free(cntlr->outbuf);
-	    cntlr->outbuf = NULL;
-	    sel_set_fd_read_handler(ser2net_sel, cntlr->tcpfd,
-				    SEL_FD_HANDLER_ENABLED);
-	    sel_set_fd_write_handler(ser2net_sel, cntlr->tcpfd,
-				     SEL_FD_HANDLER_DISABLED);
-	}
+	/* We are done writing, turn the reader back on. */
+	free(cntlr->outbuf);
+	cntlr->outbuf = NULL;
+	netio_set_read_callback_enable(net, true);
+	netio_set_write_callback_enable(net, false);
     }
  out:
     UNLOCK(cntlr->lock);
@@ -702,48 +673,36 @@ handle_tcp_fd_write(int fd, void *data)
     shutdown_controller(cntlr); /* Releases the lock */
 }
 
-/* Handle an exception from the TCP port. */
 static void
-handle_tcp_fd_except(int fd, void *data)
+controller_close_done(struct netio *net)
 {
-    controller_info_t *cntlr = (controller_info_t *) data;
-
-    LOCK(cntlr->lock);
-    if (cntlr->in_shutdown) {
-	UNLOCK(cntlr->lock);
-	return;
-    }
-    syslog(LOG_ERR, "Select exception for controller port");
-    shutdown_controller(cntlr); /* Releases the lock */
-}
-
-static void
-controller_fd_cleared(int fd, void *cb_data)
-{
-    controller_info_t *cntlr = cb_data;
+    controller_info_t *cntlr = netio_get_user_data(net);
 
     shutdown_controller2(cntlr);
 }
 
+struct netio_callbacks controller_netio_callbacks = {
+    .read_callback = controller_read,
+    .write_callback = controller_write_ready,
+    .close_done = controller_close_done
+};
+
 /* A connection request has come in for the control port. */
 static void
-handle_accept_port_read(int fd, void *data)
+controller_new_connection(struct netio_acceptor *acceptor, struct netio *net)
 {
     controller_info_t *cntlr;
-    socklen_t         len;
     char              *err = NULL;
-    int               optval;
-    int               rv;
 
     LOCK(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\r\n";
-	goto errout2;
+	goto errout;
     } else {
 	cntlr = malloc(sizeof(*cntlr));
 	if (cntlr == NULL) {
 	    err = "Could not allocate controller port\r\n";
-	    goto errout2;
+	    goto errout;
 	}
 	memset(cntlr, 0, sizeof(*cntlr));
     }
@@ -752,61 +711,13 @@ handle_accept_port_read(int fd, void *data)
 
     INIT_LOCK(cntlr->lock);
 
-    len = sizeof(cntlr->remote);
-    cntlr->tcpfd = accept(fd, (struct sockaddr *) &(cntlr->remote), &len);
-    if (cntlr->tcpfd == -1) {
-	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    syslog(LOG_ERR, "Could not accept on controller port: %m");
-	goto errout;
-    }
+    cntlr->net = net;
 
-#ifdef HAVE_TCPD_H
-    {
-	struct request_info req;
-
-	request_init(&req, RQ_DAEMON, progname, RQ_FILE, cntlr->tcpfd, NULL);
-	fromhost(&req);
-
-	if (!hosts_access(&req)) {
-	    char *err = "Access denied\r\n";
-	    write(cntlr->tcpfd, err, strlen(err));
-	    close(cntlr->tcpfd);
-	    goto errout;
-	}
-    }
-#endif /* HAVE_TCPD_H */
-
-    if (fcntl(cntlr->tcpfd, F_SETFL, O_NONBLOCK) == -1) {
-	close(cntlr->tcpfd);
-	syslog(LOG_ERR, "Could not fcntl the control port: %m");
-	goto errout;
-    }
-
-    optval = 1;
-    if (setsockopt(cntlr->tcpfd, SOL_SOCKET, SO_KEEPALIVE, (void *)&optval,
-		   sizeof(optval)) == -1) {
-	close(cntlr->tcpfd);
-	syslog(LOG_ERR, "Could not enable SO_KEEPALIVE on the control port: %m");
-	goto errout;
-    }
+    netio_set_callbacks(net, &controller_netio_callbacks, cntlr);
 
     cntlr->inbuf_count = 0;
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
-
-    rv = sel_set_fd_handlers(ser2net_sel,
-			     cntlr->tcpfd,
-			     cntlr,
-			     handle_tcp_fd_read,
-			     handle_tcp_fd_write,
-			     handle_tcp_fd_except,
-			     controller_fd_cleared);
-    if (rv) {
-	close(cntlr->tcpfd);
-	syslog(LOG_ERR, "Could not set FD handlers on the control port: %s",
-	       strerror(rv));
-	goto errout;
-    }
 
     cntlr->next = controllers;
     controllers = cntlr;
@@ -828,54 +739,33 @@ handle_accept_port_read(int fd, void *data)
 
 errout:
     UNLOCK(cntlr_lock);
-    free(cntlr);
-    return;
-
-errout2:
-    UNLOCK(cntlr_lock);
-    {
-	/* We have a problem so refuse this one. */
-	struct sockaddr_storage dummy_sockaddr;
-	socklen_t len = sizeof(dummy_sockaddr);
-	int new_fd = accept(fd, (struct sockaddr *) &dummy_sockaddr, &len);
-
-	if (new_fd != -1) {
-	    write_ignore_fail(new_fd, err, strlen(err));
-	    close(new_fd);
-	}
-    }
+    /* We have a problem so refuse this one. */
+    netio_write(cntlr->net, NULL, err, strlen(err));
+    netio_close(net);
 }
 
 static void
-controller_accept_fd_cleared(int fd, void *cb_data)
+controller_shutdown_done(struct netio_acceptor *net)
 {
     wake_waiter(accept_waiter);
 }
+
+struct netio_acceptor_callbacks controller_netio_acceptor_callbacks = {
+    .new_connection = controller_new_connection,
+    .shutdown_done = controller_shutdown_done
+};
 
 /* Set up the controller port to accept connections. */
 int
 controller_init(char *controller_port)
 {
     int rv;
-    bool is_port_set;
 
     if (!controller_shutdown_waiter) {
 	controller_shutdown_waiter = alloc_waiter(ser2net_sel);
 	if (!controller_shutdown_waiter)
 	    return ENOMEM;
     }
-
-    rv = scan_network_port(controller_port, &cntrl_ai, NULL, &is_port_set);
-    if (rv) {
-	if (rv == EINVAL)
-	    return CONTROLLER_INVALID_TCP_SPEC;
-	else if (rv == ENOMEM)
-	    return CONTROLLER_OUT_OF_MEMORY;
-	else
-	    return -1;
-    }
-    if (!is_port_set)
-	return CONTROLLER_INVALID_TCP_SPEC;
 
     if (!accept_waiter) {
 	accept_waiter = alloc_waiter(ser2net_sel);
@@ -885,13 +775,21 @@ controller_init(char *controller_port)
 	}
     }
 
-    acceptfds = open_socket(cntrl_ai, handle_accept_port_read, NULL, NULL,
-			    &nr_acceptfds, controller_accept_fd_cleared);
-    if (acceptfds == NULL) {
-	freeaddrinfo(cntrl_ai);
-	syslog(LOG_ERR, "Unable to create TCP socket: %m");
-	return CONTROLLER_CANT_OPEN_PORT;
+    rv = str_to_netio_acceptor(controller_port, 64,
+			       &controller_netio_acceptor_callbacks, NULL,
+			       &controller_acceptor);
+    if (rv) {
+	if (rv == EINVAL)
+	    return CONTROLLER_INVALID_TCP_SPEC;
+	else if (rv == ENOMEM)
+	    return CONTROLLER_OUT_OF_MEMORY;
+	else
+	    return -1;
     }
+
+    rv = netio_acc_startup(controller_acceptor);
+    if (rv) 
+	return CONTROLLER_CANT_OPEN_PORT;
 
     return 0;
 }
@@ -899,18 +797,10 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    unsigned int i;
-
-    if (acceptfds == NULL)
-	return;
-    for (i = 0; i < nr_acceptfds; i++) {
-	sel_clear_fd_handlers(ser2net_sel, acceptfds[i].fd);
-	wait_for_waiter(accept_waiter, 1);
-	close(acceptfds[i].fd);
-    }
-    free(acceptfds);
-    freeaddrinfo(cntrl_ai);
-    acceptfds = NULL;
+    netio_acc_shutdown(controller_acceptor);
+    wait_for_waiter(accept_waiter, 1);
+    netio_acc_free(controller_acceptor);
+    controller_acceptor = NULL;
 }
 
 static void
