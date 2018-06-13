@@ -381,238 +381,175 @@ void str_to_argv_free(int argc, char **argv)
 	if (argv[i])
 	    free(argv[i]);
     }
+    if (argv[argc + 1])
+	free(argv[argc + 1]);
     free(argv);
 }
 
-enum state {
-    in_space,
-    in_parm,
-    in_squote,
-    in_dquote,
-    in_bs, in_bs_hex, in_bs_hex2, in_bs_oct2, in_bs_oct3
-};
-
-static int add_to_parm(char **parm, size_t *parmlen, size_t *parmpos, char c)
+static bool is_sep_space(char c, char *seps)
 {
-    if (*parmpos >= *parmlen) {
-	char *new_parm = realloc(*parm, *parmlen + 10);
-	if (!new_parm)
-	    return ENOMEM;
-	*parmlen += 10;
-	*parm = new_parm;
+    return c && strchr(seps, c);
+}
+
+static char *skip_spaces(char *s, char *seps)
+{
+    while (is_sep_space(*s, seps))
+	s++;
+    return s;
+}
+
+static bool isodigit(char c)
+{
+    return isdigit(c) && c != '8' && c != '9';
+}
+
+static int gettok(char **s, char **tok, char *seps)
+{
+    char *t = skip_spaces(*s, seps);
+    char *p = t;
+    char *o = t;
+    char inquote = '\0';
+    unsigned int escape = 0;
+    unsigned int base = 8;
+    char cval = 0;
+
+    if (!*t) {
+	*s = t;
+	*tok = NULL;
+	return 0;
     }
 
-    (*parm)[*parmpos] = c;
-    (*parmpos)++;
+    for (; *p; p++) {
+	if (escape) {
+	    if (escape == 1) {
+		cval = 0;
+		if (isodigit(*p)) {
+		    base = 8;
+		    cval = *p - '0';
+		    escape++;
+		} else if (*p == 'x') {
+		    base = 16;
+		    escape++;
+		} else {
+		    switch (*p) {
+		    case 'a': *o++ = '\a'; break;
+		    case 'b': *o++ = '\b'; break;
+		    case 'f': *o++ = '\f'; break;
+		    case 'n': *o++ = '\n'; break;
+		    case 'r': *o++ = '\r'; break;
+		    case 't': *o++ = '\t'; break;
+		    case 'v': *o++ = '\v'; break;
+		    default:  *o++ = *p;
+		    }
+		    escape = 0;
+		}
+	    } else if (escape >= 2) {
+		if ((base == 16 && isxdigit(*p)) || isodigit(*p)) {
+		    if (isodigit(*p))
+			cval = cval * base + *p - '0';
+		    else if (isupper(*p))
+			cval = cval * base + *p - 'A';
+		    else
+			cval = cval * base + *p - 'a';
+		    if (escape >= 3) {
+			*o++ = cval;
+			escape = 0;
+		    } else {
+			escape++;
+		    }
+		} else {
+		    *o++ = cval;
+		    escape = 0;
+		    goto process_char;
+		}
+	    }
+	    continue;
+	}
+    process_char:
+	if (*p == inquote) {
+	    inquote = '\0';
+	} else if (!inquote && (*p == '\'' || *p == '"')) {
+	    inquote = *p;
+	} else if (*p == '\\') {
+	    escape = 1;
+	} else if (!inquote && is_sep_space(*p, seps)) {
+	    p++;
+	    break;
+	} else {
+	    *o++ = *p;
+	}
+    }
+
+    if ((base == 8 && escape > 1) || (base == 16 && escape > 2)) {
+	*o++ = cval;
+	escape = 0;
+    }
+
+    *s = p;
+    if (inquote || escape)
+	return -1;
+
+    *o = '\0';
+    *tok = t;
     return 0;
 }
 
-static int add_parm(int *argc, int *argc_max, char ***argv,
-		    char *parm, size_t len)
+int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
 {
-    char *s;
+    char *orig_s = strdup(ins);
+    char *s = orig_s;
+    char **argv = NULL;
+    char *tok;
+    unsigned int argc = 0;
+    unsigned int args = 0;
+    int err;
 
-    if (*argc >= *argc_max) {
-	char **new_argv = realloc(*argv, *argc_max + (10 * sizeof(char *)));
-	if (!new_argv)
-	    return ENOMEM;
-	*argv = new_argv;
-	*argc_max += 10;
-    }
-
-    s = malloc(len + 1);
     if (!s)
 	return ENOMEM;
-    memcpy(s, parm, len);
-    s[len] = '\0';
-    (*argv)[*argc] = s;
-    (*argc)++;
-    return 0;
-}
-
-int fromxdigit(char c)
-{
-    if (c >= '0' && c <= '9')
-	return c - '0';
-    else if (c >= 'a' && c <= 'f')
-	return c - 'a' + 10;
-    else
-	return c - 'A' + 10;
-}
-
-int str_to_argv(const char *s, int *r_argc, char ***r_argv, char *seps)
-{
-    int argc = 0;
-    int argc_max = 0;
-    char **argv = NULL;
-    enum state state, prev_state = in_parm, prev_bs_state = in_parm;
-    char *parm = NULL;
-    size_t parmlen = 0;
-    size_t parmpos = 0;
-    int rv = 0;
-    int c = 0;
 
     if (!seps)
 	seps = " \f\n\r\t\v";
 
-    state = in_space;
-    for (; *s; s++) {
-	switch (state) {
-	case in_space:
-	    if (strchr(seps, *s))
-		break;
-	    parmpos = 0;
-	    if (*s == '\'') {
-		prev_state = state;
-		state = in_squote;
-	    } else if (*s == '"') {
-		prev_state = state;
-		state = in_dquote;
-	    } else if (*s == '\\') {
-		prev_bs_state = state;
-		state = in_bs;
-	    } else {
-		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
-		if (rv)
-		    goto err;
-		state = in_parm;
+    args = 10;
+    argv = malloc(sizeof(*argv) * args);
+    if (!argv) {
+	free(orig_s);
+	return ENOMEM;
+    }
+
+    err = gettok(&s, &tok, seps);
+    while (tok && !err) {
+	/*
+	 * Leave one spot at the end for the NULL and one for the
+	 * pointer to the allocated string.
+	 */
+	if (argc >= args - 2) {
+	    char **nargv = realloc(argv, sizeof(*argv) * (args + 10));
+
+	    if (!nargv) {
+		err = ENOMEM;
+		goto out;
 	    }
-	    break;
-
-	case in_parm:
-	    if (strchr(seps, *s)) {
-		rv = add_parm(&argc, &argc_max, &argv, parm, parmpos);
-		if (rv)
-		    goto err;
-		state = in_space;
-	    } else if (*s == '\'') {
-		prev_state = state;
-		state = in_squote;
-	    } else if (*s == '"') {
-		prev_state = state;
-		state = in_dquote;
-	    } else if (*s == '\\') {
-		prev_bs_state = state;
-		state = in_bs;
-	    } else {
-		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
-		if (rv)
-		    goto err;
-	    }
-	    break;
-
-	case in_squote:
-	    if (*s == '\'') {
-		state = prev_state;
-	    } else if (*s == '\\') {
-		prev_bs_state = state;
-		state = in_bs;
-	    } else {
-		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
-		if (rv)
-		    goto err;
-	    }
-	    break;
-
-	case in_dquote:
-	    if (*s == '"') {
-		state = prev_state;
-	    } else if (*s == '\\') {
-		prev_bs_state = state;
-		state = in_bs;
-	    } else {
-		rv = add_to_parm(&parm, &parmlen, &parmpos, *s);
-		if (rv)
-		    goto err;
-	    }
-	    break;
-
-	case in_bs:
-	    switch (*s) {
-	    case '\\': c = '\\'; break;
-	    case 'a': c = '\a'; break;
-	    case 'b': c = '\b'; break;
-	    case 'e': c = '\e'; break;
-	    case 'f': c = '\f'; break;
-	    case 'n': c = '\n'; break;
-	    case 'r': c = '\r'; break;
-	    case 't': c = '\t'; break;
-	    case 'v': c = '\v'; break;
-	    case 'x':
-		c = 0;
-		state = in_bs_hex;
-		break;
-	    case '0': case '1': case '2': case '3': case '4':
-	    case '5': case '6': case '7': case '8': case '9':
-		c = *s - '0';
-		if (*(s + 1) >= '0' && *(s + 1) <= '7')
-		    state = in_bs_oct2;
-		else
-		    goto add_parm_c;
-		break;
-	    }
-	    if (state == in_bs)
-		goto add_parm_c;
-	    break;
-
-	case in_bs_hex:
-	    if (!isxdigit(*s)) {
-		rv = -EINVAL;
-		goto err;
-	    }
-	    c = fromxdigit(*s);
-	    if (isxdigit(*(s + 1)))
-		state = in_bs_hex2;
-	    else
-		goto add_parm_c;
-	    break;
-
-	case in_bs_hex2:
-	    c = (c * 16) + fromxdigit(*s);
-	    goto add_parm_c;
-
-	case in_bs_oct2:
-	    c = (c * 8) + (*s - '0');
-	    if (*(s + 1) >= '0' && *(s + 1) <= '7')
-		state = in_bs_oct3;
-	    else
-		goto add_parm_c;
-	    break;
-
-	case in_bs_oct3:
-	    c = (c * 8) + (*s - '0');
-	    goto add_parm_c;
+	    argv = nargv;
+	    args += 10;
 	}
-	continue;
+	argv[argc++] = tok;
 
-    add_parm_c:
-	rv = add_to_parm(&parm, &parmlen, &parmpos, c);
-	if (rv)
-	    goto err;
-	state = prev_bs_state;
+	err = gettok(&s, &tok, seps);
     }
 
-    switch (state) {
-    case in_space:
-	break;
+    argv[argc] = NULL; /* NULL terminate the array. */
+    argv[argc + 1] = orig_s; /* Keep this around for freeing. */
 
-    case in_parm:
-	rv = add_parm(&argc, &argc_max, &argv, parm, parmpos);
-	break;
-
-    default:
-	rv = -EINVAL;
-    }
-
- err:
-    free(parm);
-    if (rv) {
-	str_to_argv_free(argc, argv);
+ out:
+    if (err) {
+	free(orig_s);
+	free(argv);
     } else {
 	*r_argc = argc;
 	*r_argv = argv;
     }
-    return rv;
+    return err;
 }
 
 #include <assert.h>
