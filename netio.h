@@ -66,7 +66,7 @@ struct netio_callbacks {
 
     /*
      * Called when urgent data is available.  This should only be done
-     * on TCP sockets.
+     * on TCP sockets.  Optional.
      */
     void (*urgent_callback)(struct netio *net);
 

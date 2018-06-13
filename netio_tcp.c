@@ -343,7 +343,8 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	    if (rv == 0 || (rv < 0 && errno != EINTR))
 		break;
 	}
-	net->cbs->urgent_callback(net);
+	if (net->cbs->urgent_callback)
+	    net->cbs->urgent_callback(net);
     }
 
  retry:
