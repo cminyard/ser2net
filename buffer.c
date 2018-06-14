@@ -22,44 +22,32 @@
 #include <errno.h>
 #include <string.h>
 #include "buffer.h"
-#include "devio.h"
 
 static int
-do_write(struct devio *io, struct netio *net, int fd, void  *buf, size_t buflen,
-	 size_t *written)
+do_write(buffer_do_write tdo_write, void *cb_data,
+	 void  *buf, size_t buflen, size_t *written)
 {
     int err = 0;
-    ssize_t write_count;
+    size_t write_count;
 
-    if (io) {
-	write_count = io->f->write(io, buf, buflen);
-	if (write_count == -1)
-	    err = errno;
-    } else if (net) {
-	int count;
+ retry:
+    err = tdo_write(cb_data, buf, buflen, &write_count);
+    if (err == EINTR)
+	goto retry;
 
-	write_count = -1;
-	err = netio_write(net, &count, buf, buflen);
-	if (!err)
-	    write_count = count;
-    } else {
-	write_count = write(fd, buf, buflen);
-	if (write_count == -1)
-	    err = errno;
-    }
-
-    if (err == EINTR || err == EAGAIN || err == EWOULDBLOCK) {
+    if (err == EAGAIN || err == EWOULDBLOCK) {
 	err = 0;
 	*written = 0;
     } else if (!err) {
 	*written = write_count;
     }
+
     return err;
 }
 
-static int
-lbuffer_write(struct devio *io, struct netio *net, int fd,
-	      struct sbuf *buf, int *buferr)
+int
+buffer_write(buffer_do_write tdo_write, void *cb_data,
+	     struct sbuf *buf, int *buferr)
 {
     int err;
     size_t write_count;
@@ -74,8 +62,8 @@ lbuffer_write(struct devio *io, struct netio *net, int fd,
     }
 
     if (towrite1 > 0) {
-	err = do_write(io, net, fd, buf->buf + buf->pos, towrite1,
-		       &write_count);
+	err = do_write(tdo_write, cb_data,
+		       buf->buf + buf->pos, towrite1, &write_count);
 	if (err) {
 	    *buferr = err;
 	    return -1;
@@ -90,7 +78,7 @@ lbuffer_write(struct devio *io, struct netio *net, int fd,
     if (towrite2 > 0) {
 	/* We wrapped */
 	buf->pos = 0;
-	err = do_write(io, net, fd, buf->buf, towrite2, &write_count);
+	err = do_write(tdo_write, cb_data, buf->buf, towrite2, &write_count);
 	if (err) {
 	    *buferr = errno;
 	    return -1;
@@ -100,24 +88,6 @@ lbuffer_write(struct devio *io, struct netio *net, int fd,
     }
 
     return 0;
-}
-
-int
-buffer_write(int fd, struct sbuf *buf, int *buferr)
-{
-    return lbuffer_write(NULL, NULL, fd, buf, buferr);
-}
-
-int
-buffer_net_send(struct netio *net, struct sbuf *buf, int *buferr)
-{
-    return lbuffer_write(NULL, net, -1, buf, buferr);
-}
-
-int
-buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr)
-{
-    return lbuffer_write(io, NULL, -1, buf, buferr);
 }
 
 int

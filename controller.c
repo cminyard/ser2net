@@ -32,6 +32,7 @@
 #include "utils/utils.h"
 #include "utils/locking.h"
 
+#include "netio/netio.h"
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
@@ -627,7 +628,8 @@ controller_write_ready(struct netio *net)
     if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	int buferr, reterr;
 
-	reterr = buffer_net_send(net, &td->out_telnet_cmd, &buferr);
+	reterr = buffer_write(netio_buffer_do_write, net,
+			      &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
 		goto out_fail;
