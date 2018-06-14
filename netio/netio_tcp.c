@@ -33,7 +33,6 @@
 #include "netio_internal.h"
 #include "utils/selector.h"
 #include "utils/locking.h"
-#include "utils/utils.h"
 
 struct tcpn_data {
     struct netio net;
@@ -493,6 +492,17 @@ tcpn_finish_setup(int new_fd, struct selector_s *sel,
 }
 
 static void
+write_nofail(int fd, const char *data, size_t count)
+{
+    ssize_t written;
+
+    while ((written = write(fd, data, count)) > 0) {
+	data += written;
+	count -= written;
+    }
+}
+
+static void
 tcpna_readhandler(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
@@ -512,7 +522,7 @@ tcpna_readhandler(int fd, void *cbdata)
 
     errstr = check_tcpd_ok(new_fd);
     if (errstr) {
-	write_ignore_fail(new_fd, errstr, strlen(errstr));
+	write_nofail(new_fd, errstr, strlen(errstr));
 	close(new_fd);
 	return;
     }

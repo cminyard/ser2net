@@ -27,15 +27,6 @@
 #include <stdbool.h>
 #include "selector.h"
 
-/*
- * Compare two sockaddr structure and return TRUE if they are equal
- * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
- * If a2->sin_port is zero, then the port comparison is ignored.
- */
-bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
-		    const struct sockaddr *a2, socklen_t l2,
-		    bool compare_ports);
-
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
 
@@ -44,51 +35,6 @@ int cmpstrval(const char *s, const char *prefix, unsigned int *end);
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
 int scan_int(char *str);
-
-/* Scan for a network port in the form "[hostname,]x", where the optional
- * first part is a resolvable hostname, an IPv4 octet, or an IPv6 address.
- * In the absence of a host specification, a wildcard address is used.
- * The mandatory second part is the port number or a service name. */
-int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
-		      bool *is_port_set);
-
-struct port_remaddr
-{
-    struct sockaddr_storage addr;
-    socklen_t addrlen;
-    bool is_port_set;
-    struct port_remaddr *next;
-};
-
-/* Add a remaddr to the given list, return 0 on success or errno on fail. */
-int remaddr_append(struct port_remaddr **list, const char *str);
-
-/* Check that the given address matches something in the list. */
-bool remaddr_check(const struct port_remaddr *list,
-		   const struct sockaddr *addr, socklen_t len);
-
-struct opensocks
-{
-    int fd;
-    int family;
-};
-
-/*
- * Open a set of sockets given the addrinfo list, one per address.
- * Return the actual number of sockets opened in nr_fds.  Set the
- * I/O handler to readhndlr, with the given data.
- *
- * Note that if the function is unable to open an address, it just
- * goes on.  It returns NULL if it is unable to open any addresses.
- * Also, open IPV6 addresses first.  This way, addresses in shared
- * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
- */
-struct opensocks *
-open_socket(struct selector_s *sel,
-	    struct addrinfo *ai, void (*readhndlr)(int, void *),
-	    void (*writehndlr)(int, void *), void *data,
-	    unsigned int *nr_fds,
-	    void (*fd_handler_cleared)(int, void *));
 
 /*
  * Search for a banner/open/close string by name.  Note that the
@@ -112,8 +58,6 @@ char *find_tracefile(const char *name);
 
 /* Search for RS485 configuration by name. */
 struct serial_rs485 *find_rs485conf(const char *name);
-
-void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
 /* Do a sendto if an address is provided, a write if not. */
 int net_write(int fd, const void *buf, size_t len, int flags,

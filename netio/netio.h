@@ -281,5 +281,33 @@ int stdio_netio_alloc(char *const argv[],
 		      void *user_data,
 		      struct netio **new_netio);
 
+/*
+ * Compare two sockaddr structure and return TRUE if they are equal
+ * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
+ * If a2->sin_port is zero, then the port comparison is ignored.
+ */
+bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
+		    const struct sockaddr *a2, socklen_t l2,
+		    bool compare_ports);
+
+/*
+ * Scan for a network port in the form:
+ *
+ *   [ipv4|ipv6,][tcp|udp,][<hostname>,]<port>
+ *
+ * If neither ipv4 nor ipv6 is specified, addresses for both are
+ * returned.  If neither tcp nor udp is specified, tcp is assumed.
+ * The hostname can be a resolvable hostname, an IPv4 octet, or an
+ * IPv6 address.  If it is not supplied, inaddr_any is used.  In the
+ * absence of a hostname specification, a wildcard address is used.
+ * The mandatory second part is the port number or a service name.
+ *
+ * If the port is all zero, then is_port_set is set to true, false
+ * otherwise.  If the address is UDP, is_dgram is set to true, false
+ * otherwise.
+ */
+int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
+		      bool *is_port_set);
+
 #endif /* SER2NET_NETIO_H */
 

@@ -34,7 +34,6 @@
 #include "netio_internal.h"
 #include "utils/selector.h"
 #include "utils/locking.h"
-#include "utils/utils.h"
 
 struct udpna_data;
 

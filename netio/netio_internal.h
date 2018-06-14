@@ -22,7 +22,6 @@
 
 #include <stddef.h>
 #include "netio.h"
-#include "utils/utils.h"
 
 enum netio_type {
     NETIO_TYPE_TCP,
@@ -87,9 +86,29 @@ struct netio_acceptor {
 #define container_of(ptr, type, member) \
     ((type *)(((char *) ptr) - offsetof(type, member)))
 
-int netio_append_remaddr(struct port_remaddr **list, const char *str,
-			 bool do_dgram);
-bool netio_check_remaddr(struct port_remaddr *list,
-			 struct sockaddr *addr, socklen_t len);
+struct opensocks
+{
+    int fd;
+    int family;
+};
+
+/*
+ * Open a set of sockets given the addrinfo list, one per address.
+ * Return the actual number of sockets opened in nr_fds.  Set the
+ * I/O handler to readhndlr, with the given data.
+ *
+ * Note that if the function is unable to open an address, it just
+ * goes on.  It returns NULL if it is unable to open any addresses.
+ * Also, open IPV6 addresses first.  This way, addresses in shared
+ * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
+ */
+struct opensocks *open_socket(struct selector_s *sel,
+			      struct addrinfo *ai,
+			      void (*readhndlr)(int, void *),
+			      void (*writehndlr)(int, void *), void *data,
+			      unsigned int *nr_fds,
+			      void (*fd_handler_cleared)(int, void *));
+
+void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
 #endif /* SER2NET_NETIO_INTERNAL_H */

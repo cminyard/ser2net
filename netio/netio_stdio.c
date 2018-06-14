@@ -28,7 +28,6 @@
 
 #include "netio.h"
 #include "netio_internal.h"
-#include "utils/utils.h"
 #include "utils/locking.h"
 #include "utils/selector.h"
 
