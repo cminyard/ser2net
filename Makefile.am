@@ -10,7 +10,7 @@ noinst_HEADERS = controller.h dataxfer.h readconfig.h \
 	telnet.h ser2net.h led.h led_sysfs.h buffer.h telnet.h devio.h
 man_MANS = ser2net.8
 EXTRA_DIST = $(man_MANS) ser2net.conf ser2net.spec ser2net.init \
-	linux-serial-echo/serialecho.c linux-serial-echo/Makefile
+	linux-serial-echo/serialsim.c linux-serial-echo/Makefile
 
 SUBDIRS = utils netio tests
 

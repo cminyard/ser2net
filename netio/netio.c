@@ -3,9 +3,206 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include "utils/utils.h"
 #include "netio.h"
 #include "netio_internal.h"
+
+/* FIXME - The error handling in this function isn't good, fix it. */
+struct opensocks *
+open_socket(struct selector_s *sel,
+	    struct addrinfo *ai, void (*readhndlr)(int, void *),
+	    void (*writehndlr)(int, void *), void *data,
+	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
+{
+    struct addrinfo *rp;
+    int optval = 1;
+    int family = AF_INET6; /* Try IPV6 first, then IPV4. */
+    struct opensocks *fds;
+    unsigned int curr_fd = 0;
+    unsigned int max_fds = 0;
+    int rv;
+
+    for (rp = ai; rp != NULL; rp = rp->ai_next)
+	max_fds++;
+
+    if (max_fds == 0)
+	return NULL;
+
+    fds = malloc(sizeof(*fds) * max_fds);
+    if (!fds)
+	return NULL;
+
+  restart:
+    for (rp = ai; rp != NULL; rp = rp->ai_next) {
+	if (family != rp->ai_family)
+	    continue;
+
+	fds[curr_fd].fd = socket(rp->ai_family, rp->ai_socktype,
+				 rp->ai_protocol);
+	if (fds[curr_fd].fd == -1)
+	    continue;
+
+	fds[curr_fd].family = rp->ai_family;
+
+	if (fcntl(fds[curr_fd].fd, F_SETFL, O_NONBLOCK) == -1)
+	    goto next;
+
+	if (setsockopt(fds[curr_fd].fd, SOL_SOCKET, SO_REUSEADDR,
+		       (void *)&optval, sizeof(optval)) == -1)
+	    goto next;
+
+	check_ipv6_only(rp->ai_family, rp->ai_addr, fds[curr_fd].fd);
+
+	if (bind(fds[curr_fd].fd, rp->ai_addr, rp->ai_addrlen) != 0)
+	    goto next;
+
+	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd].fd, 1) != 0)
+	    goto next;
+
+	rv = sel_set_fd_handlers(sel, fds[curr_fd].fd, data,
+				 readhndlr, writehndlr, NULL,
+				 fd_handler_cleared);
+	if (rv)
+	    goto next;
+	sel_set_fd_read_handler(sel, fds[curr_fd].fd,
+				SEL_FD_HANDLER_ENABLED);
+	curr_fd++;
+	continue;
+
+      next:
+	close(fds[curr_fd].fd);
+    }
+    if (family == AF_INET6) {
+	family = AF_INET;
+	goto restart;
+    }
+
+    if (curr_fd == 0) {
+	free(fds);
+	fds = NULL;
+    }
+    *nr_fds = curr_fd;
+    return fds;
+}
+
+void
+check_ipv6_only(int family, struct sockaddr *addr, int fd)
+{
+    int null = 0;
+
+    if (family != AF_INET6)
+	return;
+    
+    if (!IN6_IS_ADDR_UNSPECIFIED(&(((struct sockaddr_in6 *) addr)->sin6_addr)))
+	return;
+
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &null, sizeof(null));
+}
+
+int
+scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
+		  bool *is_port_set)
+{
+    char *strtok_data, *strtok_buffer;
+    char *ip;
+    char *port;
+    struct addrinfo hints, *ai;
+    int family = AF_UNSPEC;
+    int socktype = SOCK_STREAM;
+
+    if (strncmp(str, "ipv4,", 5) == 0) {
+	family = AF_INET;
+	str += 5;
+    } else if (strncmp(str, "ipv6,", 5) == 0) {
+	family = AF_INET6;
+	str += 5;
+    }
+
+    if (strncmp(str, "tcp,", 4) == 0) {
+	str += 4;
+    } else if (strncmp(str, "udp,", 4) == 0) {
+	/* Only allow UDP if asked for. */
+	if (!is_dgram)
+	    return EINVAL;
+	socktype = SOCK_DGRAM;
+	str += 4;
+    }
+
+    strtok_buffer = strdup(str);
+    if (!strtok_buffer)
+	return ENOMEM;
+
+    ip = strtok_r(strtok_buffer, ",", &strtok_data);
+    port = strtok_r(NULL, "", &strtok_data);
+    if (port == NULL) {
+	port = ip;
+	ip = NULL;
+    }
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_flags = AI_PASSIVE;
+    hints.ai_family = family;
+    hints.ai_socktype = socktype;
+    if (getaddrinfo(ip, port, &hints, &ai)) {
+	free(strtok_buffer);
+	return EINVAL;
+    }
+
+    if (is_dgram)
+	*is_dgram = socktype == SOCK_DGRAM;
+
+    if (is_port_set)
+	*is_port_set = !strisallzero(port);
+
+    free(strtok_buffer);
+    if (*rai)
+	freeaddrinfo(*rai);
+    *rai = ai;
+    return 0;
+}
+
+bool
+sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
+	       const struct sockaddr *a2, socklen_t l2,
+	       bool compare_ports)
+{
+    if (l1 != l2)
+	return false;
+    if (a1->sa_family != a2->sa_family)
+	return false;
+    switch (a1->sa_family) {
+    case AF_INET:
+	{
+	    struct sockaddr_in *s1 = (struct sockaddr_in *) a1;
+	    struct sockaddr_in *s2 = (struct sockaddr_in *) a2;
+	    if (compare_ports && s1->sin_port != s2->sin_port)
+		return false;
+	    if (s1->sin_addr.s_addr != s2->sin_addr.s_addr)
+		return false;
+	}
+	break;
+
+    case AF_INET6:
+	{
+	    struct sockaddr_in6 *s1 = (struct sockaddr_in6 *) a1;
+	    struct sockaddr_in6 *s2 = (struct sockaddr_in6 *) a2;
+	    if (compare_ports && s1->sin6_port != s2->sin6_port)
+		return false;
+	    if (memcmp(s1->sin6_addr.s6_addr, s2->sin6_addr.s6_addr,
+		       sizeof(s1->sin6_addr.s6_addr)) != 0)
+		return false;
+	}
+	break;
+
+    default:
+	/* Unknown family. */
+	return false;
+    }
+
+    return true;
+}
 
 void
 netio_set_callbacks(struct netio *net,
