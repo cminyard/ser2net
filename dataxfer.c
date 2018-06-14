@@ -43,6 +43,7 @@
 #include "readconfig.h"
 #include "utils/telnet.h"
 #include "utils/buffer.h"
+#include "utils/waiter.h"
 #include "led.h"
 
 #define SERIAL "term"

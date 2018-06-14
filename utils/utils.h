@@ -25,7 +25,6 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <stdbool.h>
-#include "selector.h"
 
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
@@ -54,13 +53,6 @@ int str_to_argv(const char *s, int *argc, char ***argv, char *seps);
 
 /* Free the return of str_to_argv */
 void str_to_argv_free(int argc, char **argv);
-
-/* Tools to wait for events. */
-typedef struct waiter_s waiter_t;
-waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig);
-void free_waiter(waiter_t *waiter);
-void wait_for_waiter(waiter_t *waiter, unsigned int count);
-void wake_waiter(waiter_t *waiter);
 
 struct absout {
     int (*out)(struct absout *e, const char *str, ...);
