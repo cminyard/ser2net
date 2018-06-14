@@ -30,59 +30,19 @@
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
 
+/*
+ * Returns true if the first strlen(prefix) characters of s are the
+ * same as prefix.  If true is returned, end is set to the character
+ * after the last byte that compares.
+ */
 int cmpstrval(const char *s, const char *prefix, unsigned int *end);
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
-int scan_int(char *str);
-
-/*
- * Search for a banner/open/close string by name.  Note that the
- * returned value needs to be free-ed when done.
- */
-enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE, CLOSEON, DEVNAME };
-char *find_str(const char *name, enum str_type *type, unsigned int *len);
-
-/*
- * Clean up longstrings.
- */
-void free_longstrs(void);
-void free_tracefiles(void);
-void free_rs485confs(void);
-
-/*
- * Search for a tracefile by name.  Note that the
- * returned value needs to be free-ed when done.
- */
-char *find_tracefile(const char *name);
-
-/* Search for RS485 configuration by name. */
-struct serial_rs485 *find_rs485conf(const char *name);
-
-/* Do a sendto if an address is provided, a write if not. */
-int net_write(int fd, const void *buf, size_t len, int flags,
-	      const struct sockaddr *addr, socklen_t addrlen);
-
-/* Make sure the full contents get written, return an error if it occurs. */
-int write_full(int fd, char *data, size_t count);
+int scan_int(const char *str);
 
 /* Write the data completely out, return without comment on error. */
 void write_ignore_fail(int fd, const char *data, size_t count);
-
-/* Convert a string holding a baud rate into the numeric baud rate.
-   Returns -1 on an invalid value. */
-int speedstr_to_speed(const char *speed);
-
-enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
-		   PARITY_MARK, PARITY_SPACE };
-enum parity_vals lookup_parity(const char *str);
-
-/* Return the default int value for the given name. */
-int find_default_int(const char *name);
-
-/* Return the default string value for the given name.  Return NULL if
-   out of memory.  The returned value must be freed. */
-char *find_default_str(const char *name);
 
 /* Separate out a string into an argv array, returning the argc/argv
    values given.  Returns -ENOMEM when out of memory or -EINVAL if

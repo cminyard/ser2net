@@ -30,4 +30,42 @@ void readconfig_init(void);
    create the ports. */
 int readconfig(char *filename);
 
+/*
+ * Search for a banner/open/close string by name.  Note that the
+ * returned value needs to be free-ed when done.
+ */
+enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE, CLOSEON, DEVNAME };
+char *find_str(const char *name, enum str_type *type, unsigned int *len);
+
+/*
+ * Clean up longstrings.
+ */
+void free_longstrs(void);
+void free_tracefiles(void);
+void free_rs485confs(void);
+
+/*
+ * Search for a tracefile by name.  Note that the
+ * returned value needs to be free-ed when done.
+ */
+char *find_tracefile(const char *name);
+
+/* Search for RS485 configuration by name. */
+struct serial_rs485 *find_rs485conf(const char *name);
+
+/* Convert a string holding a baud rate into the numeric baud rate.
+   Returns -1 on an invalid value. */
+int speedstr_to_speed(const char *speed);
+
+enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
+		   PARITY_MARK, PARITY_SPACE };
+enum parity_vals lookup_parity(const char *str);
+
+/* Return the default int value for the given name. */
+int find_default_int(const char *name);
+
+/* Return the default string value for the given name.  Return NULL if
+   out of memory.  The returned value must be freed. */
+char *find_default_str(const char *name);
+
 #endif /* READCONFIG */
