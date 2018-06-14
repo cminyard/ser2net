@@ -32,6 +32,7 @@
 #include "utils/utils.h"
 #include "utils/locking.h"
 #include "utils/telnet.h"
+#include "utils/waiter.h"
 
 #include "netio/netio.h"
 #include "ser2net.h"
