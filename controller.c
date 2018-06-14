@@ -31,12 +31,12 @@
 #include "utils/selector.h"
 #include "utils/utils.h"
 #include "utils/locking.h"
+#include "utils/telnet.h"
 
 #include "netio/netio.h"
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
-#include "telnet.h"
 
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H

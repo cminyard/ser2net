@@ -40,8 +40,8 @@
 #include "ser2net.h"
 #include "devio.h"
 #include "dataxfer.h"
-#include "telnet.h"
-#include "buffer.h"
+#include "utils/telnet.h"
+#include "utils/buffer.h"
 #include "led.h"
 
 #define SERIAL "term"
