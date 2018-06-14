@@ -33,7 +33,6 @@
 #include "utils/utils.h"
 #include "dataxfer.h"
 #include "readconfig.h"
-#include "telnet.h"
 #include "led.h"
 
 #ifdef HAVE_OPENIPMI
