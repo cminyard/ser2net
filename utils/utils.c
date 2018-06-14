@@ -58,7 +58,7 @@ strisallzero(const char *str)
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid. */
 int
-scan_int(char *str)
+scan_int(const char *str)
 {
     int rv = 0;
 
@@ -84,34 +84,6 @@ scan_int(char *str)
     }
 
     return rv;
-}
-
-int
-net_write(int fd, const void *buf, size_t len, int flags,
-	  const struct sockaddr *addr, socklen_t addrlen)
-{
-    if (addr)
-	return sendto(fd, buf, len, flags, addr, addrlen);
-    else
-	return write(fd, buf, len);
-}
-
-int
-write_full(int fd, char *data, size_t count)
-{
-    ssize_t written;
-
- restart:
-    while ((written = write(fd, data, count)) > 0) {
-	data += written;
-	count -= written;
-    }
-    if (written < 0) {
-	if (errno == EAGAIN)
-	    goto restart;
-	return -1;
-    }
-    return 0;
 }
 
 void

@@ -35,6 +35,7 @@
 #include "utils/utils.h"
 #include "ser2net.h"
 #include "dataxfer.h"
+#include "readconfig.h"
 #include "devio.h"
 
 #include <assert.h>
@@ -191,6 +192,24 @@ uucp_rm_lock(char *devname)
     uucp_fname_lock(lck_file, devname);
     unlink(lck_file);
     free(lck_file);
+}
+
+static int
+write_full(int fd, char *data, size_t count)
+{
+    ssize_t written;
+
+ restart:
+    while ((written = write(fd, data, count)) > 0) {
+	data += written;
+	count -= written;
+    }
+    if (written < 0) {
+	if (errno == EAGAIN)
+	    goto restart;
+	return -1;
+    }
+    return 0;
 }
 
 /* return 0=OK, -1=error, 1=locked by other proces */

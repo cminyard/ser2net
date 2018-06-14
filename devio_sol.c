@@ -46,6 +46,7 @@
 #include "utils/utils.h"
 #include "ser2net.h"
 #include "dataxfer.h"
+#include "readconfig.h"
 
 static os_handler_t *os_hnd;
 

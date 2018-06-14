@@ -40,6 +40,7 @@
 #include "ser2net.h"
 #include "devio.h"
 #include "dataxfer.h"
+#include "readconfig.h"
 #include "utils/telnet.h"
 #include "utils/buffer.h"
 #include "led.h"
