@@ -17,16 +17,12 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <sys/time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
-#include <netinet/in.h>
 #include <errno.h>
 #include <syslog.h>
-#include <assert.h>
 
 #include "utils/selector.h"
 #include "utils/utils.h"

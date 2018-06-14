@@ -20,8 +20,6 @@
 /* This code handles the actual transfer of data between the serial
    ports and the TCP ports. */
 
-#include <sys/time.h>
-#include <arpa/inet.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -30,7 +28,6 @@
 #include <syslog.h>
 #include <string.h>
 #include <ctype.h>
-#include <time.h>
 #include <fcntl.h>
 #include <assert.h>
 
