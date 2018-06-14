@@ -20,12 +20,6 @@
 #ifndef UTILS
 #define UTILS
 
-#include <netinet/in.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <stdbool.h>
-
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
 

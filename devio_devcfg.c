@@ -19,6 +19,7 @@
 
 /* This code handles generating the configuration for the serial port. */
 #include <unistd.h>
+#include <stdint.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>

@@ -20,6 +20,7 @@
 /* This file holds basic utilities used by the ser2net program. */
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
