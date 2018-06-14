@@ -21,9 +21,6 @@
 #define _SER2NET_BUFFER_H
 
 #include <sys/socket.h>
-#include "netio/netio.h"
-
-struct devio;
 
 struct sbuf {
     unsigned char *buf;
@@ -32,11 +29,11 @@ struct sbuf {
     unsigned int pos;
 };
 
-int buffer_io_write(struct devio *io, struct sbuf *buf, int *buferr);
+typedef int (*buffer_do_write)(void *cbdata, void *buf, size_t buflen,
+			       size_t *written);
 
-int buffer_net_send(struct netio *net, struct sbuf *buf, int *buferr);
-
-int buffer_write(int fd, struct sbuf *buf, int *buferr);
+int buffer_write(buffer_do_write do_write, void *cb_data,
+		 struct sbuf *buf, int *buferr);
 
 int buffer_output(struct sbuf *buf, unsigned char *data, unsigned int len);
 

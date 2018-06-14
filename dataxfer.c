@@ -929,6 +929,20 @@ handle_dev_fd_read(struct devio *io)
     UNLOCK(port->lock);
 }
 
+static int
+io_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
+{
+    struct devio *io = cb_data;
+    ssize_t write_count;
+    int err = 0;
+
+    write_count = io->f->write(io, buf, buflen);
+    if (write_count == -1)
+	err = errno;
+
+    return err;
+}
+
 /* The serial port has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
@@ -937,7 +951,7 @@ dev_fd_write(port_info_t *port, struct sbuf *buf)
 {
     int reterr, buferr;
 
-    reterr = buffer_io_write(&port->io, buf, &buferr);
+    reterr = buffer_write(io_do_write, &port->io, buf, &buferr);
     if (reterr == -1) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->portname, strerror(buferr));
@@ -1169,7 +1183,8 @@ send_telnet_data(port_info_t *port, net_info_t *netcon)
     if (!netcon->sending_tn_data)
 	return 1;
 
-    reterr = buffer_net_send(netcon->net, &td->out_telnet_cmd, &buferr);
+    reterr = buffer_write(netio_buffer_do_write, netcon->net,
+			  &td->out_telnet_cmd, &buferr);
     /* Returns 0 on EAGAIN */
     if (reterr == -1) {
 	if (buferr == EPIPE) {
@@ -2559,7 +2574,7 @@ handle_dev_fd_close_write(port_info_t *port)
 {
     int reterr, buferr;
 
-    reterr = buffer_io_write(&port->io, port->devstr, &buferr);
+    reterr = buffer_write(io_do_write, &port->io, port->devstr, &buferr);
     if (reterr == -1) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->portname, strerror(buferr));

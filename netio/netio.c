@@ -204,6 +204,22 @@ sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
     return true;
 }
 
+int
+netio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
+{
+    struct netio *net = cb_data;
+    ssize_t write_count;
+    int err = 0;
+    int count;
+
+    write_count = -1;
+    err = netio_write(net, &count, buf, buflen);
+    if (!err)
+	write_count = count;
+
+    return err;
+}
+
 void
 netio_set_callbacks(struct netio *net,
 		    const struct netio_callbacks *cbs, void *user_data)
