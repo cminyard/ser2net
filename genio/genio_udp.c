@@ -224,7 +224,7 @@ static void udpna_check_finish_free(struct udpna_data *nadata)
 }
 
 static int
-udpn_write(struct genio *net, int *count,
+udpn_write(struct genio *net, unsigned int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = net_to_ndata(net);

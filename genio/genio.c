@@ -257,7 +257,7 @@ genio_set_user_data(struct genio *net, void *user_data)
 }
 
 int
-genio_write(struct genio *net, int *count,
+genio_write(struct genio *net, unsigned int *count,
 	    const void *buf, unsigned int buflen)
 {
     return net->funcs->write(net, count, buf, buflen);

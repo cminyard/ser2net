@@ -30,7 +30,7 @@ enum genio_type {
 };
 
 struct genio_functions {
-    int (*write)(struct genio *net, int *count,
+    int (*write)(struct genio *net, unsigned int *count,
 		 const void *buf, unsigned int buflen);
 
     int (*raddr_to_str)(struct genio *net, int *pos,

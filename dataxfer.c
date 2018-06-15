@@ -1211,7 +1211,8 @@ static int
 net_fd_write(port_info_t *port, net_info_t *netcon,
 	     struct sbuf *buf, unsigned int *pos)
 {
-    int reterr, to_send, count = 0;
+    int reterr, to_send;
+    unsigned int count = 0;
 
     to_send = buf->cursize - *pos;
     if (to_send <= 0)

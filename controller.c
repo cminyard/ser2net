@@ -283,7 +283,8 @@ void controller_outs(struct controller_info *cntlr, char *s)
 
 /* Write some data directly to the controllers output port. */
 void
-controller_write(struct controller_info *cntlr, const char *data, int count)
+controller_write(struct controller_info *cntlr, const char *data,
+		 unsigned int count)
 {
     genio_write(cntlr->net, NULL, data, count);
 }
@@ -615,7 +616,8 @@ controller_write_ready(struct genio *net)
 {
     controller_info_t *cntlr = genio_get_user_data(net);
     telnet_data_t *td;
-    int err, write_count;
+    int err;
+    unsigned int write_count;
 
     LOCK(cntlr->lock);
     if (cntlr->in_shutdown)

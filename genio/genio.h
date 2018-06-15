@@ -106,12 +106,12 @@ void genio_set_user_data(struct genio *net, void *user_data);
  * EAGAIN, EWOULDBLOCK, or EINTR.  Those are handled internally.
  *
  * On a non-error return, count is set to the number of bytes
- * consumed by the write call, with may be less than buflen.  If
+ * consumed by the write call, which may be less than buflen.  If
  * it is less than buflen, then not all the data was written.
  * Note that count may be set to zero.  This can happen on an
- * EAGAIN type situation.
+ * EAGAIN type situation.  count may be NULL if you don't care.
  */
-int genio_write(struct genio *net, int *count,
+int genio_write(struct genio *net, unsigned int *count,
 		const void *buf, unsigned int buflen);
 
 /*

@@ -107,7 +107,7 @@ struct tcpna_data {
 #define acc_to_nadata(acc) container_of(acc, struct tcpna_data, acceptor);
 
 static int
-tcpn_write(struct genio *net, int *count,
+tcpn_write(struct genio *net, unsigned int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
