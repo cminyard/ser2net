@@ -86,7 +86,7 @@ struct stdiona_data {
 #define acc_to_nadata(acc) container_of(acc, struct stdiona_data, acceptor);
 
 static int
-stdion_write(struct genio *net, int *count,
+stdion_write(struct genio *net, unsigned int *count,
 	     const void *buf, unsigned int buflen)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
