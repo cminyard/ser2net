@@ -236,6 +236,11 @@ struct port_info
     struct sbuf    dev_to_net;			/* Buffer struct for
 						   device to network
 						   transfers. */
+    unsigned char  *telnet_dev_to_net;		/* Used to read data
+						   to do telnet
+						   processing on
+						   before going into
+						   dev_to_net. */
     struct controller_info *dev_monitor; /* If non-null, send any input
 					    received from the device
 					    to this controller port. */
@@ -795,29 +800,31 @@ handle_dev_fd_read(struct devio *io)
     int count;
     int curend;
     bool send_now = false;
-    unsigned int readcount;
+    unsigned int readcount, oreadcount;
+    unsigned char *readbuf;
 
     LOCK(port->lock);
     if (port->dev_to_net_state != PORT_WAITING_INPUT)
 	goto out_unlock;
 
     curend = port->dev_to_net.cursize;
-    readcount = port->dev_to_net.maxsize - curend;
+    oreadcount = port->dev_to_net.maxsize - curend;
+    readcount = oreadcount;
     if (port->enabled == PORT_TELNET) {
-	if (readcount == 1) {
+	readbuf = port->telnet_dev_to_net;
+	readcount /= 2; /* Leave room for IACs. */
+
+	if (readcount == 0) {
 	    /* We don't want a zero read, so just ignore this, as we have
 	       data to send. */
 	    send_now = true;
 	    count = 0;
 	    goto do_send;
 	}
-	/* Leave room for IACs. */
-	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-				 readcount / 2);
     } else {
-	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-				 readcount);
+	readbuf = port->dev_to_net.buf + curend;
     }
+    count = port->io.f->read(&port->io, readbuf, readcount);
 
     if (count <= 0) {
 	if (curend != 0) {
@@ -842,18 +849,15 @@ handle_dev_fd_read(struct devio *io)
 	goto out_unlock;
     }
 
-    if (port->dev_monitor != NULL && count > 0) {
-	controller_write(port->dev_monitor,
-			 (char *) port->dev_to_net.buf + curend,
-			 count);
-    }
+    if (port->dev_monitor != NULL && count > 0)
+	controller_write(port->dev_monitor, (char *) readbuf, count);
 
  do_send:
     if (port->closeon) {
 	int i;
 
-	for (i = curend; i < curend + count; i++) {
-	    if (port->dev_to_net.buf[i] == port->closeon[port->closeon_pos]) {
+	for (i = 0; i < count; i++) {
+	    if (readbuf[i] == port->closeon[port->closeon_pos]) {
 		port->closeon_pos++;
 		if (port->closeon_pos >= port->closeon_len) {
 		    port->close_on_output_done = true;
@@ -869,31 +873,22 @@ handle_dev_fd_read(struct devio *io)
 
     if (port->tr)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, port->tr, port->dev_to_net.buf, count, SERIAL);
+	do_trace(port, port->tr, readbuf, count, SERIAL);
     if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->tb, port->dev_to_net.buf, count, SERIAL);
+	do_trace(port, port->tb, readbuf, count, SERIAL);
 
-    if (port->led_rx) {
+    if (port->led_rx)
 	led_flash(port->led_rx);
-    }
 
     port->dev_bytes_received += count;
 
     if (port->enabled == PORT_TELNET) {
-	int i, j;
+	unsigned int curcount = count;
 
-	/* Double the IACs on a telnet stream.  This will always fit because
-	   we only use half the buffer for telnet connections. */
-	for (i = curend; i < curend + count; i++) {
-	    if (port->dev_to_net.buf[i] == TN_IAC) {
-		for (j = curend + count; j > i; j--)
-		    port->dev_to_net.buf[j] = port->dev_to_net.buf[j - 1];
-		/* Last copy above will duplicate the IAC */
-		count++;
-		i++;
-	    }
-	}
+	count = process_telnet_xmit(port->dev_to_net.buf + curend, oreadcount,
+				    readbuf, &curcount);
+	assert(curcount == 0);
     }
 
     port->dev_to_net.cursize += count;
@@ -2374,6 +2369,8 @@ free_port(port_info_t *port)
 	genio_acc_free(port->acceptor);
     if (port->dev_to_net.buf)
 	free(port->dev_to_net.buf);
+    if (port->telnet_dev_to_net)
+	free(port->telnet_dev_to_net);
     if (port->net_to_dev.buf)
 	free(port->net_to_dev.buf);
     if (port->timer)
@@ -3095,6 +3092,12 @@ portconfig(struct absout *eout,
     if (buffer_init(&new_port->dev_to_net, NULL, new_port->dev_to_net.maxsize))
     {
 	eout->out(eout, "Could not allocate dev to net buffer");
+	goto errout;
+    }
+
+    new_port->telnet_dev_to_net = malloc(new_port->dev_to_net.maxsize / 2);
+    if (!new_port->telnet_dev_to_net) {
+	eout->out(eout, "Could not allocate telnet dev_to_net buf");
 	goto errout;
     }
 
