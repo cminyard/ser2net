@@ -887,7 +887,7 @@ handle_dev_fd_read(struct devio *io)
 	unsigned int curcount = count;
 
 	count = process_telnet_xmit(port->dev_to_net.buf + curend, oreadcount,
-				    readbuf, &curcount);
+				    &readbuf, &curcount);
 	assert(curcount == 0);
     }
 
