@@ -577,7 +577,7 @@ timestamp(trace_info_t *t, char *buf, int size)
 }
 
 static int
-trace_write_end(char *out, int size, unsigned char *start, int col)
+trace_write_end(char *out, int size, const unsigned char *start, int col)
 {
     int pos = 0, w;
 
@@ -593,13 +593,13 @@ trace_write_end(char *out, int size, unsigned char *start, int col)
 }
 
 int
-trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
-	    unsigned int buf_len, char *prefix)
+trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
+	    unsigned int buf_len, const char *prefix)
 {
     int rv = 0, w, col = 0, pos, file = t->fd;
     unsigned int q;
     static char out[1024];
-    unsigned char *start;
+    const unsigned char *start;
 
     if (buf_len == 0)
         return 0;
@@ -639,8 +639,8 @@ trace_write(port_info_t *port, trace_info_t *t, unsigned char *buf,
 }
 
 static void
-do_trace(port_info_t *port, trace_info_t *t, unsigned char *buf,
-	 unsigned int buf_len, char *prefix)
+do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
+	 unsigned int buf_len, const char *prefix)
 {
     int rv;
 
@@ -801,7 +801,7 @@ handle_dev_fd_read(struct devio *io)
     int curend;
     bool send_now = false;
     unsigned int readcount, oreadcount;
-    unsigned char *readbuf;
+    const unsigned char *readbuf;
 
     LOCK(port->lock);
     if (port->dev_to_net_state != PORT_WAITING_INPUT)
@@ -821,10 +821,13 @@ handle_dev_fd_read(struct devio *io)
 	    count = 0;
 	    goto do_send;
 	}
+	count = port->io.f->read(&port->io, port->telnet_dev_to_net,
+				 readcount);
     } else {
+	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
+				 readcount);
 	readbuf = port->dev_to_net.buf + curend;
     }
-    count = port->io.f->read(&port->io, readbuf, readcount);
 
     if (count <= 0) {
 	if (curend != 0) {

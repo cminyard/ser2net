@@ -101,7 +101,8 @@ unsigned int process_telnet_data(unsigned char *outdata, unsigned int outlen,
    will be updated to point to the location after the last processed
    character. */
 unsigned int process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
-				 unsigned char **indata, unsigned int *inlen);
+				 const unsigned char **indata,
+				 unsigned int *inlen);
 
 /* Used to send an option.  The option should *not* contain the inital
    "255 250" nor the tailing "255 240" and should *not* double

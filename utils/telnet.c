@@ -226,11 +226,11 @@ process_telnet_data(unsigned char *outdata, unsigned int outlen,
 
 unsigned int
 process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
-		    unsigned char **indata, unsigned int *r_inlen)
+		    const unsigned char **indata, unsigned int *r_inlen)
 {
     unsigned int i, j = 0;
     unsigned int inlen = *r_inlen;
-    unsigned char *ibuf = *indata;
+    const unsigned char *ibuf = *indata;
 
     /* Double the IACs on a telnet transmit stream. */
     for (i = 0; i < inlen; i++) {
