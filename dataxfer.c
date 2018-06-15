@@ -32,7 +32,7 @@
 #include <assert.h>
 
 #include "utils/utils.h"
-#include "netio/netio.h"
+#include "genio/genio.h"
 #include "utils/locking.h"
 #include "ser2net.h"
 #include "devio.h"
@@ -88,7 +88,7 @@ struct net_info {
     bool	   closing;		/* Is the connection in the process
 					   of closing? */
 
-    struct netio   *net;		/* When connected, the network
+    struct genio   *net;		/* When connected, the network
 					   connection, NULL otherwise. */
 
     bool remote_fixed;			/* Tells if the remote address was
@@ -129,7 +129,7 @@ struct net_info {
      * here since we have already accepted the connection or received
      * the packet, we have to store it someplace.
      */
-    struct netio *new_net;
+    struct genio *new_net;
 };
 
 struct port_info
@@ -198,7 +198,7 @@ struct port_info
 
     /* Information about the network port. */
     char               *portname;       /* The name given for the port. */
-    struct netio_acceptor *acceptor;	/* Used to receive new connections. */
+    struct genio_acceptor *acceptor;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
 
@@ -694,7 +694,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    netio_raddr_to_str(netcon->net, &len, buf, sizeof(buf));
+    genio_raddr_to_str(netcon->net, &len, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
     hf_out(port, buf, len);
@@ -740,7 +740,7 @@ start_net_send(port_info_t *port)
 	if (!netcon->net)
 	    continue;
 	netcon->write_pos = 0;
-	netio_set_write_callback_enable(netcon->net, true);
+	genio_set_write_callback_enable(netcon->net, true);
     }
     port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
 }
@@ -772,7 +772,7 @@ disable_all_net_read(port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net)
-	    netio_set_read_callback_enable(netcon->net, false);
+	    genio_set_read_callback_enable(netcon->net, false);
     }
 }
 
@@ -783,7 +783,7 @@ enable_all_net_read(port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net)
-	    netio_set_read_callback_enable(netcon->net, true);
+	    genio_set_read_callback_enable(netcon->net, true);
     }
 }
 
@@ -1013,10 +1013,10 @@ handle_dev_fd_devstr_write(port_info_t *port)
 
 /* Data is ready to read on the network port. */
 static unsigned int
-handle_net_fd_read(struct netio *net, int readerr,
+handle_net_fd_read(struct genio *net, int readerr,
 		   unsigned char *buf, unsigned int buflen, unsigned int flags)
 {
-    net_info_t *netcon = netio_get_user_data(net);
+    net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
     unsigned int bufpos = 0;
     unsigned int rv = 0;
@@ -1182,7 +1182,7 @@ send_telnet_data(port_info_t *port, net_info_t *netcon)
     if (!netcon->sending_tn_data)
 	return 1;
 
-    reterr = buffer_write(netio_buffer_do_write, netcon->net,
+    reterr = buffer_write(genio_buffer_do_write, netcon->net,
 			  &td->out_telnet_cmd, &buferr);
     /* Returns 0 on EAGAIN */
     if (reterr == -1) {
@@ -1225,7 +1225,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 
     /* Can't use buffer send operation here, multiple writers can send
        from the buffers. */
-    reterr = netio_write(netcon->net, &count, buf->buf + *pos, to_send);
+    reterr = genio_write(netcon->net, &count, buf->buf + *pos, to_send);
     if (reterr == EPIPE) {
 	shutdown_one_netcon(netcon, "EPIPE");
 	return -1;
@@ -1263,9 +1263,9 @@ finish_dev_to_net_write(port_info_t *port)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_net_fd_write(struct netio *net)
+handle_net_fd_write(struct genio *net)
 {
-    net_info_t *netcon = netio_get_user_data(net);
+    net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
     int rv;
 
@@ -1309,7 +1309,7 @@ handle_net_fd_write(struct netio *net)
 
  out_unlock:
     if (rv > 0)
-	netio_set_write_callback_enable(netcon->net, false);
+	genio_set_write_callback_enable(netcon->net, false);
 
     if (rv >= 0)
 	reset_timer(netcon);
@@ -1318,9 +1318,9 @@ handle_net_fd_write(struct netio *net)
 
 /* Handle an exception from the network port. */
 static void
-handle_net_fd_urgent(struct netio *net)
+handle_net_fd_urgent(struct genio *net)
 {
-    net_info_t *netcon = netio_get_user_data(net);
+    net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
     int val;
     int cmd_pos;
@@ -1353,7 +1353,7 @@ handle_net_fd_urgent(struct netio *net)
     UNLOCK(port->lock);
 }
 
-static void handle_net_fd_closed(struct netio *net);
+static void handle_net_fd_closed(struct genio *net);
 
 static void
 telnet_cmd_handler(void *cb_data, unsigned char cmd)
@@ -1378,7 +1378,7 @@ telnet_output_ready(void *cb_data)
 	return;
 
     netcon->sending_tn_data = true;
-    netio_set_write_callback_enable(netcon->net, true);
+    genio_set_write_callback_enable(netcon->net, true);
 }
 
 /* Checks to see if some other port has the same device in use.  Must
@@ -1703,7 +1703,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    netcon = first_live_net_con(port);
 		if (!netcon)
 		    break;
-		if (netio_raddr_to_str(netcon->net, NULL, ip, sizeof(ip)))
+		if (genio_raddr_to_str(netcon->net, NULL, ip, sizeof(ip)))
 		    break;
 		for (ipp = ip; *ipp; ipp++)
 		    op(data, *ipp);
@@ -1886,7 +1886,7 @@ recalc_port_chardelay(port_info_t *port)
 	port->chardelay = port->chardelay_min;
 }
 
-static const struct netio_callbacks port_callbacks = {
+static const struct genio_callbacks port_callbacks = {
     .read_callback = handle_net_fd_read,
     .write_callback = handle_net_fd_write,
     .urgent_callback = handle_net_fd_urgent,
@@ -1915,8 +1915,8 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	if (port->io.f->setup(&port->io, port->portname, &errstr,
 			      &port->bps, &port->bpc) == -1) {
 	    if (errstr)
-		netio_write(netcon->net, NULL, errstr, strlen(errstr));
-	    netio_close(netcon->net);
+		genio_write(netcon->net, NULL, errstr, strlen(errstr));
+	    genio_close(netcon->net);
 	    netcon->net = NULL;
 	    return -1;
 	}
@@ -1948,9 +1948,9 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	i_am_first = true;
     }
 
-    netio_set_callbacks(netcon->net, &port_callbacks, netcon);
+    genio_set_callbacks(netcon->net, &port_callbacks, netcon);
 
-    netio_set_read_callback_enable(netcon->net, true);
+    genio_set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
@@ -1958,12 +1958,12 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 		    telnet_cmd_handler,
 		    telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
-	netio_set_write_callback_enable(netcon->net, true);
+	genio_set_write_callback_enable(netcon->net, true);
     } else {
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
 	if (netcon->banner)
-	    netio_set_write_callback_enable(netcon->net, true);
+	    genio_set_write_callback_enable(netcon->net, true);
     }
 
     if (i_am_first)
@@ -1983,7 +1983,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 
 /* Returns with the port locked, if non-NULL. */
 static port_info_t *
-find_rotator_port(char *portname, struct netio *net, unsigned int *netconnum)
+find_rotator_port(char *portname, struct genio *net, unsigned int *netconnum)
 {
     port_info_t *port = ports;
 
@@ -1998,7 +1998,7 @@ find_rotator_port(char *portname, struct netio *net, unsigned int *netconnum)
 		goto next;
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
-	    socklen = netio_get_raddr(net, (struct sockaddr *) &addr,
+	    socklen = genio_get_raddr(net, (struct sockaddr *) &addr,
 				      sizeof(addr));
 	    if (!remaddr_check(port->remaddrs,
 			       (struct sockaddr *) &addr, socklen))
@@ -2023,7 +2023,7 @@ find_rotator_port(char *portname, struct netio *net, unsigned int *netconnum)
 }
 
 static void
-handle_new_net(port_info_t *port, struct netio *net, net_info_t *netcon)
+handle_new_net(port_info_t *port, struct genio *net, net_info_t *netcon)
 {
     netcon->net = net;
 
@@ -2040,7 +2040,7 @@ typedef struct rotator
 
     char *portname;
 
-    struct netio_acceptor *acceptor;
+    struct genio_acceptor *acceptor;
 
     struct rotator *next;
 } rotator_t;
@@ -2049,9 +2049,9 @@ static rotator_t *rotators = NULL;
 
 /* A connection request has come in on a port. */
 static void
-handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
+handle_rot_accept(struct genio_acceptor *acceptor, struct genio *net)
 {
-    rotator_t *rot = netio_acceptor_get_user_data(acceptor);
+    rotator_t *rot = genio_acceptor_get_user_data(acceptor);
     int i;
     const char *err;
 
@@ -2074,14 +2074,14 @@ handle_rot_accept(struct netio_acceptor *acceptor, struct netio *net)
     UNLOCK(ports_lock);
 
     err = "No free port found\r\n";
-    netio_write(net, NULL, err, strlen(err));
-    netio_close(net);
+    genio_write(net, NULL, err, strlen(err));
+    genio_close(net);
 }
 
 static waiter_t *rotator_shutdown_wait;
 
 static void
-handle_rot_shutdown_done(struct netio_acceptor *acceptor)
+handle_rot_shutdown_done(struct genio_acceptor *acceptor)
 {
     wake_waiter(rotator_shutdown_wait);
 }
@@ -2090,9 +2090,9 @@ static void
 free_rotator(rotator_t *rot)
 {
     if (rot->acceptor) {
-	netio_acc_shutdown(rot->acceptor);
+	genio_acc_shutdown(rot->acceptor);
 	wait_for_waiter(rotator_shutdown_wait, 1);
-	netio_acc_free(rot->acceptor);
+	genio_acc_free(rot->acceptor);
     }
     if (rot->portname)
 	free(rot->portname);
@@ -2115,7 +2115,7 @@ free_rotators(void)
     rotators = NULL;
 }
 
-static const struct netio_acceptor_callbacks rotator_cbs = {
+static const struct genio_acceptor_callbacks rotator_cbs = {
     .new_connection = handle_rot_accept,
     .shutdown_done = handle_rot_shutdown_done
 };
@@ -2141,7 +2141,7 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_netio_acceptor(rot->portname, ser2net_sel, 64,
+    rv = str_to_genio_acceptor(rot->portname, ser2net_sel, 64,
 			       &rotator_cbs, rot, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
@@ -2151,7 +2151,7 @@ add_rotator(char *portname, char *ports, int lineno)
     rot->next = rotators;
     rotators = rot;
 
-    rv = netio_acc_startup(rot->acceptor);
+    rv = genio_acc_startup(rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
 	       strerror(rv));
@@ -2165,14 +2165,14 @@ add_rotator(char *portname, char *ports, int lineno)
 }
 
 static void
-kick_old_user(port_info_t *port, net_info_t *netcon, struct netio *new_net)
+kick_old_user(port_info_t *port, net_info_t *netcon, struct genio *new_net)
 {
     char *err = "kicked off, new user is coming\r\n";
 
     /* If another user is waiting for a kick, kick that user. */
     if (netcon->new_net) {
-	netio_write(netcon->new_net, NULL, err, strlen(err));
-	netio_close(netcon->new_net);
+	genio_write(netcon->new_net, NULL, err, strlen(err));
+	genio_close(netcon->new_net);
     }
 
     /* Wait it to be unconnected and clean, restart the process. */
@@ -2184,7 +2184,7 @@ kick_old_user(port_info_t *port, net_info_t *netcon, struct netio *new_net)
 static void
 check_port_new_net(port_info_t *port, net_info_t *netcon)
 {
-    struct netio *net;
+    struct genio *net;
 
     if (!netcon->new_net)
 	return;
@@ -2193,8 +2193,8 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
 
-	netio_write(netcon->new_net, NULL, err, strlen(err));
-	netio_close(netcon->new_net);
+	genio_write(netcon->new_net, NULL, err, strlen(err));
+	genio_close(netcon->new_net);
 	netcon->new_net = NULL;
 	return;
     }
@@ -2206,9 +2206,9 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 
 /* A connection request has come in on a port. */
 static void
-handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
+handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
 {
-    port_info_t *port = netio_acceptor_get_user_data(acceptor);
+    port_info_t *port = genio_acceptor_get_user_data(acceptor);
     const char *err = NULL;
     int i;
     struct sockaddr_storage addr;
@@ -2225,7 +2225,7 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
     if (port->dev_to_net_state == PORT_CLOSING)
 	goto out;
 
-    socklen = netio_get_raddr(net, (struct sockaddr *) &addr,
+    socklen = genio_get_raddr(net, (struct sockaddr *) &addr,
 			      sizeof(addr));
     if (!remaddr_check(port->remaddrs,
 		       (struct sockaddr *) &addr, socklen)) {
@@ -2255,8 +2255,8 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
     out_err:
 	UNLOCK(port->lock);
 	UNLOCK(ports_lock);
-	netio_write(net, NULL, err, strlen(err));
-	netio_close(net);
+	genio_write(net, NULL, err, strlen(err));
+	genio_close(net);
 	return;
     }
 
@@ -2271,7 +2271,7 @@ handle_port_accept(struct netio_acceptor *acceptor, struct netio *net)
 static int
 startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 {
-    int err = netio_acc_startup(port->acceptor);
+    int err = genio_acc_startup(port->acceptor);
 
     if (err && eout) {
 	eout->out(eout, "Unable to startup network port %s: %s",
@@ -2288,7 +2288,7 @@ port_reinit_now(port_info_t *port)
 	net_info_t *netcon;
 
 	port->dev_to_net_state = PORT_UNCONNECTED;
-	netio_acc_set_accept_callback_enable(port->acceptor, true);
+	genio_acc_set_accept_callback_enable(port->acceptor, true);
 	for_each_connection(port, netcon)
 	    check_port_new_net(port, netcon);
     }
@@ -2297,9 +2297,9 @@ port_reinit_now(port_info_t *port)
 static waiter_t *acceptor_shutdown_wait;
 
 static void
-handle_port_shutdown_done(struct netio_acceptor *acceptor)
+handle_port_shutdown_done(struct genio_acceptor *acceptor)
 {
-    port_info_t *port = netio_acceptor_get_user_data(acceptor);
+    port_info_t *port = genio_acceptor_get_user_data(acceptor);
 
     LOCK(port->lock);
     while (port->wait_acceptor_shutdown--)
@@ -2324,7 +2324,7 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 	if (port->wait_acceptor_shutdown || port->acceptor_reinit_on_shutdown)
 	    /* Shutdown is already running. */
 	    return true;
-	return netio_acc_shutdown(port->acceptor) == 0;
+	return genio_acc_shutdown(port->acceptor) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
 	    int rv = startup_port(eout, port, is_reconfig);
@@ -2357,8 +2357,8 @@ free_port(port_info_t *port)
     for_each_connection(port, netcon) {
 	char *err = "Port was deleted\n\r";
 	if (netcon->new_net) {
-	    netio_write(netcon->new_net, NULL,err, strlen(err));
-	    netio_close(netcon->new_net);
+	    genio_write(netcon->new_net, NULL,err, strlen(err));
+	    genio_close(netcon->new_net);
 	}
 	if (netcon->runshutdown)
 	    sel_free_runner(netcon->runshutdown);
@@ -2371,7 +2371,7 @@ free_port(port_info_t *port)
 	free(r);
     }
     if (port->acceptor)
-	netio_acc_free(port->acceptor);
+	genio_acc_free(port->acceptor);
     if (port->dev_to_net.buf)
 	free(port->dev_to_net.buf);
     if (port->net_to_dev.buf)
@@ -2421,7 +2421,7 @@ switchout_port(struct absout *eout, port_info_t *new_port,
 	       port_info_t *curr, port_info_t *prev)
 {
     int new_state = new_port->enabled;
-    struct netio_acceptor *tmp_acceptor;
+    struct genio_acceptor *tmp_acceptor;
     int i;
 
     new_port->enabled = curr->enabled;
@@ -2430,8 +2430,8 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     tmp_acceptor = new_port->acceptor;
     new_port->acceptor = curr->acceptor;
     curr->acceptor = tmp_acceptor;
-    netio_acceptor_set_user_data(curr->acceptor, curr);
-    netio_acceptor_set_user_data(new_port->acceptor, new_port);
+    genio_acceptor_set_user_data(curr->acceptor, curr);
+    genio_acceptor_set_user_data(new_port->acceptor, new_port);
 
     for (i = 0; i < new_port->max_connections; i++) {
 	if (i >= curr->max_connections)
@@ -2471,7 +2471,7 @@ finish_shutdown_port(port_info_t *port)
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
-    if (netio_acc_exit_on_close(port->acceptor))
+    if (genio_acc_exit_on_close(port->acceptor))
 	/* This was a zero port (for stdin/stdout), this is only
 	   allowed with one port at a time, and we shut down when it
 	   closes. */
@@ -2627,7 +2627,7 @@ start_shutdown_port(port_info_t *port, char *reason)
     port->close_on_output_done = false;
 
     port->io.f->read_handler_enable(&port->io, false);
-    netio_acc_set_accept_callback_enable(port->acceptor, false);
+    genio_acc_set_accept_callback_enable(port->acceptor, false);
 
     footer_trace(port, "port", reason);
 
@@ -2675,9 +2675,9 @@ netcon_finish_shutdown(net_info_t *netcon)
 }
 
 static void
-handle_net_fd_closed(struct netio *net)
+handle_net_fd_closed(struct genio *net)
 {
-    net_info_t *netcon = netio_get_user_data(net);
+    net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
 
     netcon->net = NULL;
@@ -2695,10 +2695,10 @@ static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
     net_info_t *netcon = cb_data;
 
     if (netcon->net) {
-	struct netio *net = netcon->net;
+	struct genio *net = netcon->net;
 
 	netcon->net = NULL;
-	netio_close(net);
+	genio_close(net);
     } else {
 	netcon_finish_shutdown(netcon);
     }
@@ -2969,7 +2969,7 @@ myconfig(void *data, struct absout *eout, const char *pos)
     return 0;
 }
 
-static const struct netio_acceptor_callbacks port_acceptor_cbs = {
+static const struct genio_acceptor_callbacks port_acceptor_cbs = {
     .new_connection = handle_port_accept,
     .shutdown_done = handle_port_shutdown_done
 };
@@ -3048,7 +3048,7 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    err = str_to_netio_acceptor(new_port->portname, ser2net_sel, 64,
+    err = str_to_genio_acceptor(new_port->portname, ser2net_sel, 64,
 				&port_acceptor_cbs, new_port,
 				&new_port->acceptor);
     if (err) {
@@ -3278,7 +3278,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	netcon = &(port->netcons[0]);
 
     if (port->net_to_dev_state != PORT_UNCONNECTED) {
-	netio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
+	genio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	count = controller_outputf(cntlr, "%s", buffer);
     } else {
 	count = controller_outputf(cntlr, "unconnected");
@@ -3331,7 +3331,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
-	    netio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
+	    genio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
 	    controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
 			       netcon->bytes_received);

@@ -107,4 +107,4 @@ AC_CHECK_LIB(nsl,main)
 AC_OUTPUT([Makefile ser2net.spec
 	utils/Makefile
 	tests/Makefile
-	netio/Makefile])
+	genio/Makefile])

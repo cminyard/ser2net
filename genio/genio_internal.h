@@ -17,70 +17,70 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef SER2NET_NETIO_INTERNAL_H
-#define SER2NET_NETIO_INTERNAL_H
+#ifndef SER2NET_GENIO_INTERNAL_H
+#define SER2NET_GENIO_INTERNAL_H
 
 #include <stddef.h>
-#include "netio.h"
+#include "genio.h"
 
-enum netio_type {
-    NETIO_TYPE_TCP,
-    NETIO_TYPE_UDP,
-    NETIO_TYPE_STDIO
+enum genio_type {
+    GENIO_TYPE_TCP,
+    GENIO_TYPE_UDP,
+    GENIO_TYPE_STDIO
 };
 
-struct netio_functions {
-    int (*write)(struct netio *net, int *count,
+struct genio_functions {
+    int (*write)(struct genio *net, int *count,
 		 const void *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct netio *net, int *pos,
+    int (*raddr_to_str)(struct genio *net, int *pos,
 			char *buf, unsigned int buflen);
 
-    socklen_t (*get_raddr)(struct netio *net,
+    socklen_t (*get_raddr)(struct genio *net,
 			   struct sockaddr *addr, socklen_t addrlen);
 
-    void (*close)(struct netio *net);
+    void (*close)(struct genio *net);
 
-    void (*set_read_callback_enable)(struct netio *net, bool enabled);
+    void (*set_read_callback_enable)(struct genio *net, bool enabled);
 
-    void (*set_write_callback_enable)(struct netio *net, bool enabled);
+    void (*set_write_callback_enable)(struct genio *net, bool enabled);
 };
 
 /*
  * This structure represents a network connection, return from the
- * acceptor callback in netio_acceptor.
+ * acceptor callback in genio_acceptor.
  */
-struct netio {
+struct genio {
     void *user_data;
-    const struct netio_callbacks *cbs;
+    const struct genio_callbacks *cbs;
 
-    const struct netio_functions *funcs;
+    const struct genio_functions *funcs;
 
-    enum netio_type type;
+    enum genio_type type;
 };
 
-struct netio_acceptor_functions {
-    int (*startup)(struct netio_acceptor *acceptor);
+struct genio_acceptor_functions {
+    int (*startup)(struct genio_acceptor *acceptor);
 
-    int (*shutdown)(struct netio_acceptor *acceptor);
+    int (*shutdown)(struct genio_acceptor *acceptor);
 
-    void (*set_accept_callback_enable)(struct netio_acceptor *acceptor,
+    void (*set_accept_callback_enable)(struct genio_acceptor *acceptor,
 				       bool enabled);
 
-    void (*free)(struct netio_acceptor *acceptor);
+    void (*free)(struct genio_acceptor *acceptor);
 };
 
 /*
  * This function handles accepts on network I/O code and calls back the
  * user for the new connection.
  */
-struct netio_acceptor {
+struct genio_acceptor {
     void *user_data;
-    const struct netio_acceptor_callbacks *cbs;
+    const struct genio_acceptor_callbacks *cbs;
 
-    const struct netio_acceptor_functions *funcs;
+    const struct genio_acceptor_functions *funcs;
 
-    enum netio_type type;
+    enum genio_type type;
 };
 
 #define container_of(ptr, type, member) \
@@ -111,4 +111,4 @@ struct opensocks *open_socket(struct selector_s *sel,
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
-#endif /* SER2NET_NETIO_INTERNAL_H */
+#endif /* SER2NET_GENIO_INTERNAL_H */

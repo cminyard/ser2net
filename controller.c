@@ -30,7 +30,7 @@
 #include "utils/telnet.h"
 #include "utils/waiter.h"
 
-#include "netio/netio.h"
+#include "genio/genio.h"
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
@@ -46,7 +46,7 @@ static char *progname = "ser2net-control";
 /* This file holds the code that runs the control port. */
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
-static struct netio_acceptor *controller_acceptor;
+static struct genio_acceptor *controller_acceptor;
 static waiter_t *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -63,7 +63,7 @@ typedef struct controller_info {
     DEFINE_LOCK(, lock)
     int in_shutdown;
 
-    struct netio *net;
+    struct genio *net;
 
     unsigned char inbuf[INBUF_SIZE + 1];/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
@@ -177,7 +177,7 @@ shutdown_controller(controller_info_t *cntlr)
     cntlr->in_shutdown = 1;
     UNLOCK(cntlr->lock);
 
-    netio_close(cntlr->net);
+    genio_close(cntlr->net);
     /* The rest is handled in the close_done callback, which calls
        shutdown_controller2. */
 }
@@ -247,8 +247,8 @@ controller_output(struct controller_info *cntlr,
 	cntlr->outbuf = newbuf;
 	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count = count;
-	netio_set_read_callback_enable(cntlr->net, false);
-	netio_set_write_callback_enable(cntlr->net, true);
+	genio_set_read_callback_enable(cntlr->net, false);
+	genio_set_write_callback_enable(cntlr->net, true);
     }
 }
 
@@ -285,7 +285,7 @@ void controller_outs(struct controller_info *cntlr, char *s)
 void
 controller_write(struct controller_info *cntlr, const char *data, int count)
 {
-    netio_write(cntlr->net, NULL, data, count);
+    genio_write(cntlr->net, NULL, data, count);
 }
 
 static void
@@ -293,8 +293,8 @@ telnet_output_ready(void *cb_data)
 {
     struct controller_info *cntlr = cb_data;
 
-    netio_set_read_callback_enable(cntlr->net, false);
-    netio_set_write_callback_enable(cntlr->net, true);
+    genio_set_read_callback_enable(cntlr->net, false);
+    genio_set_write_callback_enable(cntlr->net, true);
 }
 
 /* Called when a telnet command is received. */
@@ -518,10 +518,10 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 
 /* Data is ready to read on the TCP port. */
 static unsigned int
-controller_read(struct netio *net, int readerr, unsigned char *buf,
+controller_read(struct genio *net, int readerr, unsigned char *buf,
 		unsigned int buflen, unsigned int flags)
 {
-    controller_info_t *cntlr = netio_get_user_data(net);
+    controller_info_t *cntlr = genio_get_user_data(net);
     int read_count;
     int read_start;
     unsigned int bytesleft;
@@ -611,9 +611,9 @@ controller_read(struct netio *net, int readerr, unsigned char *buf,
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-controller_write_ready(struct netio *net)
+controller_write_ready(struct genio *net)
 {
-    controller_info_t *cntlr = netio_get_user_data(net);
+    controller_info_t *cntlr = genio_get_user_data(net);
     telnet_data_t *td;
     int err, write_count;
 
@@ -625,7 +625,7 @@ controller_write_ready(struct netio *net)
     if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	int buferr, reterr;
 
-	reterr = buffer_write(netio_buffer_do_write, net,
+	reterr = buffer_write(genio_buffer_do_write, net,
 			      &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
@@ -641,7 +641,7 @@ controller_write_ready(struct netio *net)
 	    goto out;
     }
 
-    err = netio_write(net, &write_count,
+    err = genio_write(net, &write_count,
 		      &(cntlr->outbuf[cntlr->outbuf_pos]),
 		      cntlr->outbuf_count);
     if (err == EAGAIN) {
@@ -662,8 +662,8 @@ controller_write_ready(struct netio *net)
 	/* We are done writing, turn the reader back on. */
 	free(cntlr->outbuf);
 	cntlr->outbuf = NULL;
-	netio_set_read_callback_enable(net, true);
-	netio_set_write_callback_enable(net, false);
+	genio_set_read_callback_enable(net, true);
+	genio_set_write_callback_enable(net, false);
     }
  out:
     UNLOCK(cntlr->lock);
@@ -674,14 +674,14 @@ controller_write_ready(struct netio *net)
 }
 
 static void
-controller_close_done(struct netio *net)
+controller_close_done(struct genio *net)
 {
-    controller_info_t *cntlr = netio_get_user_data(net);
+    controller_info_t *cntlr = genio_get_user_data(net);
 
     shutdown_controller2(cntlr);
 }
 
-struct netio_callbacks controller_netio_callbacks = {
+struct genio_callbacks controller_genio_callbacks = {
     .read_callback = controller_read,
     .write_callback = controller_write_ready,
     .close_done = controller_close_done
@@ -689,7 +689,7 @@ struct netio_callbacks controller_netio_callbacks = {
 
 /* A connection request has come in for the control port. */
 static void
-controller_new_connection(struct netio_acceptor *acceptor, struct netio *net)
+controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
 {
     controller_info_t *cntlr;
     char              *err = NULL;
@@ -713,7 +713,7 @@ controller_new_connection(struct netio_acceptor *acceptor, struct netio *net)
 
     cntlr->net = net;
 
-    netio_set_callbacks(net, &controller_netio_callbacks, cntlr);
+    genio_set_callbacks(net, &controller_genio_callbacks, cntlr);
 
     cntlr->inbuf_count = 0;
     cntlr->outbuf = NULL;
@@ -740,17 +740,17 @@ controller_new_connection(struct netio_acceptor *acceptor, struct netio *net)
 errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
-    netio_write(cntlr->net, NULL, err, strlen(err));
-    netio_close(net);
+    genio_write(cntlr->net, NULL, err, strlen(err));
+    genio_close(net);
 }
 
 static void
-controller_shutdown_done(struct netio_acceptor *net)
+controller_shutdown_done(struct genio_acceptor *net)
 {
     wake_waiter(accept_waiter);
 }
 
-struct netio_acceptor_callbacks controller_netio_acceptor_callbacks = {
+struct genio_acceptor_callbacks controller_genio_acceptor_callbacks = {
     .new_connection = controller_new_connection,
     .shutdown_done = controller_shutdown_done
 };
@@ -776,8 +776,8 @@ controller_init(char *controller_port)
 	}
     }
 
-    rv = str_to_netio_acceptor(controller_port, ser2net_sel, 64,
-			       &controller_netio_acceptor_callbacks, NULL,
+    rv = str_to_genio_acceptor(controller_port, ser2net_sel, 64,
+			       &controller_genio_acceptor_callbacks, NULL,
 			       &controller_acceptor);
     if (rv) {
 	if (rv == EINVAL)
@@ -788,7 +788,7 @@ controller_init(char *controller_port)
 	    return -1;
     }
 
-    rv = netio_acc_startup(controller_acceptor);
+    rv = genio_acc_startup(controller_acceptor);
     if (rv) 
 	return CONTROLLER_CANT_OPEN_PORT;
 
@@ -798,9 +798,9 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    netio_acc_shutdown(controller_acceptor);
+    genio_acc_shutdown(controller_acceptor);
     wait_for_waiter(accept_waiter, 1);
-    netio_acc_free(controller_acceptor);
+    genio_acc_free(controller_acceptor);
     controller_acceptor = NULL;
 }
 
