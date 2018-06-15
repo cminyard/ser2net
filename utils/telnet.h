@@ -94,6 +94,13 @@ unsigned int process_telnet_data(unsigned char *outdata, unsigned int outlen,
 				 unsigned char *indata, unsigned int *inlen,
 				 telnet_data_t *td);
 
+/* Double all the IACs in the transmitted data.  If outlen is more
+   than twice the size of inlen, this will process all the data.  The
+   number of bytes put into outdata is returned.  inlen will be
+   updated to the number of bytes not processed in indata. */
+unsigned int process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
+				 unsigned char *indata, unsigned int *inlen);
+
 /* Used to send an option.  The option should *not* contain the inital
    "255 250" nor the tailing "255 240" and should *not* double
    internal 255 values. */

@@ -224,6 +224,34 @@ process_telnet_data(unsigned char *outdata, unsigned int outlen,
     return j;
 }
 
+unsigned int
+process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
+		    unsigned char *indata, unsigned int *r_inlen)
+{
+    unsigned int i, j = 0;
+    unsigned int inlen = *r_inlen;
+
+    /* Double the IACs on a telnet transmit stream. */
+    for (i = 0; i < inlen; i++) {
+	if (indata[i] == TN_IAC) {
+	    if (outlen < 2)
+		    break;
+	    outdata[j++] = TN_IAC;
+	    outdata[j++] = TN_IAC;
+	    outlen -= 2;
+	} else {
+	    if (outlen < 1)
+		break;
+	    outdata[j++] = indata[i];
+	    outlen--;
+	}
+    }
+
+    *r_inlen = inlen - i;
+
+    return j;
+}
+
 void
 telnet_init(telnet_data_t *td,
 	    void *cb_data,
