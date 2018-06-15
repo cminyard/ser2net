@@ -29,13 +29,13 @@
 #include <string.h>
 #include <syslog.h>
 
-#include "netio.h"
-#include "netio_internal.h"
+#include "genio.h"
+#include "genio_internal.h"
 #include "utils/selector.h"
 #include "utils/locking.h"
 
 struct tcpn_data {
-    struct netio net;
+    struct genio net;
 
     struct selector_s *sel;
 
@@ -80,7 +80,7 @@ struct tcpn_data {
 #define net_to_ndata(net) container_of(net, struct tcpn_data, net);
 
 struct tcpna_data {
-    struct netio_acceptor acceptor;
+    struct genio_acceptor acceptor;
 
     struct selector_s *sel;
 
@@ -107,7 +107,7 @@ struct tcpna_data {
 #define acc_to_nadata(acc) container_of(acc, struct tcpna_data, acceptor);
 
 static int
-tcpn_write(struct netio *net, int *count,
+tcpn_write(struct genio *net, int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
@@ -133,7 +133,7 @@ tcpn_write(struct netio *net, int *count,
 }
 
 static int
-tcpn_raddr_to_str(struct netio *net, int *epos,
+tcpn_raddr_to_str(struct genio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
@@ -168,7 +168,7 @@ tcpn_raddr_to_str(struct netio *net, int *epos,
 }
 
 static socklen_t
-tcpn_get_raddr(struct netio *net,
+tcpn_get_raddr(struct genio *net,
 	       struct sockaddr *addr, socklen_t addrlen)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
@@ -183,7 +183,7 @@ tcpn_get_raddr(struct netio *net,
 static void
 tcpn_finish_close(struct tcpn_data *ndata)
 {
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
 
     close(ndata->fd);
 
@@ -211,7 +211,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
 }
 
 static void
-tcpn_close(struct netio *net)
+tcpn_close(struct genio *net)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
 
@@ -255,7 +255,7 @@ static void
 tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
     unsigned int count;
 
     /* No lock needed, this data cannot be changed here. */
@@ -273,7 +273,7 @@ tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 }
 
 static void
-tcpn_set_read_callback_enable(struct netio *net, bool enabled)
+tcpn_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
 
@@ -303,7 +303,7 @@ tcpn_set_read_callback_enable(struct netio *net, bool enabled)
 }
 
 static void
-tcpn_set_write_callback_enable(struct netio *net, bool enabled)
+tcpn_set_write_callback_enable(struct genio *net, bool enabled)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
     int op;
@@ -320,7 +320,7 @@ static void
 tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
     unsigned int count = 0;
     int c;
     int rv;
@@ -382,7 +382,7 @@ static void
 tcpn_write_ready(int fd, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
 
     LOCK(ndata->lock);
     ndata->in_write = true;
@@ -422,7 +422,7 @@ check_tcpd_ok(int new_fd)
     return NULL;
 }
 
-static const struct netio_functions netio_tcp_funcs = {
+static const struct genio_functions genio_tcp_funcs = {
     .write = tcpn_write,
     .raddr_to_str = tcpn_raddr_to_str,
     .get_raddr = tcpn_get_raddr,
@@ -469,8 +469,8 @@ tcpn_finish_setup(int new_fd, struct selector_s *sel,
     if (!ndata->read_data)
 	goto out_nomem;
 
-    ndata->net.funcs = &netio_tcp_funcs;
-    ndata->net.type = NETIO_TYPE_TCP;
+    ndata->net.funcs = &genio_tcp_funcs;
+    ndata->net.type = GENIO_TYPE_TCP;
 
     if (sel_set_fd_handlers(ndata->sel, new_fd, ndata, tcpn_read_ready,
 			    tcpn_write_ready, tcpn_except_ready,
@@ -556,7 +556,7 @@ static void
 tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
-    struct netio_acceptor *acceptor = &nadata->acceptor;
+    struct genio_acceptor *acceptor = &nadata->acceptor;
     unsigned int num_left;
 
     close(fd);
@@ -575,7 +575,7 @@ tcpna_fd_cleared(int fd, void *cbdata)
 }
 
 static int
-tcpna_startup(struct netio_acceptor *acceptor)
+tcpna_startup(struct genio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -626,7 +626,7 @@ _tcpna_shutdown(struct tcpna_data *nadata)
 }
 
 static int
-tcpna_shutdown(struct netio_acceptor *acceptor)
+tcpna_shutdown(struct genio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv;
@@ -641,7 +641,7 @@ tcpna_shutdown(struct netio_acceptor *acceptor)
 }
 
 static void
-tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
+tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     unsigned int i;
@@ -662,7 +662,7 @@ tcpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 }
 
 static void
-tcpna_free(struct netio_acceptor *acceptor)
+tcpna_free(struct genio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -678,7 +678,7 @@ tcpna_free(struct netio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
-static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
+static const struct genio_acceptor_functions genio_acc_tcp_funcs = {
     .startup = tcpna_startup,
     .shutdown = tcpna_shutdown,
     .set_accept_callback_enable = tcpna_set_accept_callback_enable,
@@ -686,15 +686,15 @@ static const struct netio_acceptor_functions netio_acc_tcp_funcs = {
 };
 
 int
-tcp_netio_acceptor_alloc(const char *name,
+tcp_genio_acceptor_alloc(const char *name,
 			 struct selector_s *sel,
 			 struct addrinfo *ai,
 			 unsigned int max_read_size,
-			 const struct netio_acceptor_callbacks *cbs,
+			 const struct genio_acceptor_callbacks *cbs,
 			 void *user_data,
-			 struct netio_acceptor **acceptor)
+			 struct genio_acceptor **acceptor)
 {
-    struct netio_acceptor *acc;
+    struct genio_acceptor *acc;
     struct tcpna_data *nadata;
 
     nadata = malloc(sizeof(*nadata));
@@ -712,8 +712,8 @@ tcp_netio_acceptor_alloc(const char *name,
 
     acc->cbs = cbs;
     acc->user_data = user_data;
-    acc->funcs = &netio_acc_tcp_funcs;
-    acc->type = NETIO_TYPE_TCP;
+    acc->funcs = &genio_acc_tcp_funcs;
+    acc->type = GENIO_TYPE_TCP;
 
     INIT_LOCK(nadata->lock);
     nadata->ai = ai;
@@ -732,12 +732,12 @@ tcp_netio_acceptor_alloc(const char *name,
 }
 
 int
-tcp_netio_alloc(struct addrinfo *ai,
+tcp_genio_alloc(struct addrinfo *ai,
 		struct selector_s *sel,
 		unsigned int max_read_size,
-		const struct netio_callbacks *cbs,
+		const struct genio_callbacks *cbs,
 		void *user_data,
-		struct netio **new_netio)
+		struct genio **new_genio)
 {
     struct tcpn_data *ndata = NULL;
     int err;
@@ -768,6 +768,6 @@ tcp_netio_alloc(struct addrinfo *ai,
     if (err)
 	return err;
 
-    *new_netio = &ndata->net;
+    *new_genio = &ndata->net;
     return 0;
 }

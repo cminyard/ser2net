@@ -1,3 +1,21 @@
+/*
+ *  ser2net - A program for allowing telnet connection to serial ports
+ *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 #include <errno.h>
 
@@ -6,8 +24,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "utils/utils.h"
-#include "netio.h"
-#include "netio_internal.h"
+#include "genio.h"
+#include "genio_internal.h"
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
@@ -205,137 +223,135 @@ sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
 }
 
 int
-netio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
+genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
 {
-    struct netio *net = cb_data;
-    ssize_t write_count;
+    struct genio *net = cb_data;
     int err = 0;
     int count;
 
-    write_count = -1;
-    err = netio_write(net, &count, buf, buflen);
+    err = genio_write(net, &count, buf, buflen);
     if (!err)
-	write_count = count;
+	*written = count;
 
     return err;
 }
 
 void
-netio_set_callbacks(struct netio *net,
-		    const struct netio_callbacks *cbs, void *user_data)
+genio_set_callbacks(struct genio *net,
+		    const struct genio_callbacks *cbs, void *user_data)
 {
     net->cbs = cbs;
     net->user_data = user_data;
 }
 
 void *
-netio_get_user_data(struct netio *net)
+genio_get_user_data(struct genio *net)
 {
     return net->user_data;
 }
 
 void
-netio_set_user_data(struct netio *net, void *user_data)
+genio_set_user_data(struct genio *net, void *user_data)
 {
     net->user_data = user_data;
 }
 
 int
-netio_write(struct netio *net, int *count,
+genio_write(struct genio *net, int *count,
 	    const void *buf, unsigned int buflen)
 {
     return net->funcs->write(net, count, buf, buflen);
 }
 
 int
-netio_raddr_to_str(struct netio *net, int *pos,
+genio_raddr_to_str(struct genio *net, int *pos,
 		       char *buf, unsigned int buflen)
 {
     return net->funcs->raddr_to_str(net, pos, buf, buflen);
 }
 
 socklen_t
-netio_get_raddr(struct netio *net,
+genio_get_raddr(struct genio *net,
 		struct sockaddr *addr, socklen_t addrlen)
 {
     return net->funcs->get_raddr(net, addr, addrlen);
 }
 
 void
-netio_close(struct netio *net)
+genio_close(struct genio *net)
 {
     net->funcs->close(net);
 }
 
 void
-netio_set_read_callback_enable(struct netio *net, bool enabled)
+genio_set_read_callback_enable(struct genio *net, bool enabled)
 {
     net->funcs->set_read_callback_enable(net, enabled);
 }
 
 void
-netio_set_write_callback_enable(struct netio *net, bool enabled)
+genio_set_write_callback_enable(struct genio *net, bool enabled)
 {
     net->funcs->set_write_callback_enable(net, enabled);
 }
 
 void *
-netio_acceptor_get_user_data(struct netio_acceptor *acceptor)
+genio_acceptor_get_user_data(struct genio_acceptor *acceptor)
 {
     return acceptor->user_data;
 }
 
 void
-netio_acceptor_set_user_data(struct netio_acceptor *acceptor,
+genio_acceptor_set_user_data(struct genio_acceptor *acceptor,
 			     void *user_data)
 {
     acceptor->user_data = user_data;
 }
 
 int
-netio_acc_startup(struct netio_acceptor *acceptor)
+genio_acc_startup(struct genio_acceptor *acceptor)
 {
     return acceptor->funcs->startup(acceptor);
 }
 
 int
-netio_acc_shutdown(struct netio_acceptor *acceptor)
+genio_acc_shutdown(struct genio_acceptor *acceptor)
 {
     return acceptor->funcs->shutdown(acceptor);
 }
 
 void
-netio_acc_set_accept_callback_enable(struct netio_acceptor *acceptor,
+genio_acc_set_accept_callback_enable(struct genio_acceptor *acceptor,
 				     bool enabled)
 {
     acceptor->funcs->set_accept_callback_enable(acceptor, enabled);
 }
 
 void
-netio_acc_free(struct netio_acceptor *acceptor)
+genio_acc_free(struct genio_acceptor *acceptor)
 {
     acceptor->funcs->free(acceptor);
 }
 
 bool
-netio_acc_exit_on_close(struct netio_acceptor *acceptor)
+genio_acc_exit_on_close(struct genio_acceptor *acceptor)
 {
-    return acceptor->type == NETIO_TYPE_STDIO;
+    return acceptor->type == GENIO_TYPE_STDIO;
 }
 
-int str_to_netio_acceptor(const char *str,
+int str_to_genio_acceptor(const char *str,
 			  struct selector_s *sel,
 			  unsigned int max_read_size,
-			  const struct netio_acceptor_callbacks *cbs,
+			  const struct genio_acceptor_callbacks *cbs,
 			  void *user_data,
-			  struct netio_acceptor **acceptor)
+			  struct genio_acceptor **acceptor)
 {
     int err;
     struct addrinfo *ai = NULL;
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_netio_acceptor_alloc(sel, max_read_size, cbs, user_data,
+	err = stdio_genio_acceptor_alloc(sel, max_read_size, cbs, user_data,
 					 acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
@@ -343,10 +359,10 @@ int str_to_netio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_netio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
+		err = udp_genio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    } else {
-		err = tcp_netio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
+		err = tcp_genio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    }
 
@@ -360,12 +376,12 @@ int str_to_netio_acceptor(const char *str,
 }
 
 int
-str_to_netio(const char *str,
+str_to_genio(const char *str,
 	     struct selector_s *sel,
 	     unsigned int max_read_size,
-	     const struct netio_callbacks *cbs,
+	     const struct genio_callbacks *cbs,
 	     void *user_data,
-	     struct netio **netio)
+	     struct genio **genio)
 {
     int err;
     struct addrinfo *ai = NULL;
@@ -378,19 +394,19 @@ str_to_netio(const char *str,
 	err = str_to_argv(str + 6, &argc, &argv, NULL);
 	if (err)
 	    return err;
-	err = stdio_netio_alloc(argv, sel, max_read_size, cbs, user_data,
-				netio);
+	err = stdio_genio_alloc(argv, sel, max_read_size, cbs, user_data,
+				genio);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_netio_alloc(ai, sel, max_read_size, cbs,
-				      user_data, netio);
+		err = udp_genio_alloc(ai, sel, max_read_size, cbs,
+				      user_data, genio);
 	    } else {
-		err = tcp_netio_alloc(ai, sel, max_read_size, cbs,
-				      user_data, netio);
+		err = tcp_genio_alloc(ai, sel, max_read_size, cbs,
+				      user_data, genio);
 	    }
 
 	    if (err) {

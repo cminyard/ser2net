@@ -30,15 +30,15 @@
 #include <syslog.h>
 #include <assert.h>
 
-#include "netio.h"
-#include "netio_internal.h"
+#include "genio.h"
+#include "genio_internal.h"
 #include "utils/selector.h"
 #include "utils/locking.h"
 
 struct udpna_data;
 
 struct udpn_data {
-    struct netio net;
+    struct genio net;
     struct udpna_data *nadata;
 
     /*
@@ -69,7 +69,7 @@ struct udpn_data {
 #define net_to_ndata(net) container_of(net, struct udpn_data, net);
 
 struct udpna_data {
-    struct netio_acceptor acceptor;
+    struct genio_acceptor acceptor;
     struct udpn_data *udpns;
 
     struct selector_s *sel;
@@ -224,7 +224,7 @@ static void udpna_check_finish_free(struct udpna_data *nadata)
 }
 
 static int
-udpn_write(struct netio *net, int *count,
+udpn_write(struct genio *net, int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -250,7 +250,7 @@ udpn_write(struct netio *net, int *count,
 }
 
 static int
-udpn_raddr_to_str(struct netio *net, int *epos,
+udpn_raddr_to_str(struct genio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -284,7 +284,7 @@ udpn_raddr_to_str(struct netio *net, int *epos,
 }
 
 static socklen_t
-udpn_get_raddr(struct netio *net,
+udpn_get_raddr(struct genio *net,
 	       struct sockaddr *addr, socklen_t addrlen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -299,7 +299,7 @@ udpn_get_raddr(struct netio *net,
 static void
 udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
 
     if (net->cbs && net->cbs->close_done) {
 	UNLOCK(nadata->lock);
@@ -400,7 +400,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
     UNLOCK(nadata->lock);
 
     if (ndata) {
-	struct netio *net = &ndata->net;
+	struct genio *net = &ndata->net;
 
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
@@ -421,7 +421,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 	goto retry;
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
-	struct netio_acceptor *acceptor = &nadata->acceptor;
+	struct genio_acceptor *acceptor = &nadata->acceptor;
 
 	nadata->in_shutdown = false;
 	if (acceptor->cbs->shutdown_done)
@@ -437,7 +437,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 }
 
 static void
-udpn_close(struct netio *net)
+udpn_close(struct genio *net)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -452,7 +452,7 @@ udpn_close(struct netio *net)
 }
 
 static void
-udpn_set_read_callback_enable(struct netio *net, bool enabled)
+udpn_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -483,7 +483,7 @@ udpn_set_read_callback_enable(struct netio *net, bool enabled)
 }
 
 static void
-udpn_set_write_callback_enable(struct netio *net, bool enabled)
+udpn_set_write_callback_enable(struct genio *net, bool enabled)
 {
   struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -502,7 +502,7 @@ udpn_set_write_callback_enable(struct netio *net, bool enabled)
 static void
 udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
     unsigned int count;
 
     if (!ndata->read_enabled)
@@ -523,7 +523,7 @@ udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 static void
 udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct netio *net = &ndata->net;
+    struct genio *net = &ndata->net;
 
     ndata->in_write = true;
     UNLOCK(nadata->lock);
@@ -556,7 +556,7 @@ udpna_writehandler(int fd, void *cbdata)
     UNLOCK(nadata->lock);
 }
 
-static const struct netio_functions netio_udp_funcs = {
+static const struct genio_functions genio_udp_funcs = {
     .write = udpn_write,
     .raddr_to_str = udpn_raddr_to_str,
     .get_raddr = udpn_get_raddr,
@@ -641,8 +641,8 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->nadata = nadata;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
-    ndata->net.funcs = &netio_udp_funcs;
-    ndata->net.type = NETIO_TYPE_UDP;
+    ndata->net.funcs = &genio_udp_funcs;
+    ndata->net.type = GENIO_TYPE_UDP;
 
     /* Stick it on the end of the list. */
     tndata = nadata->udpns;
@@ -671,7 +671,7 @@ udpna_readhandler(int fd, void *cbdata)
     nadata->in_new_connection = false;
 
     if (nadata->in_shutdown) {
-	struct netio_acceptor *acceptor = &nadata->acceptor;
+	struct genio_acceptor *acceptor = &nadata->acceptor;
 
 	nadata->in_shutdown = false;
 	if (acceptor->cbs->shutdown_done)
@@ -693,7 +693,7 @@ udpna_readhandler(int fd, void *cbdata)
 }
 
 static int
-udpna_startup(struct netio_acceptor *acceptor)
+udpna_startup(struct genio_acceptor *acceptor)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -718,7 +718,7 @@ udpna_startup(struct netio_acceptor *acceptor)
 }
 
 static int
-udpna_shutdown(struct netio_acceptor *acceptor)
+udpna_shutdown(struct genio_acceptor *acceptor)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -741,7 +741,7 @@ udpna_shutdown(struct netio_acceptor *acceptor)
 }
 
 static void
-udpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
+udpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -751,7 +751,7 @@ udpna_set_accept_callback_enable(struct netio_acceptor *acceptor, bool enabled)
 }
 
 static void
-udpna_free(struct netio_acceptor *acceptor)
+udpna_free(struct genio_acceptor *acceptor)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -765,7 +765,7 @@ udpna_free(struct netio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
-static const struct netio_acceptor_functions netio_acc_udp_funcs = {
+static const struct genio_acceptor_functions genio_acc_udp_funcs = {
     .startup = udpna_startup,
     .shutdown = udpna_shutdown,
     .set_accept_callback_enable = udpna_set_accept_callback_enable,
@@ -773,16 +773,16 @@ static const struct netio_acceptor_functions netio_acc_udp_funcs = {
 };
 
 int
-udp_netio_acceptor_alloc(const char *name,
+udp_genio_acceptor_alloc(const char *name,
 			 struct selector_s *sel,
 			 struct addrinfo *ai,
 			 unsigned int max_read_size,
-			 const struct netio_acceptor_callbacks *cbs,
+			 const struct genio_acceptor_callbacks *cbs,
 			 void *user_data,
-			 struct netio_acceptor **acceptor)
+			 struct genio_acceptor **acceptor)
 {
     int err = ENOMEM;
-    struct netio_acceptor *acc;
+    struct genio_acceptor *acc;
     struct udpna_data *nadata;
 
     nadata = malloc(sizeof(*nadata));
@@ -806,8 +806,8 @@ udp_netio_acceptor_alloc(const char *name,
     acc = &nadata->acceptor;
     acc->cbs = cbs;
     acc->user_data = user_data;
-    acc->funcs = &netio_acc_udp_funcs;
-    acc->type = NETIO_TYPE_UDP;
+    acc->funcs = &genio_acc_udp_funcs;
+    acc->type = GENIO_TYPE_UDP;
 
     INIT_LOCK(nadata->lock);
     nadata->ai = ai;
@@ -831,15 +831,15 @@ udp_netio_acceptor_alloc(const char *name,
 }
 
 int
-udp_netio_alloc(struct addrinfo *ai,
+udp_genio_alloc(struct addrinfo *ai,
 		struct selector_s *sel,
 		unsigned int max_read_size,
-		const struct netio_callbacks *cbs,
+		const struct genio_callbacks *cbs,
 		void *user_data,
-		struct netio **new_netio)
+		struct genio **new_genio)
 {
     struct udpn_data *ndata = NULL;
-    struct netio_acceptor *acceptor;
+    struct genio_acceptor *acceptor;
     struct udpna_data *nadata = NULL;
     int err;
     int new_fd;
@@ -863,7 +863,7 @@ udp_netio_alloc(struct addrinfo *ai,
     memset(ndata, 0, sizeof(*ndata));
 
     /* Allocate a dummy network acceptor. */
-    err = udp_netio_acceptor_alloc("dummy", sel, NULL, max_read_size,
+    err = udp_genio_acceptor_alloc("dummy", sel, NULL, max_read_size,
 				   NULL, NULL, &acceptor);
     if (err) {
 	close(new_fd);
@@ -892,8 +892,8 @@ udp_netio_alloc(struct addrinfo *ai,
     memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
     ndata->raddrlen = ai->ai_addrlen;
 
-    ndata->net.funcs = &netio_udp_funcs;
-    ndata->net.type = NETIO_TYPE_UDP;
+    ndata->net.funcs = &genio_udp_funcs;
+    ndata->net.type = GENIO_TYPE_UDP;
 
     ndata->myfd = new_fd;
 
@@ -905,7 +905,7 @@ udp_netio_alloc(struct addrinfo *ai,
 	free(ndata);
 	udpna_do_free(nadata);
     } else {
-	*new_netio = &ndata->net;
+	*new_genio = &ndata->net;
     }
 
     return err;
