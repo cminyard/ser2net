@@ -547,7 +547,7 @@ controller_read(struct genio *net, int readerr, unsigned char *buf,
     bytesleft = buflen;
     read_count = process_telnet_data(cntlr->inbuf + read_start,
 				     INBUF_SIZE - read_start,
-				     buf, &bytesleft, &cntlr->tn_data);
+				     &buf, &bytesleft, &cntlr->tn_data);
     if (cntlr->tn_data.error) {
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;

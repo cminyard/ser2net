@@ -146,10 +146,11 @@ telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
 
 unsigned int
 process_telnet_data(unsigned char *outdata, unsigned int outlen,
-		    unsigned char *indata, unsigned int *inlen,
+		    unsigned char **r_indata, unsigned int *inlen,
 		    telnet_data_t *td)
 {
     unsigned int i, j;
+    unsigned char *indata = *r_indata;
 
     /* If it's a telnet port, get the commands out of the stream. */
     for (i = 0, j = 0; i < *inlen && j < outlen; i++) {
@@ -221,6 +222,8 @@ process_telnet_data(unsigned char *outdata, unsigned int outlen,
     }
 
     *inlen -= i;
+    *r_indata = indata + i;
+
     return j;
 }
 

@@ -1073,11 +1073,11 @@ handle_net_fd_read(struct genio *net, int readerr,
 
     if (port->enabled == PORT_TELNET) {
 	unsigned int bytesleft = buflen - bufpos;
+	unsigned char *cbuf = buf + bufpos;
 
 	port->net_to_dev.cursize = process_telnet_data(port->net_to_dev.buf,
 						       port->net_to_dev.maxsize,
-						       buf + bufpos,
-						       &bytesleft,
+						       &cbuf, &bytesleft,
 						       &netcon->tn_data);
 
 	if (netcon->tn_data.error) {

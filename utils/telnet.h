@@ -91,7 +91,7 @@ void telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len);
    telnet data will be removed from data.  This will set td->error to
    true if an output error occurs (out of space).*/
 unsigned int process_telnet_data(unsigned char *outdata, unsigned int outlen,
-				 unsigned char *indata, unsigned int *inlen,
+				 unsigned char **indata, unsigned int *inlen,
 				 telnet_data_t *td);
 
 /* Double all the IACs in the transmitted data.  If outlen is more
