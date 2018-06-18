@@ -1898,6 +1898,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 {
     struct timeval then;
     bool i_am_first = false;
+    int err;
 
     if (!is_reconfig) {
 	if (netcon->banner) {
@@ -1905,6 +1906,21 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	    free(netcon->banner);
 	}
 	netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
+    }
+
+    if (port->enabled == PORT_TELNET) {
+	err = telnet_init(&netcon->tn_data, netcon, telnet_output_ready,
+			  telnet_cmd_handler,
+			  telnet_cmds,
+			  telnet_init_seq, sizeof(telnet_init_seq));
+	if (err) {
+	    char *errstr = "Out of memory\r\n";
+
+	    genio_write(netcon->net, NULL, errstr, strlen(errstr));
+	    genio_close(netcon->net);
+	    netcon->net = NULL;
+	    return -1;
+	}
     }
 
     if (num_connected_net(port, true) == 1) {
@@ -1953,10 +1969,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     port->net_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
-	telnet_init(&netcon->tn_data, netcon, telnet_output_ready,
-		    telnet_cmd_handler,
-		    telnet_cmds,
-		    telnet_init_seq, sizeof(telnet_init_seq));
 	genio_set_write_callback_enable(netcon->net, true);
     } else {
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
@@ -2665,6 +2677,7 @@ netcon_finish_shutdown(net_info_t *netcon)
 	free(netcon->banner);
 	netcon->banner = NULL;
     }
+    telnet_cleanup(&netcon->tn_data);
 
     if (num_connected_net(port, true) == 0) {
 	start_shutdown_port(port, "All network connections free");

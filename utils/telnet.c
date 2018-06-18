@@ -1,6 +1,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include "telnet.h"
 
@@ -17,7 +18,7 @@ find_cmd(struct telnet_cmd *array, unsigned char option)
 }
 
 void
-telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len)
+telnet_cmd_send(telnet_data_t *td, const unsigned char *cmd, int len)
 {
     if (buffer_output(&td->out_telnet_cmd, cmd, len) == -1) {
 	/* Out of data, abort the connection.  This really shouldn't
@@ -257,23 +258,42 @@ process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
     return j;
 }
 
-void
+int
 telnet_init(telnet_data_t *td,
 	    void *cb_data,
 	    void (*output_ready)(void *cb_data),
 	    void (*cmd_handler)(void *cb_data, unsigned char cmd),
-	    struct telnet_cmd *cmds,
-	    unsigned char *init_seq,
+	    const struct telnet_cmd *cmds,
+	    const unsigned char *init_seq,
 	    int init_seq_len)
 {
-    td->telnet_cmd_pos = 0;
+    unsigned int i;
+
+    if (td->cmds)
+	free(td->cmds);
+    memset(td, 0, sizeof(*td));
     buffer_init(&td->out_telnet_cmd, td->out_telnet_cmdbuf,
 		sizeof(td->out_telnet_cmdbuf));
-    td->error = 0;
     td->cb_data = cb_data;
     td->output_ready = output_ready;
     td->cmd_handler = cmd_handler;
-    td->cmds = cmds;
+
+    for (i = 0; cmds[i].option != TELNET_CMD_END_OPTION; i++)
+	;
+    i++;
+
+    td->cmds = malloc(i * sizeof(*cmds));
+    if (!td->cmds)
+	return ENOMEM;
+    memcpy(td->cmds, cmds, i * sizeof(*cmds));
 
     telnet_cmd_send(td, init_seq, init_seq_len);
+}
+
+void
+telnet_cleanup(telnet_data_t *td)
+{
+    if (td->cmds)
+	free(td->cmds);
+    td->cmds = NULL;
 }

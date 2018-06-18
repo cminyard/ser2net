@@ -150,6 +150,8 @@ shutdown_controller2(controller_info_t *cntlr)
     }
     UNLOCK(cntlr_lock);
 
+    telnet_cleanup(&cntlr->tn_data);
+
     shutdown_complete = cntlr->shutdown_complete;
     shutdown_complete_cb_data = cntlr->shutdown_complete_cb_data;
 
@@ -695,6 +697,7 @@ controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
 {
     controller_info_t *cntlr;
     char              *err = NULL;
+    int rv;
 
     LOCK(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
@@ -721,19 +724,22 @@ controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
 
-    cntlr->next = controllers;
-    controllers = cntlr;
-
     /* Send the telnet negotiation string.  We do this by
        putting the data in the dev to tcp buffer and turning
        the tcp write selector on. */
 
-    telnet_init(&cntlr->tn_data, cntlr, telnet_output_ready,
-		telnet_cmd_handler,
-		telnet_cmds,
-		telnet_init_seq, sizeof(telnet_init_seq));
+    rv = telnet_init(&cntlr->tn_data, cntlr, telnet_output_ready,
+		     telnet_cmd_handler,
+		     telnet_cmds,
+		     telnet_init_seq, sizeof(telnet_init_seq));
+    if (rv) {
+	err = "Out of memory\r\n";
+	goto errout;
+    }
     controller_outs(cntlr, prompt);
 
+    cntlr->next = controllers;
+    controllers = cntlr;
     num_controller_ports++;
 
     UNLOCK(cntlr_lock);
@@ -742,7 +748,7 @@ controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
 errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
-    genio_write(cntlr->net, NULL, err, strlen(err));
+    genio_write(net, NULL, err, strlen(err));
     genio_close(net);
 }
 
