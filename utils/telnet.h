@@ -74,7 +74,11 @@ struct telnet_data_s
     int error;
 
     void *cb_data;
+
+    /* Call when data is added to out_telnet_cmd. */
     void (*output_ready)(void *cb_data);
+
+    /* Called for all one-byte telnet commands. */
     void (*cmd_handler)(void *cb_data, unsigned char cmd);
 
     /* An array of commands, the last option must be set to 255 to
