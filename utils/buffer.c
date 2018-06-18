@@ -91,7 +91,7 @@ buffer_write(buffer_do_write tdo_write, void *cb_data,
 }
 
 int
-buffer_output(struct sbuf *buf, unsigned char *data, unsigned int len)
+buffer_output(struct sbuf *buf, const unsigned char *data, unsigned int len)
 {
     int end;
 

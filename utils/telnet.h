@@ -39,7 +39,7 @@ struct telnet_cmd
 
     /* If this is non-null, this will be called if a will command is
        sent by the remote end.  If this returns 1, the option will be
-       allowed (a DO is returned).  If it return 0, a DONT is
+       allowed (a DO is returned).  If it returns 0, a DONT is
        returned. */
     int (*will_handler)(void *cb_data);
 };
@@ -84,7 +84,7 @@ struct telnet_data_s
 
 /* Send a telnet command.  This will set td->error to true if an
    output error occurs (out of space). */
-void telnet_cmd_send(telnet_data_t *td, unsigned char *cmd, int len);
+void telnet_cmd_send(telnet_data_t *td, const unsigned char *cmd, int len);
 
 /* Received some data from the TCP port representing telnet, process
    it.  The leftover length is returned by this function, and the
@@ -110,12 +110,14 @@ unsigned int process_telnet_xmit(unsigned char *outdata, unsigned int outlen,
 void telnet_send_option(telnet_data_t *td, unsigned char *option, int len);
 
 /* Initialize the telnet data. */
-void telnet_init(telnet_data_t *td,
-		 void *cb_data,
-		 void (*output_ready)(void *cb_data),
-		 void (*cmd_handler)(void *cb_data, unsigned char cmd),
-		 struct telnet_cmd *cmds,
-		 unsigned char *init_seq,
-		 int init_seq_len);
+int telnet_init(telnet_data_t *td,
+		void *cb_data,
+		void (*output_ready)(void *cb_data),
+		void (*cmd_handler)(void *cb_data, unsigned char cmd),
+		const struct telnet_cmd *cmds,
+		const unsigned char *init_seq,
+		int init_seq_len);
+
+void telnet_cleanup(telnet_data_t *td);
 
 #endif /* _SER2NET_TELNET_H */

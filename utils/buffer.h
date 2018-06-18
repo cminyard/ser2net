@@ -35,7 +35,8 @@ typedef int (*buffer_do_write)(void *cbdata, void *buf, size_t buflen,
 int buffer_write(buffer_do_write do_write, void *cb_data,
 		 struct sbuf *buf, int *buferr);
 
-int buffer_output(struct sbuf *buf, unsigned char *data, unsigned int len);
+int buffer_output(struct sbuf *buf, const unsigned char *data,
+		  unsigned int len);
 
 int buffer_outchar(struct sbuf *buf, unsigned char data);
 
