@@ -94,8 +94,6 @@ write_ignore_fail(int fd, const char *data, size_t count)
 
 void str_to_argv_free(int argc, char **argv)
 {
-    int i;
-
     if (!argv)
 	return;
     if (argv[argc + 1])
