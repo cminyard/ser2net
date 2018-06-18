@@ -33,7 +33,6 @@
 
 struct selector_s *sel;
 bool done;
-bool exit_nl = false;
 
 static bool tokeq(const char *t, const char *m)
 {
@@ -45,7 +44,7 @@ cmd_cb_handler(char *cmdline)
 {
     char *expansion;
     char **argv = NULL;
-    unsigned int argc = 0;
+    int argc = 0;
     int i;
 
     if (!cmdline) {
@@ -76,6 +75,9 @@ cmd_cb_handler(char *cmdline)
     for (i = 1; i < argc; i++)
 	printf(" '%s'", argv[i]);
     printf("\n");
+
+    if (tokeq(argv[0], "exit"))
+      done = true;
 
     str_to_argv_free(argc, argv);
 

@@ -288,6 +288,7 @@ telnet_init(telnet_data_t *td,
     memcpy(td->cmds, cmds, i * sizeof(*cmds));
 
     telnet_cmd_send(td, init_seq, init_seq_len);
+    return 0;
 }
 
 void

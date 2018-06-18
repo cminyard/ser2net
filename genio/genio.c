@@ -227,7 +227,7 @@ genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
 {
     struct genio *net = cb_data;
     int err = 0;
-    int count;
+    unsigned int count;
 
     err = genio_write(net, &count, buf, buflen);
     if (!err)
