@@ -71,80 +71,6 @@ struct devcfg_data {
 #endif
 };
 
-static struct baud_rates_s {
-    int real_rate;
-    int val;
-    int cisco_ios_val;
-} baud_rates[] =
-{
-    { 50, B50, -1 },
-    { 75, B75, -1 },
-    { 110, B110, -1 },
-    { 134, B134, -1 },
-    { 150, B150, -1 },
-    { 200, B200, -1 },
-    { 300, B300, 3 },
-    { 600, B600 , 4},
-    { 1200, B1200, 5 },
-    { 1800, B1800, -1 },
-    { 2400, B2400, 6 },
-    { 4800, B4800, 7 },
-    { 9600, B9600, 8 },
-    /* We don't support 14400 baud */
-    { 19200, B19200, 10 },
-    /* We don't support 28800 baud */
-    { 38400, B38400, 12 },
-    { 57600, B57600, 13 },
-    { 115200, B115200, 14 },
-    { 230400, B230400, 15 },
-    /* We don't support 460800 baud */
-};
-#define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
-
-static int
-get_baud_rate(int rate, int *val, int cisco, int *bps)
-{
-    unsigned int i;
-    for (i = 0; i < BAUD_RATES_LEN; i++) {
-	if (cisco) {
-	    if (rate == baud_rates[i].cisco_ios_val) {
-		*val = baud_rates[i].val;
-		*bps = baud_rates[i].real_rate;
-		return 1;
-	    }
-	} else {
-	    if (rate == baud_rates[i].real_rate) {
-		*val = baud_rates[i].val;
-		*bps = baud_rates[i].real_rate;
-		return 1;
-	    }
-	}
-    }
-
-    return 0;
-}
-
-static void
-get_rate_from_baud_rate(int baud_rate, int *val, int cisco)
-{
-    unsigned int i;
-    for (i = 0; i < BAUD_RATES_LEN; i++) {
-	if (baud_rate == baud_rates[i].val) {
-	    if (cisco) {
-		if (baud_rates[i].cisco_ios_val < 0)
-		    /* We are at a baud rate unsupported by the
-		       enumeration, just return zero. */
-		    *val = 0;
-		else
-		    *val = baud_rates[i].cisco_ios_val;
-	    } else {
-		*val = baud_rates[i].real_rate;
-	    }
-	    return;
-	}
-    }
-}
-
 #ifdef USE_UUCP_LOCKING
 static char *uucp_lck_dir = "/var/lock/";
 static char *dev_prefix = "/dev/";
@@ -1088,7 +1014,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
 	return -1;
     }
 
-    if ((*val != 0) && (get_baud_rate(*val, val, cisco, bps))) {
+    if ((*val != 0) && (get_baud_rate(*val, val, cisco, NULL))) {
 	/* We have a valid baud rate. */
 	cfsetispeed(&termio, *val);
 	cfsetospeed(&termio, *val);
@@ -1097,7 +1023,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
 
     tcgetattr(d->devfd, &termio);
     *val = cfgetispeed(&termio);
-    get_rate_from_baud_rate(*val, val, cisco);
+    get_rate_from_baud_rate(*val, val, cisco, bps);
 
     return 0;
 }

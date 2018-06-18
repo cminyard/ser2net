@@ -20,6 +20,8 @@
 #ifndef UTILS
 #define UTILS
 
+#include <stdbool.h>
+
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
 
@@ -52,5 +54,24 @@ struct absout {
     int (*out)(struct absout *e, const char *str, ...);
     void *data;
 };
+
+/*
+ * Given an integer baud rate (300 for 300baud, for instance) if
+ * "cisco" is false, or an cisco IOS baud rate if "cisco" is true,
+ * return the termios value for the given baud rate.  Returns 1 if
+ * successful and 0 if the given integer baud rate is not supported.
+ * If successful, the integer baud rate is returned in bps if that is
+ * not NULL;
+ */
+int get_baud_rate(int rate, int *val, bool cisco, int *bps);
+
+/*
+ * Given the termios value in "baud_rate", return either the actual
+ * integer baud rate in "val" if cisco is false, or the Cisco IOS baud
+ * rate in "val" if cisco is true.  Always return the actual integer
+ * baud rate in bps if that is not NULL.  If the baud rate is not
+ * supported, val is set to zero and bps is undefined.
+ */
+void get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps);
 
 #endif /* UTILS */
