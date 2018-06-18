@@ -111,7 +111,7 @@ static struct baud_rates_s {
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
 static int
-get_baud_rate(int rate, int cisco, int *val)
+get_sol_baud_rate(int rate, int cisco, int *val)
 {
     unsigned int i;
     for (i = 0; i < BAUD_RATES_LEN; i++) {
@@ -392,7 +392,7 @@ static int solcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
     int sol_rate = 0;
 
     if (*val != 0) {
-	int err = get_baud_rate(*val, cisco, &sol_rate);
+	int err = get_sol_baud_rate(*val, cisco, &sol_rate);
 	if (!err)
 	    ipmi_sol_set_bit_rate(d->sol, sol_rate);
     }
