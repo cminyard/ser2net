@@ -305,7 +305,8 @@ get_baud_rate(int rate, int *val, bool cisco, int *bps)
     for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if ((cisco && rate == baud_rates[i].cisco_ios_val) ||
 			(!cisco && rate == baud_rates[i].real_rate)) {
-	    *val = baud_rates[i].val;
+	    if (val)
+		*val = baud_rates[i].val;
 	    if (bps)
 		*bps = baud_rates[i].real_rate;
 	    return 1;
@@ -319,6 +320,7 @@ void
 get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps)
 {
     unsigned int i;
+    int rval;
 
     for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
@@ -326,12 +328,14 @@ get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps)
 		if (baud_rates[i].cisco_ios_val < 0)
 		    /* We are at a baud rate unsupported by the
 		       enumeration, just return zero. */
-		    *val = 0;
+		    rval = 0;
 		else
-		    *val = baud_rates[i].cisco_ios_val;
+		    rval = baud_rates[i].cisco_ios_val;
 	    } else {
-		*val = baud_rates[i].real_rate;
+		rval = baud_rates[i].real_rate;
 	    }
+	    if (val)
+		*val = rval;
 	    if (bps)
 		*bps = baud_rates[i].real_rate;
 	    return;
