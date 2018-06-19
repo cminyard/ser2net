@@ -139,7 +139,9 @@ it: 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000,
 Parity, databits, and stopbits may be specified
 in the classical manner after the speed, as in 9600N81.
 This has the following format:
-.B <speed>[N|E|O|M|S[5|6|7|8[1|2]]]
+.B <speed>[N|E|O|M|S[5|6|7|8[1|2]]].
+Setting serial options this way does not work on SOL, SOL has fixed
+N81 serial options.
 .I EVEN, ODD, NONE (MARK and SPACE if supported)
 set the parity.
 .I 1STOPBIT, 2STOPBITS
