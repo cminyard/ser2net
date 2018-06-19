@@ -230,9 +230,72 @@ static void cfmakeraw(struct termios *termios_p) {
 }
 #endif
 
+static void
+set_termios_parity(struct devcfg_data *d, struct termios *termctl,
+		   enum parity_vals val)
+{
+    switch (val) {
+    case PARITY_NONE:
+	termctl->c_cflag &= ~(PARENB);
+	break;
+    case PARITY_EVEN:
+    case PARITY_SPACE:
+	termctl->c_cflag |= PARENB;
+	termctl->c_cflag &= ~(PARODD);
+#ifdef CMSPAR
+	if (val == PARITY_SPACE)
+	    termctl->c_cflag |= CMSPAR;
+#endif
+	break;
+    case PARITY_ODD:
+    case PARITY_MARK:
+	termctl->c_cflag |= PARENB | PARODD;
+#ifdef CMSPAR
+	if (val == PARITY_MARK)
+	    termctl->c_cflag |= CMSPAR;
+#endif
+	break;
+    }
+    d->default_parity_on = val != PARITY_NONE;
+}
+
+static void
+set_termios_xonoff(struct termios *termctl, int enabled)
+{
+    if (enabled) {
+	termctl->c_iflag |= (IXON | IXOFF | IXANY);
+	termctl->c_cc[VSTART] = 17;
+	termctl->c_cc[VSTOP] = 19;
+    } else {
+	termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
+    }
+}
+
+static void
+set_termios_rtscts(struct termios *termctl, int enabled)
+{
+    if (enabled)
+	termctl->c_cflag |= CRTSCTS;
+    else
+	termctl->c_cflag &= ~CRTSCTS;
+}
+
+static void
+set_termios_datasize(struct devcfg_data *d, struct termios *termctl, int size)
+{
+    termctl->c_cflag &= ~CSIZE;
+    switch (size) {
+    case 5: termctl->c_cflag |= CS5; break;
+    case 6: termctl->c_cflag |= CS6; break;
+    case 7: termctl->c_cflag |= CS7; break;
+    case 8: termctl->c_cflag |= CS8; break;
+    }
+    d->default_data_size = size;
+}
+
 static int
 set_termios_from_speed(struct devcfg_data *d, struct termios *termctl,
-		       int speed)
+		       int speed, const char *others)
 {
     switch (speed) {
     case 300:
@@ -367,71 +430,60 @@ set_termios_from_speed(struct devcfg_data *d, struct termios *termctl,
 	return -1;
     }
 
+    if (*others) {
+	enum parity_vals val;
+
+	switch (*others) {
+	case 'N': val = PARITY_NONE; break;
+	case 'E': val = PARITY_EVEN; break;
+	case 'O': val = PARITY_ODD; break;
+	case 'M': val = PARITY_MARK; break;
+	case 'S': val = PARITY_SPACE; break;
+	default:
+	    return -1;
+	}
+	set_termios_parity(d, termctl, val);
+	others++;
+    }
+
+    if (*others) {
+	int val;
+
+	switch (*others) {
+	case '5': val = 5; break;
+	case '6': val = 6; break;
+	case '7': val = 7; break;
+	case '8': val = 8; break;
+	default:
+	    return -1;
+	}
+	set_termios_datasize(d, termctl, val);
+	others++;
+    }
+
+    if (*others) {
+	switch (*others) {
+	case '1':
+	    termctl->c_cflag &= ~(CSTOPB);
+	    d->default_stop_bits = 1;
+	    break;
+
+	case '2':
+	    termctl->c_cflag |= CSTOPB;
+	    d->default_stop_bits = 2;
+	    break;
+
+	default:
+	    return -1;
+	}
+	others++;
+    }
+
+    if (*others)
+	return -1;
+
     d->default_bps = speed;
     return 0;
-}
-
-static void
-set_termios_parity(struct devcfg_data *d, struct termios *termctl,
-		   enum parity_vals val)
-{
-    switch (val) {
-    case PARITY_NONE:
-	termctl->c_cflag &= ~(PARENB);
-	break;
-    case PARITY_EVEN:
-    case PARITY_SPACE:
-	termctl->c_cflag |= PARENB;
-	termctl->c_cflag &= ~(PARODD);
-#ifdef CMSPAR
-	if (val == PARITY_SPACE)
-	    termctl->c_cflag |= CMSPAR;
-#endif
-	break;
-    case PARITY_ODD:
-    case PARITY_MARK:
-	termctl->c_cflag |= PARENB | PARODD;
-#ifdef CMSPAR
-	if (val == PARITY_MARK)
-	    termctl->c_cflag |= CMSPAR;
-#endif
-	break;
-    }
-    d->default_parity_on = val != PARITY_NONE;
-}
-
-static void
-set_termios_xonoff(struct termios *termctl, int enabled)
-{
-    if (enabled) {
-	termctl->c_iflag |= (IXON | IXOFF | IXANY);
-	termctl->c_cc[VSTART] = 17;
-	termctl->c_cc[VSTOP] = 19;
-    } else {
-	termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
-    }
-}
-
-static void
-set_termios_rtscts(struct termios *termctl, int enabled)
-{
-    if (enabled)
-	termctl->c_cflag |= CRTSCTS;
-    else
-	termctl->c_cflag &= ~CRTSCTS;
-}
-
-static void
-set_termios_datasize(struct devcfg_data *d, struct termios *termctl, int size)
-{
-    termctl->c_cflag &= ~CSIZE;
-    switch (size) {
-    case 5: termctl->c_cflag |= CS5; break;
-    case 6: termctl->c_cflag |= CS6; break;
-    case 7: termctl->c_cflag |= CS7; break;
-    case 8: termctl->c_cflag |= CS8; break;
-    }
-    d->default_data_size = size;
 }
 
 /* Initialize a serial port control structure for the first time.
@@ -442,7 +494,7 @@ devinit(struct devcfg_data *d, struct termios *termctl)
 {
     cfmakeraw(termctl);
 
-    set_termios_from_speed(d, termctl, find_default_int("speed"));
+    set_termios_from_speed(d, termctl, find_default_int("speed"), "");
     set_termios_datasize(d, termctl, find_default_int("databits"));
     d->default_stop_bits = find_default_int("stopbits");
     if (d->default_stop_bits == 1)
@@ -494,10 +546,12 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 
     pos = strtok_r(str, " \t", &strtok_data);
     while (pos != NULL) {
-	if ((val = speedstr_to_speed(pos)) != -1) {
-	    rv = set_termios_from_speed(d, termctl, val);
+	const char *rest = "";
+
+	if ((val = speedstr_to_speed(pos, &rest)) != -1) {
+	    rv = set_termios_from_speed(d, termctl, val, rest);
 	    if (rv) {
-		eout->out(eout, "Invalid baud rate: %d\n", d->default_bps);
+		eout->out(eout, "Invalid baud rate: %s", pos);
 		goto out;
 	    }
 	} else if (strcmp(pos, "1STOPBIT") == 0) {

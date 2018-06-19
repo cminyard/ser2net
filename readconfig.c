@@ -490,9 +490,22 @@ static struct enum_val speed_enums[] = {
 };
 
 int
-speedstr_to_speed(const char *speed)
+speedstr_to_speed(const char *speed, const char **rest)
 {
-    return lookup_enum(speed_enums, speed, -1);
+    const char *end = speed;
+    unsigned int len;
+    int rv;
+
+    while (*end && isdigit(*end))
+	end++;
+    len = end - speed;
+    if (len < 3)
+	return -1;
+
+    rv = lookup_enum(speed_enums, speed, len);
+    if (rv != -1)
+	*rest = end;
+    return rv;
 }
 
 struct enum_val parity_enums[] = {
