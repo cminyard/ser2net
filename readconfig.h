@@ -54,8 +54,9 @@ char *find_tracefile(const char *name);
 struct serial_rs485 *find_rs485conf(const char *name);
 
 /* Convert a string holding a baud rate into the numeric baud rate.
-   Returns -1 on an invalid value. */
-int speedstr_to_speed(const char *speed);
+   Returns -1 on an invalid value.  rest will be updated to point
+   to the first character after the digits of the speed. */
+int speedstr_to_speed(const char *speed, const char **rest);
 
 enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
 		   PARITY_MARK, PARITY_SPACE };

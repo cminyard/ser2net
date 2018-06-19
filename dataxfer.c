@@ -2365,14 +2365,16 @@ free_port(port_info_t *port)
     net_info_t *netcon;
     struct port_remaddr *r;
 
-    for_each_connection(port, netcon) {
-	char *err = "Port was deleted\n\r";
-	if (netcon->new_net) {
-	    genio_write(netcon->new_net, NULL,err, strlen(err));
-	    genio_close(netcon->new_net);
+    if (port->netcons) {
+	for_each_connection(port, netcon) {
+	    char *err = "Port was deleted\n\r";
+	    if (netcon->new_net) {
+		genio_write(netcon->new_net, NULL,err, strlen(err));
+		genio_close(netcon->new_net);
+	    }
+	    if (netcon->runshutdown)
+		sel_free_runner(netcon->runshutdown);
 	}
-	if (netcon->runshutdown)
-	    sel_free_runner(netcon->runshutdown);
     }
 
     FREE_LOCK(port->lock);
