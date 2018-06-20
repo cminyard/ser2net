@@ -634,7 +634,7 @@ sel_start_timer(sel_timer_t    *timer,
 		struct timeval *timeout)
 {
     struct selector_s *sel = timer->val.sel;
-    volatile sel_timer_t *top;
+    volatile sel_timer_t *old_top;
 
     sel_timer_lock(sel);
     if (timer->val.in_heap) {
@@ -642,7 +642,7 @@ sel_start_timer(sel_timer_t    *timer,
 	return EBUSY;
     }
 
-    top = theap_get_top(&sel->timer_heap);
+    old_top = theap_get_top(&sel->timer_heap);
 
     timer->val.timeout = *timeout;
 
@@ -653,7 +653,7 @@ sel_start_timer(sel_timer_t    *timer,
     }
     timer->val.stopped = 0;
 
-    wake_timer_sel_thread(sel, top);
+    wake_timer_sel_thread(sel, old_top);
 
     sel_timer_unlock(sel);
 
@@ -672,11 +672,11 @@ sel_stop_timer(sel_timer_t *timer)
     }
 
     if (timer->val.in_heap) {
-	volatile sel_timer_t *top = theap_get_top(&sel->timer_heap);
+	volatile sel_timer_t *old_top = theap_get_top(&sel->timer_heap);
 
 	theap_remove(&sel->timer_heap, timer);
 	timer->val.in_heap = 0;
-	wake_timer_sel_thread(sel, top);
+	wake_timer_sel_thread(sel, old_top);
     }
     timer->val.stopped = 1;
 
@@ -691,34 +691,37 @@ sel_stop_timer_with_done(sel_timer_t *timer,
 			 void *cb_data)
 {
     struct selector_s *sel = timer->val.sel;
-    volatile sel_timer_t *top;
 
     sel_timer_lock(sel);
-    if (timer->val.stopped) {
+    if (timer->val.stopped || timer->val.done_handler) {
 	sel_timer_unlock(sel);
-	goto out;
+	return ETIMEDOUT;
     }
 
-    if (timer->val.in_handler) {
-	timer->val.done_handler = done_handler;
-	timer->val.done_cb_data = cb_data;
-	sel_timer_unlock(sel);
-	return 0;
-    }
+    timer->val.stopped = 1;
 
+    timer->val.done_handler = done_handler;
+    timer->val.done_cb_data = cb_data;
+
+    if (timer->val.in_handler)
+	goto out_unlock;
+
+    /*
+     * We don't want to run the done handler here do avoid locking
+     * issues.  So set it in_handler and stick it on the top of the
+     * heap with an immediate timeout so it will be processed now.
+     */
+    timer->val.in_handler = 1;
     if (timer->val.in_heap) {
-	top = theap_get_top(&sel->timer_heap);
-
 	theap_remove(&sel->timer_heap, timer);
 	timer->val.in_heap = 0;
-
-	wake_timer_sel_thread(sel, top);
     }
-    timer->val.stopped = 1;
-    sel_timer_unlock(sel);
+    sel_get_monotonic_time(&timer->val.timeout);
+    theap_add(&sel->timer_heap, timer);
+    wake_timer_sel_thread(sel, NULL);
 
- out:
-    done_handler(sel, timer, cb_data);
+ out_unlock:
+    sel_timer_unlock(sel);
     return 0;
 }
 
@@ -752,11 +755,19 @@ process_timers(struct selector_s       *sel,
 	theap_remove(&(sel->timer_heap), timer);
 	timer->val.in_heap = 0;
 	timer->val.stopped = 1;
-	timer->val.in_handler = 1;
-	sel_timer_unlock(sel);
-	timer->val.handler(sel, timer, timer->val.user_data);
+
+	/*
+	 * A timer may be in a handler here if it has been stopped with
+	 * a done_handler.  In that case the timer was stopped, so we
+	 * don't call the main handler.
+	 */
+	if (!timer->val.in_handler) {
+	    timer->val.in_handler = 1;
+	    sel_timer_unlock(sel);
+	    timer->val.handler(sel, timer, timer->val.user_data);
+	    sel_timer_lock(sel);
+	}
 	count++;
-	sel_timer_lock(sel);
 	timer->val.in_handler = 0;
 	if (timer->val.done_handler) {
 	    sel_timeout_handler_t done_handler = timer->val.done_handler;
