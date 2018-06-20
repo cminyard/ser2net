@@ -114,6 +114,11 @@ int sel_start_timer(sel_timer_t    *timer,
 		    struct timeval *timeout);
 
 int sel_stop_timer(sel_timer_t *timer);
+
+/* Stops the timer and calls the done handler when the stop is
+   complete.  This will return an error if the timer is not
+   running or if another done handler is pending running, and
+   the done handler will not be called. */
 int sel_stop_timer_with_done(sel_timer_t *timer,
 			     sel_timeout_handler_t done_handler,
 			     void *cb_data);
