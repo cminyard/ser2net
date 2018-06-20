@@ -2603,7 +2603,7 @@ closeit:
 }
 
 static void
-timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
+start_shutdown_port_io(sel_runner_t *runner, void *cb_data)
 {
     port_info_t *port = cb_data;
 
@@ -2625,11 +2625,10 @@ timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
     }
 }
 
-static void shutdown_port_timer(sel_runner_t *runner, void *cb_data)
+static void
+timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
 {
-    port_info_t *port = cb_data;
-
-    sel_stop_timer_with_done(port->timer, timer_shutdown_done, port);
+    start_shutdown_port_io(NULL, cb_data);
 }
 
 static void
@@ -2683,7 +2682,8 @@ netcon_finish_shutdown(net_info_t *netcon)
 
     if (num_connected_net(port, true) == 0) {
 	start_shutdown_port(port, "All network connections free");
-	sel_run(port->runshutdown, shutdown_port_timer, port);
+	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
+	    sel_run(port->runshutdown, start_shutdown_port_io, port);
     } else {
 	check_port_new_net(port, netcon);
     }
@@ -2748,8 +2748,10 @@ shutdown_port(port_info_t *port, char *reason)
 	}
     }
 
-    if (!some_to_close)
-	sel_run(port->runshutdown, shutdown_port_timer, port);
+    if (!some_to_close) {
+	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
+	    sel_run(port->runshutdown, start_shutdown_port_io, port);
+    }
 }
 
 void
