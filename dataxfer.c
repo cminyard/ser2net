@@ -3780,7 +3780,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     case 1: /* SET-BAUDRATE */
 	if (len == 3) {
 	    cisco_ios_baud_rates = 1;
-	    val = option[2];
+	    val = cisco_baud_to_baud(option[2]);
 	} else {
 	    if (len < 6)
 		return;
@@ -3793,13 +3793,12 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    val |= option[5];
 	}
 
-	port->io.f->baud_rate(&port->io, &val, cisco_ios_baud_rates,
-			      &port->bps);
+	port->io.f->baud_rate(&port->io, &val, &port->bps);
 	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 101;
 	if (cisco_ios_baud_rates) {
-	    outopt[2] = val;
+	    outopt[2] = baud_to_cisco_baud(val);
 	    telnet_send_option(&netcon->tn_data, outopt, 3);
 	} else {
 	    /* Basically the same as:

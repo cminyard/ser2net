@@ -99,32 +99,24 @@ struct solcfg_data {
 static struct baud_rates_s {
     int real_rate;
     int val;
-    int cisco_ios_val;
 } baud_rates[] =
 {
-    { 9600, IPMI_SOL_BIT_RATE_9600, 8 },
-    { 19200, IPMI_SOL_BIT_RATE_19200, 10 },
-    { 38400, IPMI_SOL_BIT_RATE_38400, 12 },
-    { 57600, IPMI_SOL_BIT_RATE_57600, 13 },
-    { 115200, IPMI_SOL_BIT_RATE_115200, 14 },
+    { 9600, IPMI_SOL_BIT_RATE_9600 },
+    { 19200, IPMI_SOL_BIT_RATE_19200 },
+    { 38400, IPMI_SOL_BIT_RATE_38400 },
+    { 57600, IPMI_SOL_BIT_RATE_57600 },
+    { 115200, IPMI_SOL_BIT_RATE_115200 },
 };
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
 static int
-get_sol_baud_rate(int rate, int cisco, int *val)
+get_sol_baud_rate(int rate, int *val)
 {
     unsigned int i;
     for (i = 0; i < BAUD_RATES_LEN; i++) {
-	if (cisco) {
-	    if (rate == baud_rates[i].cisco_ios_val) {
-		*val = baud_rates[i].val;
-		return 1;
-	    }
-	} else {
-	    if (rate == baud_rates[i].real_rate) {
-		*val = baud_rates[i].val;
-		return 1;
-	    }
+	if (rate == baud_rates[i].real_rate) {
+	    *val = baud_rates[i].val;
+	    return 1;
 	}
     }
 
@@ -132,28 +124,16 @@ get_sol_baud_rate(int rate, int cisco, int *val)
 }
 
 static int
-get_rate_from_sol_baud_rate(int baud_rate, int cisco)
+get_rate_from_sol_baud_rate(int baud_rate)
 {
     unsigned int i;
-    int val = 0;
 
     for (i = 0; i < BAUD_RATES_LEN; i++) {
-	if (baud_rate == baud_rates[i].val) {
-	    if (cisco) {
-		if (baud_rates[i].cisco_ios_val < 0)
-		    /* We are at a baud rate unsupported by the
-		       enumeration, just return zero. */
-		    val = 0;
-		else
-		    val = baud_rates[i].cisco_ios_val;
-	    } else {
-		val = baud_rates[i].real_rate;
-	    }
-	    break;
-	}
+	if (baud_rate == baud_rates[i].val)
+	    return baud_rates[i].real_rate;
     }
 
-    return val;
+    return 0;
 }
 
 
@@ -386,20 +366,20 @@ static int solcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     return -1;
 }
 
-static int solcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
+static int solcfg_baud_rate(struct devio *io, int *val, int *bps)
 {
     struct solcfg_data *d = io->my_data;
     int sol_rate = 0;
 
     if (*val != 0) {
-	int err = get_sol_baud_rate(*val, cisco, &sol_rate);
+	int err = get_sol_baud_rate(*val, &sol_rate);
 	if (!err)
 	    ipmi_sol_set_bit_rate(d->sol, sol_rate);
     }
 
     sol_rate = ipmi_sol_get_bit_rate(d->sol);
-    *val = get_rate_from_sol_baud_rate(sol_rate, cisco);
-    *bps = get_rate_from_sol_baud_rate(sol_rate, 0);
+    *val = get_rate_from_sol_baud_rate(sol_rate);
+    *bps = get_rate_from_sol_baud_rate(sol_rate);
     return 0;
 }
 
@@ -639,7 +619,7 @@ static int solcfg_setup(struct devio *io, const char *name, const char **errstr,
 
     ipmi_sol_set_bit_rate(d->sol, d->speed);
 
-    *bps = get_rate_from_sol_baud_rate(d->speed, 0);
+    *bps = get_rate_from_sol_baud_rate(d->speed);
     *bpc = 10;
 
     d->ready = 0;

@@ -124,13 +124,7 @@ stel_baud(struct sergenio *snet, int baud,
     buf[0] = 44;
     buf[1] = 1;
     if (sdata->cisco_baud) {
-	int val;
-
-	/* Convert an integer baud rate to a cisco baud rate. */
-	if (!get_baud_rate(baud, &val, false, NULL))
-	    val = 0;
-	else
-	    get_rate_from_baud_rate(val, &val, true, NULL);
+	buf[2] = baud_to_cisco_baud(baud);
 	telnet_send_option(&sdata->tn_data, buf, 3);
     } else {
 	buf[2] = baud >> 24;
@@ -528,7 +522,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     switch (option[1]) {
     case 1:
 	if (len == 3) {
-	    get_baud_rate(option[2], NULL, true, &val);
+	    sdata->cisco_baud = true;
+	    val = cisco_baud_to_baud(option[2]);
 	} else if (len >= 6) {
 	    val = option[2] << 24;
 	    val |= option[3] << 16;
@@ -559,7 +554,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     UNLOCK(sdata->lock);
 
     if (curr) {
-	curr->done(&sdata->snet, 0, val, curr->cb_data);
+	if (curr->done)
+	    curr->done(&sdata->snet, 0, val, curr->cb_data);
 	free(curr);
     }
 }
@@ -581,7 +577,7 @@ sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
 			void *cb_data)
 {
     struct stel_data *sdata = cb_data;
-    struct timeval timeout = {1, 0};
+    struct timeval timeout;
     struct stel_req *req, *curr, *prev = NULL, *to_complete = NULL;
 
     LOCK(sdata->lock);
@@ -621,6 +617,8 @@ sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
 	free(prev);
     }
 
+    sel_get_monotonic_time(&timeout);
+    timeout.tv_sec += 1;
     sel_start_timer(timer, &timeout);
 }
 
@@ -631,6 +629,7 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 		      struct sergenio **snet)
 {
     struct stel_data *sdata = malloc(sizeof(*sdata));
+    struct timeval timeout;
     int err;
 
     if (!sdata)
@@ -658,6 +657,10 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 	sel_free_timer(sdata->timer);
 	free(sdata);
     }
+
+    sel_get_monotonic_time(&timeout);
+    timeout.tv_sec += 1;
+    sel_start_timer(sdata->timer, &timeout);
 
     return err;
 }
