@@ -271,40 +271,38 @@ int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
 static struct baud_rates_s {
     int real_rate;
     int val;
-    int cisco_ios_val;
 } baud_rates[] =
 {
-    { 50, B50, -1 },
-    { 75, B75, -1 },
-    { 110, B110, -1 },
-    { 134, B134, -1 },
-    { 150, B150, -1 },
-    { 200, B200, -1 },
-    { 300, B300, 3 },
-    { 600, B600 , 4},
-    { 1200, B1200, 5 },
-    { 1800, B1800, -1 },
-    { 2400, B2400, 6 },
-    { 4800, B4800, 7 },
-    { 9600, B9600, 8 },
+    { 50, B50 },
+    { 75, B75 },
+    { 110, B110 },
+    { 134, B134 },
+    { 150, B150 },
+    { 200, B200 },
+    { 300, B300 },
+    { 600, B600 },
+    { 1200, B1200 },
+    { 1800, B1800 },
+    { 2400, B2400 },
+    { 4800, B4800 },
+    { 9600, B9600 },
     /* We don't support 14400 baud */
-    { 19200, B19200, 10 },
+    { 19200, B19200 },
     /* We don't support 28800 baud */
-    { 38400, B38400, 12 },
-    { 57600, B57600, 13 },
-    { 115200, B115200, 14 },
-    { 230400, B230400, 15 },
+    { 38400, B38400 },
+    { 57600, B57600 },
+    { 115200, B115200 },
+    { 230400, B230400 },
     /* We don't support 460800 baud */
 };
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
 int
-get_baud_rate(int rate, int *val, bool cisco, int *bps)
+get_baud_rate(int rate, int *val, int *bps)
 {
     unsigned int i;
     for (i = 0; i < BAUD_RATES_LEN; i++) {
-	if ((cisco && rate == baud_rates[i].cisco_ios_val) ||
-			(!cisco && rate == baud_rates[i].real_rate)) {
+	if (rate == baud_rates[i].real_rate) {
 	    if (val)
 		*val = baud_rates[i].val;
 	    if (bps)
@@ -317,23 +315,14 @@ get_baud_rate(int rate, int *val, bool cisco, int *bps)
 }
 
 void
-get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps)
+get_rate_from_baud_rate(int baud_rate, int *val, int *bps)
 {
     unsigned int i;
     int rval;
 
     for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
-	    if (cisco) {
-		if (baud_rates[i].cisco_ios_val < 0)
-		    /* We are at a baud rate unsupported by the
-		       enumeration, just return zero. */
-		    rval = 0;
-		else
-		    rval = baud_rates[i].cisco_ios_val;
-	    } else {
-		rval = baud_rates[i].real_rate;
-	    }
+	    rval = baud_rates[i].real_rate;
 	    if (val)
 		*val = rval;
 	    if (bps)
@@ -343,4 +332,47 @@ get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps)
     }
 
     *val = 0;
+}
+
+static struct cisco_baud_rates_s {
+    int real_rate;
+    int cisco_ios_val;
+} cisco_baud_rates[] = {
+    { 300, 3 },
+    { 600 , 4},
+    { 1200, 5 },
+    { 2400, 6 },
+    { 4800, 7 },
+    { 9600, 8 },
+    { 19200, 10 },
+    { 38400, 12 },
+    { 57600, 13 },
+    { 115200, 14 },
+    { 230400, 15 },
+};
+#define CISCO_BAUD_RATES_LEN \
+    ((sizeof(cisco_baud_rates) / sizeof(struct cisco_baud_rates_s)))
+
+int cisco_baud_to_baud(int cisco_val)
+{
+    unsigned int i;
+
+    for (i = 0; i < CISCO_BAUD_RATES_LEN; i++) {
+	if (cisco_val == cisco_baud_rates[i].cisco_ios_val)
+	    return cisco_baud_rates[i].real_rate;
+    }
+
+    return 0;
+}
+
+int baud_to_cisco_baud(int val)
+{
+    unsigned int i;
+
+    for (i = 0; i < CISCO_BAUD_RATES_LEN; i++) {
+	if (val == cisco_baud_rates[i].real_rate)
+	    return cisco_baud_rates[i].cisco_ios_val;
+    }
+
+    return 0;
 }

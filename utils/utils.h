@@ -56,22 +56,32 @@ struct absout {
 };
 
 /*
- * Given an integer baud rate (300 for 300baud, for instance) if
- * "cisco" is false, or an cisco IOS baud rate if "cisco" is true,
+ * Given an integer baud rate (300 for 300baud, for instance),
  * return the termios value for the given baud rate.  Returns 1 if
  * successful and 0 if the given integer baud rate is not supported.
  * If successful, the integer baud rate is returned in bps if that is
  * not NULL;
  */
-int get_baud_rate(int rate, int *val, bool cisco, int *bps);
+int get_baud_rate(int rate, int *val, int *bps);
 
 /*
  * Given the termios value in "baud_rate", return either the actual
- * integer baud rate in "val" if cisco is false, or the Cisco IOS baud
- * rate in "val" if cisco is true.  Always return the actual integer
+ * integer baud rate in "val".  Always return the actual integer
  * baud rate in bps if that is not NULL.  If the baud rate is not
  * supported, val is set to zero and bps is undefined.
  */
-void get_rate_from_baud_rate(int baud_rate, int *val, bool cisco, int *bps);
+void get_rate_from_baud_rate(int baud_rate, int *val, int *bps);
+
+/*
+ * Convert a Cisco version RFC2217 baud rate to an integer baud rate.
+ * Returns 0 if unsuccessful.
+ */
+int cisco_baud_to_baud(int cisco_val);
+
+/*
+ * Convert an integer baud rate to a Cisco version RFC2217 baud rate.
+ * Returns 0 if unsuccessful.
+ */
+int baud_to_cisco_baud(int val);
 
 #endif /* UTILS */

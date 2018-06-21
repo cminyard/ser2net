@@ -1058,7 +1058,7 @@ static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     return 0;
 }
 
-static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
+static int devcfg_baud_rate(struct devio *io, int *val, int *bps)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -1068,7 +1068,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
 	return -1;
     }
 
-    if ((*val != 0) && (get_baud_rate(*val, val, cisco, NULL))) {
+    if ((*val != 0) && (get_baud_rate(*val, val, NULL))) {
 	/* We have a valid baud rate. */
 	cfsetispeed(&termio, *val);
 	cfsetospeed(&termio, *val);
@@ -1077,7 +1077,7 @@ static int devcfg_baud_rate(struct devio *io, int *val, int cisco, int *bps)
 
     tcgetattr(d->devfd, &termio);
     *val = cfgetispeed(&termio);
-    get_rate_from_baud_rate(*val, val, cisco, bps);
+    get_rate_from_baud_rate(*val, val, bps);
 
     return 0;
 }
