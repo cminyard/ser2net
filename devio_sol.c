@@ -366,20 +366,19 @@ static int solcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
     return -1;
 }
 
-static int solcfg_baud_rate(struct devio *io, int *val, int *bps)
+static int solcfg_baud_rate(struct devio *io, int *val)
 {
     struct solcfg_data *d = io->my_data;
     int sol_rate = 0;
 
     if (*val != 0) {
-	int err = get_sol_baud_rate(*val, &sol_rate);
-	if (!err)
+	if (get_sol_baud_rate(*val, &sol_rate))
 	    ipmi_sol_set_bit_rate(d->sol, sol_rate);
     }
 
     sol_rate = ipmi_sol_get_bit_rate(d->sol);
     *val = get_rate_from_sol_baud_rate(sol_rate);
-    *bps = get_rate_from_sol_baud_rate(sol_rate);
+
     return 0;
 }
 
