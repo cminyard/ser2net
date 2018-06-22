@@ -23,10 +23,6 @@
 #include "utils/utils.h"
 #include "controller.h"
 
-#ifdef USE_UUCP_LOCKING
-extern int uucp_locking_enabled;
-#endif
-
 #ifdef linux
 
 #include <linux/serial.h>
