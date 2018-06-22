@@ -149,138 +149,13 @@ static int
 set_termios_from_speed(struct devcfg_data *d, struct termios *termctl,
 		       int speed, const char *others)
 {
-    switch (speed) {
-    case 300:
-	cfsetospeed(termctl, B300);
-	cfsetispeed(termctl, B300);
-	break;
+    int speed_val;
 
-    case 600:
-	cfsetospeed(termctl, B600);
-	cfsetispeed(termctl, B600);
-	break;
-
-    case 1200:
-	cfsetospeed(termctl, B1200);
-	cfsetispeed(termctl, B1200);
-	break;
-
-    case 2400:
-	cfsetospeed(termctl, B2400);
-	cfsetispeed(termctl, B2400);
-	break;
-
-    case 4800:
-	cfsetospeed(termctl, B4800);
-	cfsetispeed(termctl, B4800);
-	break;
-
-    case 9600:
-	cfsetospeed(termctl, B9600);
-	cfsetispeed(termctl, B9600);
-	break;
-
-    case 19200:
-	cfsetospeed(termctl, B19200);
-	cfsetispeed(termctl, B19200);
-	break;
-
-    case 38400:
-	cfsetospeed(termctl, B38400);
-	cfsetispeed(termctl, B38400);
-	break;
-
-    case 57600:
-	cfsetospeed(termctl, B57600);
-	cfsetispeed(termctl, B57600);
-	break;
-
-    case 115200:
-	cfsetospeed(termctl, B115200);
-	cfsetispeed(termctl, B115200);
-	break;
-
-#ifdef B230400
-    case 230400:
-	cfsetospeed(termctl, B230400);
-	cfsetispeed(termctl, B230400);
-	break;
-#endif
-#ifdef B460800
-    case 460800:
-	cfsetospeed(termctl, B460800);
-	cfsetispeed(termctl, B460800);
-	break;
-#endif
-#ifdef B500000
-    case 500000:
-	cfsetospeed(termctl, B500000);
-	cfsetispeed(termctl, B500000);
-	break;
-#endif
-#ifdef B576000
-    case 576000:
-	cfsetospeed(termctl, B576000);
-	cfsetispeed(termctl, B576000);
-	break;
-#endif
-#ifdef B921600
-    case 921600:
-	cfsetospeed(termctl, B921600);
-	cfsetispeed(termctl, B921600);
-	break;
-#endif
-#ifdef B1000000
-    case 1000000:
-	cfsetospeed(termctl, B1000000);
-	cfsetispeed(termctl, B1000000);
-	break;
-#endif
-#ifdef B1152000
-    case 1152000:
-	cfsetospeed(termctl, B1152000);
-	cfsetispeed(termctl, B1152000);
-	break;
-#endif
-#ifdef B1500000
-    case 1500000:
-	cfsetospeed(termctl, B1500000);
-	cfsetispeed(termctl, B1500000);
-	break;
-#endif
-#ifdef B2000000
-    case 2000000:
-	cfsetospeed(termctl, B2000000);
-	cfsetispeed(termctl, B2000000);
-	break;
-#endif
-#ifdef B2500000
-    case 2500000:
-	cfsetospeed(termctl, B2500000);
-	cfsetispeed(termctl, B2500000);
-	break;
-#endif
-#ifdef B3000000
-    case 3000000:
-	cfsetospeed(termctl, B3000000);
-	cfsetispeed(termctl, B3000000);
-	break;
-#endif
-#ifdef B3500000
-    case 3500000:
-	cfsetospeed(termctl, B3500000);
-	cfsetispeed(termctl, B3500000);
-	break;
-#endif
-#ifdef B4000000
-    case 4000000:
-	cfsetospeed(termctl, B4000000);
-	cfsetispeed(termctl, B4000000);
-	break;
-#endif
-    default:
+    if (!get_baud_rate(speed, &speed_val))
 	return -1;
-    }
+
+    cfsetospeed(termctl, speed_val);
+    cfsetispeed(termctl, speed_val);
 
     if (*others) {
 	enum parity_vals val;
@@ -460,65 +335,6 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
     return rv;
 }
 
-static char *
-baud_string(int speed)
-{
-    char *str;
-    switch (speed) {
-    case B300: str = "300"; break;
-    case B600: str = "600"; break;
-    case B1200: str = "1200"; break;
-    case B2400: str = "2400"; break;
-    case B4800: str = "4800"; break;
-    case B9600: str = "9600"; break;
-    case B19200: str = "19200"; break;
-    case B38400: str = "38400"; break;
-    case B57600: str = "57600"; break;
-    case B115200: str = "115200"; break;
-#ifdef B230400
-    case B230400: str = "230400"; break;
-#endif
-#ifdef B460800
-    case B460800: str = "460800"; break;
-#endif
-#ifdef B500000
-    case B500000: str = "500000"; break;
-#endif
-#ifdef B576000
-    case B576000: str = "576000"; break;
-#endif
-#ifdef B921600
-    case B921600: str = "921600"; break;
-#endif
-#ifdef B1000000
-    case B1000000: str = "1000000"; break;
-#endif
-#ifdef B1152000
-    case B1152000: str = "1152000"; break;
-#endif
-#ifdef B1500000
-    case B1500000: str = "1500000"; break;
-#endif
-#ifdef B2000000
-    case B2000000: str = "2000000"; break;
-#endif
-#ifdef B2500000
-    case B2500000: str = "2500000"; break;
-#endif
-#ifdef B3000000
-    case B3000000: str = "3000000"; break;
-#endif
-#ifdef B3500000
-    case B3500000: str = "3500000"; break;
-#endif
-#ifdef B4000000
-    case B4000000: str = "4000000"; break;
-#endif
-    default: str = "unknown speed";
-    }
-    return str;
-}
-
 static void
 devcfg_serparm_to_str(struct devio *io, char *str, int strlen)
 {
@@ -529,10 +345,10 @@ devcfg_serparm_to_str(struct devio *io, char *str, int strlen)
     int     databits = termctl->c_cflag & CSIZE;
     int     parity_enabled = termctl->c_cflag & PARENB;
     int     parity = termctl->c_cflag & PARODD;
-    char    *sstr;
+    const char *sstr;
     char    pchar, schar, dchar;
 
-    sstr = baud_string(speed);
+    sstr = get_baud_rate_str(speed);
 
     if (stopbits)
 	schar = '2';
@@ -578,7 +394,7 @@ devcfg_show_devcfg(struct devio *io, struct absout *out)
     int     hangup_when_done = termctl->c_cflag & HUPCL;
     char    *str;
 
-    out->out(out, "%s ", baud_string(speed));
+    out->out(out, "%s ", get_baud_rate_str(speed));
 
     if (xon && xoff && xany) {
       out->out(out, "XONXOFF ");

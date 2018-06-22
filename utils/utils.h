@@ -63,6 +63,11 @@ struct absout {
 int get_baud_rate(int rate, int *val);
 
 /*
+ * Given a termios baud rate value, return a string value for it.
+ */
+const char *get_baud_rate_str(int baud_rate);
+
+/*
  * Given the termios value in "baud_rate", return the actual
  * integer baud rate in "val".  If the baud rate is not
  * supported, val is set to zero.
