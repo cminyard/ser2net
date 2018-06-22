@@ -3793,7 +3793,8 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    val |= option[5];
 	}
 
-	port->io.f->baud_rate(&port->io, &val, &port->bps);
+	port->io.f->baud_rate(&port->io, &val);
+	port->bps = val;
 	recalc_port_chardelay(port);
 	outopt[0] = 44;
 	outopt[1] = 101;

@@ -298,15 +298,13 @@ static struct baud_rates_s {
 #define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
 
 int
-get_baud_rate(int rate, int *val, int *bps)
+get_baud_rate(int rate, int *val)
 {
     unsigned int i;
     for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (rate == baud_rates[i].real_rate) {
 	    if (val)
 		*val = baud_rates[i].val;
-	    if (bps)
-		*bps = baud_rates[i].real_rate;
 	    return 1;
 	}
     }
@@ -315,18 +313,13 @@ get_baud_rate(int rate, int *val, int *bps)
 }
 
 void
-get_rate_from_baud_rate(int baud_rate, int *val, int *bps)
+get_rate_from_baud_rate(int baud_rate, int *val)
 {
     unsigned int i;
-    int rval;
 
     for (i = 0; i < BAUD_RATES_LEN; i++) {
 	if (baud_rate == baud_rates[i].val) {
-	    rval = baud_rates[i].real_rate;
-	    if (val)
-		*val = rval;
-	    if (bps)
-		*bps = baud_rates[i].real_rate;
+	    *val = baud_rates[i].real_rate;
 	    return;
 	}
     }
