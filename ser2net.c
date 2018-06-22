@@ -37,6 +37,7 @@
 #include "utils/utils.h"
 #include "utils/selector.h"
 #include "utils/locking.h"
+#include "utils/uucplock.h"
 #include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
@@ -51,9 +52,6 @@ static int detach = 1;
 int ser2net_debug = 0;
 int ser2net_debug_level = 0;
 volatile int in_shutdown = 0;
-#ifdef USE_UUCP_LOCKING
-int uucp_locking_enabled = 1;
-#endif
 #ifdef USE_PTHREADS
 int num_threads = 1;
 struct thread_info {
@@ -79,9 +77,7 @@ static char *help_string =
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
 "  -l - Increate the debugging level\n"
-#ifdef USE_UUCP_LOCKING
 "  -u - Disable UUCP locking\n"
-#endif
 #ifdef USE_PTHREADS
 "  -t <num threads> - Use the given number of threads, default 1\n"
 #endif
@@ -601,11 +597,9 @@ main(int argc, char *argv[])
 	    pid_file = argv[i];
 	    break;
 
-#ifdef USE_UUCP_LOCKING
 	case 'u':
 	    uucp_locking_enabled = 0;
 	    break;
-#endif
 
 	case 'v':
 	    printf("%s version %s\n", argv[0], VERSION);
