@@ -70,11 +70,6 @@ struct genio_callbacks {
      * on TCP sockets.  Optional.
      */
     void (*urgent_callback)(struct genio *net);
-
-    /*
-     * Called when a close operation completes.  May be NULL.
-     */
-    void (*close_done)(struct genio *net);
 };
 
 /*
@@ -135,11 +130,27 @@ int genio_raddr_to_str(struct genio *net, int *pos,
  */
 socklen_t genio_get_raddr(struct genio *net,
 			  struct sockaddr *addr, socklen_t addrlen);
+
+/*
+ * Open the genio.  genios recevied from an acceptor are open upon
+ * receipt, but client genios are started closed and need to be opened
+ * before use.
+ */
+int genio_open(struct genio *net);
+
 /*
  * Close the genio.  Note that the close operation is not complete
- * until close_done() is called.
+ * until close_done() is called.  This shuts down internal file
+ * descriptors and such, but does not free the genio.
  */
-void genio_close(struct genio *net);
+int genio_close(struct genio *net, void (*close_done)(struct genio *net));
+
+/*
+ * Frees data assoicated with the genio.  If it is open, the genio is
+ * closed.  Note that you should not call genio_free() after genio_close()
+ * before the done callback is called.  The results are undefined.
+ */
+void genio_free(struct genio *net);
 
 /*
  * Enable or disable data to be read from the network connection.
@@ -259,6 +270,10 @@ int stdio_genio_acceptor_alloc(struct selector_s *sel,
 
 /* Client allocators. */
 
+/*
+ * Create a TCP genio for the given ai.  Note that if this function
+ * does not return an error, it takes over ai and frees it when done.
+ */
 int tcp_genio_alloc(struct addrinfo *ai,
 		    struct selector_s *sel,
 		    unsigned int max_read_size,
@@ -266,6 +281,10 @@ int tcp_genio_alloc(struct addrinfo *ai,
 		    void *user_data,
 		    struct genio **new_genio);
 
+/*
+ * Create a UDP genio for the given ai.  It uses the first entry
+ * in ai.
+ */
 int udp_genio_alloc(struct addrinfo *ai,
 		    struct selector_s *sel,
 		    unsigned int max_read_size,
@@ -284,7 +303,7 @@ int stdio_genio_alloc(char *const argv[],
 /*
  * Compare two sockaddr structure and return TRUE if they are equal
  * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
- * If a2->sin_port is zero, then the port comparison is ignored.
+ * If compare_ports is false, then the port comparison is ignored.
  */
 bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
 		    const struct sockaddr *a2, socklen_t l2,

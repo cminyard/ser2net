@@ -118,10 +118,19 @@ static struct telnet_cmd telnet_cmds[] =
 static void
 shutdown_controller2(controller_info_t *cntlr)
 {
+}
+
+static void
+controller_close_done(struct genio *net)
+{
+    controller_info_t *cntlr = genio_get_user_data(net);
+
     controller_info_t *prev;
     controller_info_t *curr;
     void (*shutdown_complete)(void *);
     void *shutdown_complete_cb_data;
+
+    genio_free(net);
 
     FREE_LOCK(cntlr->lock);
 
@@ -179,9 +188,7 @@ shutdown_controller(controller_info_t *cntlr)
     cntlr->in_shutdown = 1;
     UNLOCK(cntlr->lock);
 
-    genio_close(cntlr->net);
-    /* The rest is handled in the close_done callback, which calls
-       shutdown_controller2. */
+    genio_close(cntlr->net, controller_close_done);
 }
 
 /* Send some output to the control connection.  This allocates and
@@ -677,18 +684,9 @@ controller_write_ready(struct genio *net)
     shutdown_controller(cntlr); /* Releases the lock */
 }
 
-static void
-controller_close_done(struct genio *net)
-{
-    controller_info_t *cntlr = genio_get_user_data(net);
-
-    shutdown_controller2(cntlr);
-}
-
 struct genio_callbacks controller_genio_callbacks = {
     .read_callback = controller_read,
     .write_callback = controller_write_ready,
-    .close_done = controller_close_done
 };
 
 /* A connection request has come in for the control port. */
@@ -749,7 +747,7 @@ errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
     genio_write(net, NULL, err, strlen(err));
-    genio_close(net);
+    genio_free(net);
 }
 
 static void

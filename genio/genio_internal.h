@@ -39,7 +39,11 @@ struct genio_functions {
     socklen_t (*get_raddr)(struct genio *net,
 			   struct sockaddr *addr, socklen_t addrlen);
 
-    void (*close)(struct genio *net);
+    int (*open)(struct genio *net);
+
+    int (*close)(struct genio *net, void (*close_done)(struct genio *net));
+
+    void (*free)(struct genio *net);
 
     void (*set_read_callback_enable)(struct genio *net, bool enabled);
 
