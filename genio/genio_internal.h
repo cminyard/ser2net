@@ -66,7 +66,8 @@ struct genio {
 struct genio_acceptor_functions {
     int (*startup)(struct genio_acceptor *acceptor);
 
-    int (*shutdown)(struct genio_acceptor *acceptor);
+    int (*shutdown)(struct genio_acceptor *acceptor,
+		    void (*shutdown_done)(struct genio_acceptor *acceptor));
 
     void (*set_accept_callback_enable)(struct genio_acceptor *acceptor,
 				       bool enabled);

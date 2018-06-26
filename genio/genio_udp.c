@@ -108,6 +108,7 @@ struct udpna_data {
     bool enabled;
     bool closed;
     bool in_shutdown;
+    void (*shutdown_done)(struct genio_acceptor *acceptor);
 
     struct addrinfo    *ai;		/* The address list for the portname. */
     struct opensocks   *fds;		/* The file descriptor used for
@@ -465,9 +466,9 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
     if (nadata->in_shutdown && !nadata->in_new_connection) {
 	struct genio_acceptor *acceptor = &nadata->acceptor;
 
-	if (acceptor->cbs->shutdown_done) {
+	if (nadata->shutdown_done) {
 	    UNLOCK(nadata->lock);
-	    acceptor->cbs->shutdown_done(acceptor);
+	    nadata->shutdown_done(acceptor);
 	    LOCK(nadata->lock);
 	}
 	nadata->in_shutdown = false;
@@ -792,9 +793,9 @@ udpna_readhandler(int fd, void *cbdata)
     if (nadata->in_shutdown) {
 	struct genio_acceptor *acceptor = &nadata->acceptor;
 
+	if (nadata->shutdown_done)
+	    nadata->shutdown_done(acceptor);
 	nadata->in_shutdown = false;
-	if (acceptor->cbs->shutdown_done)
-	    acceptor->cbs->shutdown_done(acceptor);
     }
     udpna_check_finish_free(nadata);
     goto out_unlock;
@@ -835,7 +836,8 @@ udpna_startup(struct genio_acceptor *acceptor)
 }
 
 static int
-udpna_shutdown(struct genio_acceptor *acceptor)
+udpna_shutdown(struct genio_acceptor *acceptor,
+	       void (*shutdown_done)(struct genio_acceptor *acceptor))
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -845,6 +847,7 @@ udpna_shutdown(struct genio_acceptor *acceptor)
 	nadata->enabled = false;
 	nadata->setup = false;
 	nadata->in_shutdown = true;
+	nadata->shutdown_done = shutdown_done;
 	if (!nadata->in_new_connection && !nadata->deferred_op_pending) {
 	    nadata->deferred_op_pending = true;
 	    sel_run(nadata->deferred_op_runner, udpna_deferred_op, nadata);

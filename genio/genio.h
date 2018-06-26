@@ -170,11 +170,6 @@ struct genio_acceptor_callbacks {
      * A new net connection for the acceptor is in net.
      */
     void (*new_connection)(struct genio_acceptor *acceptor, struct genio *net);
-
-    /*
-     * The shutdown operation is complete.  May be NULL.
-     */
-    void (*shutdown_done)(struct genio_acceptor *acceptor);
 };
 
 /*
@@ -199,12 +194,14 @@ int genio_acc_startup(struct genio_acceptor *acceptor);
 
 /*
  * Closes all sockets and disables everything.  shutdown_complete()
- * will be called if successful after the shutdown is complete.
+ * will be called if successful after the shutdown is complete, if it
+ * is not NULL.
  *
  * Returns a EAGAIN if the acceptor is already shut down, zero
  * otherwise.
  */
-int genio_acc_shutdown(struct genio_acceptor *acceptor);
+int genio_acc_shutdown(struct genio_acceptor *acceptor,
+		       void (*shutdown_done)(struct genio_acceptor *acceptor));
 
 /*
  * Enable the accept callback when connections come in.

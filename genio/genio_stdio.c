@@ -47,7 +47,7 @@ struct stdiona_data {
     /* For the acceptor only. */
     bool in_free;
     bool in_shutdown;
-    bool report_shutdown;
+    void (*shutdown_done)(struct genio_acceptor *acceptor);
 
     bool read_enabled;
     bool in_read;
@@ -541,12 +541,17 @@ stdiona_fd_cleared(int fd, void *cbdata)
 
     fcntl(0, F_SETFL, nadata->old_flags);
 
-    nadata->in_shutdown = false;
-    if (acceptor->cbs->shutdown_done && nadata->report_shutdown)
-	acceptor->cbs->shutdown_done(acceptor);
+    if (nadata->shutdown_done)
+	nadata->shutdown_done(acceptor);
 
-    if (nadata->in_free)
+    LOCK(nadata->lock);
+    nadata->in_shutdown = false;
+    if (nadata->in_free) {
+	UNLOCK(nadata->lock);
 	stdiona_finish_free(nadata);
+    } else {
+	UNLOCK(nadata->lock);
+    }
 }
 
 static int
@@ -586,7 +591,8 @@ stdiona_startup(struct genio_acceptor *acceptor)
 }
 
 static int
-stdiona_shutdown(struct genio_acceptor *acceptor)
+stdiona_shutdown(struct genio_acceptor *acceptor,
+		 void (*shutdown_done)(struct genio_acceptor *acceptor))
 {
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -594,8 +600,8 @@ stdiona_shutdown(struct genio_acceptor *acceptor)
     LOCK(nadata->lock);
     if (nadata->enabled) {
 	nadata->enabled = false;
-	nadata->report_shutdown = true;
 	nadata->in_shutdown = true;
+	nadata->shutdown_done = shutdown_done;
 	sel_clear_fd_handlers(nadata->sel, 0);
     } else {
 	rv = EAGAIN;
