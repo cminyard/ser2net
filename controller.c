@@ -116,11 +116,6 @@ static struct telnet_cmd telnet_cmds[] =
 };
 
 static void
-shutdown_controller2(controller_info_t *cntlr)
-{
-}
-
-static void
 controller_close_done(struct genio *net)
 {
     controller_info_t *cntlr = genio_get_user_data(net);
@@ -758,7 +753,6 @@ controller_shutdown_done(struct genio_acceptor *net)
 
 struct genio_acceptor_callbacks controller_genio_acceptor_callbacks = {
     .new_connection = controller_new_connection,
-    .shutdown_done = controller_shutdown_done
 };
 
 /* Set up the controller port to accept connections. */
@@ -804,7 +798,7 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    genio_acc_shutdown(controller_acceptor);
+    genio_acc_shutdown(controller_acceptor, controller_shutdown_done);
     wait_for_waiter(accept_waiter, 1);
     genio_acc_free(controller_acceptor);
     controller_acceptor = NULL;

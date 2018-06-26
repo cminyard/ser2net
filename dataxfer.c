@@ -2100,7 +2100,7 @@ static void
 free_rotator(rotator_t *rot)
 {
     if (rot->acceptor) {
-	genio_acc_shutdown(rot->acceptor);
+	genio_acc_shutdown(rot->acceptor, handle_rot_shutdown_done);
 	wait_for_waiter(rotator_shutdown_wait, 1);
 	genio_acc_free(rot->acceptor);
     }
@@ -2127,7 +2127,6 @@ free_rotators(void)
 
 static const struct genio_acceptor_callbacks rotator_cbs = {
     .new_connection = handle_rot_accept,
-    .shutdown_done = handle_rot_shutdown_done
 };
 
 int
@@ -2334,7 +2333,8 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 	if (port->wait_acceptor_shutdown || port->acceptor_reinit_on_shutdown)
 	    /* Shutdown is already running. */
 	    return true;
-	return genio_acc_shutdown(port->acceptor) == 0;
+	return genio_acc_shutdown(port->acceptor,
+				  handle_port_shutdown_done) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
 	    int rv = startup_port(eout, port, is_reconfig);
@@ -2985,7 +2985,6 @@ myconfig(void *data, struct absout *eout, const char *pos)
 
 static const struct genio_acceptor_callbacks port_acceptor_cbs = {
     .new_connection = handle_port_accept,
-    .shutdown_done = handle_port_shutdown_done
 };
 
 /* Create a port based on a set of parameters passed in. */

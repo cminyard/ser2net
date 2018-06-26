@@ -327,9 +327,10 @@ genio_acc_startup(struct genio_acceptor *acceptor)
 }
 
 int
-genio_acc_shutdown(struct genio_acceptor *acceptor)
+genio_acc_shutdown(struct genio_acceptor *acceptor,
+		   void (*shutdown_done)(struct genio_acceptor *acceptor))
 {
-    return acceptor->funcs->shutdown(acceptor);
+    return acceptor->funcs->shutdown(acceptor, shutdown_done);
 }
 
 void
