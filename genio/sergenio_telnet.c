@@ -46,8 +46,11 @@ struct stel_data {
 
     struct sel_timer_s *timer;
 
-    bool in_close;
-    int close_count;
+    bool in_free;
+    bool closed;
+    unsigned int close_count;
+
+    void (*close_done)(struct genio *net);
 
     struct genio *net;
 
@@ -296,19 +299,11 @@ stel_get_raddr(struct genio *net,
 }
 
 static void
-check_finish_close(struct stel_data *sdata)
+stel_finish_free(struct stel_data *sdata)
 {
     struct stel_req *req, *prev;
 
-    LOCK(sdata->lock);
-    sdata->close_count--;
-    if (sdata->close_count > 0) {
-	UNLOCK(sdata->lock);
-	return;
-    }
-    UNLOCK(sdata->lock);
-
-    sdata->snet.net.cbs->close_done(&sdata->snet.net);
+    genio_free(sdata->net);
     sel_free_timer(sdata->timer);
     telnet_cleanup(&sdata->tn_data);
     req = sdata->reqs;
@@ -321,6 +316,30 @@ check_finish_close(struct stel_data *sdata)
 }
 
 static void
+check_finish_close(struct stel_data *sdata)
+{
+    LOCK(sdata->lock);
+    if (sdata->close_count > 1) {
+	sdata->close_count--;
+	UNLOCK(sdata->lock);
+	return;
+    }
+    UNLOCK(sdata->lock);
+
+    if (sdata->close_done)
+	sdata->close_done(&sdata->snet.net);
+
+    LOCK(sdata->lock);
+    sdata->close_count--; /* Keep stel_free() from freeing it. */
+    if (sdata->in_free) {
+	UNLOCK(sdata->lock);
+	stel_finish_free(sdata);
+    } else {
+	UNLOCK(sdata->lock);
+    }
+}
+
+static void
 stel_timer_stopped(struct selector_s *sel,
 		  struct sel_timer_s *timer,
 		  void *cb_data)
@@ -329,20 +348,77 @@ stel_timer_stopped(struct selector_s *sel,
 }
 
 static void
-stel_close(struct genio *net)
+stel_genio_close_done(struct genio *net)
+{
+    struct stel_data *sdata = genio_get_user_data(net);
+
+    check_finish_close(sdata);
+}
+
+static int
+stel_open(struct genio *net)
+{
+    struct stel_data *sdata = genio_get_user_data(net);
+    struct timeval timeout;
+    int err;
+
+    LOCK(sdata->lock);
+    if (sdata->closed && !sdata->close_count)
+    err = genio_open(sdata->net);
+
+    if (!err) {
+	sel_get_monotonic_time(&timeout);
+	timeout.tv_sec += 1;
+	sel_start_timer(sdata->timer, &timeout);
+    }
+
+    return err;
+}
+
+static void
+__stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net))
+{
+    sdata->close_done = close_done;
+    sdata->closed = true;
+    sdata->close_count = 2; /* One for timer and one for genio. */
+    UNLOCK(sdata->lock);
+    sel_stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
+    genio_close(sdata->net, stel_genio_close_done);
+}
+
+static int
+stel_close(struct genio *net, void (*close_done)(struct genio *net))
+{
+    struct stel_data *sdata = mygenio_to_stel(net);
+    int err = 0;
+
+    LOCK(sdata->lock);
+    if (sdata->closed || sdata->close_count) {
+	UNLOCK(sdata->lock);
+	err = EBUSY;
+    } else {
+	__stel_close(sdata, close_done); /* Releases lock. */
+    }
+
+    return err;
+}
+
+static void
+stel_free(struct genio *net)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
     LOCK(sdata->lock);
-    if (sdata->in_close) {
+    if (sdata->close_count) {
+	sdata->in_free = true;
+	sdata->close_done = NULL;
 	UNLOCK(sdata->lock);
-	return;
+    } else if (sdata->closed) {
+	UNLOCK(sdata->lock);
+	stel_finish_free(sdata);
+    } else {
+	__stel_close(sdata, NULL); /* Releases lock */
     }
-    sdata->in_close = true;
-    sdata->close_count = 2; /* One for timer and one for genio. */
-    UNLOCK(sdata->lock);
-    sel_stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
-    genio_close(sdata->net);
 }
 
 static void
@@ -372,7 +448,9 @@ static const struct genio_functions stel_net_funcs = {
     .write = stel_write,
     .raddr_to_str = stel_raddr_to_str,
     .get_raddr = stel_get_raddr,
+    .open = stel_open,
     .close = stel_close,
+    .free = stel_free,
     .set_read_callback_enable = stel_set_read_callback_enable,
     .set_write_callback_enable = stel_set_write_callback_enable
 };
@@ -481,19 +559,10 @@ stel_genio_urgent(struct genio *net)
     genio_set_read_callback_enable(sdata->net, true);
 }
 
-static void
-stel_genio_close_done(struct genio *net)
-{
-    struct stel_data *sdata = genio_get_user_data(net);
-
-    check_finish_close(sdata);
-}
-
 static const struct genio_callbacks stel_genio_callbacks = {
     .read_callback = stel_genio_read,
     .write_callback = stel_genio_write,
     .urgent_callback = stel_genio_urgent,
-    .close_done = stel_genio_close_done
 };
 
 static void
@@ -581,7 +650,7 @@ sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
     struct stel_req *req, *curr, *prev = NULL, *to_complete = NULL;
 
     LOCK(sdata->lock);
-    if (sdata->in_close) {
+    if (sdata->close_count) {
 	UNLOCK(sdata->lock);
 	return;
     }
@@ -629,7 +698,6 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 		      struct sergenio **snet)
 {
     struct stel_data *sdata = malloc(sizeof(*sdata));
-    struct timeval timeout;
     int err;
 
     if (!sdata)
@@ -657,10 +725,6 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 	sel_free_timer(sdata->timer);
 	free(sdata);
     }
-
-    sel_get_monotonic_time(&timeout);
-    timeout.tv_sec += 1;
-    sel_start_timer(sdata->timer, &timeout);
 
     return err;
 }

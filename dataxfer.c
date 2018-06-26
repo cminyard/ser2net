@@ -1888,8 +1888,7 @@ recalc_port_chardelay(port_info_t *port)
 static const struct genio_callbacks port_callbacks = {
     .read_callback = handle_net_fd_read,
     .write_callback = handle_net_fd_write,
-    .urgent_callback = handle_net_fd_urgent,
-    .close_done = handle_net_fd_closed
+    .urgent_callback = handle_net_fd_urgent
 };
 
 /* Called to set up a new connection's file descriptor. */
@@ -1917,7 +1916,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	    char *errstr = "Out of memory\r\n";
 
 	    genio_write(netcon->net, NULL, errstr, strlen(errstr));
-	    genio_close(netcon->net);
+	    genio_free(netcon->net);
 	    netcon->net = NULL;
 	    return -1;
 	}
@@ -1931,7 +1930,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 			      &port->bps, &port->bpc) == -1) {
 	    if (errstr)
 		genio_write(netcon->net, NULL, errstr, strlen(errstr));
-	    genio_close(netcon->net);
+	    genio_free(netcon->net);
 	    netcon->net = NULL;
 	    return -1;
 	}
@@ -2086,7 +2085,7 @@ handle_rot_accept(struct genio_acceptor *acceptor, struct genio *net)
 
     err = "No free port found\r\n";
     genio_write(net, NULL, err, strlen(err));
-    genio_close(net);
+    genio_free(net);
 }
 
 static waiter_t *rotator_shutdown_wait;
@@ -2183,7 +2182,7 @@ kick_old_user(port_info_t *port, net_info_t *netcon, struct genio *new_net)
     /* If another user is waiting for a kick, kick that user. */
     if (netcon->new_net) {
 	genio_write(netcon->new_net, NULL, err, strlen(err));
-	genio_close(netcon->new_net);
+	genio_free(netcon->new_net);
     }
 
     /* Wait it to be unconnected and clean, restart the process. */
@@ -2205,7 +2204,7 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 	char *err = "kicked off, new user is coming\r\n";
 
 	genio_write(netcon->new_net, NULL, err, strlen(err));
-	genio_close(netcon->new_net);
+	genio_free(netcon->new_net);
 	netcon->new_net = NULL;
 	return;
     }
@@ -2267,7 +2266,7 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
 	UNLOCK(port->lock);
 	UNLOCK(ports_lock);
 	genio_write(net, NULL, err, strlen(err));
-	genio_close(net);
+	genio_free(net);
 	return;
     }
 
@@ -2369,8 +2368,8 @@ free_port(port_info_t *port)
 	for_each_connection(port, netcon) {
 	    char *err = "Port was deleted\n\r";
 	    if (netcon->new_net) {
-		genio_write(netcon->new_net, NULL,err, strlen(err));
-		genio_close(netcon->new_net);
+		genio_write(netcon->new_net, NULL, err, strlen(err));
+		genio_free(netcon->new_net);
 	    }
 	    if (netcon->runshutdown)
 		sel_free_runner(netcon->runshutdown);
@@ -2696,6 +2695,7 @@ handle_net_fd_closed(struct genio *net)
     net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
 
+    genio_free(netcon->net);
     netcon->net = NULL;
 
     LOCK(port->lock);
@@ -2710,14 +2710,10 @@ static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
 {
     net_info_t *netcon = cb_data;
 
-    if (netcon->net) {
-	struct genio *net = netcon->net;
-
-	netcon->net = NULL;
-	genio_close(net);
-    } else {
+    if (netcon->net)
+	genio_close(netcon->net, handle_net_fd_closed);
+    else
 	netcon_finish_shutdown(netcon);
-    }
 }
 
 static void

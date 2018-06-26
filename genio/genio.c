@@ -277,10 +277,22 @@ genio_get_raddr(struct genio *net,
     return net->funcs->get_raddr(net, addr, addrlen);
 }
 
-void
-genio_close(struct genio *net)
+int
+genio_open(struct genio *net)
 {
-    net->funcs->close(net);
+    return net->funcs->open(net);
+}
+
+int
+genio_close(struct genio *net, void (*close_done)(struct genio *net))
+{
+    return net->funcs->close(net, close_done);
+}
+
+void
+genio_free(struct genio *net)
+{
+    return net->funcs->free(net);
 }
 
 void

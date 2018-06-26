@@ -36,19 +36,29 @@ struct stdiona_data {
 
     struct selector_s *sel;
 
+    int argc;
+    char **argv;
+
     sel_runner_t *connect_runner;
 
     bool enabled;
     int old_flags;
 
-    bool read_enabled;
-    bool in_read;
+    /* For the acceptor only. */
     bool in_free;
     bool in_shutdown;
     bool report_shutdown;
 
+    bool read_enabled;
+    bool in_read;
+
     bool user_set_read_enabled;
     bool user_read_enabled_setting;
+
+    /* For the client only. */
+    bool deferred_close; /* A close is pending the running running. */
+    bool closed;
+    void (*close_done)(struct genio *net);
 
     /*
      * If non-zero, this is the PID of the other process and we are
@@ -76,7 +86,6 @@ struct stdiona_data {
      */
     bool deferred_op_pending;
     sel_runner_t *deferred_op_runner;
-    bool deferred_close; /* A close is pending the running running. */
 
     struct genio net;
     struct genio_acceptor acceptor;
@@ -143,8 +152,8 @@ stdion_finish_close(struct stdiona_data *nadata)
 {
     struct genio *net = &nadata->net;
 
-    if (net->cbs && net->cbs->close_done)
-	net->cbs->close_done(net);
+    if (nadata->close_done)
+	nadata->close_done(net);
 }
 
 /* Must be called with ndata->lock held */
@@ -202,6 +211,7 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     LOCK(nadata->lock);
     nadata->deferred_op_pending = false;
     if (nadata->deferred_close) {
+	nadata->deferred_close = false;
 	UNLOCK(nadata->lock);
 	stdion_finish_close(nadata);
 	return;
@@ -212,19 +222,39 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 }
 
 static void
-stdion_close(struct genio *net)
+stdiona_finish_free(struct stdiona_data *nadata)
 {
-    struct stdiona_data *nadata = net_to_nadata(net);
+    if (nadata->argv) {
+	int i;
+
+	for (i = 0; nadata->argv[i]; i++)
+	    free(nadata->argv[i]);
+	free(nadata->argv);
+    }
+    if (nadata->deferred_op_runner)
+	sel_free_runner(nadata->deferred_op_runner);
+    if (nadata->connect_runner)
+	sel_free_runner(nadata->connect_runner);
+    if (nadata->read_data)
+	free(nadata->read_data);
+    free(nadata);
+}
+
+static void
+stdio_client_fd_cleared(int fd, void *cbdata)
+{
+    struct stdiona_data *nadata = cbdata;
 
     LOCK(nadata->lock);
-    nadata->deferred_close = true;
-    if (nadata->opid) {
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
-    } else if (!nadata->deferred_op_pending) {
-	nadata->deferred_op_pending = true;
-	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
+    nadata->oio_count--;
+    if (nadata->oio_count == 0) {
+	close(nadata->ostdin);
+	close(nadata->ostdout);
+	close(nadata->ostderr);
+	UNLOCK(nadata->lock);
+	stdion_finish_close(nadata);
+	LOCK(nadata->lock);
+	nadata->deferred_close = false;
     }
     UNLOCK(nadata->lock);
 }
@@ -334,24 +364,173 @@ stdion_write_ready(int fd, void *cbdata)
     net->cbs->write_callback(net);
 }
 
+static int
+stdion_open(struct genio *net)
+{
+    struct stdiona_data *nadata = net_to_nadata(net);
+    int err;
+    int stdinpipe[2] = {-1, -1};
+    int stdoutpipe[2] = {-1, -1};
+    int stderrpipe[2] = {-1, -1};
+
+    LOCK(nadata->lock);
+
+    if (!nadata->closed || nadata->deferred_close) {
+	err = EBUSY;
+	goto out_unlock;
+    }
+
+    err = pipe(stdinpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    err = pipe(stdoutpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    err = pipe(stderrpipe);
+    if (err) {
+	err = errno;
+	goto out_err;
+    }
+
+    nadata->ostdin = stdinpipe[1];
+    nadata->ostdout = stdoutpipe[0];
+    nadata->ostderr = stderrpipe[0];
+    err = sel_set_fd_handlers(nadata->sel, nadata->ostdout, nadata,
+			      stdion_read_ready, NULL, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    err = sel_set_fd_handlers(nadata->sel, nadata->ostderr, nadata,
+			      stdion_read_ready, NULL, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    err = sel_set_fd_handlers(nadata->sel, nadata->ostdin, nadata,
+			      NULL, stdion_write_ready, NULL,
+			      stdio_client_fd_cleared);
+    if (err)
+	goto out_err;
+    nadata->oio_count++;
+
+    nadata->opid = fork();
+    if (nadata->opid < 0) {
+	err = errno;
+	goto out_err;
+    }
+    UNLOCK(nadata->lock);
+    if (nadata->opid == 0) {
+	close(stdinpipe[1]);
+	close(stdoutpipe[0]);
+	close(stderrpipe[0]);
+	dup2(stdinpipe[0], 0);
+	dup2(stdoutpipe[1], 1);
+	dup2(stderrpipe[1], 2);
+
+	execvp(nadata->argv[0], nadata->argv);
+	exit(1); /* Only reached on error. */
+    }
+
+    close(stdinpipe[0]);
+    close(stdoutpipe[1]);
+    close(stderrpipe[1]);
+
+    return 0;
+
+ out_err:
+    if (stdinpipe[0] != -1)
+	close(stdinpipe[0]);
+    if (stdoutpipe[1] != -1)
+	close(stdoutpipe[1]);
+    if (stderrpipe[1] != -1)
+	close(stderrpipe[1]);
+
+    if (nadata->oio_count) {
+	if (nadata->oio_count > 0)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	if (nadata->oio_count > 1)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
+	if (nadata->oio_count > 2)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+    } else {
+	if (stdinpipe[1] != -1)
+	    close(stdinpipe[1]);
+	if (stdoutpipe[0] != -1)
+	    close(stdoutpipe[0]);
+	if (stderrpipe[0] != -1)
+	    close(stderrpipe[0]);
+    }
+ out_unlock:
+    UNLOCK(nadata->lock);
+
+    return err;
+}
+
+static void
+__stdion_close(struct stdiona_data *nadata,
+	       void (*close_done)(struct genio *net))
+{
+    nadata->closed = true;
+    nadata->deferred_close = true;
+    nadata->close_done = close_done;
+    if (nadata->argv) {
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
+    } else if (!nadata->deferred_op_pending) {
+	nadata->deferred_op_pending = true;
+	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
+    }
+}
+
+static int
+stdion_close(struct genio *net, void (*close_done)(struct genio *net))
+{
+    struct stdiona_data *nadata = net_to_nadata(net);
+    int err = 0;
+
+    LOCK(nadata->lock);
+    if (nadata->closed || nadata->deferred_close)
+	err = EBUSY;
+    else
+	__stdion_close(nadata, close_done);
+    UNLOCK(nadata->lock);
+
+    return err;
+}
+
+static void
+stdion_free(struct genio *net)
+{
+    struct stdiona_data *nadata = net_to_nadata(net);
+
+    LOCK(nadata->lock);
+    if (nadata->deferred_close) {
+	nadata->close_done = NULL;
+	UNLOCK(nadata->lock);
+    } else if (nadata->closed) {
+	UNLOCK(nadata->lock);
+    } else {
+	__stdion_close(nadata, NULL);
+	UNLOCK(nadata->lock);
+    }
+}
+
 static void
 stdiona_do_connect(sel_runner_t *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
     nadata->acceptor.cbs->new_connection(&nadata->acceptor, &nadata->net);
-}
-
-static void
-stdiona_finish_free(struct stdiona_data *nadata)
-{
-    if (nadata->deferred_op_runner)
-	sel_free_runner(nadata->deferred_op_runner);
-    if (nadata->connect_runner)
-	sel_free_runner(nadata->connect_runner);
-    if (nadata->read_data)
-	free(nadata->read_data);
-    free(nadata);
 }
 
 static void
@@ -369,7 +548,6 @@ stdiona_fd_cleared(int fd, void *cbdata)
     if (nadata->in_free)
 	stdiona_finish_free(nadata);
 }
-
 
 static int
 stdiona_startup(struct genio_acceptor *acceptor)
@@ -455,7 +633,9 @@ static const struct genio_functions genio_stdio_funcs = {
     .write = stdion_write,
     .raddr_to_str = stdion_raddr_to_str,
     .get_raddr = stdion_get_raddr,
+    .open = stdion_open,
     .close = stdion_close,
+    .free = stdion_free,
     .set_read_callback_enable = stdion_set_read_callback_enable,
     .set_write_callback_enable = stdion_set_write_callback_enable
 };
@@ -542,25 +722,6 @@ stdio_genio_acceptor_alloc(struct selector_s *sel,
     return 0;
 }
 
-static void
-stdio_client_fd_cleared(int fd, void *cbdata)
-{
-    struct stdiona_data *nadata = cbdata;
-
-    LOCK(nadata->lock);
-    nadata->oio_count--;
-    if (nadata->oio_count == 0) {
-	UNLOCK(nadata->lock);
-	stdion_finish_close(nadata);
-	close(nadata->ostdin);
-	close(nadata->ostdout);
-	close(nadata->ostderr);
-	stdiona_finish_free(nadata);
-    } else {
-	UNLOCK(nadata->lock);
-    }
-}
-
 int
 stdio_genio_alloc(char *const argv[],
 		  struct selector_s *sel,
@@ -571,111 +732,34 @@ stdio_genio_alloc(char *const argv[],
 {
     int err;
     struct stdiona_data *nadata = NULL;
-    int stdinpipe[2] = {-1, -1};
-    int stdoutpipe[2] = {-1, -1};
-    int stderrpipe[2] = {-1, -1};
+    int i, argc;
 
     err = stdio_nadata_setup(sel, max_read_size, &nadata);
     if (err)
 	return err;
 
-    err = pipe(stdinpipe);
-    if (err) {
-	err = errno;
-	goto out_err;
+    for (argc = 0; argv[argc]; argc++)
+	;
+    nadata->argv = malloc((argc + 1) * sizeof(*nadata->argv));
+    if (!nadata->argv)
+	goto out_nomem;
+    memset(nadata->argv, 0, (argc + 1) * sizeof(*nadata->argv));
+    for (i = 0; i < argc; i++) {
+	nadata->argv[i] = strdup(argv[i]);
+	if (!nadata->argv[i])
+	    goto out_nomem;
     }
-
-    err = pipe(stdoutpipe);
-    if (err) {
-	err = errno;
-	goto out_err;
-    }
-
-    err = pipe(stderrpipe);
-    if (err) {
-	err = errno;
-	goto out_err;
-    }
-
-    nadata->ostdin = stdinpipe[1];
-    nadata->ostdout = stdoutpipe[0];
-    nadata->ostderr = stderrpipe[0];
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostdout, nadata,
-			      stdion_read_ready, NULL, NULL,
-			      stdio_client_fd_cleared);
-    if (err)
-	goto out_err;
-    nadata->oio_count++;
-
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostderr, nadata,
-			      stdion_read_ready, NULL, NULL,
-			      stdio_client_fd_cleared);
-    if (err)
-	goto out_err;
-    nadata->oio_count++;
-
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostdin, nadata,
-			      NULL, stdion_write_ready, NULL,
-			      stdio_client_fd_cleared);
-    if (err)
-	goto out_err;
-    nadata->oio_count++;
-
+    nadata->closed = true;
     nadata->net.cbs = cbs;
     nadata->net.user_data = user_data;
     nadata->net.funcs = &genio_stdio_funcs;
     nadata->net.type = GENIO_TYPE_STDIO;
 
-    nadata->opid = fork();
-    if (nadata->opid < 0) {
-	err = errno;
-	goto out_err;
-    }
-    if (nadata->opid == 0) {
-	close(stdinpipe[1]);
-	close(stdoutpipe[0]);
-	close(stderrpipe[0]);
-	dup2(stdinpipe[0], 0);
-	dup2(stdoutpipe[1], 1);
-	dup2(stderrpipe[1], 2);
-
-	execvp(argv[0], argv);
-	exit(1); /* Only reached on error. */
-    }
-
-    close(stdinpipe[0]);
-    close(stdoutpipe[1]);
-    close(stderrpipe[1]);
-
     *new_genio = &nadata->net;
 
     return 0;
 
- out_err:
-    if (stdinpipe[0] != -1)
-	close(stdinpipe[0]);
-    if (stdoutpipe[1] != -1)
-	close(stdoutpipe[1]);
-    if (stderrpipe[1] != -1)
-	close(stderrpipe[1]);
-
-    if (nadata->oio_count) {
-	LOCK(nadata->lock);
-	if (nadata->oio_count > 0)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
-	if (nadata->oio_count > 1)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
-	if (nadata->oio_count > 2)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
-	UNLOCK(nadata->lock);
-    } else {
-	if (stdinpipe[1] != -1)
-	    close(stdinpipe[1]);
-	if (stdoutpipe[0] != -1)
-	    close(stdoutpipe[0]);
-	if (stderrpipe[0] != -1)
-	    close(stderrpipe[0]);
-	stdiona_finish_free(nadata);
-    }
-    return err;
+ out_nomem:
+    stdiona_finish_free(nadata);
+    return ENOMEM;
 }
