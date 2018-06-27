@@ -53,13 +53,13 @@ struct sterm_data {
     struct selector_s *sel;
 
     char *devname;
+    char *parms;
 
     DEFINE_LOCK(, lock);
 
     int fd;
 
     struct termios default_termios;
-    struct termios current_termios;
 
     void (*close_done)(struct genio *io);
     bool closed;
@@ -726,7 +726,7 @@ sterm_open(struct genio *net)
 	goto out_uucp;
     }
 
-    if (tcsetattr(sdata->fd, TCSANOW, &sdata->current_termios) == -1) {
+    if (tcsetattr(sdata->fd, TCSANOW, &sdata->default_termios) == -1) {
 	err = errno;
 	goto out_uucp;
     }
@@ -853,6 +853,36 @@ static const struct genio_functions sterm_net_funcs = {
     .set_write_callback_enable = sterm_set_write_callback_enable
 };
 
+#ifdef __CYGWIN__
+static void cfmakeraw(struct termios *termios_p) {
+    termios_p->c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+    termios_p->c_oflag &= ~OPOST;
+    termios_p->c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
+    termios_p->c_cflag &= ~(CSIZE|PARENB);
+    termios_p->c_cflag |= CS8;
+}
+#endif
+
+static int
+sergenio_process_parms(struct sterm_data *sdata)
+{
+    int argc, i;
+    char **argv;
+    int err = str_to_argv(sdata->parms, &argc, &argv, " \f\t\n\r\v,");
+
+    if (err)
+	return err;
+
+    for (i = 0; i < argc; i++) {
+	err = process_termios_parm(&sdata->default_termios, argv[i]);
+	if (err)
+	    break;
+    }
+
+    str_to_argv_free(argc, argv);
+    return err;
+}
+
 int
 sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 		       unsigned int read_buffer_size,
@@ -862,6 +892,7 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 {
     struct sterm_data *sdata = malloc(sizeof(*sdata));
     int err;
+    char *comma;
 
     if (!sdata)
 	return ENOMEM;
@@ -869,10 +900,24 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
     memset(sdata, 0, sizeof(*sdata));
     sdata->fd = -1;
 
+    cfmakeraw(&sdata->default_termios);
+    cfsetispeed(&sdata->default_termios, B9600);
+    cfsetospeed(&sdata->default_termios, B9600);
+    sdata->default_termios.c_cc[VSTART] = 17;
+    sdata->default_termios.c_cc[VSTOP] = 19;
+
     sdata->devname = strdup(devname);
     if (!sdata->devname) {
 	err = ENOMEM;
 	goto out;
+    }
+    comma = strchr(sdata->devname, ',');
+    if (comma) {
+	*comma++ = '\0';
+	sdata->parms = comma;
+	err = sergenio_process_parms(sdata);
+	if (err)
+	    goto out;
     }
 
     sdata->read_buffer_size = read_buffer_size;
