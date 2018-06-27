@@ -51,12 +51,10 @@ struct stdiona_data {
 
     bool read_enabled;
     bool in_read;
-
-    bool user_set_read_enabled;
-    bool user_read_enabled_setting;
+    bool deferred_read;
 
     /* For the client only. */
-    bool deferred_close; /* A close is pending the running running. */
+    bool in_close; /* A close is pending the running running. */
     bool closed;
     void (*close_done)(struct genio *net);
 
@@ -76,7 +74,6 @@ struct stdiona_data {
     unsigned char *read_data;
     unsigned int read_flags;
 
-    bool data_pending;
     unsigned int data_pending_len;
     unsigned int data_pos;
 
@@ -140,46 +137,23 @@ stdion_raddr_to_str(struct genio *net, int *epos,
     return 0;
 }
 
-static socklen_t
-stdion_get_raddr(struct genio *net,
-		 struct sockaddr *addr, socklen_t addrlen)
-{
-    return 0;
-}
-
-static void
-stdion_finish_close(struct stdiona_data *nadata)
-{
-    struct genio *net = &nadata->net;
-
-    if (nadata->close_done)
-	nadata->close_done(net);
-}
-
-/* Must be called with ndata->lock held */
+/* Must be called with nadata->lock held */
 static void
 stdion_finish_read(struct stdiona_data *nadata, int err, unsigned int count)
 {
-    nadata->data_pending = false;
     if (err < 0) {
-	nadata->user_set_read_enabled = true;
-	nadata->user_read_enabled_setting = false;
+	nadata->read_enabled = false;
     } else if (count < nadata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
-	nadata->data_pending = true;
 	nadata->data_pending_len -= count;
 	nadata->data_pos += count;
-	nadata->user_set_read_enabled = true;
-	nadata->user_read_enabled_setting = false;
+	nadata->read_enabled = false;
+    } else {
+	nadata->data_pending_len = 0;
     }
 
     nadata->in_read = false;
-
-    if (nadata->user_set_read_enabled)
-	nadata->read_enabled = nadata->user_read_enabled_setting;
-    else
-	nadata->read_enabled = true;
 
     if (nadata->read_enabled) {
 	sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
@@ -198,26 +172,35 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     unsigned int count;
     bool in_read;
 
-    /* No lock needed, this data cannot be changed here. */
     LOCK(nadata->lock);
-    in_read = nadata->in_read;
-    UNLOCK(nadata->lock);
+ restart:
+    if (nadata->deferred_read) {
+	in_read = nadata->in_read;
+	nadata->deferred_read = false;
+    }
 
-    if (in_read)
+    if (in_read) {
+	UNLOCK(nadata->lock);
 	count = net->cbs->read_callback(net, 0,
 					nadata->read_data + nadata->data_pos,
 					nadata->data_pending_len,
 					nadata->read_flags);
-    LOCK(nadata->lock);
+	LOCK(nadata->lock);
+	stdion_finish_read(nadata, 0, count);
+    }
+
+    if (nadata->deferred_read)
+	goto restart;
+
     nadata->deferred_op_pending = false;
-    if (nadata->deferred_close) {
-	nadata->deferred_close = false;
+
+    if (nadata->in_close) {
+	nadata->in_close = false;
 	UNLOCK(nadata->lock);
-	stdion_finish_close(nadata);
+	if (nadata->close_done)
+	    nadata->close_done(net);
 	return;
     }
-    if (in_read)
-	stdion_finish_read(nadata, 0, count);
     UNLOCK(nadata->lock);
 }
 
@@ -252,9 +235,10 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 	close(nadata->ostdout);
 	close(nadata->ostderr);
 	UNLOCK(nadata->lock);
-	stdion_finish_close(nadata);
+	if (nadata->close_done)
+	    nadata->close_done(&nadata->net);
 	LOCK(nadata->lock);
-	nadata->deferred_close = false;
+	nadata->in_close = false;
     }
     UNLOCK(nadata->lock);
 }
@@ -265,13 +249,14 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
     struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
-    if (nadata->in_read || (nadata->data_pending && !enabled)) {
-	nadata->user_set_read_enabled = true;
-	nadata->user_read_enabled_setting = enabled;
-    } else if (nadata->data_pending) {
+    nadata->read_enabled = enabled;
+    if (nadata->in_read || (nadata->data_pending_len && !enabled)) {
+	/* Nothing to do, let the read handling wake things up. */
+    } else if (nadata->data_pending_len) {
+	nadata->deferred_read = true;
+	nadata->in_read = true;
 	if (!nadata->deferred_op_pending) {
 	    /* Call the read from the selector to avoid lock nesting issues. */
-	    nadata->in_read = true;
 	    nadata->deferred_op_pending = true;
 	    sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
 	}
@@ -283,7 +268,6 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
 	else
 	    op = SEL_FD_HANDLER_DISABLED;
 
-	nadata->read_enabled = true;
 	sel_set_fd_read_handler(nadata->sel, nadata->ostdout, op);
 	if (nadata->ostderr != -1)
 	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr, op);
@@ -327,7 +311,6 @@ stdion_read_ready(int fd, void *cbdata)
     else
 	nadata->read_flags = 0;
     nadata->in_read = true;
-    nadata->user_set_read_enabled = false;
     nadata->data_pos = 0;
     UNLOCK(nadata->lock);
 
@@ -375,7 +358,7 @@ stdion_open(struct genio *net)
 
     LOCK(nadata->lock);
 
-    if (!nadata->closed || nadata->deferred_close) {
+    if (!nadata->closed || nadata->in_close) {
 	err = EBUSY;
 	goto out_unlock;
     }
@@ -480,7 +463,7 @@ __stdion_close(struct stdiona_data *nadata,
 	       void (*close_done)(struct genio *net))
 {
     nadata->closed = true;
-    nadata->deferred_close = true;
+    nadata->in_close = true;
     nadata->close_done = close_done;
     if (nadata->argv) {
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
@@ -499,7 +482,7 @@ stdion_close(struct genio *net, void (*close_done)(struct genio *net))
     int err = 0;
 
     LOCK(nadata->lock);
-    if (nadata->closed || nadata->deferred_close)
+    if (nadata->closed || nadata->in_close)
 	err = EBUSY;
     else
 	__stdion_close(nadata, close_done);
@@ -514,7 +497,7 @@ stdion_free(struct genio *net)
     struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
-    if (nadata->deferred_close) {
+    if (nadata->in_close) {
 	nadata->close_done = NULL;
 	UNLOCK(nadata->lock);
     } else if (nadata->closed) {
@@ -638,7 +621,6 @@ stdiona_free(struct genio_acceptor *acceptor)
 static const struct genio_functions genio_stdio_funcs = {
     .write = stdion_write,
     .raddr_to_str = stdion_raddr_to_str,
-    .get_raddr = stdion_get_raddr,
     .open = stdion_open,
     .close = stdion_close,
     .free = stdion_free,
