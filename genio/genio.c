@@ -274,7 +274,10 @@ socklen_t
 genio_get_raddr(struct genio *net,
 		struct sockaddr *addr, socklen_t addrlen)
 {
-    return net->funcs->get_raddr(net, addr, addrlen);
+    if (net->funcs->get_raddr)
+	return net->funcs->get_raddr(net, addr, addrlen);
+    else
+	return ENOTSUP;
 }
 
 int
