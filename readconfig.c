@@ -443,85 +443,6 @@ static struct absout syslog_eout = {
     .data = &lineno
 };
 
-struct enum_val
-{
-    char *str;
-    int val;
-};
-
-static int
-lookup_enum(struct enum_val *enums, const char *str, int len)
-{
-    while (enums->str != NULL) {
-	if (len == -1 && strcmp(enums->str, str) == 0)
-	    return enums->val;
-	if (strlen(enums->str) == len && strncmp(enums->str, str, len) == 0)
-	    return enums->val;
-	enums++;
-    }
-    return -1;
-}
-
-static struct enum_val speed_enums[] = {
-    { "300",	300 },
-    { "600",	600 },
-    { "1200",	1200 },
-    { "2400",	2400 },
-    { "4800",	4800 },
-    { "9600",	9600 },
-    { "19200",	19200 },
-    { "38400",	38400 },
-    { "57600",	57600 },
-    { "115200",	115200 },
-    { "230400",	230400 },
-    { "460800",	460800 },
-    { "500000",	500000 },
-    { "576000",	576000 },
-    { "921600",	921600 },
-    { "1000000",1000000 },
-    { "1152000",1152000 },
-    { "1500000",1500000 },
-    { "2000000",2000000 },
-    { "2500000",2500000 },
-    { "3000000",3000000 },
-    { "3500000",3500000 },
-    { "4000000",4000000 },
-    { NULL },
-};
-
-int
-speedstr_to_speed(const char *speed, const char **rest)
-{
-    const char *end = speed;
-    unsigned int len;
-    int rv;
-
-    while (*end && isdigit(*end))
-	end++;
-    len = end - speed;
-    if (len < 3)
-	return -1;
-
-    rv = lookup_enum(speed_enums, speed, len);
-    if (rv != -1)
-	*rest = end;
-    return rv;
-}
-
-struct enum_val parity_enums[] = {
-    { "NONE", PARITY_NONE },
-    { "EVEN", PARITY_EVEN },
-    { "ODD", PARITY_ODD },
-    { "none", PARITY_NONE },
-    { "even", PARITY_EVEN },
-    { "odd", PARITY_ODD },
-    { "MARK", PARITY_MARK },
-    { "SPACE", PARITY_SPACE },
-    { "mark", PARITY_MARK },
-    { "space", PARITY_SPACE },
-    { NULL }
-};
-
 #ifdef HAVE_OPENIPMI
 struct enum_val shared_serial_alert_enums[] = {
     { "fail",		ipmi_sol_serial_alerts_fail },
@@ -530,12 +451,6 @@ struct enum_val shared_serial_alert_enums[] = {
     { NULL }
 };
 #endif
-
-enum parity_vals
-lookup_parity(const char *str)
-{
-    return lookup_enum(parity_enums, str, -1);
-}
 
 enum default_type { DEFAULT_INT, DEFAULT_BOOL, DEFAULT_ENUM, DEFAULT_STR };
 

@@ -21,6 +21,7 @@
 #define UTILS
 
 #include <stdbool.h>
+#include <termios.h>
 
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);
@@ -85,5 +86,66 @@ int cisco_baud_to_baud(int cisco_val);
  * Returns 0 if unsuccessful.
  */
 int baud_to_cisco_baud(int val);
+
+/*
+ * Convert string parameter into a termios setting.  Valid values
+ * are 1STOPBIT, 2STOPBITS, 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS,
+ * 
+ */
+int process_termios_parm(struct termios *termio, char *parm);
+
+struct enum_val
+{
+    char *str;
+    int val;
+};
+
+/*
+ * Given an enum table (terminated by a NULL str entry), find the
+ * given string in the table.  If "len" is not -1, use it to only
+ * compare the first "len" chars of str.
+ */
+int lookup_enum(struct enum_val *enums, const char *str, int len);
+
+/*
+ * enum table to convert speed string to termios baud.
+ */
+extern struct enum_val speed_enums[];
+
+enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
+		   PARITY_MARK, PARITY_SPACE };
+
+/*
+ * enum table to convert parit string to termios the parity values above.
+ */
+extern struct enum_val parity_enums[];
+
+/*
+ * Given an integer speed and a string that came after that speed
+ * (like N81), set the termios appropriately.  Returns an errno.
+ */
+int set_termios_from_speed(struct termios *termctl, int speed,
+			   const char *others);
+
+/*
+ * Set the termios datasize from an integer size.
+ */
+void set_termios_datasize(struct termios *termctl, int size);
+
+/*
+ * Set the termios RTS/CTS from an bool setting.
+ */
+void set_termios_rtscts(struct termios *termctl, int enabled);
+
+/*
+ * Set the termios xon/xoff from an bool setting.
+ */
+void set_termios_xonoff(struct termios *termctl, int enabled);
+
+/*
+ * Set the termios parity from an enum.
+ */
+void set_termios_parity(struct termios *termctl, enum parity_vals val);
+
 
 #endif /* UTILS */
