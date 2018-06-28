@@ -24,6 +24,7 @@
 #include "genio.h"
 
 enum genio_type {
+    GENIO_TYPE_INVALID = 0,
     GENIO_TYPE_TCP,
     GENIO_TYPE_UDP,
     GENIO_TYPE_STDIO,
@@ -65,6 +66,11 @@ struct genio {
     enum genio_type type;
     bool is_client;
 };
+
+/*
+ * If io->type is in the types array, return true.  Return false otherwise.
+ */
+bool genio_match_type(struct genio *io, enum genio_type *types);
 
 struct genio_acceptor_functions {
     int (*startup)(struct genio_acceptor *acceptor);

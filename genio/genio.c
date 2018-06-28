@@ -433,3 +433,14 @@ str_to_genio(const char *str,
 
     return err;
 }
+
+bool
+genio_match_type(struct genio *io, enum genio_type *types)
+{
+    while (*types) {
+	if (io->type == *types)
+	    return true;
+	types++;
+    }
+    return false;
+}
