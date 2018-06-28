@@ -872,6 +872,7 @@ tcp_genio_alloc(struct addrinfo *ai,
     ndata->net.user_data = user_data;
     ndata->net.funcs = &genio_tcp_funcs;
     ndata->net.type = GENIO_TYPE_TCP;
+    ndata->net.is_client = true;
 
     *new_genio = &ndata->net;
     return 0;

@@ -742,6 +742,7 @@ stdio_genio_alloc(char *const argv[],
     nadata->net.user_data = user_data;
     nadata->net.funcs = &genio_stdio_funcs;
     nadata->net.type = GENIO_TYPE_STDIO;
+    nadata->net.is_client = true;
 
     *new_genio = &nadata->net;
 
