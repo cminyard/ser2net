@@ -715,6 +715,9 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
     sdata->snet.funcs = &stel_funcs;
     sdata->snet.net.cbs = cbs;
     sdata->snet.net.funcs = &stel_net_funcs;
+    sdata->snet.net.funcs = &stel_net_funcs;
+    sdata->snet.net.type = GENIO_TYPE_SER_TELNET;
+    sdata->snet.net.is_client = true;
     genio_set_callbacks(net, &stel_genio_callbacks, sdata);
 
     err = telnet_init(&sdata->tn_data, sdata, sergenio_telnet_output_ready,

@@ -1016,6 +1016,7 @@ udp_genio_alloc(struct addrinfo *ai,
 
     ndata->net.funcs = &genio_udp_funcs;
     ndata->net.type = GENIO_TYPE_UDP;
+    ndata->net.is_client = true;
 
     ndata->myfd = new_fd;
 

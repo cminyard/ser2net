@@ -26,7 +26,9 @@
 enum genio_type {
     GENIO_TYPE_TCP,
     GENIO_TYPE_UDP,
-    GENIO_TYPE_STDIO
+    GENIO_TYPE_STDIO,
+    GENIO_TYPE_SER_TELNET,
+    GENIO_TYPE_SER_TERMIOS
 };
 
 struct genio_functions {
@@ -61,6 +63,7 @@ struct genio {
     const struct genio_functions *funcs;
 
     enum genio_type type;
+    bool is_client;
 };
 
 struct genio_acceptor_functions {

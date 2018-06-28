@@ -937,6 +937,8 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
     sdata->snet.funcs = &sterm_funcs;
     sdata->snet.net.cbs = cbs;
     sdata->snet.net.funcs = &sterm_net_funcs;
+    sdata->snet.net.type = GENIO_TYPE_SER_TERMIOS;
+    sdata->snet.net.is_client = true;
     sdata->closed = true;
 
     *snet = &sdata->snet;
