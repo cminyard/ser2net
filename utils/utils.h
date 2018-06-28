@@ -48,6 +48,16 @@ void write_ignore_fail(int fd, const char *data, size_t count);
    array must be freed with str_to_argv_free(). */
 int str_to_argv(const char *s, int *argc, char ***argv, char *seps);
 
+/*
+ * Like above, but give the lengths of each argv entry in the lengths
+ * array.  The lengths array is automatically freed as part of
+ * str_to_argv_free().  Note that the length does not include the
+ * ending '\0'.
+ */
+int str_to_argv_lengths(const char *s, int *argc, char ***argv,
+			unsigned int **lengths,
+			char *seps);
+
 /* Free the return of str_to_argv */
 void str_to_argv_free(int argc, char **argv);
 

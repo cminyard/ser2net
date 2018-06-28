@@ -99,6 +99,8 @@ void str_to_argv_free(int argc, char **argv)
 	return;
     if (argv[argc + 1])
 	free(argv[argc + 1]);
+    if (argv[argc + 2])
+	free(argv[argc + 2]);
     free(argv);
 }
 
@@ -119,7 +121,7 @@ static bool isodigit(char c)
     return isdigit(c) && c != '8' && c != '9';
 }
 
-static int gettok(char **s, char **tok, char *seps)
+static int gettok(char **s, char **tok, char *seps, unsigned int *len)
 {
     char *t = skip_spaces(*s, seps);
     char *p = t;
@@ -206,18 +208,23 @@ static int gettok(char **s, char **tok, char *seps)
 	return -1;
 
     *o = '\0';
+    if (len)
+	*len = o - t;
     *tok = t;
     return 0;
 }
 
-int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
+int str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
+			unsigned int **r_lengths, char *seps)
 {
     char *orig_s = strdup(ins);
+    unsigned int *lengths = NULL;
     char *s = orig_s;
     char **argv = NULL;
     char *tok;
     unsigned int argc = 0;
     unsigned int args = 0;
+    unsigned int len;
     int err;
 
     if (!s)
@@ -232,40 +239,72 @@ int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
 	free(orig_s);
 	return ENOMEM;
     }
+    if (r_lengths) {
+	lengths = malloc(sizeof(*lengths) * args);
+	if (!lengths) {
+	    free(argv);
+	    free(orig_s);
+	    return ENOMEM;
+	}
+    }
 
-    err = gettok(&s, &tok, seps);
+    err = gettok(&s, &tok, seps, &len);
     while (tok && !err) {
 	/*
 	 * Leave one spot at the end for the NULL and one for the
-	 * pointer to the allocated string.
+	 * pointer to the allocated string and one for the lengths
+	 * array.
 	 */
-	if (argc >= args - 2) {
-	    char **nargv = realloc(argv, sizeof(*argv) * (args + 10));
+	if (argc >= args - 3) {
+	    char **nargv;
 
+	    args += 10;
+	    nargv = realloc(argv, sizeof(*argv) * args);
 	    if (!nargv) {
 		err = ENOMEM;
 		goto out;
 	    }
+	    if (r_lengths) {
+		unsigned int *nlengths = realloc(lengths,
+						 sizeof(*lengths) * args);
+
+		if (!nlengths) {
+		    err = ENOMEM;
+		    goto out;
+		}
+		lengths = nlengths;
+	    }
 	    argv = nargv;
-	    args += 10;
 	}
+	if (lengths)
+	    lengths[argc] = len;
 	argv[argc++] = tok;
 
-	err = gettok(&s, &tok, seps);
+	err = gettok(&s, &tok, seps, &len);
     }
 
     argv[argc] = NULL; /* NULL terminate the array. */
     argv[argc + 1] = orig_s; /* Keep this around for freeing. */
+    argv[argc + 2] = (void *) lengths; /* Keep this around for freeing. */
 
  out:
     if (err) {
 	free(orig_s);
 	free(argv);
+	if (lengths)
+	    free(lengths);
     } else {
 	*r_argc = argc;
 	*r_argv = argv;
+	if (r_lengths)
+	    *r_lengths = lengths;
     }
     return err;
+}
+
+int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
+{
+    return str_to_argv_lengths(ins, r_argc, r_argv, NULL, seps);
 }
 
 static struct baud_rates_s {
