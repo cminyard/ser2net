@@ -375,10 +375,11 @@ cmd_cb_handler(char *cmdline)
     i = history_expand(cmdline, &expansion);
     if (i < 0 || i == 2) {
 	printf("%s\n", expansion);
-	return;
+	goto out;
     }
 
     add_history(expansion);
+    rl_free(expansion);
 
     i = str_to_argv_lengths(cmdline, &argc, &argv, &lengths, NULL);
     if (i == ENOMEM) {
@@ -421,6 +422,7 @@ cmd_cb_handler(char *cmdline)
     str_to_argv_free(argc, argv);
 
  out:
+    rl_free(cmdline);
     return;
 }
 
@@ -433,8 +435,13 @@ stdio_read_ready(int fd, void *cbdata)
 static void
 cleanup_term(struct selector_s *sel)
 {
+    struct timeval timeout = {0, 0};
+
     rl_callback_handler_remove();
     printf("\b\b  \b\b");
+    sel_clear_fd_handlers(sel, 0);
+    while (sel_select(sel, NULL, 0, NULL, &timeout))
+	;
 }
 
 static int
@@ -509,6 +516,8 @@ main(int argc, char *argv[])
 	sel_select(sel, NULL, 0, NULL, NULL);
 
     cleanup_term(sel);
+
+    sel_free_selector(sel);
 
     return 0;
 }
