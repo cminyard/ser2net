@@ -120,7 +120,7 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
     unsigned int end;
     char *pos;
     char *strtok_data;
-    int  rv = 0;
+    int rv = 0;
 
     devinit(termctl);
     d->disablebreak = find_default_int("nobreak");
@@ -130,11 +130,19 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	return -1;
     }
 
-    pos = strtok_r(str, " \t", &strtok_data);
-    while (pos != NULL) {
-	if (!process_termios_parm(termctl, pos)) {
-	    /* Processed, nothing to do. */
-	} else if (strcmp(pos, "NOBREAK") == 0) {
+    for (pos = strtok_r(str, " \t", &strtok_data); pos != NULL;
+	 pos = strtok_r(NULL, " \t", &strtok_data))
+    {
+	rv = process_termios_parm(termctl, pos);
+	if (rv == 0)
+	    continue;
+	if (rv == EINVAL) {
+	    eout->out(eout, "Invalid baud rate: %s", pos);
+	    rv = -1;
+	    goto out;
+	}
+
+	if (strcmp(pos, "NOBREAK") == 0) {
 	    d->disablebreak = 1;
 	} else if (strcmp(pos, "-NOBREAK") == 0) {
 	    d->disablebreak = 0;
@@ -144,11 +152,10 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	    d->rs485conf = find_rs485conf(pos + end);
 #endif
 	} else {
-	    if (otherconfig(data, eout, pos) == -1)
+	    rv = otherconfig(data, eout, pos);
+	    if (rv == -1)
 		goto out;
 	}
-
-	pos = strtok_r(NULL, " \t", &strtok_data);
     }
 
  out:

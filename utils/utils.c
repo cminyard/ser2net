@@ -630,7 +630,8 @@ process_termios_parm(struct termios *termio, char *parm)
     const char *rest = "";
 
     if ((val = speedstr_to_speed(parm, &rest)) != -1) {
-	rv = set_termios_from_speed(termio, val, rest);
+	if (set_termios_from_speed(termio, val, rest) == -1)
+	    rv = EINVAL;
     } else if (strcmp(parm, "1STOPBIT") == 0) {
 	termio->c_cflag &= ~(CSTOPB);
     } else if (strcmp(parm, "2STOPBITS") == 0) {
@@ -662,7 +663,7 @@ process_termios_parm(struct termios *termio, char *parm)
     } else if (strcmp(parm, "-HANGUP_WHEN_DONE") == 0) {
 	termio->c_cflag &= ~HUPCL;
     } else {
-	rv = EINVAL;
+	rv = ENOTSUP;
     }
 
     return rv;
