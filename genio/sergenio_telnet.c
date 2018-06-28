@@ -693,8 +693,8 @@ sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
 
 int
 sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
-		      struct sergenio_callbacks *scbs,
-		      struct genio_callbacks *cbs, void *user_data,
+		      const struct sergenio_callbacks *scbs,
+		      const struct genio_callbacks *cbs, void *user_data,
 		      struct sergenio **snet)
 {
     struct stel_data *sdata = malloc(sizeof(*sdata));

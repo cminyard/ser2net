@@ -37,10 +37,16 @@ static enum genio_type sergenio_types[] =
     GENIO_TYPE_INVALID
 };
 
+bool
+is_sergenio(struct genio *io)
+{
+    return genio_match_type(io, sergenio_types);
+}
+
 struct sergenio *
 genio_to_sergenio(struct genio *net)
 {
-    if (!genio_match_type(net, sergenio_types))
+    if (!is_sergenio(net))
 	abort();
     return container_of(net, struct sergenio, net);
 }
@@ -150,6 +156,11 @@ sergenio_b_alloc(struct sergenio *snet, struct selector_s *sel,
     *new_sbnet = sbnet;
 
     return 0;
+}
+
+void sergenio_b_free(struct sergenio_b *sbnet)
+{
+    free(sbnet);
 }
 
 static void sergenio_done(struct sergenio *snet, int err,
@@ -338,11 +349,19 @@ sergenio_rts_b(struct sergenio_b *sbnet, int *rts)
     return err;
 }
 
+void
+sergenio_set_ser_cbs(struct sergenio *sio,
+		     struct sergenio_callbacks *scbs)
+{
+    sio->scbs = scbs;
+}
+
+
 int
 str_to_sergenio(const char *str, struct selector_s *sel,
 		unsigned int read_buffer_size,
-		struct sergenio_callbacks *scbs,
-		struct genio_callbacks *cbs, void *user_data,
+		const struct sergenio_callbacks *scbs,
+		const struct genio_callbacks *cbs, void *user_data,
 		struct sergenio **snet)
 {
     int err;
@@ -367,4 +386,3 @@ str_to_sergenio(const char *str, struct selector_s *sel,
 
     return err;
 }
-		    

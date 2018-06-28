@@ -26,6 +26,7 @@
 #include "utils/utils.h"
 #include "genio.h"
 #include "genio_internal.h"
+#include "sergenio.h"
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
@@ -412,6 +413,15 @@ str_to_genio(const char *str,
 	    return err;
 	err = stdio_genio_alloc(argv, sel, max_read_size, cbs, user_data,
 				genio);
+    } else if (strncmp(str, "ser,", 4) == 0) {
+	struct sergenio *sio;
+
+	str += 4;
+	err = str_to_sergenio(str, sel, max_read_size, NULL, cbs, user_data,
+			      &sio);
+	if (err)
+	    return err;
+	*genio = sergenio_to_genio(sio);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
