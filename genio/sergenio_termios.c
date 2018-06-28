@@ -886,8 +886,8 @@ sergenio_process_parms(struct sterm_data *sdata)
 int
 sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 		       unsigned int read_buffer_size,
-		       struct sergenio_callbacks *scbs,
-		       struct genio_callbacks *cbs, void *user_data,
+		       const struct sergenio_callbacks *scbs,
+		       const struct genio_callbacks *cbs, void *user_data,
 		       struct sergenio **snet)
 {
     struct sterm_data *sdata = malloc(sizeof(*sdata));

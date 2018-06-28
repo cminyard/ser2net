@@ -35,8 +35,25 @@
 
 struct sergenio;
 
+/*
+ * Cast between sergenio and genio types.  If
+ */
 struct genio *sergenio_to_genio(struct sergenio *snet);
 struct sergenio *genio_to_sergenio(struct genio *net);
+bool is_sergenio(struct genio *io);
+
+/*
+ * The following functions set various serial parameters.  The done()
+ * callback is called if the function does not return an error,
+ * otherwise it is not called.  The done callback may have an error,
+ * if so the data is not valid.  Otherwise the data given is the actual
+ * set value.
+ *
+ * If you pass a zero to the value to this, the value is not set, it
+ * is only fetched.  This can be used to get the current value.
+ *
+ * If the done() callback is NULL, no callback is done.
+ */
 
 int sergenio_baud(struct sergenio *snet, int baud,
 		  void (*done)(struct sergenio *snet, int err,
@@ -97,10 +114,24 @@ int sergenio_rts(struct sergenio *snet, int rts,
  */
 void *sergenio_get_user_data(struct sergenio *net);
 
+/*
+ * The following is blocking values for the serial port setting calls.
+ * You allocate one of these, then you can use it to request values
+ * without having to do your own callback.  It blocks using the
+ * selector framework, so selector calls will still happen while
+ * blocked.  See the selector code for details on wake_sig.
+ *
+ * The value is passed in using a pointer.  If it points to a zero
+ * value, no set it done, it only fetches the current value.
+ *
+ * The free function should only be called if the code is not currently
+ * in a blocking call using the sbnet.
+ */
 struct sergenio_b;
 
 int sergenio_b_alloc(struct sergenio *snet, struct selector_s *sel,
 		     int wake_sig, struct sergenio_b **new_sbnet);
+void sergenio_b_free(struct sergenio_b *sbnet);
 int sergenio_baud_b(struct sergenio_b *sbnet, int *baud);
 int sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize);
 int sergenio_parity_b(struct sergenio_b *sbnet, int *parity);
@@ -110,6 +141,11 @@ int sergenio_break_b(struct sergenio_b *sbnet, int *breakv);
 int sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr);
 int sergenio_rts_b(struct sergenio_b *sbnet, int *rts);
 
+/*
+ * Callbacks for dynamic changes to the serial port.  The user may
+ * supply a NULL one of these if they don't care.
+ */
+
 struct sergenio_callbacks {
     void (*modemstate_change)(struct sergenio *snet, unsigned int changed_mask,
 			      unsigned int modemstate);
@@ -118,21 +154,31 @@ struct sergenio_callbacks {
 			     unsigned int linestate);
 };
 
+/*
+ * Set the sergenio callbacks.  This should only be done if the genio
+ * is closed or completely disabled for read and not in a write.
+ */
+void sergenio_set_ser_cbs(struct sergenio *sio,
+			  struct sergenio_callbacks *scbs);
+
+/*
+ * Allocate a sergenio based on a string.
+ */
+int str_to_sergenio(const char *str, struct selector_s *sel,
+		    unsigned int read_buffer_size,
+		    const struct sergenio_callbacks *scbs,
+		    const struct genio_callbacks *cbs, void *user_data,
+		    struct sergenio **snet);
+
 int sergenio_telnet_alloc(struct genio *genio, struct selector_s *sel,
-			  struct sergenio_callbacks *scbs,
-			  struct genio_callbacks *cbs, void *user_data,
+			  const struct sergenio_callbacks *scbs,
+			  const struct genio_callbacks *cbs, void *user_data,
 			  struct sergenio **snet);
 
 int sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 			   unsigned int read_buffer_size,
-			   struct sergenio_callbacks *scbs,
-			   struct genio_callbacks *cbs, void *user_data,
+			   const struct sergenio_callbacks *scbs,
+			   const struct genio_callbacks *cbs, void *user_data,
 			   struct sergenio **snet);
 
-int str_to_sergenio(const char *str, struct selector_s *sel,
-		    unsigned int read_buffer_size,
-		    struct sergenio_callbacks *scbs,
-		    struct genio_callbacks *cbs, void *user_data,
-		    struct sergenio **snet);
-		    
 #endif /* SER2NET_SERGENIO_H */
