@@ -29,9 +29,18 @@ sergenio_to_genio(struct sergenio *snet)
     return &snet->net;
 }
 
+static enum genio_type sergenio_types[] =
+{
+    GENIO_TYPE_SER_TELNET,
+    GENIO_TYPE_SER_TERMIOS,
+    GENIO_TYPE_INVALID
+};
+
 struct sergenio *
 genio_to_sergenio(struct genio *net)
 {
+    if (!genio_match_type(net, sergenio_types))
+	abort();
     return container_of(net, struct sergenio, net);
 }
 
