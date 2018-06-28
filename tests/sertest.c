@@ -39,6 +39,94 @@ static bool tokeq(const char *t, const char *m)
     return strcmp(t, m) == 0;
 }
 
+struct genio_list {
+    char *name;
+    struct genio *io;
+    struct genio_list *next;
+};
+
+static struct genio_list *genios;
+
+static int
+start_exit(int argc, char **argv)
+{
+    done = true;
+    return 0;
+}
+
+static unsigned int
+data_read(struct genio *net, int readerr,
+	  unsigned char *buf, unsigned int buflen,
+	  unsigned int flags)
+{
+}
+
+static void
+write_ready(struct genio *net)
+{
+}
+
+static void
+urgent_data_read(struct genio *net)
+{
+}
+
+struct genio_callbacks gcbs = {
+    .read_callback = data_read,
+    .write_callback = write_ready,
+    .urgent_callback = urgent_data_read,
+};
+
+static 
+alloc_genio(int argc, char **argv)
+{
+    struct genio_list *le;
+
+    if (argc < 3) {
+	printf("Not enough arguments to function\n")
+	return 0;
+    }
+
+    le = malloc(sizeof(*le));
+    if (!le)
+	return ENOMEM;
+
+    le->name = strdup(argv[1]);
+    if (!le->name) {
+	free(le);
+	return ENOMEM;
+    }
+
+    err = str_to_genio(argv[2], sel, 1024, &gcbs, le, &le->io);
+    if (err) {
+	free(le->name);
+	free(le);
+    } else {
+	struct genio_list *prev = genios;
+
+	if (!prev) {
+	    genios = le;
+	} else {
+	    while (prev->next)
+		prev = prev->next;
+	    prev->next = le;
+	}
+    }
+
+    return err;
+}
+
+struct cmd_list {
+    const char *name;
+    int (*func)(int argc, char **argv);
+};
+
+struct cmd_list cmds[] = {
+    { "exit", start_exit },
+    { "connect", alloc_genio },
+    { NULL },
+};
+
 static void
 cmd_cb_handler(char *cmdline)
 {
@@ -76,9 +164,18 @@ cmd_cb_handler(char *cmdline)
 	printf(" '%s'", argv[i]);
     printf("\n");
 
-    if (tokeq(argv[0], "exit"))
-      done = true;
+    for (i = 0; cmds[i].name; i++) {
+	if (tokeq(cmds[i].name, argv[0])) {
+	    i = cmds[i].func(argc, argv);
+	    if (i)
+		printf("Error: %s\n", strerror(i));
+	    goto found;
+	}
+    }
 
+    printf("No command named '%s'\n", argv[0]);
+
+ found:
     str_to_argv_free(argc, argv);
 
  out:
