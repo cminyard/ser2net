@@ -30,6 +30,9 @@ waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig);
 
 void free_waiter(waiter_t *waiter);
 
+int wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			    struct timeval *timeout);
+
 void wait_for_waiter(waiter_t *waiter, unsigned int count);
 
 void wake_waiter(waiter_t *waiter);
