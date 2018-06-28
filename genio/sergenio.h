@@ -129,5 +129,10 @@ int sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 			   struct genio_callbacks *cbs, void *user_data,
 			   struct sergenio **snet);
 
-
+int str_to_sergenio(const char *str, struct selector_s *sel,
+		    unsigned int read_buffer_size,
+		    struct sergenio_callbacks *scbs,
+		    struct genio_callbacks *cbs, void *user_data,
+		    struct sergenio **snet);
+		    
 #endif /* SER2NET_SERGENIO_H */
