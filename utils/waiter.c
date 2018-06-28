@@ -9,6 +9,7 @@
 
 #include <pthread.h>
 #include <signal.h>
+#include <errno.h>
 
 struct waiter_timeout {
     struct timeval tv;
@@ -24,7 +25,8 @@ struct waiter_s {
     struct waiter_timeout *wts;
 };
 
-waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
+waiter_t *
+alloc_waiter(struct selector_s *sel, int wake_sig)
 {
     waiter_t *waiter;
 
@@ -37,7 +39,8 @@ waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
     return waiter;
 }
 
-void free_waiter(waiter_t *waiter)
+void
+free_waiter(waiter_t *waiter)
 {
     assert(waiter);
     assert(waiter->count == 0);
@@ -59,10 +62,50 @@ wake_thread_send_sig(long thread_id, void *cb_data)
     pthread_kill(w->id, w->wake_sig);
 }
 
-void wait_for_waiter(waiter_t *waiter, unsigned int count)
+static void
+add_to_timeval(struct timeval *tv1, struct timeval *tv2)
+{
+    tv1->tv_sec += tv2->tv_sec;
+    tv1->tv_usec += tv2->tv_usec;
+    while (tv1->tv_usec > 1000000) {
+	tv1->tv_usec -= 1000000;
+	tv1->tv_sec += 1;
+    }
+    while (tv1->tv_usec < 0) {
+	tv1->tv_usec += 1000000;
+	tv1->tv_sec -= 1;
+    }
+}
+
+static void
+sub_from_timeval(struct timeval *tv1, struct timeval *tv2)
+{
+    tv1->tv_sec -= tv2->tv_sec;
+    tv1->tv_usec -= tv2->tv_usec;
+    while (tv1->tv_usec > 1000000) {
+	tv1->tv_usec -= 1000000;
+	tv1->tv_sec += 1;
+    }
+    while (tv1->tv_usec < 0) {
+	tv1->tv_usec += 1000000;
+	tv1->tv_sec -= 1;
+    }
+}
+
+int
+wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			struct timeval *timeout)
 {
     struct waiter_timeout wt;
     struct wait_data w;
+    struct timeval now, end, *left = NULL, left_data;
+    int err = 0;
+
+    if (timeout) {
+	sel_get_monotonic_time(&end);
+	add_to_timeval(&end, timeout);
+	left = &left_data;
+    }
 
     w.id = pthread_self();
     w.wake_sig = waiter->wake_sig;
@@ -80,10 +123,20 @@ void wait_for_waiter(waiter_t *waiter, unsigned int count)
     }
     while (waiter->count < count) {
 	pthread_mutex_unlock(&waiter->lock);
-	sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, NULL);
+	if (left) {
+	    *left = end;
+	    sel_get_monotonic_time(&now);
+	    sub_from_timeval(left, &now);
+	    if (left->tv_sec < 0) {
+		err = ETIMEDOUT;
+		break;
+	    }
+	}
+	sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, left);
 	pthread_mutex_lock(&waiter->lock);
     }
-    waiter->count -= count;
+    if (!err)
+	waiter->count -= count;
     if (wt.next)
 	wt.next->prev = wt.prev;
     if (waiter->wts == &wt)
@@ -91,9 +144,18 @@ void wait_for_waiter(waiter_t *waiter, unsigned int count)
     else
 	wt.prev->next = wt.next;
     pthread_mutex_unlock(&waiter->lock);
+
+    return err;
 }
 
-void wake_waiter(waiter_t *waiter)
+void
+wait_for_waiter(waiter_t *waiter, unsigned int count)
+{
+  wait_for_waiter_timeout(waiter, count, NULL);
+}
+
+void
+wake_waiter(waiter_t *waiter)
 {
     struct waiter_timeout *wt;
 
@@ -112,7 +174,8 @@ struct waiter_s {
     unsigned int count;
 };
 
-waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
+waiter_t *
+alloc_waiter(struct selector_s *sel, int wake_sig)
 {
     waiter_t *waiter;
 
@@ -122,21 +185,31 @@ waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig)
     return waiter;
 }
 
-void free_waiter(waiter_t *waiter)
+void
+free_waiter(waiter_t *waiter)
 {
     assert(waiter);
     assert(waiter->count == 0);
     free(waiter);
 }
 
-void wait_for_waiter(waiter_t *waiter, unsigned int count)
+void
+wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			struct timeval *timeout)
 {
     while (waiter->count < count) {
-	sel_select(waiter->sel, wake_thread_send_sig, long (&self), NULL, NULL);
+	sel_select(waiter->sel, NULL, 0, NULL, NULL);
     waiter->count -= count;
 }
 
-void wake_waiter(waiter_t *waiter)
+void
+wait_for_waiter(waiter_t *waiter, unsigned int count)
+{
+    wait_for_waiter_timeout(waiter, count, NULL);
+}
+
+void
+wake_waiter(waiter_t *waiter)
 {
     waiter->count++;
 }
