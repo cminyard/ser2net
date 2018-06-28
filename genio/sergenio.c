@@ -18,6 +18,7 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 
 #include "utils/waiter.h"
@@ -336,3 +337,34 @@ sergenio_rts_b(struct sergenio_b *sbnet, int *rts)
 
     return err;
 }
+
+int
+str_to_sergenio(const char *str, struct selector_s *sel,
+		unsigned int read_buffer_size,
+		struct sergenio_callbacks *scbs,
+		struct genio_callbacks *cbs, void *user_data,
+		struct sergenio **snet)
+{
+    int err;
+
+    if (strncmp(str, "telnet,", 7) == 0) {
+	struct genio *io;
+
+	str += 7;
+	err = str_to_genio(str, sel, read_buffer_size, NULL, NULL, &io);
+	if (err)
+	    return err;
+	err = sergenio_telnet_alloc(io, sel, scbs, cbs, user_data, snet);
+	if (err)
+	    genio_free(io);
+    } else if (strncmp(str, "termios,", 8) == 0) {
+	str += 8;
+	err = sergenio_termios_alloc(str, sel, read_buffer_size, scbs,
+				     cbs, user_data, snet);
+    } else {
+	err = EINVAL;
+    }
+
+    return err;
+}
+		    
