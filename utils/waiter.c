@@ -80,7 +80,7 @@ void wait_for_waiter(waiter_t *waiter, unsigned int count)
     }
     while (waiter->count < count) {
 	pthread_mutex_unlock(&waiter->lock);
-	sel_select(waiter->sel, wake_thread_send_sig, (long) &w, NULL, NULL);
+	sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, NULL);
 	pthread_mutex_lock(&waiter->lock);
     }
     waiter->count -= count;
