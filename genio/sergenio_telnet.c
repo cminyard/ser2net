@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <limits.h>
+#include <string.h>
 
 #include "utils/utils.h"
 #include "utils/locking.h"
@@ -358,19 +359,21 @@ stel_genio_close_done(struct genio *net)
 static int
 stel_open(struct genio *net)
 {
-    struct stel_data *sdata = genio_get_user_data(net);
+    struct stel_data *sdata = mygenio_to_stel(net);
     struct timeval timeout;
-    int err;
+    int err = EBUSY;
 
     LOCK(sdata->lock);
-    if (sdata->closed && !sdata->close_count)
-    err = genio_open(sdata->net);
-
-    if (!err) {
-	sel_get_monotonic_time(&timeout);
-	timeout.tv_sec += 1;
-	sel_start_timer(sdata->timer, &timeout);
+    if (sdata->closed && !sdata->close_count) {
+	err = genio_open(sdata->net);
+	if (!err) {
+	    sdata->closed = false;
+	    sel_get_monotonic_time(&timeout);
+	    timeout.tv_sec += 1;
+	    sel_start_timer(sdata->timer, &timeout);
+	}
     }
+    UNLOCK(sdata->lock);
 
     return err;
 }
@@ -702,6 +705,8 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 
     if (!sdata)
 	return ENOMEM;
+    memset(sdata, 0, sizeof(*sdata));
+    INIT_LOCK(sdata->lock);
 
     err = sel_alloc_timer(sel, sergenio_telnet_timeout, sdata, &sdata->timer);
     if (err) {
@@ -715,10 +720,10 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
     sdata->snet.funcs = &stel_funcs;
     sdata->snet.net.cbs = cbs;
     sdata->snet.net.funcs = &stel_net_funcs;
-    sdata->snet.net.funcs = &stel_net_funcs;
     sdata->snet.net.type = GENIO_TYPE_SER_TELNET;
     sdata->snet.net.is_client = true;
     genio_set_callbacks(net, &stel_genio_callbacks, sdata);
+    sdata->closed = true;
 
     err = telnet_init(&sdata->tn_data, sdata, sergenio_telnet_output_ready,
 		      sergenio_telnet_cmd_handler, sergenio_telnet_cmds,
@@ -727,6 +732,8 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
     if (err) {
 	sel_free_timer(sdata->timer);
 	free(sdata);
+    } else {
+	*snet = &sdata->snet;
     }
 
     return err;
