@@ -798,10 +798,12 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    genio_acc_shutdown(controller_acceptor, controller_shutdown_done);
-    wait_for_waiter(accept_waiter, 1);
-    genio_acc_free(controller_acceptor);
-    controller_acceptor = NULL;
+    if (controller_acceptor) {
+	genio_acc_shutdown(controller_acceptor, controller_shutdown_done);
+	wait_for_waiter(accept_waiter, 1);
+	genio_acc_free(controller_acceptor);
+	controller_acceptor = NULL;
+    }
 }
 
 static void
