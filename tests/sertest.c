@@ -56,6 +56,9 @@ struct genio_list {
     bool flush_read;
     unsigned char *cmp_read;
     unsigned int cmp_read_len;
+    unsigned int curr_read_byte;
+    unsigned char expected;
+    unsigned char got;
 };
 
 static struct genio_list *genios;
@@ -139,11 +142,14 @@ data_read(struct genio *net, int readerr,
     for (i = 0; i < to_cmp; i++) {
 	if (buf[i] != *le->cmp_read) {
 	    to_cmp = i; /* Only read up to the last matching value. */
+	    le->expected = *le->cmp_read;
+	    le->got = buf[i];
 	    le->read_err = EINVAL;
 	    goto finish_op;
 	}
 	le->cmp_read++;
 	le->cmp_read_len--;
+	le->curr_read_byte++;
     }
 
     if (le->cmp_read_len == 0) {
@@ -340,6 +346,7 @@ check_read_genio(int argc, char **argv, unsigned int *lengths,
     le->read_err = 0;
     le->cmp_read = (unsigned char *) argv[2];
     le->cmp_read_len = lengths[2];
+    le->curr_read_byte = 0;
     genio_set_read_callback_enable(le->io, true);
     err = wait_for_waiter_timeout(le->waiter, 1, &timeout);
     if (err) {
@@ -347,7 +354,9 @@ check_read_genio(int argc, char **argv, unsigned int *lengths,
 	printf("Timeout waiting for read data\n");
 	err = -1;
     } else if (le->read_err) {
-	printf("Data mismatch reading data\n");
+	printf("Data mismatch reading data at byte %d, "
+	       "expected %2.2x but got %2.2x\n",
+	       le->curr_read_byte, le->expected, le->got);
 	err = -1;
     }
 
@@ -413,6 +422,7 @@ xfer_data_genio(int argc, char **argv, unsigned int *lengths,
     le->write_err = 0;
     le2->cmp_read = data;
     le2->cmp_read_len = size;
+    le2->curr_read_byte = 0;
     le->to_write = data;
     le->to_write_len = size;
     genio_set_read_callback_enable(le2->io, true);
@@ -439,15 +449,16 @@ xfer_data_genio(int argc, char **argv, unsigned int *lengths,
 
     /* Clear these out to avoid abort on exit. */
     if (!le2->cmp_read)
-	wait_for_waiter(le->waiter, 1);
+	wait_for_waiter(le2->waiter, 1);
     if (!le->to_write)
 	wait_for_waiter(le->waiter, 1);
     le2->cmp_read = NULL;
     le->to_write = NULL;
 
     if (le2->read_err) {
-	printf("Data mismatch reading data\n");
-	err = -1;
+	printf("Data mismatch reading data at byte %d, "
+	       "expected %2.2x but got %2.2x\n",
+	       le2->curr_read_byte, le2->expected, le2->got);
     }
     if (le->write_err) {
 	printf("Write error: %s\n", strerror(le->write_err));
