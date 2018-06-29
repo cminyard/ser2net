@@ -23,7 +23,7 @@ struct waiter_s {
     int wake_sig;
     unsigned int count;
     pthread_mutex_t lock;
-    struct waiter_timeout *wts;
+    struct waiter_timeout wts;
 };
 
 waiter_t *
@@ -36,6 +36,8 @@ alloc_waiter(struct selector_s *sel, int wake_sig)
 	memset(waiter, 0, sizeof(*waiter));
 	waiter->sel = sel;
 	pthread_mutex_init(&waiter->lock, NULL);
+	waiter->wts.next = &waiter->wts;
+	waiter->wts.prev = &waiter->wts;
     }
     return waiter;
 }
@@ -45,7 +47,7 @@ free_waiter(waiter_t *waiter)
 {
     assert(waiter);
     assert(waiter->count == 0);
-    assert(waiter->wts == NULL);
+    assert(waiter->wts.next == waiter->wts.prev);
     pthread_mutex_destroy(&waiter->lock);
     free(waiter);
 }
@@ -85,13 +87,12 @@ wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
     wt.next = NULL;
     wt.prev = NULL;
     pthread_mutex_lock(&waiter->lock);
-    if (!waiter->wts) {
-	waiter->wts = &wt;
-    } else {
-	waiter->wts->next->prev = &wt;
-	wt.next = waiter->wts;
-	waiter->wts = &wt;
-    }
+
+    waiter->wts.next->prev = &wt;
+    wt.next = waiter->wts.next;
+    waiter->wts.next = &wt;
+    wt.prev = &waiter->wts;
+
     while (waiter->count < count) {
 	pthread_mutex_unlock(&waiter->lock);
 	if (left) {
@@ -108,12 +109,8 @@ wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
     }
     if (!err)
 	waiter->count -= count;
-    if (wt.next)
-	wt.next->prev = wt.prev;
-    if (waiter->wts == &wt)
-	waiter->wts = wt.next;
-    else
-	wt.prev->next = wt.next;
+    wt.next->prev = wt.prev;
+    wt.prev->next = wt.next;
     pthread_mutex_unlock(&waiter->lock);
 
     return err;
@@ -132,8 +129,8 @@ wake_waiter(waiter_t *waiter)
 
     pthread_mutex_lock(&waiter->lock);
     waiter->count++;
-    wt = waiter->wts;
-    while (wt) {
+    wt = waiter->wts.next;
+    while (wt != &waiter->wts) {
 	wt->tv.tv_sec = 0;
 	wt = wt->next;
     }
