@@ -743,7 +743,7 @@ sel_get_monotonic_time(struct timeval *tv)
  */
 static void
 process_timers(struct selector_s       *sel,
-	       unsigned int            count,
+	       unsigned int            *count,
 	       volatile struct timeval *timeout)
 {
     struct timeval now;
@@ -767,7 +767,7 @@ process_timers(struct selector_s       *sel,
 	    timer->val.handler(sel, timer, timer->val.user_data);
 	    sel_timer_lock(sel);
 	}
-	count++;
+	(*count)++;
 	timer->val.in_handler = 0;
 	if (timer->val.done_handler) {
 	    sel_timeout_handler_t done_handler = timer->val.done_handler;
@@ -788,7 +788,7 @@ process_timers(struct selector_s       *sel,
 	timer = theap_get_top(&sel->timer_heap);
     }
 
-    if (count) {
+    if (*count) {
 	/* If called, set the timeout to zero. */
 	timeout->tv_sec = 0;
 	timeout->tv_usec = 0;
@@ -1015,7 +1015,7 @@ process_fds_epoll(struct selector_s *sel, struct timeval *tvtimeout)
 	sel_update_epoll(sel, fd, EPOLL_CTL_MOD);
     sel_fd_unlock(sel);
 
-    return 0;
+    return rv;
 }
 #endif
 
@@ -1034,7 +1034,7 @@ sel_select(struct selector_s *sel,
     sel_timer_lock(sel);
     count = process_runners(sel);
     /* If count is non-zero or any timers are processed, timeout is set to 0. */
-    process_timers(sel, count, (struct timeval *)(&loc_timeout));
+    process_timers(sel, &count, (struct timeval *)(&loc_timeout));
     if (timeout) {
 	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
 	    memcpy(&loc_timeout, timeout, sizeof(loc_timeout));
@@ -1054,7 +1054,10 @@ sel_select(struct selector_s *sel,
     remove_sel_wait_list(sel, &wait_entry);
     sel_timer_unlock(sel);
 
-    return err;
+    if (err < 0)
+	return err;
+
+    return err + count;
 }
 
 /* The main loop for the program.  This will select on the various
