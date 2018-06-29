@@ -55,9 +55,12 @@ struct stel_data {
 
     struct genio *net;
 
-    unsigned char recv_buf[1024];
-    unsigned int recv_buf_curr;
-    unsigned int recv_buf_len;
+    bool read_enabled;
+    bool in_read;
+    bool deferred_read;
+    unsigned char read_data[1024];
+    unsigned int data_pos;
+    unsigned int data_pending_len;
     int in_urgent;
 
     struct telnet_data_s tn_data;
@@ -69,6 +72,13 @@ struct stel_data {
     unsigned int xmit_buf_curr;
     unsigned int xmit_buf_len;
     int saved_xmit_err;
+
+    /*
+     * Used to run read callbacks from the selector to avoid running
+     * it directly from user calls.
+     */
+    bool deferred_op_pending;
+    sel_runner_t *deferred_op_runner;
 
     struct stel_req *reqs;
 };
@@ -313,6 +323,8 @@ stel_finish_free(struct stel_data *sdata)
 	req = req->next;
 	free(prev);
     }
+    if (sdata->deferred_op_runner)
+	sel_free_runner(sdata->deferred_op_runner);
     free(sdata);
 }
 
@@ -331,13 +343,68 @@ check_finish_close(struct stel_data *sdata)
 	sdata->close_done(&sdata->snet.net);
 
     LOCK(sdata->lock);
-    sdata->close_count--; /* Keep stel_free() from freeing it. */
+    /* delay this until here to keep stel_free() from freeing it. */
+    sdata->close_count--;
     if (sdata->in_free) {
 	UNLOCK(sdata->lock);
 	stel_finish_free(sdata);
     } else {
 	UNLOCK(sdata->lock);
     }
+}
+
+/* Must be called with sdata->lock held */
+static void
+stel_finish_read(struct stel_data *sdata, int err, unsigned int count)
+{
+    if (err < 0) {
+	sdata->read_enabled = false;
+    } else if (count < sdata->data_pending_len) {
+	/* If the user doesn't consume all the data, disable
+	   automatically. */
+	sdata->data_pending_len -= count;
+	sdata->data_pos += count;
+	sdata->read_enabled = false;
+    } else {
+	sdata->data_pending_len = 0;
+    }
+
+    sdata->in_read = false;
+
+    if (sdata->read_enabled)
+	genio_set_read_callback_enable(sdata->net, true);
+}
+
+static void
+stel_deferred_op(sel_runner_t *runner, void *cbdata)
+{
+    struct stel_data *sdata = cbdata;
+    struct genio *net = &sdata->snet.net;
+    unsigned int count;
+    bool in_read;
+
+    LOCK(sdata->lock);
+ restart:
+    if (sdata->deferred_read) {
+	in_read = sdata->in_read;
+	sdata->deferred_read = false;
+    }
+
+    if (in_read) {
+	UNLOCK(sdata->lock);
+	count = net->cbs->read_callback(net, 0,
+					&sdata->read_data[sdata->data_pos],
+					sdata->data_pending_len, 0);
+	LOCK(sdata->lock);
+	stel_finish_read(sdata, 0, count);
+    }
+
+    if (sdata->deferred_read)
+	/* Something was added, process it. */
+	goto restart;
+
+    sdata->deferred_op_pending = false;
+    UNLOCK(sdata->lock);
 }
 
 static void
@@ -429,7 +496,22 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    genio_set_read_callback_enable(sdata->net, enabled);
+    LOCK(sdata->lock);
+    sdata->read_enabled = enabled;
+    if (sdata->in_read || (sdata->data_pending_len && !enabled)) {
+	/* Nothing to do, let the read handling wake things up. */
+    } else if (sdata->data_pending_len) {
+	sdata->deferred_read = true;
+	sdata->in_read = true;
+	if (!sdata->deferred_op_pending) {
+	    /* Call the read from the selector to avoid lock nesting issues. */
+	    sdata->deferred_op_pending = true;
+	    sel_run(sdata->deferred_op_runner, stel_deferred_op, sdata);
+	}
+    } else {
+	genio_set_read_callback_enable(sdata->net, enabled);
+    }
+    UNLOCK(sdata->lock);
 }
 
 static void
@@ -466,16 +548,21 @@ stel_genio_read(struct genio *net, int readerr,
     struct stel_data *sdata = genio_get_user_data(net);
     struct genio *mynet = &sdata->snet.net;
     unsigned char *buf = ibuf;
+    unsigned int count = 0;
 
     if (readerr) {
 	mynet->cbs->read_callback(&sdata->snet.net, readerr,
 				  NULL, 0, 0);
-	return 0;
+	goto out_finish;
     }
 
     LOCK(sdata->lock);
-    if (sdata->recv_buf_len)
-	goto out_shutdown;
+    if (!sdata->read_enabled || sdata->data_pending_len)
+	goto out_unlock;
+    genio_set_read_callback_enable(sdata->net, false);
+    sdata->in_read = true;
+    sdata->data_pos = 0;
+    UNLOCK(sdata->lock);
 
     while (sdata->in_urgent && buflen) {
 	if (sdata->in_urgent == 2) {
@@ -491,29 +578,27 @@ stel_genio_read(struct genio *net, int readerr,
     }
 
  process_more:
-    sdata->recv_buf_len = process_telnet_data(sdata->recv_buf,
-					      sizeof(sdata->recv_buf),
-					      &buf, &buflen, &sdata->tn_data);
+    sdata->data_pending_len = process_telnet_data(sdata->read_data,
+						  sizeof(sdata->read_data),
+						  &buf, &buflen,
+						  &sdata->tn_data);
 
-    if (!sdata->recv_buf_len)
-	goto out_unlock;
-
-    sdata->recv_buf_curr = mynet->cbs->read_callback(&sdata->snet.net, 0,
-						     sdata->recv_buf,
-						     sdata->recv_buf_len, 0);
-    if (sdata->recv_buf_curr == sdata->recv_buf_len) {
-	if (buflen)
+    if (sdata->data_pending_len) {
+	count = mynet->cbs->read_callback(&sdata->snet.net, 0,
+					  sdata->read_data,
+					  sdata->data_pending_len, 0);
+	if (count == sdata->data_pending_len && buflen)
 	    goto process_more;
-	sdata->recv_buf_len = 0;
     }
 
- out_shutdown:
-    if (sdata->recv_buf_len)
-	genio_set_read_callback_enable(sdata->net, false);
-out_unlock:
+ out_finish:
+    LOCK(sdata->lock);
+    stel_finish_read(sdata, readerr, count);
+
+ out_unlock:
     UNLOCK(sdata->lock);
     
-    return ibuf - buf;
+    return buf - ibuf;
 }
 
 void
@@ -557,7 +642,7 @@ stel_genio_urgent(struct genio *net)
 
     LOCK(sdata->lock);
     sdata->in_urgent = 1;
-    sdata->recv_buf_len = 0;
+    sdata->data_pending_len = 0;
     UNLOCK(sdata->lock);
     genio_set_read_callback_enable(sdata->net, true);
 }
@@ -710,6 +795,13 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 
     err = sel_alloc_timer(sel, sergenio_telnet_timeout, sdata, &sdata->timer);
     if (err) {
+	free(sdata);
+	return err;
+    }
+
+    err = sel_alloc_runner(sel, &sdata->deferred_op_runner);
+    if (err) {
+	sel_free_timer(sdata->timer);
 	free(sdata);
 	return err;
     }
