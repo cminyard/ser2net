@@ -363,6 +363,7 @@ flush_read_genio(int argc, char **argv, unsigned int *lengths,
     le->flush_read = true;
     genio_set_read_callback_enable(le->io, true);
     wait_for_waiter_timeout(le->waiter, 1, &timeout);
+    genio_set_read_callback_enable(le->io, false);
     le->flush_read = false;
 
     return 0;
@@ -377,8 +378,22 @@ xfer_data_genio(int argc, char **argv, unsigned int *lengths,
     char *end;
     unsigned char *data;
     struct timeval timeout = { 1, 0 };
+    struct genio_list *le2;
+    struct timeval test_time, now;
+    unsigned int last_read;
 
-    size = strtoul(argv[2], &end, 0);
+    if (argc < 4) {
+	printf("Not enough arguments to function\n");
+	return -1;
+    }
+
+    le2 = find_genio(argv[2]);
+    if (!le2) {
+	printf("No genio named %s\n", argv[2]);
+	return -1;
+    }
+
+    size = strtoul(argv[3], &end, 0);
     if (*end != '\0') {
 	printf("Invalid size: %s\n", argv[2]);
 	return -1;
@@ -391,35 +406,46 @@ xfer_data_genio(int argc, char **argv, unsigned int *lengths,
     for (i = 0; i < size; i++)
 	data[i] = i;
 
-    le->read_err = 0;
+    sel_get_monotonic_time(&test_time);
+    test_time.tv_sec += 5;
+
+    le2->read_err = 0;
     le->write_err = 0;
-    le->cmp_read = data;
-    le->cmp_read_len = size;
+    le2->cmp_read = data;
+    le2->cmp_read_len = size;
     le->to_write = data;
     le->to_write_len = size;
-    genio_set_read_callback_enable(le->io, true);
+    genio_set_read_callback_enable(le2->io, true);
     genio_set_write_callback_enable(le->io, true);
 
-    while (!le->read_err && !le->write_err && le->cmp_read_len > 0) {
-	int err;
-	if ((err = sel_select(sel, NULL, 0, NULL, &timeout)) <= 0) {
-	    printf("Timeout in operation\n");
-	    genio_set_read_callback_enable(le->io, false);
-	    genio_set_write_callback_enable(le->io, false);
-	    err = -1;
-	    break;
+    last_read = le2->cmp_read_len;
+    while (!le2->read_err && !le->write_err && le2->cmp_read_len > 0) {
+	sel_select(sel, NULL, 0, NULL, &timeout);
+	sel_get_monotonic_time(&now);
+	if (cmp_timeval(&now, &test_time) >= 0) {
+	    if (last_read == le2->cmp_read_len) {
+		/* No progress in 5 seconds. */
+		printf("Timeout in operation\n");
+		genio_set_read_callback_enable(le2->io, false);
+		genio_set_write_callback_enable(le->io, false);
+		err = -1;
+		break;
+	    }
+	    last_read = le2->cmp_read_len;
+	    test_time = now;
+	    test_time.tv_sec += 5;
 	}
     }
 
     /* Clear these out to avoid abort on exit. */
-    if (!le->cmp_read)
+    if (!le2->cmp_read)
 	wait_for_waiter(le->waiter, 1);
     if (!le->to_write)
 	wait_for_waiter(le->waiter, 1);
-    le->cmp_read = NULL;
+    le2->cmp_read = NULL;
     le->to_write = NULL;
 
-    if (le->read_err) {
+    if (le2->read_err) {
 	printf("Data mismatch reading data\n");
 	err = -1;
     }
