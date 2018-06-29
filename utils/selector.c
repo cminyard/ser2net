@@ -768,15 +768,17 @@ process_timers(struct selector_s       *sel,
 	    sel_timer_lock(sel);
 	}
 	(*count)++;
-	timer->val.in_handler = 0;
 	if (timer->val.done_handler) {
 	    sel_timeout_handler_t done_handler = timer->val.done_handler;
 	    void *done_cb_data = timer->val.done_cb_data;
+
 	    timer->val.done_handler = NULL;
+	    timer->val.in_handler = 1;
 	    sel_timer_unlock(sel);
 	    done_handler(sel, timer, done_cb_data);
 	    sel_timer_lock(sel);
 	}
+	timer->val.in_handler = 0;
 	if (timer->val.freed)
 	    free(timer);
 	else if (!timer->val.stopped) {
