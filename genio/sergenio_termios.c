@@ -658,9 +658,8 @@ handle_read(int fd, void *cb_data)
     unsigned int count = 0;
 
     LOCK(sdata->lock);
-    if (!sdata->read_enabled)
+    if (!sdata->read_enabled || sdata->data_pending_len)
 	goto out_unlock;
-    sdata->read_enabled = false;
     sel_set_fd_read_handler(sdata->sel, sdata->fd, SEL_FD_HANDLER_DISABLED);
     sdata->in_read = true;
     sdata->data_pos = 0;
