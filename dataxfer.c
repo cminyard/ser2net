@@ -936,6 +936,8 @@ io_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
     write_count = io->f->write(io, buf, buflen);
     if (write_count == -1)
 	err = errno;
+    else
+	*written = write_count;
 
     return err;
 }
