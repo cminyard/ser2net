@@ -1030,14 +1030,17 @@ sel_select(struct selector_s *sel,
     struct timeval  loc_timeout;
     sel_wait_list_t wait_entry;
     unsigned int    count;
+    int user_timeout = 0;
 
     sel_timer_lock(sel);
     count = process_runners(sel);
     /* If count is non-zero or any timers are processed, timeout is set to 0. */
     process_timers(sel, &count, (struct timeval *)(&loc_timeout));
     if (timeout) {
-	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0)
-	    memcpy(&loc_timeout, timeout, sizeof(loc_timeout));
+	if (cmp_timeval((struct timeval *)(&loc_timeout), timeout) >= 0) {
+	    loc_timeout = *timeout;
+	    user_timeout = 1;
+	}
     }
     add_sel_wait_list(sel, &wait_entry, send_sig, cb_data, thread_id,
 		      &loc_timeout);
@@ -1049,6 +1052,16 @@ sel_select(struct selector_s *sel,
     else
 #endif
 	err = process_fds(sel, &loc_timeout);
+
+    if (!user_timeout || (err && errno == EINTR)) {
+	/*
+	 * Only return a timeout if we waited on the user's timeout
+	 * Otherwise there is a timer to process.
+	 * Also, if we get an EINTR, we don't want to report a timeout.
+	 */
+	count++;
+	err = 0;
+    }
 
     sel_timer_lock(sel);
     remove_sel_wait_list(sel, &wait_entry);
