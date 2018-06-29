@@ -413,6 +413,7 @@ str_to_genio(const char *str,
 	    return err;
 	err = stdio_genio_alloc(argv, sel, max_read_size, cbs, user_data,
 				genio);
+	str_to_argv_free(argc, argv);
     } else if (strncmp(str, "ser,", 4) == 0) {
 	struct sergenio *sio;
 
