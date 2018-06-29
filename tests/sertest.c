@@ -47,7 +47,8 @@ struct genio_list {
     struct genio_list *next;
 
     struct waiter_s *waiter;
-    int err;
+    int read_err;
+    int write_err;
 
     unsigned char *to_write;
     unsigned int to_write_len;
@@ -67,6 +68,7 @@ find_genio(char *name)
     while (le) {
 	if (tokeq(le->name, name))
 	    break;
+	le = le->next;
     }
 
     return le;
@@ -105,7 +107,7 @@ data_read(struct genio *net, int readerr,
     for (i = 0; i < to_cmp; i++) {
 	if (buf[i] != *le->cmp_read) {
 	    to_cmp = i; /* Only read up to the last matching value. */
-	    le->err = EINVAL;
+	    le->read_err = EINVAL;
 	    goto finish_op;
 	}
 	le->cmp_read++;
@@ -134,7 +136,8 @@ write_ready(struct genio *net)
 	return;
     }
 
-    le->err = genio_write(le->io, &written, le->to_write, le->to_write_len);
+    le->write_err = genio_write(le->io, &written, le->to_write,
+				le->to_write_len);
     if (written >= le->to_write_len) {
 	genio_set_write_callback_enable(le->io, false);
 	le->to_write = NULL;
@@ -271,15 +274,15 @@ free_genio(int argc, char **argv, unsigned int *lengths, struct genio_list *le)
 static int
 write_genio(int argc, char **argv, unsigned int *lengths, struct genio_list *le)
 {
-    le->err = 0;
+    le->write_err = 0;
     le->to_write = (unsigned char *) argv[2];
     le->to_write_len = lengths[2];
     genio_set_write_callback_enable(le->io, true);
     wait_for_waiter(le->waiter, 1);
-    if (le->err)
+    if (le->write_err)
 	printf("Error writing genio\n");
 
-    return le->err;
+    return le->write_err;
 }
 
 static int
@@ -305,7 +308,7 @@ check_read_genio(int argc, char **argv, unsigned int *lengths,
     int err;
     struct timeval timeout = { 5, 0 };
 
-    le->err = 0;
+    le->read_err = 0;
     le->cmp_read = (unsigned char *) argv[2];
     le->cmp_read_len = lengths[2];
     genio_set_read_callback_enable(le->io, true);
@@ -314,7 +317,7 @@ check_read_genio(int argc, char **argv, unsigned int *lengths,
 	genio_set_read_callback_enable(le->io, false);
 	printf("Timeout waiting for read data\n");
 	err = -1;
-    } else if (le->err) {
+    } else if (le->read_err) {
 	printf("Data mismatch reading data\n");
 	err = -1;
     }
@@ -336,6 +339,65 @@ flush_read_genio(int argc, char **argv, unsigned int *lengths,
     return 0;
 }
 
+static int
+xfer_data_genio(int argc, char **argv, unsigned int *lengths,
+		struct genio_list *le)
+{
+    int err = 0;
+    unsigned int size, i;
+    char *end;
+    unsigned char *data;
+    struct timeval timeout = { 1, 0 };
+
+    size = strtoul(argv[2], &end, 0);
+    if (*end != '\0') {
+	printf("Invalid size: %s\n", argv[2]);
+	return -1;
+    }
+
+    data = malloc(size);
+    if (!data)
+	return ENOMEM;
+
+    for (i = 0; i < size; i++)
+	data[i] = i;
+
+    le->read_err = 0;
+    le->write_err = 0;
+    le->cmp_read = data;
+    le->cmp_read_len = size;
+    le->to_write = data;
+    le->to_write_len = size;
+    genio_set_read_callback_enable(le->io, true);
+    genio_set_write_callback_enable(le->io, true);
+
+    while (!le->read_err && !le->write_err && le->cmp_read_len > 0) {
+	int err;
+	if ((err = sel_select(sel, NULL, 0, NULL, &timeout)) <= 0) {
+	    printf("Timeout in operation\n");
+	    genio_set_read_callback_enable(le->io, false);
+	    genio_set_write_callback_enable(le->io, false);
+	    le->cmp_read = NULL;
+	    le->to_write = NULL;
+	    err = -1;
+	    break;
+	}
+    }
+
+    if (le->read_err) {
+	printf("Data mismatch reading data\n");
+	err = -1;
+    }
+    if (le->write_err) {
+	printf("Write error: %s\n", strerror(le->write_err));
+	err = -1;
+    }
+
+    free(data);
+
+    return err;
+}
+
 struct cmd_list {
     const char *name;
     int (*func)(int argc, char **argv, unsigned int *lengths);
@@ -354,6 +416,7 @@ struct cmd_list cmds[] = {
     { "read_off",   .gfunc = read_disable_genio },
     { "check_read", .gfunc = check_read_genio },
     { "flush_read", .gfunc = flush_read_genio },
+    { "xfer",       .gfunc = xfer_data_genio },
     { NULL }
 };
 
