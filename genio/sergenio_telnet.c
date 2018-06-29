@@ -483,8 +483,8 @@ stel_free(struct genio *net)
     struct stel_data *sdata = mygenio_to_stel(net);
 
     LOCK(sdata->lock);
+    sdata->in_free = true;
     if (sdata->close_count) {
-	sdata->in_free = true;
 	sdata->close_done = NULL;
 	UNLOCK(sdata->lock);
     } else if (sdata->closed) {
