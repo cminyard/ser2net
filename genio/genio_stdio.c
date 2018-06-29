@@ -239,6 +239,10 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 	    nadata->close_done(&nadata->net);
 	LOCK(nadata->lock);
 	nadata->in_close = false;
+	if (nadata->in_free) {
+	    stdiona_finish_free(nadata);
+	    return;
+	}
     }
     UNLOCK(nadata->lock);
 }
@@ -308,7 +312,6 @@ stdion_read_ready(int fd, void *cbdata)
     LOCK(nadata->lock);
     if (!nadata->read_enabled)
 	goto out_unlock;
-    nadata->read_enabled = false;
     sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
 			    SEL_FD_HANDLER_DISABLED);
     if (nadata->ostderr != -1)
@@ -392,6 +395,20 @@ stdion_open(struct genio *net)
     nadata->ostdin = stdinpipe[1];
     nadata->ostdout = stdoutpipe[0];
     nadata->ostderr = stderrpipe[0];
+
+    if (fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK) == -1) {
+	err = errno;
+	goto out_err;
+    }
+    if (fcntl(nadata->ostdout, F_SETFL, O_NONBLOCK) == -1) {
+	err = errno;
+	goto out_err;
+    }
+    if (fcntl(nadata->ostderr, F_SETFL, O_NONBLOCK) == -1) {
+	err = errno;
+	goto out_err;
+    }
+
     err = sel_set_fd_handlers(nadata->sel, nadata->ostdout, nadata,
 			      stdion_read_ready, NULL, NULL,
 			      stdio_client_fd_cleared);
@@ -434,6 +451,8 @@ stdion_open(struct genio *net)
     close(stdinpipe[0]);
     close(stdoutpipe[1]);
     close(stderrpipe[1]);
+
+    nadata->closed = false;
 
     return 0;
 
@@ -505,11 +524,13 @@ stdion_free(struct genio *net)
     struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
+    nadata->in_free = true;
     if (nadata->in_close) {
 	nadata->close_done = NULL;
 	UNLOCK(nadata->lock);
     } else if (nadata->closed) {
 	UNLOCK(nadata->lock);
+	stdiona_finish_free(nadata);
     } else {
 	__stdion_close(nadata, NULL);
 	UNLOCK(nadata->lock);
