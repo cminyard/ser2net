@@ -559,6 +559,8 @@ udpn_set_read_callback_enable(struct genio *net, bool enabled)
     bool my_data_pending;
 
     LOCK(nadata->lock);
+    if (ndata->closed)
+	goto out_unlock;
     my_data_pending = (nadata->data_pending &&
 		       nadata->pending_data_owner == ndata);
     if (ndata->in_read || (my_data_pending && !enabled)) {
@@ -579,16 +581,19 @@ udpn_set_read_callback_enable(struct genio *net, bool enabled)
 	else
 	    udpna_fd_read_disable(ndata->nadata);
     }
+ out_unlock:
     UNLOCK(nadata->lock);
 }
 
 static void
 udpn_set_write_callback_enable(struct genio *net, bool enabled)
 {
-  struct udpn_data *ndata = net_to_ndata(net);
+    struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
 
     LOCK(nadata->lock);
+    if (ndata->closed)
+	goto out_unlock;
     if (ndata->write_enabled != enabled) {
 	ndata->write_enabled = enabled;
 	if (enabled)
@@ -596,6 +601,7 @@ udpn_set_write_callback_enable(struct genio *net, bool enabled)
 	else
 	    udpna_fd_write_disable(ndata->nadata);
     }
+ out_unlock:
     UNLOCK(nadata->lock);
 }
 

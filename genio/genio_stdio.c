@@ -249,6 +249,8 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
     struct stdiona_data *nadata = net_to_nadata(net);
 
     LOCK(nadata->lock);
+    if (nadata->closed)
+	goto out_unlock;
     nadata->read_enabled = enabled;
     if (nadata->in_read || (nadata->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read handling wake things up. */
@@ -272,6 +274,7 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
 	if (nadata->ostderr != -1)
 	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr, op);
     }
+ out_unlock:
     UNLOCK(nadata->lock);
 }
 
@@ -281,12 +284,17 @@ stdion_set_write_callback_enable(struct genio *net, bool enabled)
     struct stdiona_data *nadata = net_to_nadata(net);
     int op;
 
+    LOCK(nadata->lock);
+    if (nadata->closed)
+	goto out_unlock;
     if (enabled)
 	op = SEL_FD_HANDLER_ENABLED;
     else
 	op = SEL_FD_HANDLER_DISABLED;
 
     sel_set_fd_write_handler(nadata->sel, nadata->ostdin, op);
+ out_unlock:
+    UNLOCK(nadata->lock);
 }
 
 static void

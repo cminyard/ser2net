@@ -24,11 +24,6 @@
 #include "genio_internal.h"
 #include "sergenio.h"
 
-enum sergenio_type {
-    SERGENIO_TYPE_TELNET,
-    SERGENIO_TYPE_DEV
-};
-
 struct sergenio_functions {
     int (*baud)(struct sergenio *snet, int baud,
 		void (*done)(struct sergenio *snet, int err,
@@ -81,8 +76,6 @@ struct sergenio {
     const struct sergenio_callbacks *scbs;
 
     const struct sergenio_functions *funcs;
-
-    enum sergenio_type type;
 };
 
 #endif /* SER2NET_SERGENIO_INTERNAL_H */
