@@ -157,5 +157,13 @@ void set_termios_xonoff(struct termios *termctl, int enabled);
  */
 void set_termios_parity(struct termios *termctl, enum parity_vals val);
 
+/* Return -1 if tv1 < tv2, 0 if tv1 == tv2, and 1 if tv1 > tv2 */
+int cmp_timeval(struct timeval *tv1, struct timeval *tv2);
+
+/* Add tv2 to tv1 */
+void add_to_timeval(struct timeval *tv1, struct timeval *tv2);
+
+/* Subtract tv2 from tv1 */
+void sub_from_timeval(struct timeval *tv1, struct timeval *tv2);
 
 #endif /* UTILS */
