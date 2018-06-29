@@ -74,6 +74,38 @@ find_genio(char *name)
     return le;
 }
 
+static void
+finish_free_genio(struct genio_list *le)
+{
+    genio_free(le->io);
+    free_waiter(le->waiter);
+    free(le->name);
+    free(le);
+}
+
+static void
+free_close_done(struct genio *io)
+{
+    struct genio_list *le = genio_get_user_data(io);
+
+    wake_waiter(le->waiter);
+}
+
+static void
+free_genios(void)
+{
+    while (genios) {
+	struct genio_list *le = genios;
+
+	genios = le->next;
+	if (genio_close(le->io, free_close_done))
+	    genio_free(le->io);
+	else
+	    wait_for_waiter(le->waiter, 1);
+	finish_free_genio(le);
+    }
+}
+
 static int
 start_exit(int argc, char **argv, unsigned int *lengths)
 {
@@ -263,10 +295,7 @@ free_genio(int argc, char **argv, unsigned int *lengths, struct genio_list *le)
 	prev->next = le->next;
     }
 
-    genio_free(le->io);
-    free_waiter(le->waiter);
-    free(le->name);
-    free(le);
+    finish_free_genio(le);
 
     return 0;
 }
@@ -377,12 +406,18 @@ xfer_data_genio(int argc, char **argv, unsigned int *lengths,
 	    printf("Timeout in operation\n");
 	    genio_set_read_callback_enable(le->io, false);
 	    genio_set_write_callback_enable(le->io, false);
-	    le->cmp_read = NULL;
-	    le->to_write = NULL;
 	    err = -1;
 	    break;
 	}
     }
+
+    /* Clear these out to avoid abort on exit. */
+    if (!le->cmp_read)
+	wait_for_waiter(le->waiter, 1);
+    if (!le->to_write)
+	wait_for_waiter(le->waiter, 1);
+    le->cmp_read = NULL;
+    le->to_write = NULL;
 
     if (le->read_err) {
 	printf("Data mismatch reading data\n");
@@ -579,6 +614,8 @@ main(int argc, char *argv[])
 	sel_select(sel, NULL, 0, NULL, NULL);
 
     cleanup_term(sel);
+
+    free_genios();
 
     sel_free_selector(sel);
 
