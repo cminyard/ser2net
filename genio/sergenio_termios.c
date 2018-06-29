@@ -119,6 +119,7 @@ sterm_finish_close(struct sterm_data *sdata)
     uucp_rm_lock(sdata->devname);
     if (sdata->close_done)
 	sdata->close_done(&sdata->snet.net);
+    sdata->in_close = false;
     if (sdata->in_free)
 	sterm_finish_free(sdata);
 }
