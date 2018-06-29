@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <limits.h>
 #include "waiter.h"
+#include "utils.h"
 
 #ifdef USE_PTHREADS
 
@@ -60,36 +61,6 @@ wake_thread_send_sig(long thread_id, void *cb_data)
     struct wait_data *w = cb_data;
 
     pthread_kill(w->id, w->wake_sig);
-}
-
-static void
-add_to_timeval(struct timeval *tv1, struct timeval *tv2)
-{
-    tv1->tv_sec += tv2->tv_sec;
-    tv1->tv_usec += tv2->tv_usec;
-    while (tv1->tv_usec > 1000000) {
-	tv1->tv_usec -= 1000000;
-	tv1->tv_sec += 1;
-    }
-    while (tv1->tv_usec < 0) {
-	tv1->tv_usec += 1000000;
-	tv1->tv_sec -= 1;
-    }
-}
-
-static void
-sub_from_timeval(struct timeval *tv1, struct timeval *tv2)
-{
-    tv1->tv_sec -= tv2->tv_sec;
-    tv1->tv_usec -= tv2->tv_usec;
-    while (tv1->tv_usec > 1000000) {
-	tv1->tv_usec -= 1000000;
-	tv1->tv_sec += 1;
-    }
-    while (tv1->tv_usec < 0) {
-	tv1->tv_usec += 1000000;
-	tv1->tv_sec -= 1;
-    }
 }
 
 int

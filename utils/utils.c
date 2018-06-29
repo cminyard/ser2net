@@ -707,3 +707,48 @@ process_termios_parm(struct termios *termio, char *parm)
 
     return rv;
 }
+
+int
+cmp_timeval(struct timeval *tv1, struct timeval *tv2)
+{
+    if (tv1->tv_sec > tv2->tv_sec)
+	return 1;
+    else if (tv1->tv_sec < tv2->tv_sec)
+	return -1;
+    else if (tv1->tv_usec > tv2->tv_usec)
+	return 1;
+    else if (tv1->tv_usec < tv2->tv_usec)
+	return -1;
+    else
+	return 0;
+}
+
+void
+add_to_timeval(struct timeval *tv1, struct timeval *tv2)
+{
+    tv1->tv_sec += tv2->tv_sec;
+    tv1->tv_usec += tv2->tv_usec;
+    while (tv1->tv_usec > 1000000) {
+	tv1->tv_usec -= 1000000;
+	tv1->tv_sec += 1;
+    }
+    while (tv1->tv_usec < 0) {
+	tv1->tv_usec += 1000000;
+	tv1->tv_sec -= 1;
+    }
+}
+
+void
+sub_from_timeval(struct timeval *tv1, struct timeval *tv2)
+{
+    tv1->tv_sec -= tv2->tv_sec;
+    tv1->tv_usec -= tv2->tv_usec;
+    while (tv1->tv_usec > 1000000) {
+	tv1->tv_usec -= 1000000;
+	tv1->tv_sec += 1;
+    }
+    while (tv1->tv_usec < 0) {
+	tv1->tv_usec += 1000000;
+	tv1->tv_sec -= 1;
+    }
+}
