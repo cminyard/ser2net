@@ -737,6 +737,8 @@ sterm_open(struct genio *net)
 			      devfd_fd_cleared);
     if (err)
 	goto out_uucp;
+
+    sdata->closed = false;
     UNLOCK(sdata->lock);
 
     return 0;
@@ -804,6 +806,8 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
     struct sterm_data *sdata = mygenio_to_sterm(net);
 
     LOCK(sdata->lock);
+    if (sdata->closed)
+	goto out_unlock;
     sdata->read_enabled = enabled;
     if (sdata->in_read || (sdata->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read handling wake things up. */
@@ -825,6 +829,7 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
 
 	sel_set_fd_read_handler(sdata->sel, sdata->fd, op);
     }
+ out_unlock:
     UNLOCK(sdata->lock);
 }
 
@@ -834,12 +839,17 @@ sterm_set_write_callback_enable(struct genio *net, bool enabled)
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int op;
 
+    LOCK(sdata->lock);
+    if (sdata->closed)
+	goto out_unlock;
     if (enabled)
 	op = SEL_FD_HANDLER_ENABLED;
     else
 	op = SEL_FD_HANDLER_DISABLED;
 
-    sel_set_fd_write_handler(sdata->sel, sdata->fd, op);  
+    sel_set_fd_write_handler(sdata->sel, sdata->fd, op);
+ out_unlock:
+    UNLOCK(sdata->lock);
 }
 
 static const struct genio_functions sterm_net_funcs = {
@@ -926,7 +936,7 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
 	goto out;
     }
 
-    err = sel_alloc_runner(sdata->sel, &sdata->deferred_op_runner);
+    err = sel_alloc_runner(sel, &sdata->deferred_op_runner);
     if (err)
 	goto out;
 

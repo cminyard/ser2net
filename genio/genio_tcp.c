@@ -498,7 +498,9 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
     struct tcpn_data *ndata = net_to_ndata(net);
 
     LOCK(ndata->lock);
-    if (ndata->in_read || (ndata->data_pending && !enabled)) {
+    if (!ndata->open) {
+	/* Just ignore this. */
+    } else if (ndata->in_read || (ndata->data_pending && !enabled)) {
 	ndata->user_set_read_enabled = true;
 	ndata->user_read_enabled_setting = enabled;
     } else if (ndata->data_pending) {
@@ -528,12 +530,18 @@ tcpn_set_write_callback_enable(struct genio *net, bool enabled)
     struct tcpn_data *ndata = net_to_ndata(net);
     int op;
 
-    if (enabled)
-	op = SEL_FD_HANDLER_ENABLED;
-    else
-	op = SEL_FD_HANDLER_DISABLED;
+    LOCK(ndata->lock);
+    if (!ndata->open) {
+	/* Just ignore this. */
+    } else {
+	if (enabled)
+	    op = SEL_FD_HANDLER_ENABLED;
+	else
+	    op = SEL_FD_HANDLER_DISABLED;
 
-    sel_set_fd_write_handler(ndata->sel, ndata->fd, op);
+	sel_set_fd_write_handler(ndata->sel, ndata->fd, op);
+    }
+    UNLOCK(ndata->lock);
 }
 
 static const char *

@@ -257,6 +257,10 @@ stel_write(struct genio *net, unsigned int *rcount,
     int err = 0;
 
     LOCK(sdata->lock);
+    if (sdata->closed) {
+	err = EBADF;
+	goto out_unlock;
+    }
     if (sdata->saved_xmit_err) {
 	err = sdata->saved_xmit_err;
 	sdata->saved_xmit_err = 0;
@@ -497,6 +501,8 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
     struct stel_data *sdata = mygenio_to_stel(net);
 
     LOCK(sdata->lock);
+    if (sdata->closed)
+	goto out_unlock;
     sdata->read_enabled = enabled;
     if (sdata->in_read || (sdata->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read handling wake things up. */
@@ -511,6 +517,7 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
     } else {
 	genio_set_read_callback_enable(sdata->net, enabled);
     }
+ out_unlock:
     UNLOCK(sdata->lock);
 }
 
@@ -520,12 +527,15 @@ stel_set_write_callback_enable(struct genio *net, bool enabled)
     struct stel_data *sdata = mygenio_to_stel(net);
 
     LOCK(sdata->lock);
+    if (sdata->closed)
+	goto out_unlock;
     if (sdata->xmit_enabled != enabled) {
 	sdata->xmit_enabled = enabled;
 	if (enabled || !sdata->xmit_buf_len)
 	    /* Only disable if we don't have data pending. */
 	    genio_set_write_callback_enable(sdata->net, enabled);
     }
+ out_unlock:
     UNLOCK(sdata->lock);
 }
 
