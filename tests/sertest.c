@@ -151,7 +151,7 @@ data_read(struct genio *net, int readerr,
 	return 0;
     }
 
-    dbgout(c, 1, "Data read with %u bytes, %u to compare\n",
+    dbgout(c, 2, "Data read with %u bytes, %u to compare\n",
 	   buflen, le->cmp_read_len);
     if (buflen > le->cmp_read_len)
 	to_cmp = le->cmp_read_len;
@@ -201,14 +201,14 @@ write_ready(struct genio *net)
     le->write_err = genio_write(le->io, &written, le->to_write,
 				le->to_write_len);
     if (le->write_err || written >= le->to_write_len) {
-	dbgout(c, 1, "Write finished, err=%d, count=%d\n",
+	dbgout(c, 2, "Write finished, err=%d, count=%d\n",
 	       le->write_err, written);
 	genio_set_write_callback_enable(le->io, false);
 	le->to_write = NULL;
 	le->to_write_len = 0;
 	wake_waiter(le->waiter);
     } else {
-	dbgout(c, 1, "Partial write, count=%d\n", written);
+	dbgout(c, 2, "Partial write, count=%d\n", written);
 	le->to_write += written;
 	le->to_write_len -= written;
     }
@@ -617,6 +617,7 @@ sertest_alloc_context(struct selector_s *sel, bool *done, struct absout *out,
 bool my_done;
 struct sertest_context *c;
 struct selector_s *my_sel;
+int debug;
 
 static void
 cmd_cb_handler(char *cmdline)
@@ -715,14 +716,115 @@ pr_out(struct absout *o, const char *fmt, ...)
     return rv;
 }
 
+static void
+process_file(const char *filename)
+{
+    char *buf = NULL, *p;
+    int bufsize = 0;
+    int readpos = 0;
+    FILE *f;
+    struct absout my_out = { .out = pr_out, .data = NULL };
+    int err;
+    struct timeval zerotime = {0, 0};
+
+    c = sertest_alloc_context(my_sel, &my_done, &my_out, debug);
+    if (!c) {
+	fprintf(stderr, "Could not allocate sertest context\n");
+	exit(1);
+    }
+
+    f = fopen(filename, "r");
+    if (!f) {
+	fprintf(stderr, "Error opening '%s'\n", filename);
+	exit(1);
+    }
+
+    while (true) {
+	if (readpos >= bufsize - 1) {
+	    char *nb;
+
+	    bufsize += 100;
+	    nb = realloc(buf, bufsize);
+	    if (!nb) {
+		fprintf(stderr, "Out of memory reading commands\n");
+		exit(1);
+	    }
+	    buf = nb;
+	}
+	if (!fgets(buf + readpos, bufsize - readpos, f))
+	    break;
+	readpos = strlen(buf + readpos);
+	if (readpos >= bufsize - 1 && buf[readpos - 1] != '\n')
+	    /* Didn't get all the line, continue reading. */
+	    continue;
+
+	if (readpos == 0)
+	    continue;
+	if (buf[readpos - 1] == '\n')
+	    buf[--readpos] = '\0';
+	if (readpos == 0)
+	    continue;
+	if (buf[readpos - 1] == '\\') {
+	    buf[--readpos] = '\0';
+	    continue;
+	}
+	p = buf;
+	while (*p && isspace(*p))
+	    p++;
+
+	printf("EX: %s\n", p);
+	if (*p != '#') {
+	    err = sertest_cmd(c, p);
+	    if (err) {
+		if (err != -1)
+		    printf("Error: %s\n", strerror(err));
+		exit(1);
+	    }
+	}
+	readpos = 0;
+    }
+
+    fclose(f);
+    free(buf);
+
+    sertest_cleanup(c);
+
+    while (sel_select(my_sel, NULL, 0, NULL, &zerotime) > 0)
+	;
+}
+
+static void
+interactive_term(void)
+{
+    struct absout my_out = { .out = pr_out, .data = NULL };
+    int rv;
+
+    c = sertest_alloc_context(my_sel, &my_done, &my_out, debug);
+    if (!c) {
+	fprintf(stderr, "Could not allocate sertest context\n");
+	exit(1);
+    }
+
+    rv = setup_term(my_sel);
+    if (rv) {
+	fprintf(stderr, "Could not set up terminal: %s\n", strerror(rv));
+	exit(1);
+    }
+
+    while (!my_done)
+	sel_select(my_sel, NULL, 0, NULL, NULL);
+
+    cleanup_term(my_sel);
+
+    sertest_cleanup(c);
+}
+
 int
 main(int argc, char *argv[])
 {
     int curr_arg = 1;
     const char *arg;
     int rv;
-    struct absout my_out = { .out = pr_out, .data = NULL };
-    int debug = 0;
 
     while ((curr_arg < argc) && (argv[curr_arg][0] == '-')) {
 	arg = argv[curr_arg];
@@ -743,26 +845,14 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
-    c = sertest_alloc_context(my_sel, &my_done, &my_out, debug);
-    if (!c) {
-	fprintf(stderr, "Could not allocate sertest context\n");
-	exit(1);
-    }
-
     setup_sig();
 
-    rv = setup_term(my_sel);
-    if (rv) {
-	fprintf(stderr, "Could not set up terminal: %s\n", strerror(rv));
-	exit(1);
+    if (curr_arg < argc) {
+	for (; curr_arg < argc; curr_arg++)
+	    process_file(argv[curr_arg]);
+    } else {
+	interactive_term();
     }
-
-    while (!my_done)
-	sel_select(my_sel, NULL, 0, NULL, NULL);
-
-    cleanup_term(my_sel);
-
-    sertest_cleanup(c);
 
     sel_free_selector(my_sel);
 
