@@ -65,6 +65,8 @@ struct absout {
     int (*out)(struct absout *e, const char *str, ...);
     void *data;
 };
+#define abspr(abs, fmt, ...) \
+  abs->out(abs, fmt, ##__VA_ARGS__)
 
 /*
  * Given an integer baud rate (300 for 300baud, for instance),
