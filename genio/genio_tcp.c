@@ -439,12 +439,10 @@ tcpn_close(struct genio *net, void (*close_done)(struct genio *net))
 	ndata->open = false;
 	ndata->in_close = true;
 	ndata->close_done = close_done;
+	sel_clear_fd_handlers(ndata->sel, ndata->fd);
 	err = 0;
     }
     UNLOCK(ndata->lock);
-
-    if (!err)
-	sel_clear_fd_handlers(ndata->sel, ndata->fd);
 
     return err;
 }
