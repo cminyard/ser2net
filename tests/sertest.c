@@ -80,7 +80,6 @@ find_genio(char *name)
 static void
 finish_free_genio(struct genio_list *le)
 {
-    genio_free(le->io);
     free_waiter(le->waiter);
     free(le->name);
     free(le);
@@ -101,10 +100,13 @@ free_genios(void)
 	struct genio_list *le = genios;
 
 	genios = le->next;
-	if (genio_close(le->io, free_close_done))
+	if (genio_close(le->io, free_close_done)) {
+	    /* Already closed, just free it. */
 	    genio_free(le->io);
-	else
+	} else {
 	    wait_for_waiter(le->waiter, 1);
+	    genio_free(le->io);
+	}
 	finish_free_genio(le);
     }
 }
@@ -206,6 +208,12 @@ alloc_genio(int argc, char **argv, unsigned int *lengths)
 
     if (argc < 3) {
 	printf("Not enough arguments to function\n");
+	return -1;
+    }
+
+    le = find_genio(argv[1]);
+    if (le) {
+	printf("Name '%s' is already in use\n", argv[1]);
 	return -1;
     }
 
