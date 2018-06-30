@@ -50,9 +50,6 @@ struct tcpn_data {
     bool in_free;
     void (*close_done)(struct genio *net);
 
-    bool user_set_read_enabled;
-    bool user_read_enabled_setting;
-
     bool data_pending;
     unsigned int data_pending_len;
     unsigned int data_pos;
@@ -224,24 +221,17 @@ tcpn_finish_read(struct tcpn_data *ndata, int err, unsigned int count)
 {
     ndata->data_pending = false;
     if (err < 0) {
-	ndata->user_set_read_enabled = true;
-	ndata->user_read_enabled_setting = false;
+	ndata->read_enabled = false;
     } else if (count < ndata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
 	ndata->data_pending = true;
 	ndata->data_pending_len -= count;
 	ndata->data_pos += count;
-	ndata->user_set_read_enabled = true;
-	ndata->user_read_enabled_setting = false;
+	ndata->read_enabled = false;
     }
 
     ndata->in_read = false;
-
-    if (ndata->user_set_read_enabled)
-	ndata->read_enabled = ndata->user_read_enabled_setting;
-    else
-	ndata->read_enabled = true;
 
     if (ndata->read_enabled) {
 	sel_set_fd_read_handler(ndata->sel, ndata->fd,
@@ -263,11 +253,9 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     LOCK(ndata->lock);
     if (!ndata->read_enabled)
 	goto out_unlock;
-    ndata->read_enabled = false;
     sel_set_fd_read_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     sel_set_fd_except_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     ndata->in_read = true;
-    ndata->user_set_read_enabled = false;
     ndata->data_pos = 0;
     UNLOCK(ndata->lock);
 
@@ -499,8 +487,7 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
     if (!ndata->open) {
 	/* Just ignore this. */
     } else if (ndata->in_read || (ndata->data_pending && !enabled)) {
-	ndata->user_set_read_enabled = true;
-	ndata->user_read_enabled_setting = enabled;
+	ndata->read_enabled = enabled;
     } else if (ndata->data_pending) {
 	if (!ndata->deferred_read_pending) {
 	    /* Call the read from the selector to avoid lock nesting issues. */
