@@ -68,7 +68,6 @@ struct tcpn_data {
      */
     bool deferred_read_pending;
     sel_runner_t *deferred_read_runner;
-    bool deferred_close; /* A close is pending the running running. */
 
     struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
@@ -217,12 +216,22 @@ tcpn_finish_close(struct tcpn_data *ndata)
 
 /* Must be called with ndata->lock held */
 static void
-tcpn_finish_read(struct tcpn_data *ndata, int err, unsigned int count)
+tcpn_finish_read(struct tcpn_data *ndata, int err)
 {
+    struct genio *net = &ndata->net;
+    unsigned int count;
+
+    LOCK(ndata->lock);
     ndata->data_pending = false;
-    if (err < 0) {
+
+    if (err < 0)
 	ndata->read_enabled = false;
-    } else if (count < ndata->data_pending_len) {
+
+    count = net->cbs->read_callback(net, err,
+				    ndata->read_data + ndata->data_pos,
+				    ndata->data_pending_len, 0);
+
+    if (!err && count < ndata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
 	ndata->data_pending = true;
@@ -233,12 +242,18 @@ tcpn_finish_read(struct tcpn_data *ndata, int err, unsigned int count)
 
     ndata->in_read = false;
 
+    if (ndata->in_close && !ndata->in_write) {
+	tcpn_finish_close(ndata); /* Releases the lock */
+	return;
+    }
+
     if (ndata->read_enabled) {
 	sel_set_fd_read_handler(ndata->sel, ndata->fd,
 				SEL_FD_HANDLER_ENABLED);
 	sel_set_fd_except_handler(ndata->sel, ndata->fd,
 				  SEL_FD_HANDLER_ENABLED);
     }
+    UNLOCK(ndata->lock);
 }
 
 static void
@@ -246,17 +261,19 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 {
     struct tcpn_data *ndata = cbdata;
     struct genio *net = &ndata->net;
-    unsigned int count = 0;
     int c;
-    int rv;
+    int rv, err = 0;
 
     LOCK(ndata->lock);
-    if (!ndata->read_enabled)
-	goto out_unlock;
+    if (!ndata->read_enabled) {
+	UNLOCK(ndata->lock);
+	return;
+    }
     sel_set_fd_read_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     sel_set_fd_except_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     ndata->in_read = true;
     ndata->data_pos = 0;
+    ndata->data_pending_len = 0;
     UNLOCK(ndata->lock);
 
     if (urgent) {
@@ -280,19 +297,14 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, NULL, 0, 0);
+	    err = errno;
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, NULL, 0, 0);
-	rv = -1;
+	err = EPIPE;
     } else {
 	ndata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, ndata->read_data, rv, 0);
     }
 
-    LOCK(ndata->lock);
-    tcpn_finish_read(ndata, rv, count);
- out_unlock:
-    UNLOCK(ndata->lock);
+    tcpn_finish_read(ndata, err);
 }
 
 static void
@@ -315,7 +327,7 @@ tcpn_write_ready(int fd, void *cbdata)
 
     LOCK(ndata->lock);
     ndata->in_write = false;
-    if (ndata->deferred_close && !ndata->deferred_read_pending) {
+    if (ndata->in_close && !ndata->in_read) {
 	tcpn_finish_close(ndata); /* Releases the lock */
 	return;
     }
@@ -334,8 +346,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
     struct tcpn_data *ndata = cbdata;
 
     LOCK(ndata->lock);
-    if (ndata->deferred_read_pending || ndata->in_write) {
-	ndata->deferred_close = true;
+    if (ndata->in_read || ndata->in_write) {
 	UNLOCK(ndata->lock);
     } else {
 	tcpn_finish_close(ndata); /* Releases the lock */
@@ -462,20 +473,9 @@ static void
 tcpn_deferred_read(sel_runner_t *runner, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
-    struct genio *net = &ndata->net;
-    unsigned int count;
 
-    /* No lock needed, this data cannot be changed here. */
-    count = net->cbs->read_callback(net, 0, ndata->read_data + ndata->data_pos,
-				    ndata->data_pending_len, 0);
-    LOCK(ndata->lock);
     ndata->deferred_read_pending = false;
-    if (ndata->deferred_close) {
-	tcpn_finish_close(ndata); /* Releases the lock */
-	return;
-    }
-    tcpn_finish_read(ndata, 0, count);
-    UNLOCK(ndata->lock);
+    tcpn_finish_read(ndata, 0);
 }
 
 static void
