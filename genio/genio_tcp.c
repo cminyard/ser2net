@@ -224,13 +224,18 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
     LOCK(ndata->lock);
     ndata->data_pending = false;
 
+    /*
+     * Change this here, not later, so the user can modify it.
+     */
     if (err < 0)
 	ndata->read_enabled = false;
+    UNLOCK(ndata->lock);
 
     count = net->cbs->read_callback(net, err,
 				    ndata->read_data + ndata->data_pos,
 				    ndata->data_pending_len, 0);
 
+    LOCK(ndata->lock);
     if (!err && count < ndata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
