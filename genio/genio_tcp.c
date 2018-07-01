@@ -49,7 +49,6 @@ struct tcpn_data {
     bool in_free;
     void (*close_done)(struct genio *net);
 
-    bool data_pending;
     unsigned int data_pending_len;
     unsigned int data_pos;
 
@@ -220,15 +219,14 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
     struct genio *net = &ndata->net;
     unsigned int count;
 
-    LOCK(ndata->lock);
-    ndata->data_pending = false;
-
-    /*
-     * Change this here, not later, so the user can modify it.
-     */
-    if (err < 0)
+    if (err < 0) {
+	/*
+	 * Change this here, not later, so the user can modify it.
+	 */
+	LOCK(ndata->lock);
 	ndata->read_enabled = false;
-    UNLOCK(ndata->lock);
+	UNLOCK(ndata->lock);
+    }
 
     count = net->cbs->read_callback(net, err,
 				    ndata->read_data + ndata->data_pos,
@@ -238,10 +236,11 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
     if (!err && count < ndata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
-	ndata->data_pending = true;
 	ndata->data_pending_len -= count;
 	ndata->data_pos += count;
 	ndata->read_enabled = false;
+    } else {
+	ndata->data_pending_len = 0;
     }
 
     ndata->in_read = false;
@@ -269,7 +268,7 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     int rv, err = 0;
 
     LOCK(ndata->lock);
-    if (!ndata->read_enabled || ndata->in_read) {
+    if (!ndata->read_enabled || ndata->in_read || ndata->data_pending_len) {
 	UNLOCK(ndata->lock);
 	return;
     }
@@ -277,7 +276,6 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     sel_set_fd_except_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
     ndata->in_read = true;
     ndata->data_pos = 0;
-    ndata->data_pending_len = 0;
     UNLOCK(ndata->lock);
 
     if (urgent) {
@@ -488,9 +486,9 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
 	goto out_unlock;
 
     ndata->read_enabled = enabled;
-    if (ndata->in_read || (ndata->data_pending && !enabled)) {
+    if (ndata->in_read || (ndata->data_pending_len && !enabled)) {
 	/* It will be handled in finish_read. */
-    } else if (ndata->data_pending) {
+    } else if (ndata->data_pending_len) {
 	if (!ndata->deferred_read_pending) {
 	    /* Call the read from the selector to avoid lock nesting issues. */
 	    ndata->in_read = true;
