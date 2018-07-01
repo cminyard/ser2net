@@ -483,10 +483,13 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
     struct tcpn_data *ndata = net_to_ndata(net);
 
     LOCK(ndata->lock);
-    if (!ndata->open) {
+    if (!ndata->open)
 	/* Just ignore this. */
-    } else if (ndata->in_read || (ndata->data_pending && !enabled)) {
-	ndata->read_enabled = enabled;
+	goto out_unlock;
+
+    ndata->read_enabled = enabled;
+    if (ndata->in_read || (ndata->data_pending && !enabled)) {
+	/* It will be handled in finish_read. */
     } else if (ndata->data_pending) {
 	if (!ndata->deferred_read_pending) {
 	    /* Call the read from the selector to avoid lock nesting issues. */
@@ -502,9 +505,9 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
 	else
 	    op = SEL_FD_HANDLER_DISABLED;
 
-	ndata->read_enabled = enabled;
 	sel_set_fd_read_handler(ndata->sel, ndata->fd, op);
     }
+ out_unlock:
     UNLOCK(ndata->lock);
 }
 
