@@ -413,10 +413,16 @@ udpn_add_to_closed(struct udpna_data *nadata, struct udpn_data *ndata)
 }
 
 static void
-udpn_finish_read(struct udpn_data *ndata, unsigned int count)
+udpn_finish_read(struct udpn_data *ndata)
 {
     struct udpna_data *nadata = ndata->nadata;
+    struct genio *net = &ndata->net;
+    unsigned int count;
 
+    UNLOCK(nadata->lock);
+    count = net->cbs->read_callback(net, 0, nadata->read_data,
+				    nadata->data_pending_len, 0);
+    LOCK(nadata->lock);
     ndata->in_read = false;
 
     if (ndata->closed)
@@ -443,34 +449,17 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 {
     struct udpna_data *nadata = cbdata;
     struct udpn_data *ndata = NULL;
-    unsigned int count;
 
     LOCK(nadata->lock);
- retry:
-    if (nadata->pending_data_owner && nadata->pending_data_owner->read_enabled)
-	ndata = nadata->pending_data_owner;
 
-    if (ndata) {
-	struct genio *net = &ndata->net;
-
-	UNLOCK(nadata->lock);
-	count = net->cbs->read_callback(net, 0,
-					nadata->read_data + nadata->data_pos,
-					nadata->data_pending_len, 0);
-	LOCK(nadata->lock);
-	udpn_finish_read(ndata, count);
-    }
+    while (nadata->pending_data_owner &&
+			nadata->pending_data_owner->read_enabled)
+	udpn_finish_read(nadata->pending_data_owner);
 
     while (nadata->pending_close_ndata) {
 	ndata = nadata->pending_close_ndata;
 	nadata->pending_close_ndata = ndata->next;
 	udpn_finish_close(nadata, ndata);
-    }
-
-    if (nadata->pending_data_owner &&
-			nadata->pending_data_owner->read_enabled) {
-	ndata = nadata->pending_data_owner;
-	goto retry;
     }
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
@@ -632,20 +621,11 @@ udpn_set_write_callback_enable(struct genio *net, bool enabled)
 static void
 udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct genio *net = &ndata->net;
-    unsigned int count;
-
     if (!ndata->read_enabled || ndata->in_read)
 	return;
 
     ndata->in_read = true;
-    UNLOCK(nadata->lock);
-
-    count = net->cbs->read_callback(net, 0, nadata->read_data,
-				    nadata->data_pending_len, 0);
-
-    LOCK(nadata->lock);
-    udpn_finish_read(ndata, count);
+    udpn_finish_read(ndata);
 }
 
 static void
