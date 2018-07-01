@@ -204,6 +204,7 @@ tcpn_finish_close(struct tcpn_data *ndata)
 
     LOCK(ndata->lock);
     ndata->in_close = false;
+    ndata->read_enabled = false;
     if (ndata->in_free) {
 	UNLOCK(ndata->lock);
 	tcpn_finish_free(ndata);
