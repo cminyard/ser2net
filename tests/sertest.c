@@ -71,7 +71,8 @@ struct sertest_context {
 };
 
 #define dbgout(c, level, fmt, ...)		\
-    do { if (c->debug >= level) abspr(c->out, fmt, ##__VA_ARGS__); } while(0)
+    do { if (c->debug >= level) abspr(c->out, "%s: " fmt, le->name, \
+				      ##__VA_ARGS__); } while(0)
 
 static struct genio_list *
 find_genio(struct sertest_context *c, char *name)
