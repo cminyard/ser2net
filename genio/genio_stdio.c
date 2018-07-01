@@ -139,11 +139,24 @@ stdion_raddr_to_str(struct genio *net, int *epos,
 
 /* Must be called with nadata->lock held */
 static void
-stdion_finish_read(struct stdiona_data *nadata, int err, unsigned int count)
+stdion_finish_read(struct stdiona_data *nadata, int err)
 {
-    if (err < 0) {
+    struct genio *net = &nadata->net;
+    unsigned int count;
+
+    if (err) {
+	/* Do this here so the user can modify it. */
+	LOCK(nadata->lock);
 	nadata->read_enabled = false;
-    } else if (count < nadata->data_pending_len) {
+	UNLOCK(nadata->lock);
+    }
+
+    count = net->cbs->read_callback(net, err,
+				    nadata->read_data + nadata->data_pos,
+				    nadata->data_pending_len,
+				    nadata->read_flags);
+
+    if (!err && count < nadata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
 	nadata->data_pending_len -= count;
@@ -169,7 +182,6 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
     struct genio *net = &nadata->net;
-    unsigned int count;
     bool in_read;
 
     LOCK(nadata->lock);
@@ -181,12 +193,8 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 
     if (in_read) {
 	UNLOCK(nadata->lock);
-	count = net->cbs->read_callback(net, 0,
-					nadata->read_data + nadata->data_pos,
-					nadata->data_pending_len,
-					nadata->read_flags);
+	stdion_finish_read(nadata, 0);
 	LOCK(nadata->lock);
-	stdion_finish_read(nadata, 0, count);
     }
 
     if (nadata->deferred_read)
@@ -305,9 +313,7 @@ static void
 stdion_read_ready(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct genio *net = &nadata->net;
-    int rv;
-    unsigned int count = 0;
+    int rv, err = 0;
 
     LOCK(nadata->lock);
     if (!nadata->read_enabled || nadata->in_read)
@@ -333,18 +339,15 @@ stdion_read_ready(int fd, void *cbdata)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, 0, 0, nadata->read_flags);
+	    err = errno;
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, 0, 0, nadata->read_flags);
-	rv = -1;
+	err = EPIPE;
     } else {
 	nadata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, nadata->read_data, rv,
-					nadata->read_flags);
     }
 
     LOCK(nadata->lock);
-    stdion_finish_read(nadata, rv, count);
+    stdion_finish_read(nadata, err);
  out_unlock:
     UNLOCK(nadata->lock);
 }
