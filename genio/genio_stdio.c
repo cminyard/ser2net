@@ -310,7 +310,7 @@ stdion_read_ready(int fd, void *cbdata)
     unsigned int count = 0;
 
     LOCK(nadata->lock);
-    if (!nadata->read_enabled)
+    if (!nadata->read_enabled || nadata->in_read)
 	goto out_unlock;
     sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
 			    SEL_FD_HANDLER_DISABLED);
