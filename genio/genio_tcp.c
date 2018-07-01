@@ -44,7 +44,6 @@ struct tcpn_data {
     int fd;
     bool read_enabled;
     bool in_read;
-    bool in_write;
     bool open;
     bool in_close;
     bool in_free;
@@ -247,7 +246,7 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
 
     ndata->in_read = false;
 
-    if (ndata->in_close && !ndata->in_write) {
+    if (ndata->in_close) {
 	tcpn_finish_close(ndata); /* Releases the lock */
 	return;
     }
@@ -270,7 +269,7 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
     int rv, err = 0;
 
     LOCK(ndata->lock);
-    if (!ndata->read_enabled) {
+    if (!ndata->read_enabled || ndata->in_read) {
 	UNLOCK(ndata->lock);
 	return;
     }
@@ -324,14 +323,9 @@ tcpn_write_ready(int fd, void *cbdata)
     struct tcpn_data *ndata = cbdata;
     struct genio *net = &ndata->net;
 
-    LOCK(ndata->lock);
-    ndata->in_write = true;
-    UNLOCK(ndata->lock);
-
     net->cbs->write_callback(net);
 
     LOCK(ndata->lock);
-    ndata->in_write = false;
     if (ndata->in_close && !ndata->in_read) {
 	tcpn_finish_close(ndata); /* Releases the lock */
 	return;
@@ -351,7 +345,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
     struct tcpn_data *ndata = cbdata;
 
     LOCK(ndata->lock);
-    if (ndata->in_read || ndata->in_write) {
+    if (ndata->in_read) {
 	UNLOCK(ndata->lock);
     } else {
 	tcpn_finish_close(ndata); /* Releases the lock */
