@@ -361,9 +361,7 @@ check_finish_close(struct stel_data *sdata)
 static void
 stel_finish_read(struct stel_data *sdata, int err, unsigned int count)
 {
-    if (err < 0) {
-	sdata->read_enabled = false;
-    } else if (count < sdata->data_pending_len) {
+    if (!err && count < sdata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
 	sdata->data_pending_len -= count;
@@ -560,15 +558,19 @@ stel_genio_read(struct genio *net, int readerr,
     unsigned char *buf = ibuf;
     unsigned int count = 0;
 
+    LOCK(sdata->lock);
+    if (!sdata->read_enabled || sdata->data_pending_len)
+	goto out_unlock;
+
     if (readerr) {
+	/* Do this here so the user can modify it. */
+	sdata->read_enabled = false;
+	UNLOCK(sdata->lock);
 	mynet->cbs->read_callback(&sdata->snet.net, readerr,
 				  NULL, 0, 0);
 	goto out_finish;
     }
 
-    LOCK(sdata->lock);
-    if (!sdata->read_enabled || sdata->data_pending_len)
-	goto out_unlock;
     genio_set_read_callback_enable(sdata->net, false);
     sdata->in_read = true;
     sdata->data_pos = 0;

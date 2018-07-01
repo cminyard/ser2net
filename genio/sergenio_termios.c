@@ -126,11 +126,23 @@ sterm_finish_close(struct sterm_data *sdata)
 
 /* Must be called with sdata->lock held */
 static void
-sterm_finish_read(struct sterm_data *sdata, int err, unsigned int count)
+sterm_finish_read(struct sterm_data *sdata, int err)
 {
-    if (err < 0) {
+    struct genio *net = &sdata->snet.net;
+    unsigned int count;
+
+    if (err) {
+	LOCK(sdata->lock);
 	sdata->read_enabled = false;
-    } else if (count < sdata->data_pending_len) {
+	UNLOCK(sdata->lock);
+    }
+
+    count = net->cbs->read_callback(net, err,
+				    sdata->read_data + sdata->data_pos,
+				    sdata->data_pending_len, 0);
+
+    LOCK(sdata->lock);
+    if (count < sdata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
 	sdata->data_pending_len -= count;
@@ -145,14 +157,13 @@ sterm_finish_read(struct sterm_data *sdata, int err, unsigned int count)
     if (sdata->read_enabled)
 	sel_set_fd_read_handler(sdata->sel, sdata->fd,
 				SEL_FD_HANDLER_ENABLED);
+    UNLOCK(sdata->lock);
 }
 
 static void
 sterm_deferred_op(sel_runner_t *runner, void *cbdata)
 {
     struct sterm_data *sdata = cbdata;
-    struct genio *net = &sdata->snet.net;
-    unsigned int count;
     bool in_read;
 
     LOCK(sdata->lock);
@@ -164,11 +175,8 @@ sterm_deferred_op(sel_runner_t *runner, void *cbdata)
 
     if (in_read) {
 	UNLOCK(sdata->lock);
-	count = net->cbs->read_callback(net, 0,
-					sdata->read_data + sdata->data_pos,
-					sdata->data_pending_len, 0);
+	sterm_finish_read(sdata, 0);
 	LOCK(sdata->lock);
-	sterm_finish_read(sdata, 0, count);
     }
 
     termios_process(sdata);
@@ -654,13 +662,13 @@ static void
 handle_read(int fd, void *cb_data)
 {
     struct sterm_data *sdata = cb_data;
-    struct genio *net = &sdata->snet.net;
-    int rv;
-    unsigned int count = 0;
+    int rv, err = 0;
 
     LOCK(sdata->lock);
-    if (!sdata->read_enabled || sdata->data_pending_len)
-	goto out_unlock;
+    if (!sdata->read_enabled || sdata->data_pending_len) {
+	UNLOCK(sdata->lock);
+	return;
+    }
     sel_set_fd_read_handler(sdata->sel, sdata->fd, SEL_FD_HANDLER_DISABLED);
     sdata->in_read = true;
     sdata->data_pos = 0;
@@ -674,19 +682,14 @@ handle_read(int fd, void *cb_data)
 	if (errno == EAGAIN || errno == EWOULDBLOCK)
 	    rv = 0; /* Pretend like nothing happened. */
 	else
-	    net->cbs->read_callback(net, errno, 0, 0, 0);
+	    err = errno;
     } else if (rv == 0) {
-	net->cbs->read_callback(net, EPIPE, 0, 0, 0);
-	rv = -1;
+	err = EPIPE;
     } else {
 	sdata->data_pending_len = rv;
-	count = net->cbs->read_callback(net, 0, sdata->read_data, rv, 0);
     }
 
-    LOCK(sdata->lock);
-    sterm_finish_read(sdata, rv, count);
- out_unlock:
-    UNLOCK(sdata->lock);
+    sterm_finish_read(sdata, err);
 }
 
 static void
