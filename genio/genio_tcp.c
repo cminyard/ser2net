@@ -220,7 +220,7 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
     struct genio *net = &ndata->net;
     unsigned int count;
 
-    if (err < 0) {
+    if (err) {
 	/*
 	 * Change this here, not later, so the user can modify it.
 	 */
