@@ -3063,14 +3063,6 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    err = str_to_genio_acceptor(new_port->portname, ser2net_sel, 64,
-				&port_acceptor_cbs, new_port,
-				&new_port->acceptor);
-    if (err) {
-	eout->out(eout, "Invalid port name/number");
-	goto errout;
-    }
-
     if (strcmp(state, "raw") == 0) {
 	new_port->enabled = PORT_RAW;
     } else if (strcmp(state, "rawlp") == 0) {
@@ -3105,6 +3097,15 @@ portconfig(struct absout *eout,
 	    eout->out(eout, "device configuration invalid");
 	    goto errout;
 	}
+    }
+
+    err = str_to_genio_acceptor(new_port->portname, ser2net_sel,
+				new_port->net_to_dev.maxsize,
+				&port_acceptor_cbs, new_port,
+				&new_port->acceptor);
+    if (err) {
+	eout->out(eout, "Invalid port name/number");
+	goto errout;
     }
 
     if (buffer_init(&new_port->dev_to_net, NULL, new_port->dev_to_net.maxsize))
