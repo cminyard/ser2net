@@ -47,7 +47,9 @@ struct stdiona_data {
     /* For the acceptor only. */
     bool in_free;
     bool in_shutdown;
-    void (*shutdown_done)(struct genio_acceptor *acceptor);
+    void (*shutdown_done)(struct genio_acceptor *acceptor,
+			  void *shutdown_data);
+    void *shutdown_data;
 
     bool read_enabled;
     bool in_read;
@@ -56,7 +58,8 @@ struct stdiona_data {
     /* For the client only. */
     bool in_close; /* A close is pending the running running. */
     bool closed;
-    void (*close_done)(struct genio *net);
+    void (*close_done)(struct genio *net, void *close_data);
+    void *close_data;
 
     /*
      * If non-zero, this is the PID of the other process and we are
@@ -206,7 +209,7 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 	nadata->in_close = false;
 	UNLOCK(nadata->lock);
 	if (nadata->close_done)
-	    nadata->close_done(net);
+	    nadata->close_done(net, nadata->close_data);
 	return;
     }
     UNLOCK(nadata->lock);
@@ -244,7 +247,7 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 	close(nadata->ostderr);
 	UNLOCK(nadata->lock);
 	if (nadata->close_done)
-	    nadata->close_done(&nadata->net);
+	    nadata->close_done(&nadata->net, nadata->close_data);
 	LOCK(nadata->lock);
 	nadata->in_close = false;
 	if (nadata->in_free) {
@@ -490,11 +493,13 @@ stdion_open(struct genio *net)
 
 static void
 __stdion_close(struct stdiona_data *nadata,
-	       void (*close_done)(struct genio *net))
+	       void (*close_done)(struct genio *net, void *close_data),
+	       void *close_data)
 {
     nadata->closed = true;
     nadata->in_close = true;
     nadata->close_done = close_done;
+    nadata->close_data = close_data;
     if (nadata->argv) {
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
@@ -506,7 +511,9 @@ __stdion_close(struct stdiona_data *nadata,
 }
 
 static int
-stdion_close(struct genio *net, void (*close_done)(struct genio *net))
+stdion_close(struct genio *net, void (*close_done)(struct genio *net,
+						   void *close_data),
+	     void *close_data)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
     int err = 0;
@@ -515,7 +522,7 @@ stdion_close(struct genio *net, void (*close_done)(struct genio *net))
     if (nadata->closed || nadata->in_close)
 	err = EBUSY;
     else
-	__stdion_close(nadata, close_done);
+	__stdion_close(nadata, close_done, close_data);
     UNLOCK(nadata->lock);
 
     return err;
@@ -535,7 +542,7 @@ stdion_free(struct genio *net)
 	UNLOCK(nadata->lock);
 	stdiona_finish_free(nadata);
     } else {
-	__stdion_close(nadata, NULL);
+	__stdion_close(nadata, NULL, NULL);
 	UNLOCK(nadata->lock);
     }
 }
@@ -557,7 +564,7 @@ stdiona_fd_cleared(int fd, void *cbdata)
     fcntl(0, F_SETFL, nadata->old_flags);
 
     if (nadata->shutdown_done)
-	nadata->shutdown_done(acceptor);
+	nadata->shutdown_done(acceptor, nadata->shutdown_data);
 
     LOCK(nadata->lock);
     nadata->in_shutdown = false;
@@ -607,7 +614,9 @@ stdiona_startup(struct genio_acceptor *acceptor)
 
 static int
 stdiona_shutdown(struct genio_acceptor *acceptor,
-		 void (*shutdown_done)(struct genio_acceptor *acceptor))
+		 void (*shutdown_done)(struct genio_acceptor *acceptor,
+				       void *shutdown_data),
+		 void *shutdown_data)
 {
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -617,6 +626,7 @@ stdiona_shutdown(struct genio_acceptor *acceptor,
 	nadata->enabled = false;
 	nadata->in_shutdown = true;
 	nadata->shutdown_done = shutdown_done;
+	nadata->shutdown_data = shutdown_data;
 	sel_clear_fd_handlers(nadata->sel, 0);
     } else {
 	rv = EAGAIN;

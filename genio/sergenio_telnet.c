@@ -51,7 +51,8 @@ struct stel_data {
     bool closed;
     unsigned int close_count;
 
-    void (*close_done)(struct genio *net);
+    void (*close_done)(struct genio *net, void *close_data);
+    void *close_data;
 
     struct genio *net;
 
@@ -344,7 +345,7 @@ check_finish_close(struct stel_data *sdata)
     UNLOCK(sdata->lock);
 
     if (sdata->close_done)
-	sdata->close_done(&sdata->snet.net);
+	sdata->close_done(&sdata->snet.net, sdata->close_data);
 
     LOCK(sdata->lock);
     /* delay this until here to keep stel_free() from freeing it. */
@@ -418,7 +419,7 @@ stel_timer_stopped(struct selector_s *sel,
 }
 
 static void
-stel_genio_close_done(struct genio *net)
+stel_genio_close_done(struct genio *net, void *close_data)
 {
     struct stel_data *sdata = genio_get_user_data(net);
 
@@ -448,18 +449,23 @@ stel_open(struct genio *net)
 }
 
 static void
-__stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net))
+__stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net,
+							 void *close_data),
+	     void *close_data)
 {
     sdata->close_done = close_done;
+    sdata->close_data = close_data;
     sdata->closed = true;
     sdata->close_count = 2; /* One for timer and one for genio. */
     UNLOCK(sdata->lock);
     sel_stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
-    genio_close(sdata->net, stel_genio_close_done);
+    genio_close(sdata->net, stel_genio_close_done, NULL);
 }
 
 static int
-stel_close(struct genio *net, void (*close_done)(struct genio *net))
+stel_close(struct genio *net, void (*close_done)(struct genio *net,
+						 void *close_data),
+	   void *close_data)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
     int err = 0;
@@ -469,7 +475,7 @@ stel_close(struct genio *net, void (*close_done)(struct genio *net))
 	UNLOCK(sdata->lock);
 	err = EBUSY;
     } else {
-	__stel_close(sdata, close_done); /* Releases lock. */
+	__stel_close(sdata, close_done, close_data); /* Releases lock. */
     }
 
     return err;
@@ -489,7 +495,7 @@ stel_free(struct genio *net)
 	UNLOCK(sdata->lock);
 	stel_finish_free(sdata);
     } else {
-	__stel_close(sdata, NULL); /* Releases lock */
+	__stel_close(sdata, NULL, NULL); /* Releases lock */
     }
 }
 

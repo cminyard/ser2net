@@ -288,9 +288,11 @@ genio_open(struct genio *net)
 }
 
 int
-genio_close(struct genio *net, void (*close_done)(struct genio *net))
+genio_close(struct genio *net, void (*close_done)(struct genio *net,
+						  void *close_data),
+	    void *close_data)
 {
-    return net->funcs->close(net, close_done);
+    return net->funcs->close(net, close_done, close_data);
 }
 
 void
@@ -332,9 +334,11 @@ genio_acc_startup(struct genio_acceptor *acceptor)
 
 int
 genio_acc_shutdown(struct genio_acceptor *acceptor,
-		   void (*shutdown_done)(struct genio_acceptor *acceptor))
+		   void (*shutdown_done)(struct genio_acceptor *acceptor,
+					 void *shutdown_data),
+		   void *shutdown_data)
 {
-    return acceptor->funcs->shutdown(acceptor, shutdown_done);
+    return acceptor->funcs->shutdown(acceptor, shutdown_done, shutdown_data);
 }
 
 void

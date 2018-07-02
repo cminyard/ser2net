@@ -49,7 +49,8 @@ struct udpn_data {
     bool in_write;	/* Currently in a write callback. */
 
     bool in_close;	/* In the closing process, close_done is not called. */
-    void (*close_done)(struct genio *net);
+    void (*close_done)(struct genio *net, void *close_data);
+    void *close_data;
     bool closed;	/* Has this net been closed? */
     bool in_free;	/* Free the data when closed? */
 
@@ -98,7 +99,9 @@ struct udpna_data {
     bool enabled;
     bool closed;
     bool in_shutdown;
-    void (*shutdown_done)(struct genio_acceptor *acceptor);
+    void (*shutdown_done)(struct genio_acceptor *acceptor,
+			  void *shutdown_data);
+    void *shutdown_data;
 
     struct addrinfo    *ai;		/* The address list for the portname. */
     struct opensocks   *fds;		/* The file descriptor used for
@@ -369,11 +372,13 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
     udpn_add_to_list(&nadata->closed_udpns, ndata);
     if (ndata->close_done) {
-	void (*close_done)(struct genio *net) = ndata->close_done;
+	void (*close_done)(struct genio *net, void *close_data) =
+	    ndata->close_done;
+	void *close_data = ndata->close_data;
 
 	ndata->close_done = NULL;
 	UNLOCK(nadata->lock);
-	close_done(&ndata->net);
+	close_done(&ndata->net, close_data);
 	LOCK(nadata->lock);
     }
 
@@ -467,7 +472,7 @@ udpna_deferred_op(sel_runner_t *runner, void *cbdata)
 
 	if (nadata->shutdown_done) {
 	    UNLOCK(nadata->lock);
-	    nadata->shutdown_done(acceptor);
+	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
 	    LOCK(nadata->lock);
 	}
 	nadata->in_shutdown = false;
@@ -505,7 +510,8 @@ udpn_open(struct genio *net)
 
 static void
 udpn_start_close(struct udpn_data *ndata,
-		 void (*close_done)(struct genio *net))
+		 void (*close_done)(struct genio *net, void *close_data),
+		 void *close_data)
 {
     struct udpna_data *nadata = ndata->nadata;
 
@@ -516,12 +522,15 @@ udpn_start_close(struct udpn_data *ndata,
     ndata->in_close = true;
     ndata->closed = true;
     ndata->close_done = close_done;
+    ndata->close_data = close_data;
     if (!ndata->in_read && !ndata->in_write)
 	udpn_add_to_closed(nadata, ndata);
 }
 
 static int
-udpn_close(struct genio *net, void (*close_done)(struct genio *net))
+udpn_close(struct genio *net, void (*close_done)(struct genio *net,
+						 void *close_data),
+	   void *close_data)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -529,7 +538,7 @@ udpn_close(struct genio *net, void (*close_done)(struct genio *net))
 
     LOCK(nadata->lock);
     if (!ndata->closed) {
-	udpn_start_close(ndata, close_done);
+	udpn_start_close(ndata, close_done, close_data);
 	err = 0;
     }
     UNLOCK(nadata->lock);
@@ -549,7 +558,7 @@ udpn_free(struct genio *net)
 	ndata->close_done = NULL;
     } else if (!ndata->closed) {
 	ndata->in_free = true;
-	udpn_start_close(ndata, NULL);
+	udpn_start_close(ndata, NULL, NULL);
     } else {
 	udpn_remove_from_list(&nadata->closed_udpns, ndata);
 	nadata->udpn_count--;
@@ -744,11 +753,13 @@ udpna_readhandler(int fd, void *cbdata)
 			  (struct sockaddr *) &addr, addrlen, true);
 	if (ndata) {
 	    if (ndata->close_done) {
-		void (*close_done)(struct genio *net) = ndata->close_done;
+		void (*close_done)(struct genio *net, void *close_data) =
+		    ndata->close_done;
+		void *close_data = ndata->close_data;
 
 		ndata->close_done = NULL;
 		UNLOCK(nadata->lock);
-		close_done(&ndata->net);
+		close_done(&ndata->net, close_data);
 		LOCK(nadata->lock);
 	    }
 	} else {
@@ -812,7 +823,7 @@ udpna_readhandler(int fd, void *cbdata)
 	struct genio_acceptor *acceptor = &nadata->acceptor;
 
 	if (nadata->shutdown_done)
-	    nadata->shutdown_done(acceptor);
+	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
 	nadata->in_shutdown = false;
     }
     udpna_check_finish_free(nadata);
@@ -855,7 +866,9 @@ udpna_startup(struct genio_acceptor *acceptor)
 
 static int
 udpna_shutdown(struct genio_acceptor *acceptor,
-	       void (*shutdown_done)(struct genio_acceptor *acceptor))
+	       void (*shutdown_done)(struct genio_acceptor *acceptor,
+				     void *shutdown_data),
+	       void *shutdown_data)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -866,6 +879,7 @@ udpna_shutdown(struct genio_acceptor *acceptor,
 	nadata->setup = false;
 	nadata->in_shutdown = true;
 	nadata->shutdown_done = shutdown_done;
+	nadata->shutdown_data = shutdown_data;
 	if (!nadata->in_new_connection && !nadata->deferred_op_pending) {
 	    nadata->deferred_op_pending = true;
 	    sel_run(nadata->deferred_op_runner, udpna_deferred_op, nadata);

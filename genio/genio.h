@@ -143,7 +143,9 @@ int genio_open(struct genio *net);
  * until close_done() is called.  This shuts down internal file
  * descriptors and such, but does not free the genio.
  */
-int genio_close(struct genio *net, void (*close_done)(struct genio *net));
+int genio_close(struct genio *net, void (*close_done)(struct genio *net,
+						      void *close_data),
+		void *close_data);
 
 /*
  * Frees data assoicated with the genio.  If it is open, the genio is
@@ -201,7 +203,9 @@ int genio_acc_startup(struct genio_acceptor *acceptor);
  * otherwise.
  */
 int genio_acc_shutdown(struct genio_acceptor *acceptor,
-		       void (*shutdown_done)(struct genio_acceptor *acceptor));
+		       void (*shutdown_done)(struct genio_acceptor *acceptor,
+					     void *shutdown_data),
+		       void *shutdown_data);
 
 /*
  * Enable the accept callback when connections come in.

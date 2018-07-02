@@ -1354,7 +1354,7 @@ handle_net_fd_urgent(struct genio *net)
     UNLOCK(port->lock);
 }
 
-static void handle_net_fd_closed(struct genio *net);
+static void handle_net_fd_closed(struct genio *net, void *cb_data);
 
 static void
 telnet_cmd_handler(void *cb_data, unsigned char cmd)
@@ -2093,7 +2093,7 @@ handle_rot_accept(struct genio_acceptor *acceptor, struct genio *net)
 static waiter_t *rotator_shutdown_wait;
 
 static void
-handle_rot_shutdown_done(struct genio_acceptor *acceptor)
+handle_rot_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 {
     wake_waiter(rotator_shutdown_wait);
 }
@@ -2102,7 +2102,7 @@ static void
 free_rotator(rotator_t *rot)
 {
     if (rot->acceptor) {
-	genio_acc_shutdown(rot->acceptor, handle_rot_shutdown_done);
+	genio_acc_shutdown(rot->acceptor, handle_rot_shutdown_done, NULL);
 	wait_for_waiter(rotator_shutdown_wait, 1);
 	genio_acc_free(rot->acceptor);
     }
@@ -2308,7 +2308,7 @@ port_reinit_now(port_info_t *port)
 static waiter_t *acceptor_shutdown_wait;
 
 static void
-handle_port_shutdown_done(struct genio_acceptor *acceptor)
+handle_port_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 {
     port_info_t *port = genio_acceptor_get_user_data(acceptor);
 
@@ -2336,7 +2336,7 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 	    /* Shutdown is already running. */
 	    return true;
 	return genio_acc_shutdown(port->acceptor,
-				  handle_port_shutdown_done) == 0;
+				  handle_port_shutdown_done, NULL) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
 	    int rv = startup_port(eout, port, is_reconfig);
@@ -2692,7 +2692,7 @@ netcon_finish_shutdown(net_info_t *netcon)
 }
 
 static void
-handle_net_fd_closed(struct genio *net)
+handle_net_fd_closed(struct genio *net, void *cb_data)
 {
     net_info_t *netcon = genio_get_user_data(net);
     port_info_t *port = netcon->port;
@@ -2713,7 +2713,7 @@ static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
     net_info_t *netcon = cb_data;
 
     if (netcon->net)
-	genio_close(netcon->net, handle_net_fd_closed);
+	genio_close(netcon->net, handle_net_fd_closed, NULL);
     else
 	netcon_finish_shutdown(netcon);
 }

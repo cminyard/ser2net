@@ -47,7 +47,8 @@ struct tcpn_data {
     bool open;
     bool in_close;
     bool in_free;
-    void (*close_done)(struct genio *net);
+    void (*close_done)(struct genio *net, void *close_data);
+    void *close_data;
 
     unsigned int data_pending_len;
     unsigned int data_pos;
@@ -95,7 +96,9 @@ struct tcpna_data {
     bool in_free;		/* Currently being freed. */
     bool in_shutdown;		/* Currently being shut down. */
 
-    void (*shutdown_done)(struct genio_acceptor *acceptor);
+    void (*shutdown_done)(struct genio_acceptor *acceptor,
+			  void *shutdown_data);
+    void *shutdown_data;
 
     struct addrinfo    *ai;		/* The address list for the portname. */
     struct opensocks   *acceptfds;	/* The file descriptor used to
@@ -200,7 +203,7 @@ tcpn_finish_close(struct tcpn_data *ndata)
     UNLOCK(ndata->lock);
 
     if (ndata->close_done)
-	ndata->close_done(&ndata->net);
+	ndata->close_done(&ndata->net, ndata->close_data);
 
     LOCK(ndata->lock);
     ndata->in_close = false;
@@ -426,7 +429,9 @@ tcpn_open(struct genio *net)
 }
 
 static int
-tcpn_close(struct genio *net, void (*close_done)(struct genio *net))
+tcpn_close(struct genio *net, void (*close_done)(struct genio *net,
+						 void *close_data),
+	   void *close_data)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
     int err = EBUSY;
@@ -436,6 +441,7 @@ tcpn_close(struct genio *net, void (*close_done)(struct genio *net))
 	ndata->open = false;
 	ndata->in_close = true;
 	ndata->close_done = close_done;
+	ndata->close_data = close_data;
 	sel_clear_fd_handlers(ndata->sel, ndata->fd);
 	err = 0;
     }
@@ -676,7 +682,7 @@ tcpna_fd_cleared(int fd, void *cbdata)
 
     if (num_left == 0) {
 	if (nadata->shutdown_done)
-	    nadata->shutdown_done(acceptor);
+	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
 	LOCK(nadata->lock);
 	nadata->in_shutdown = false;
 	if (nadata->in_free) {
@@ -721,7 +727,9 @@ tcpna_startup(struct genio_acceptor *acceptor)
 
 static int
 _tcpna_shutdown(struct tcpna_data *nadata,
-		void (*shutdown_done)(struct genio_acceptor *acceptor))
+		void (*shutdown_done)(struct genio_acceptor *acceptor,
+				      void *shutdown_data),
+		void *shutdown_data)
 {
     unsigned int i;
     int rv = 0;
@@ -729,6 +737,7 @@ _tcpna_shutdown(struct tcpna_data *nadata,
     if (nadata->setup) {
 	nadata->in_shutdown = true;
 	nadata->shutdown_done = shutdown_done;
+	nadata->shutdown_data = shutdown_data;
 	nadata->nr_accept_close_waiting = nadata->nr_acceptfds;
 	for (i = 0; i < nadata->nr_acceptfds; i++)
 	    sel_clear_fd_handlers(nadata->sel, nadata->acceptfds[i].fd);
@@ -743,13 +752,15 @@ _tcpna_shutdown(struct tcpna_data *nadata,
 
 static int
 tcpna_shutdown(struct genio_acceptor *acceptor,
-	       void (*shutdown_done)(struct genio_acceptor *acceptor))
+	       void (*shutdown_done)(struct genio_acceptor *acceptor,
+				     void *shutdown_data),
+	       void *shutdown_data)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv;
 
     LOCK(nadata->lock);
-    rv = _tcpna_shutdown(nadata, shutdown_done);
+    rv = _tcpna_shutdown(nadata, shutdown_done, shutdown_data);
     UNLOCK(nadata->lock);
 	
     return rv;
@@ -783,7 +794,7 @@ tcpna_free(struct genio_acceptor *acceptor)
 
     LOCK(nadata->lock);
     nadata->in_free = true;
-    if (!nadata->in_shutdown && _tcpna_shutdown(nadata, NULL)) {
+    if (!nadata->in_shutdown && _tcpna_shutdown(nadata, NULL, NULL)) {
 	if (nadata->nr_accept_close_waiting == 0) {
 	    UNLOCK(nadata->lock);
 	    tcpna_finish_free(nadata);

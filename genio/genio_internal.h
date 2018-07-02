@@ -44,7 +44,9 @@ struct genio_functions {
 
     int (*open)(struct genio *net);
 
-    int (*close)(struct genio *net, void (*close_done)(struct genio *net));
+    int (*close)(struct genio *net, void (*close_done)(struct genio *net,
+						       void *close_data),
+		 void *close_data);
 
     void (*free)(struct genio *net);
 
@@ -76,7 +78,9 @@ struct genio_acceptor_functions {
     int (*startup)(struct genio_acceptor *acceptor);
 
     int (*shutdown)(struct genio_acceptor *acceptor,
-		    void (*shutdown_done)(struct genio_acceptor *acceptor));
+		    void (*shutdown_done)(struct genio_acceptor *acceptor,
+					  void *shutdown_data),
+		    void *shutdown_data);
 
     void (*set_accept_callback_enable)(struct genio_acceptor *acceptor,
 				       bool enabled);

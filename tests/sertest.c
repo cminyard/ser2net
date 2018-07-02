@@ -97,7 +97,7 @@ finish_free_genio(struct genio_list *le)
 }
 
 static void
-free_close_done(struct genio *io)
+free_close_done(struct genio *io, void *close_data)
 {
     struct genio_list *le = genio_get_user_data(io);
 
@@ -111,7 +111,7 @@ sertest_cleanup(struct sertest_context *c)
 	struct genio_list *le = c->genios;
 
 	c->genios = le->next;
-	if (genio_close(le->io, free_close_done)) {
+	if (genio_close(le->io, free_close_done, NULL)) {
 	    /* Already closed, just free it. */
 	    genio_free(le->io);
 	} else {
@@ -298,7 +298,7 @@ open_genio(struct sertest_context *c,
 }
 
 static void
-close_genio_done(struct genio *net)
+close_genio_done(struct genio *net, void *close_data)
 {
     struct genio_list *le = genio_get_user_data(net);
 
@@ -312,7 +312,7 @@ close_genio(struct sertest_context *c,
     int err;
     struct timeval timeout = {2, 0};
 
-    err = genio_close(le->io, close_genio_done);
+    err = genio_close(le->io, close_genio_done, NULL);
     if (err) {
 	abspr(c->out, "Error closing genio\n");
     } else {

@@ -116,7 +116,7 @@ static struct telnet_cmd telnet_cmds[] =
 };
 
 static void
-controller_close_done(struct genio *net)
+controller_close_done(struct genio *net, void *cb_data)
 {
     controller_info_t *cntlr = genio_get_user_data(net);
 
@@ -183,7 +183,7 @@ shutdown_controller(controller_info_t *cntlr)
     cntlr->in_shutdown = 1;
     UNLOCK(cntlr->lock);
 
-    genio_close(cntlr->net, controller_close_done);
+    genio_close(cntlr->net, controller_close_done, NULL);
 }
 
 /* Send some output to the control connection.  This allocates and
@@ -746,7 +746,7 @@ errout:
 }
 
 static void
-controller_shutdown_done(struct genio_acceptor *net)
+controller_shutdown_done(struct genio_acceptor *net, void *cb_data)
 {
     wake_waiter(accept_waiter);
 }
@@ -799,7 +799,8 @@ void
 controller_shutdown(void)
 {
     if (controller_acceptor) {
-	genio_acc_shutdown(controller_acceptor, controller_shutdown_done);
+	genio_acc_shutdown(controller_acceptor, controller_shutdown_done,
+			   NULL);
 	wait_for_waiter(accept_waiter, 1);
 	genio_acc_free(controller_acceptor);
 	controller_acceptor = NULL;

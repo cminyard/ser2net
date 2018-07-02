@@ -61,7 +61,8 @@ struct sterm_data {
 
     struct termios default_termios;
 
-    void (*close_done)(struct genio *io);
+    void (*close_done)(struct genio *io, void *close_data);
+    void *close_data;
     bool closed;
     bool in_close;
     bool in_free;
@@ -118,7 +119,7 @@ sterm_finish_close(struct sterm_data *sdata)
     sdata->fd = -1;
     uucp_rm_lock(sdata->devname);
     if (sdata->close_done)
-	sdata->close_done(&sdata->snet.net);
+	sdata->close_done(&sdata->snet.net, sdata->close_done);
     sdata->in_close = false;
     if (sdata->in_free)
 	sterm_finish_free(sdata);
@@ -761,16 +762,20 @@ sterm_open(struct genio *net)
 
 static void
 __sterm_close(struct sterm_data *sdata,
-	      void (*close_done)(struct genio *net))
+	      void (*close_done)(struct genio *net, void *close_data),
+	      void *close_data)
 {
     sdata->closed = true;
     sdata->in_close = true;
     sdata->close_done = close_done;
+    sdata->close_data = close_data;
     sel_clear_fd_handlers(sdata->sel, sdata->fd);
 }
 
 static int
-sterm_close(struct genio *net, void (*close_done)(struct genio *net))
+sterm_close(struct genio *net, void (*close_done)(struct genio *net,
+						  void *close_data),
+	    void *close_data)
 {
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int err = 0;
@@ -779,7 +784,7 @@ sterm_close(struct genio *net, void (*close_done)(struct genio *net))
     if (sdata->closed || sdata->in_close)
 	err = EBUSY;
     else
-	__sterm_close(sdata, close_done);
+	__sterm_close(sdata, close_done, close_data);
     UNLOCK(sdata->lock);
 
     return err;
@@ -799,7 +804,7 @@ sterm_free(struct genio *net)
 	UNLOCK(sdata->lock);
 	sterm_finish_free(sdata);
     } else {
-	__sterm_close(sdata, NULL);
+	__sterm_close(sdata, NULL, NULL);
 	UNLOCK(sdata->lock);
     }
 }
