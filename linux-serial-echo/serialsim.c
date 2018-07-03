@@ -374,7 +374,7 @@ static void serialsim_stop_tx(struct uart_port *port)
 {
 	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 
-	intf->tx_enabled = true;
+	intf->tx_enabled = false;
 }
 
 static void serialsim_set_baud_rate(struct serialsim_intf *intf,
@@ -568,6 +568,7 @@ static int serialsim_startup(struct uart_port *port)
 	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	int rv = 0;
 
+	intf->buf.head = intf->buf.tail = 0;
 	intf->thread = kthread_run(serialsim_thread, intf,
 				   "%s%d", intf->threadname, port->line);
 	if (IS_ERR(intf->thread)) {
