@@ -509,6 +509,7 @@ main(int argc, char *argv[])
 #endif
     char **config_lines;
     int num_config_lines = 0;
+    int print_when_ready = 0;
 
     config_lines = malloc(sizeof(*config_lines));
     if (!config_lines) {
@@ -529,6 +530,10 @@ main(int argc, char *argv[])
 	}
 
 	switch (argv[i][1]) {
+	case 'r':
+	    print_when_ready = 1;
+	    break;
+
 	case 'n':
 	    detach = 0;
 	    break;
@@ -735,6 +740,12 @@ main(int argc, char *argv[])
     make_pidfile();
 
     start_threads();
+
+    if (print_when_ready) {
+	printf("Ready\n");
+	fflush(stdout);
+    }
+
     op_loop(NULL);
 
     sel_free_selector(ser2net_sel);
