@@ -282,6 +282,15 @@ genio_get_raddr(struct genio *net,
 }
 
 int
+genio_remote_id(struct genio *net, int *id)
+{
+    if (net->funcs->remote_id)
+	return net->funcs->remote_id(net, id);
+    else
+	return ENOTSUP;
+}
+
+int
 genio_open(struct genio *net)
 {
     return net->funcs->open(net);

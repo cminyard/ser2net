@@ -42,6 +42,8 @@ struct genio_functions {
     socklen_t (*get_raddr)(struct genio *net,
 			   struct sockaddr *addr, socklen_t addrlen);
 
+    int (*remote_id)(struct genio *net, int *id);
+
     int (*open)(struct genio *net);
 
     int (*close)(struct genio *net, void (*close_done)(struct genio *net,

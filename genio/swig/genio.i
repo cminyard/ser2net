@@ -25,13 +25,6 @@
 #include "utils/selector.h"
 #include "utils/waiter.h"
 
-static char *err_to_errstr(int err)
-{
-    if (!err)
-	return "";
-    return strerror(err);
-}
-
 #include "genio_python.h"
 
 static struct selector_s *genio_sel;
@@ -101,13 +94,20 @@ struct waiter_s { };
 	free(data);
     }
 
+    %rename (remote_id) remote_idt;
+    int remote_idt() {
+	int remid;
+
+	err_handle("remote_id", genio_remote_id(self, &remid));
+	return remid;
+    }
     %rename(open) opent;
-    char *opent() {
-	return err_to_errstr(genio_open(self));
+    void opent() {
+	err_handle("open", genio_open(self));
     }
 
     %rename(close) closet;
-    char *closet(swig_cb *done) {
+    void closet(swig_cb *done) {
 	swig_cb_val *done_val = NULL;
 	void (*close_done)(struct genio *io, void *cb_data) = NULL;
 	int rv;
@@ -120,19 +120,18 @@ struct waiter_s { };
 	if (rv && done_val)
 	    deref_swig_cb_val(done_val);
 
-	return err_to_errstr(rv);
+	err_handle("close", rv);
     }
 
     %rename(write) writet;
     %apply (char *STRING, size_t LENGTH) { (char *str, size_t len) };
-    %apply int *OUTPUT { int *written };
-    char *writet(int *written, char *str, size_t len) {
+    unsigned int writet(char *str, size_t len) {
 	unsigned int wr = 0;
 	int rv;
 
 	rv = genio_write(self, &wr, str, len);
-	*written = wr;
-	return err_to_errstr(rv);
+	err_handle("write", rv);
+	return wr;
     }
 
     void read_cb_enable(bool enable) {
@@ -178,7 +177,7 @@ struct waiter_s { };
 	free(data);
     }
 
-    char *shutdown(swig_cb *done) {
+    void shutdown(swig_cb *done) {
 	swig_cb_val *done_val = NULL;
 	int rv;
 
@@ -188,7 +187,7 @@ struct waiter_s { };
 	if (rv && done_val)
 	    deref_swig_cb_val(done_val);
 
-	return err_to_errstr(rv);
+	err_handle("shutdown", rv);
     }
 }
 
@@ -203,10 +202,10 @@ struct waiter_s { };
 	free_waiter(self);
     }
 
-    void wait_timeout(int timeout) {
+    int wait_timeout(int timeout) {
 	struct timeval tv = { timeout / 1000, timeout % 1000 };
 
-	genio_do_wait(self, &tv);
+	return genio_do_wait(self, &tv);
     }
 
     void wait() {

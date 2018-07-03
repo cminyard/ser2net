@@ -171,7 +171,7 @@ genio_got_read(struct genio *io, int readerr,
     PyTuple_SET_ITEM(args, 0, io_ref.val);
 
     if (readerr)
-	o = PyString_FromString(err_to_errstr(readerr));
+	o = PyString_FromString(strerror(readerr));
     else
 	o = Py_None;
     PyTuple_SET_ITEM(args, 1, o);
@@ -320,3 +320,13 @@ static struct genio_acceptor_callbacks gen_acc_cbs = {
 
 #define check_for_err PyErr_Occurred
 
+static void
+err_handle(char *name, int rv)
+{
+    if (rv) {
+	char str[200];
+
+	snprintf(str, sizeof(str), "genio:%s: %s", name, strerror(rv));
+	PyErr_SetString(PyExc_Exception, str);
+    }
+}

@@ -140,6 +140,17 @@ stdion_raddr_to_str(struct genio *net, int *epos,
     return 0;
 }
 
+static int
+stdion_remote_id(struct genio *net, int *id)
+{
+    struct stdiona_data *nadata = net_to_nadata(net);
+
+    if (!nadata->argv)
+	return ENOTSUP;
+    *id = nadata->opid;
+    return 0;
+}
+
 /* Must be called with nadata->lock held */
 static void
 stdion_finish_read(struct stdiona_data *nadata, int err)
@@ -663,6 +674,7 @@ stdiona_free(struct genio_acceptor *acceptor)
 static const struct genio_functions genio_stdio_funcs = {
     .write = stdion_write,
     .raddr_to_str = stdion_raddr_to_str,
+    .remote_id = stdion_remote_id,
     .open = stdion_open,
     .close = stdion_close,
     .free = stdion_free,

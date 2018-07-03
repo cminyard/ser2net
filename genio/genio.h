@@ -132,6 +132,13 @@ socklen_t genio_get_raddr(struct genio *net,
 			  struct sockaddr *addr, socklen_t addrlen);
 
 /*
+ * Returns an id for the remote end.  For stdio clients this is the
+ * pid.  For sergenio_termios this is the fd.  It returns an error
+ * for all others.
+ */
+int genio_remote_id(struct genio *net, int *id);
+
+/*
  * Open the genio.  genios recevied from an acceptor are open upon
  * receipt, but client genios are started closed and need to be opened
  * before use.

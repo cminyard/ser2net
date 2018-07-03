@@ -645,6 +645,15 @@ sterm_raddr_to_str(struct genio *net, int *epos,
     return 0;
 }
 
+static int
+sterm_remote_id(struct genio *net, int *id)
+{
+    struct sterm_data *sdata = mygenio_to_sterm(net);
+
+    *id = sdata->fd;
+    return 0;
+}
+
 static void
 devfd_fd_cleared(int fd, void *cb_data)
 {
@@ -864,6 +873,7 @@ sterm_set_write_callback_enable(struct genio *net, bool enabled)
 static const struct genio_functions sterm_net_funcs = {
     .write = sterm_write,
     .raddr_to_str = sterm_raddr_to_str,
+    .remote_id = sterm_remote_id,
     .open = sterm_open,
     .close = sterm_close,
     .free = sterm_free,
