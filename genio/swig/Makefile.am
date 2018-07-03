@@ -1,0 +1,5 @@
+
+EXTRA_DIST = genio.i
+
+SUBDIRS = $(PYTHON_DIR)
+DIST_SUBDIRS = python
