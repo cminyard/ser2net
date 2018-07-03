@@ -119,7 +119,7 @@ sterm_finish_close(struct sterm_data *sdata)
     sdata->fd = -1;
     uucp_rm_lock(sdata->devname);
     if (sdata->close_done)
-	sdata->close_done(&sdata->snet.net, sdata->close_done);
+	sdata->close_done(&sdata->snet.net, sdata->close_data);
     sdata->in_close = false;
     if (sdata->in_free)
 	sterm_finish_free(sdata);
