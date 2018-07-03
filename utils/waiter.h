@@ -35,6 +35,11 @@ int wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
 
 void wait_for_waiter(waiter_t *waiter, unsigned int count);
 
+int wait_for_waiter_timeout_intr(waiter_t *waiter, unsigned int count,
+				 struct timeval *timeout);
+
+int wait_for_waiter_intr(waiter_t *waiter, unsigned int count);
+
 void wake_waiter(waiter_t *waiter);
 
 #endif /* WAITER_H */

@@ -587,6 +587,19 @@ diff_timeval(struct timeval *dest,
     }
 }
 
+static void
+add_timeval(struct timeval *dest,
+	    struct timeval *left,
+	    struct timeval *right)
+{
+    dest->tv_sec = left->tv_sec + right->tv_sec;
+    dest->tv_usec = left->tv_usec + right->tv_usec;
+    while (dest->tv_usec > 1000000) {
+	dest->tv_usec -= 1000000;
+	dest->tv_sec++;
+    }
+}
+
 int
 sel_alloc_timer(struct selector_s     *sel,
 		sel_timeout_handler_t handler,
@@ -1022,17 +1035,23 @@ process_fds_epoll(struct selector_s *sel, struct timeval *tvtimeout)
 #endif
 
 int
-sel_select(struct selector_s *sel,
-	   sel_send_sig_cb send_sig,
-	   long            thread_id,
-	   void            *cb_data,
-	   struct timeval  *timeout)
+sel_select_intr(struct selector_s *sel,
+		sel_send_sig_cb send_sig,
+		long            thread_id,
+		void            *cb_data,
+		struct timeval  *timeout)
 {
     int             err;
     struct timeval  loc_timeout;
     sel_wait_list_t wait_entry;
     unsigned int    count;
+    struct timeval  end, now;
     int user_timeout = 0;
+
+    if (timeout) {
+	sel_get_monotonic_time(&now);
+	add_timeval(&end, &now, timeout);
+    }
 
     sel_timer_lock(sel);
     count = process_runners(sel);
@@ -1055,11 +1074,10 @@ sel_select(struct selector_s *sel,
 #endif
 	err = process_fds(sel, &loc_timeout);
 
-    if (!user_timeout || (err && errno == EINTR)) {
+    if (!user_timeout && !err) {
 	/*
 	 * Only return a timeout if we waited on the user's timeout
 	 * Otherwise there is a timer to process.
-	 * Also, if we get an EINTR, we don't want to report a timeout.
 	 */
 	count++;
 	err = 0;
@@ -1069,10 +1087,34 @@ sel_select(struct selector_s *sel,
     remove_sel_wait_list(sel, &wait_entry);
     sel_timer_unlock(sel);
 
+    if (timeout) {
+	sel_get_monotonic_time(&now);
+	diff_timeval(timeout, &end, &now);
+    }
+
     if (err < 0)
 	return err;
 
     return err + count;
+}
+
+int
+sel_select(struct selector_s *sel,
+	   sel_send_sig_cb send_sig,
+	   long            thread_id,
+	   void            *cb_data,
+	   struct timeval  *timeout)
+{
+    int err;
+
+    err = sel_select_intr(sel, send_sig, thread_id, cb_data, timeout);
+    if (err < 0 && errno == EINTR)
+	/*
+	 * If we get an EINTR, we don't want to report a timeout.  Just
+	 * return that we did something.
+	 */
+	return 1;
+    return err;
 }
 
 /* The main loop for the program.  This will select on the various

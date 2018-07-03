@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <errno.h>
+#include <stdbool.h>
 
 struct waiter_timeout {
     struct timeval tv;
@@ -46,7 +47,7 @@ void
 free_waiter(waiter_t *waiter)
 {
     assert(waiter);
-    assert(waiter->count == 0);
+    /* assert(waiter->count == 0); */
     assert(waiter->wts.next == waiter->wts.prev);
     pthread_mutex_destroy(&waiter->lock);
     free(waiter);
@@ -66,8 +67,8 @@ wake_thread_send_sig(long thread_id, void *cb_data)
 }
 
 int
-wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
-			struct timeval *timeout)
+i_wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			  struct timeval *timeout, bool intr)
 {
     struct waiter_timeout wt;
     struct wait_data w;
@@ -104,7 +105,16 @@ wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
 		break;
 	    }
 	}
-	sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, left);
+	if (intr) {
+	    err = sel_select_intr(waiter->sel, wake_thread_send_sig,
+				  w.id, &w, left);
+	    if (err < 0) {
+		err = errno;
+		break;
+	    }
+	} else {
+	    sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, left);
+	}
 	pthread_mutex_lock(&waiter->lock);
     }
     if (!err)
@@ -116,10 +126,30 @@ wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
     return err;
 }
 
+int
+wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			struct timeval *timeout)
+{
+    return i_wait_for_waiter_timeout(waiter, count, timeout, false);
+}
+
 void
 wait_for_waiter(waiter_t *waiter, unsigned int count)
 {
-  wait_for_waiter_timeout(waiter, count, NULL);
+    wait_for_waiter_timeout(waiter, count, NULL);
+}
+
+int
+wait_for_waiter_timeout_intr(waiter_t *waiter, unsigned int count,
+				 struct timeval *timeout)
+{
+    return i_wait_for_waiter_timeout(waiter, count, timeout, true);
+}
+
+int
+wait_for_waiter_intr(waiter_t *waiter, unsigned int count)
+{
+    return wait_for_waiter_timeout_intr(waiter, count, NULL);
 }
 
 void
@@ -165,8 +195,8 @@ void
 wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
 			struct timeval *timeout)
 {
-    while (waiter->count < count) {
-	sel_select(waiter->sel, NULL, 0, NULL, NULL);
+    while (waiter->count < count)
+	sel_select(waiter->sel, NULL, 0, NULL, timeout);
     waiter->count -= count;
 }
 

@@ -155,6 +155,15 @@ int sel_select(struct selector_s *sel,
 	       void            *cb_data,
 	       struct timeval  *timeout);
 
+/*
+ * Like the above call, but it will return EINTR if interrupted.
+ */
+int sel_select_intr(struct selector_s *sel,
+		    sel_send_sig_cb send_sig,
+		    long            thread_id,
+		    void            *cb_data,
+		    struct timeval  *timeout);
+
 /* This is the main loop for the program.  If NULL is passed in to
    send_sig, then the signal sender is not used.  If this encounters
    an unrecoverable problem with select(), it will return the errno.
