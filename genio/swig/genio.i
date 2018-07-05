@@ -22,6 +22,7 @@
 %{
 #include <string.h>
 #include "genio/genio.h"
+#include "genio/sergenio.h"
 #include "utils/selector.h"
 #include "utils/waiter.h"
 
@@ -85,11 +86,14 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
 
 %}
 
+%include <typemaps.i>
+%include <exception.i>
+
 %include "genio_python.i"
 
-%include <typemaps.i>
-
+%nodefaultctor sergenio;
 struct genio { };
+struct sergenio { };
 struct genio_acceptor { };
 struct waiter_s { };
 
@@ -173,9 +177,103 @@ struct waiter_s { };
     void write_cb_enable(bool enable) {
 	genio_set_write_callback_enable(self, enable);
     }
+
+    %newobject cast_to_sergenio;
+    struct sergenio *cast_to_sergenio() {
+	struct sergenio *rv = genio_to_sergenio(self);
+
+	if (!rv)
+	    cast_error("sergenio", "genio");
+	return rv;
+    }
 }
 
-%nodefaultctor genio_acceptor;
+%define sgenio_entry(name)
+    void sg_baud(int name, swig_cb *h) {
+	struct sergenio_cbdata *cbdata = NULL;
+	int rv;
+
+	if (!nil_swig_cb(h)) {
+	    cbdata = sergenio_cbdata(name, h);
+	    if (!cbdata) {
+		oom_err();
+		return;
+	    }
+	    rv = sergenio_##name(self, name, sergenio_cb, cbdata);
+	} else {
+	    rv = sergenio_##name(self, name, NULL, NULL);
+	}
+
+	if (rv && cbdata)
+	    cleanup_sergenio_cbdata(cbdata);
+	ser_err_handle("sg_"stringify(name), rv);
+    }
+
+    int sg_##name##_s(int name) {
+	struct sergenio_b *b = NULL;
+	int rv;
+
+	rv = sergenio_b_alloc(self, genio_sel, 0, &b);
+	if (!rv)
+	    rv = sergenio_##name##_b(b, &name);
+	if (rv)
+	    ser_err_handle("sg_"stringify(name)"_s", rv);
+	if (b)
+	    sergenio_b_free(b);
+	return name;
+    }
+%enddef
+
+%constant int SERGENIO_PARITY_NONE = SERGENIO_PARITY_NONE;
+%constant int SERGENIO_PARITY_ODD = SERGENIO_PARITY_ODD;
+%constant int SERGENIO_PARITY_EVEN = SERGENIO_PARITY_EVEN;
+%constant int SERGENIO_PARITY_MARK = SERGENIO_PARITY_MARK;
+%constant int SERGENIO_PARITY_SPACE = SERGENIO_PARITY_SPACE;
+
+%constant int SERGENIO_FLOWCONTROL_NONE = SERGENIO_FLOWCONTROL_NONE;
+%constant int SERGENIO_FLOWCONTROL_XON_XOFF = SERGENIO_FLOWCONTROL_XON_XOFF;
+%constant int SERGENIO_FLOWCONTROL_RTS_CTS = SERGENIO_FLOWCONTROL_RTS_CTS;
+
+%constant int SERGENIO_BREAK_ON = SERGENIO_BREAK_ON;
+%constant int SERGENIO_BREAK_OFF = SERGENIO_BREAK_OFF;
+
+%constant int SERGENIO_DTR_ON = SERGENIO_DTR_ON;
+%constant int SERGENIO_DTR_OFF = SERGENIO_DTR_OFF;
+
+%constant int SERGENIO_RTS_ON = SERGENIO_RTS_ON;
+%constant int SERGENIO_RTS_OFF = SERGENIO_RTS_OFF;
+
+%extend sergenio {
+    %newobject cast_to_genio;
+    struct genio *cast_to_genio() {
+	return sergenio_to_genio(self);
+    }
+
+    /* Standard baud rates. */
+    sgenio_entry(baud);
+
+    /* 5, 6, 7, or 8 bits. */
+    sgenio_entry(datasize);
+
+    /* SERGENIO_PARITY_ entries */
+    sgenio_entry(parity);
+
+    /* 1 or 2 */
+    sgenio_entry(stopbits);
+
+    /* SERGENIO_FLOWCONTROL_ entries */
+    sgenio_entry(flowcontrol);
+
+    /* SERGENIO_BREAK_ entries */
+    sgenio_entry(sbreak);
+
+    /* SERGENIO_DTR_ entries */
+    sgenio_entry(dtr);
+
+    /* SERGENIO_RTS_ entries */
+    sgenio_entry(rts);
+}
+
 %extend genio_acceptor {
     genio_acceptor(char *str, int max_read_size, swig_cb *handler) {
 	struct genio_acc_data *data;
@@ -223,7 +321,6 @@ struct waiter_s { };
     }
 }
 
-%nodefaultctor genio_acceptor;
 %extend waiter_s {
     waiter_s() {
 	setup_genio_sel();

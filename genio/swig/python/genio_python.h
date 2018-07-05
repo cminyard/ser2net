@@ -84,7 +84,7 @@ deref_swig_cb_val(swig_cb_val *cb)
 	} while(0)
 
 static PyObject *
-swig_finish_call_rv(swig_cb_val *cb, char *method_name, PyObject *args)
+swig_finish_call_rv(swig_cb_val *cb, const char *method_name, PyObject *args)
 {
     PyObject *p, *o = NULL;
 
@@ -113,7 +113,7 @@ swig_finish_call_rv(swig_cb_val *cb, char *method_name, PyObject *args)
 }
 
 static void
-swig_finish_call(swig_cb_val *cb, char *method_name, PyObject *args)
+swig_finish_call(swig_cb_val *cb, const char *method_name, PyObject *args)
 {
     PyObject *o;
 
@@ -313,6 +313,52 @@ static struct genio_acceptor_callbacks gen_acc_cbs = {
     .new_connection = genio_acc_got_new
 };
 
+struct sergenio_cbdata {
+    const char *cbname;
+    swig_cb_val *h_val;
+};
+
+#define stringify_1(x...)     #x
+#define stringify(x...)       stringify_1(x)
+
+#define sergenio_cbdata(name, h) \
+({							\
+    struct sergenio_cbdata *cbd = malloc(sizeof(*cbd));	\
+    if (cbd) {						\
+	cbd->cbname = stringify(name);			\
+	cbd->h_val = ref_swig_cb(h, name);		\
+    }							\
+    cbd;						\
+ })
+
+static void
+cleanup_sergenio_cbdata(struct sergenio_cbdata *cbd)
+{
+    deref_swig_cb_val(cbd->h_val);
+    free(cbd);
+}
+
+static void
+sergenio_cb(struct sergenio *snet, int err, int val, void *cb_data)
+{
+    struct sergenio_cbdata *cbd = cb_data;
+    PyObject *o, *args;
+    OI_PY_STATE gstate;
+
+    gstate = OI_PY_STATE_GET();
+
+    args = PyTuple_New(2);
+    o = PyInt_FromLong(err);
+    PyTuple_SET_ITEM(args, 0, o);
+    o = PyInt_FromLong(val);
+    PyTuple_SET_ITEM(args, 1, o);
+
+    swig_finish_call(cbd->h_val, cbd->cbname, args);
+
+    cleanup_sergenio_cbdata(cbd);
+    OI_PY_STATE_PUT(gstate);
+}
+
 #define check_for_err PyErr_Occurred
 
 static void err_handle(char *name, int rv)
@@ -320,4 +366,21 @@ static void err_handle(char *name, int rv)
     if (!rv)
 	return;
     PyErr_Format(PyExc_Exception, "genio:%s: %s", name, strerror(rv));
+}
+
+static void ser_err_handle(char *name, int rv)
+{
+    if (!rv)
+	return;
+    PyErr_Format(PyExc_Exception, "sergenio:%s: %s", name, strerror(rv));
+}
+
+static void cast_error(char *to, char *from)
+{
+    PyErr_Format(PyExc_RuntimeError, "Error casting from %s to %s", from, to);
+}
+
+static void oom_err(void)
+{
+    PyErr_Format(PyExc_MemoryError, "Out of memory");
 }
