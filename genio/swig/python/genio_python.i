@@ -23,3 +23,9 @@
     else
 	$1 = $input;
 }
+
+%exception {
+    $action
+    if (PyErr_Occurred())
+	SWIG_fail;
+}

@@ -101,9 +101,11 @@ swig_finish_call_rv(swig_cb_val *cb, char *method_name, PyObject *args)
 	PyObject *c = PyObject_GetAttrString(t, "__name__");
 	char *class = PyString_AsString(c);
 
-	fprintf(stderr, "genio callback: Class '%s' has no method '%s'\n",
-		class, method_name);
-	exit(1);
+	PyErr_Format(PyExc_RuntimeError,
+		     "genio callback: Class '%s' has no method '%s'\n",
+		     class, method_name);
+	if (curr_waiter)
+	    wake_waiter(curr_waiter);
     }
     Py_DECREF(args);
 
@@ -183,16 +185,7 @@ genio_got_read(struct genio *io, int readerr,
     PyTuple_SET_ITEM(args, 3, o);
 
     o = swig_finish_call_rv(data->handler_val, "read_callback", args);
-    if (!o) {
-	PyObject *t = PyObject_GetAttrString(data->handler_val, "__class__");
-	PyObject *c = PyObject_GetAttrString(t, "__name__");
-	char *class = PyString_AsString(c);
-
-	fprintf(stderr, "genio callback: "
-		"Class '%s' method 'read_callback' did not return a value\n",
-		class);
-	exit(1);
-    } else {
+    if (o) {
 	rv = PyLong_AsUnsignedLong(o);
 	if (PyErr_Occurred()) {
 	    PyObject *t = PyObject_GetAttrString(data->handler_val,
@@ -200,11 +193,11 @@ genio_got_read(struct genio *io, int readerr,
 	    PyObject *c = PyObject_GetAttrString(t, "__name__");
 	    char *class = PyString_AsString(c);
 
-	    fprintf(stderr, "genio callback: "
-		    "Class '%s' method 'read_callback' did not return "
-		    "an integer\n",
-		    class);
-	    exit(1);
+	    PyErr_Format(PyExc_RuntimeError, "genio callback: "
+			 "Class '%s' method 'read_callback' did not return "
+			 "an integer\n", class);
+	    if (curr_waiter)
+		wake_waiter(curr_waiter);
 	}
 	Py_DECREF(o);
     }
@@ -320,13 +313,9 @@ static struct genio_acceptor_callbacks gen_acc_cbs = {
 
 #define check_for_err PyErr_Occurred
 
-static void
-err_handle(char *name, int rv)
+static void err_handle(char *name, int rv)
 {
-    if (rv) {
-	char str[200];
-
-	snprintf(str, sizeof(str), "genio:%s: %s", name, strerror(rv));
-	PyErr_SetString(PyExc_Exception, str);
-    }
+    if (!rv)
+	return;
+    PyErr_Format(PyExc_Exception, "genio:%s: %s", name, strerror(rv));
 }

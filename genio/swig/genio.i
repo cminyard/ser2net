@@ -25,6 +25,12 @@
 #include "utils/selector.h"
 #include "utils/waiter.h"
 
+/*
+ * If an exception occurs inside a waiter, we want to stop the wait
+ * operation and propagate back.  So we wake it up
+ */
+static struct waiter_s *curr_waiter;
+
 #include "genio_python.h"
 
 static struct selector_s *genio_sel;
@@ -39,14 +45,21 @@ static int
 genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
 {
     int err;
+    struct waiter_s *prev_waiter = curr_waiter;
 
+    curr_waiter = waiter;
     do {
 	err = wait_for_waiter_timeout_intr(waiter, 1, timeout);
-	if (check_for_err())
+	if (check_for_err()) {
+	    if (prev_waiter)
+		wake_waiter(prev_waiter);
 	    break;
-	if (err)
-	    break;
+	}
+	if (err == EINTR)
+	    continue;
+	break;
     } while (1);
+    curr_waiter = prev_waiter;
 
     return err;
 }
