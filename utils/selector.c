@@ -1065,7 +1065,7 @@ sel_select_intr(struct selector_s *sel,
 		void            *cb_data,
 		struct timeval  *timeout)
 {
-    int             err;
+    int             err, old_errno;
     struct timeval  loc_timeout;
     sel_wait_list_t wait_entry;
     unsigned int    count;
@@ -1098,6 +1098,7 @@ sel_select_intr(struct selector_s *sel,
 #endif
 	err = process_fds(sel, &loc_timeout);
 
+    old_errno = errno;
     if (!user_timeout && !err) {
 	/*
 	 * Only return a timeout if we waited on the user's timeout
@@ -1116,8 +1117,10 @@ sel_select_intr(struct selector_s *sel,
 	diff_timeval(timeout, &end, &now);
     }
 
-    if (err < 0)
+    if (err < 0) {
+	errno = old_errno;
 	return err;
+    }
 
     return err + count;
 }
