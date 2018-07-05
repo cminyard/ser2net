@@ -29,3 +29,32 @@
     if (PyErr_Occurred())
 	SWIG_fail;
 }
+
+%typemap(in, numinputs=0) char **rbuffer (char *temp),
+                          size_t *rbuffer_len (size_t temp) {
+    $1 = &temp;
+}
+
+%typemap(argout) (char **rbuffer, size_t *rbuffer_len) {
+    PyObject *r = PyString_FromStringAndSize(*$1, *$2);
+
+    if (($result == Py_None)) {
+	Py_XDECREF($result);
+	$result = r;
+    } else {
+	PyObject *seq, *o2;
+
+	if (!PyTuple_Check($result)) {
+	    PyObject *tmpr = $result;
+	    $result = PyTuple_New(1);
+	    PyTuple_SetItem($result, 0, tmpr);
+	}
+	seq = PyTuple_New(1);
+	PyTuple_SetItem(seq, 0, r);
+	o2 = $result;
+	$result = PySequence_Concat(o2, seq);
+	Py_DECREF(o2);
+	Py_DECREF(seq);
+    }
+    free(*$1);
+}

@@ -64,6 +64,25 @@ genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
     return err;
 }
 
+void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
+{
+    char *buffer;
+    int i;
+
+    buffer = malloc(size_to_allocate);
+    if (!buffer) {
+	*rbuffer = NULL;
+	*rbuffer_len = 0;
+	return;
+    }
+    srandom(time(NULL));
+
+    for (i = 0; i < size_to_allocate; i++)
+	buffer[i] = random();
+    *rbuffer = buffer;
+    *rbuffer_len = size_to_allocate;
+}
+
 %}
 
 %include "genio_python.i"
@@ -229,3 +248,6 @@ struct waiter_s { };
 	wake_waiter(self);
     }
 }
+
+void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
+		      int size_to_allocate);
