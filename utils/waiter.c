@@ -66,20 +66,13 @@ wake_thread_send_sig(long thread_id, void *cb_data)
     pthread_kill(w->id, w->wake_sig);
 }
 
-int
+static int
 i_wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
 			  struct timeval *timeout, bool intr)
 {
     struct waiter_timeout wt;
     struct wait_data w;
-    struct timeval now, end, *left = NULL, left_data;
     int err = 0;
-
-    if (timeout) {
-	sel_get_monotonic_time(&end);
-	add_to_timeval(&end, timeout);
-	left = &left_data;
-    }
 
     w.id = pthread_self();
     w.wake_sig = waiter->wake_sig;
@@ -96,26 +89,21 @@ i_wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
 
     while (waiter->count < count) {
 	pthread_mutex_unlock(&waiter->lock);
-	if (left) {
-	    *left = end;
-	    sel_get_monotonic_time(&now);
-	    sub_from_timeval(left, &now);
-	    if (left->tv_sec < 0) {
-		err = ETIMEDOUT;
-		break;
-	    }
-	}
-	if (intr) {
+	if (intr)
 	    err = sel_select_intr(waiter->sel, wake_thread_send_sig,
-				  w.id, &w, left);
-	    if (err < 0) {
-		err = errno;
-		break;
-	    }
-	} else {
-	    sel_select(waiter->sel, wake_thread_send_sig, w.id, &w, left);
-	}
+				  w.id, &w, timeout);
+	else
+	    err = sel_select(waiter->sel, wake_thread_send_sig, w.id, &w,
+			     timeout);
 	pthread_mutex_lock(&waiter->lock);
+	if (err < 0) {
+	    err = errno;
+	    break;
+	} else if (err == 0) {
+	    err = ETIMEDOUT;
+	    break;
+	}
+	err = 0;
     }
     if (!err)
 	waiter->count -= count;
@@ -124,32 +112,6 @@ i_wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
     pthread_mutex_unlock(&waiter->lock);
 
     return err;
-}
-
-int
-wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
-			struct timeval *timeout)
-{
-    return i_wait_for_waiter_timeout(waiter, count, timeout, false);
-}
-
-void
-wait_for_waiter(waiter_t *waiter, unsigned int count)
-{
-    wait_for_waiter_timeout(waiter, count, NULL);
-}
-
-int
-wait_for_waiter_timeout_intr(waiter_t *waiter, unsigned int count,
-				 struct timeval *timeout)
-{
-    return i_wait_for_waiter_timeout(waiter, count, timeout, true);
-}
-
-int
-wait_for_waiter_intr(waiter_t *waiter, unsigned int count)
-{
-    return wait_for_waiter_timeout_intr(waiter, count, NULL);
 }
 
 void
@@ -191,19 +153,30 @@ free_waiter(waiter_t *waiter)
     free(waiter);
 }
 
-void
-wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
-			struct timeval *timeout)
+static int
+i_wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			  struct timeval *timeout, bool intr)
 {
-    while (waiter->count < count)
-	sel_select(waiter->sel, NULL, 0, NULL, timeout);
-    waiter->count -= count;
-}
+    int err;
 
-void
-wait_for_waiter(waiter_t *waiter, unsigned int count)
-{
-    wait_for_waiter_timeout(waiter, count, NULL);
+    while (waiter->count < count) {
+	if (intr)
+	    err = sel_select_intr(waiter->sel, wake_thread_send_sig,
+				  w.id, &w, timeout);
+	else
+	    err = sel_select(waiter->sel, wake_thread_send_sig, w.id, &w,
+			     timeout);
+	if (err < 0) {
+	    err = errno;
+	    break;
+	} else if (err == 0) {
+	    err = ETIMEDOUT;
+	    break;
+	}
+	err = 0;
+    }
+    if (!err)
+	waiter->count -= count;
 }
 
 void
@@ -212,3 +185,29 @@ wake_waiter(waiter_t *waiter)
     waiter->count++;
 }
 #endif
+
+int
+wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
+			struct timeval *timeout)
+{
+    return i_wait_for_waiter_timeout(waiter, count, timeout, false);
+}
+
+void
+wait_for_waiter(waiter_t *waiter, unsigned int count)
+{
+    wait_for_waiter_timeout(waiter, count, NULL);
+}
+
+int
+wait_for_waiter_timeout_intr(waiter_t *waiter, unsigned int count,
+				 struct timeval *timeout)
+{
+    return i_wait_for_waiter_timeout(waiter, count, timeout, true);
+}
+
+int
+wait_for_waiter_intr(waiter_t *waiter, unsigned int count)
+{
+    return wait_for_waiter_timeout_intr(waiter, count, NULL);
+}
