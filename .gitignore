@@ -14,4 +14,12 @@ install-sh
 /autom4te.cache/
 *.o
 *~
+*.pyc
+*.cmd
+.tmp_versions
+Module.*
+modules.*
+*.ko
+*.mod.c
+*.ur-safe
 ser2net
