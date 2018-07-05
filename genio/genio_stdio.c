@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <syslog.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 #include "genio.h"
 #include "genio_internal.h"
@@ -170,6 +171,7 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 				    nadata->data_pending_len,
 				    nadata->read_flags);
 
+    LOCK(nadata->lock);
     if (!err && count < nadata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
@@ -189,6 +191,7 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr,
 				    SEL_FD_HANDLER_ENABLED);
     }
+    UNLOCK(nadata->lock);
 }
 
 static void
@@ -330,8 +333,10 @@ stdion_read_ready(int fd, void *cbdata)
     int rv, err = 0;
 
     LOCK(nadata->lock);
-    if (!nadata->read_enabled || nadata->in_read)
-	goto out_unlock;
+    if (!nadata->read_enabled || nadata->in_read) {
+	UNLOCK(nadata->lock);
+	return;
+    }
     sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
 			    SEL_FD_HANDLER_DISABLED);
     if (nadata->ostderr != -1)
@@ -360,10 +365,7 @@ stdion_read_ready(int fd, void *cbdata)
 	nadata->data_pending_len = rv;
     }
 
-    LOCK(nadata->lock);
     stdion_finish_read(nadata, err);
- out_unlock:
-    UNLOCK(nadata->lock);
 }
 
 static void
@@ -462,6 +464,12 @@ stdion_open(struct genio *net)
 	dup2(stderrpipe[1], 2);
 
 	execvp(nadata->argv[0], nadata->argv);
+	{
+	    char buff[1024];
+
+	    fprintf(stderr, "Err: %s %s\n", nadata->argv[0], strerror(errno));
+	    fprintf(stderr, "  pwd = '%s'\n", getcwd(buff, sizeof(buff)));
+	}
 	exit(1); /* Only reached on error. */
     }
 
