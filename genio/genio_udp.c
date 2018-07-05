@@ -289,7 +289,6 @@ static void udpna_check_finish_free(struct udpna_data *nadata)
 		nadata->pending_close_ndata || nadata->in_shutdown)
 	return;
 
-    nadata->nr_accept_close_waiting = nadata->nr_fds;
     for (i = 0; i < nadata->nr_fds; i++)
 	sel_clear_fd_handlers(nadata->sel, nadata->fds[i].fd);
 }
@@ -854,6 +853,7 @@ udpna_startup(struct genio_acceptor *acceptor)
 	    rv = errno;
 	    goto out_unlock;
 	}
+	nadata->nr_accept_close_waiting = nadata->nr_fds;
     }
 
     nadata->setup = true;
@@ -1063,6 +1063,7 @@ udp_genio_alloc(struct addrinfo *ai,
 	free(ndata);
 	udpna_do_free(nadata);
     } else {
+	nadata->nr_accept_close_waiting = 1;
 	freeaddrinfo(ai);
 	*new_genio = &ndata->net;
     }
