@@ -38,7 +38,7 @@ class HandleData:
     object of that io will be this object.
     """
 
-    def __init__(self, iostr, bufsize, name = None):
+    def __init__(self, iostr, bufsize, name = None, chunksize=10240):
         """Start a genio object with this handler"""
         if (name):
             self.name = name
@@ -49,7 +49,8 @@ class HandleData:
         self.to_compare = None
         self.ignore_input = False
         self.io = genio.genio(iostr, bufsize, self)
-        self.io.handler = self;
+        self.io.handler = self
+        self.chunksize = chunksize
         return
 
     def set_compare(self, to_compare, start_reader = True):
@@ -65,6 +66,8 @@ class HandleData:
         return
 
     def set_write_data(self, to_write, start_writer = True):
+        self.wrpos = 0
+        self.wrlen = len(to_write)
         self.to_write = to_write
         if (start_writer):
             self.io.write_cb_enable(True)
@@ -84,8 +87,12 @@ class HandleData:
     # Everything below here is internal handling functions.
 
     def read_callback(self, io, err, buf, flags):
+        if (debug):
+            print "%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
+                                                        self.compared,
+                                                        len(self.to_compare))
         if (debug >= 2):
-            print self.name + ": Got data(%d): %s" % (self.compared,  str(buf))
+            print  "%s: Got data: %s" % (self.name, str(buf))
         if (self.ignore_input):
             return len(buf)
         if (not self.to_compare):
@@ -112,7 +119,7 @@ class HandleData:
 
         if (self.compared >= len(self.to_compare)):
             self.to_compare = None
-            io.write_cb_enable(False)
+            io.read_cb_enable(False)
             self.waiter.wake()
 
         return count
@@ -124,15 +131,20 @@ class HandleData:
             io.write_cb_enable(False)
             return
 
-        count = io.write(self.to_write)
+        if (self.wrpos + self.chunksize > self.wrlen):
+            wrdata = self.to_write[self.wrpos:]
+        else:
+            wrdata = self.to_write[self.wrpos:self.wrpos + self.chunksize]
+        count = io.write(wrdata)
         if (debug):
             print self.name + ": wrote %d bytes" % count
-        if (count >= len(self.to_write)):
+
+        if (count + self.wrpos >= self.wrlen):
             io.write_cb_enable(False)
             self.to_write = None
             self.waiter.wake()
         else:
-            self.to_write = self.to_write[count:]
+            self.wrpos += count
         return
 
     def urgent_callback(self, io):
