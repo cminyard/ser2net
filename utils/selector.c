@@ -88,6 +88,9 @@ typedef struct fd_control_s
     sel_fd_handler_t handle_read;
     sel_fd_handler_t handle_write;
     sel_fd_handler_t handle_except;
+#ifdef HAVE_EPOLL_PWAIT
+    uint32_t saved_events;
+#endif
 } fd_control_t;
 
 typedef struct heap_val_s
@@ -331,8 +334,9 @@ init_fd(fd_control_t *fd)
 
 #ifdef HAVE_EPOLL_PWAIT
 static int
-sel_update_epoll(struct selector_s *sel, int fd, int op)
+sel_update_epoll(struct selector_s *sel, int fd, int op, int read_enable)
 {
+    fd_control_t *fdc = (fd_control_t *) &sel->fds[fd];
     struct epoll_event event;
 
     if (sel->epollfd < 0)
@@ -341,19 +345,25 @@ sel_update_epoll(struct selector_s *sel, int fd, int op)
     memset(&event, 0, sizeof(event));
     event.events = EPOLLONESHOT;
     event.data.fd = fd;
-    if (FD_ISSET(fd, &sel->read_set))
-	event.events |= EPOLLIN | EPOLLHUP;
-    if (FD_ISSET(fd, &sel->write_set))
-	event.events |= EPOLLOUT;
-    if (FD_ISSET(fd, &sel->write_set))
-	event.events |= EPOLLERR | EPOLLPRI;
-
+    if (fdc->saved_events) {
+	if (!read_enable)
+	    return 0;
+	op = EPOLL_CTL_ADD;
+	event.events = EPOLLIN | EPOLLHUP;
+    } else {
+	if (FD_ISSET(fd, &sel->read_set))
+	    event.events |= EPOLLIN | EPOLLHUP;
+	if (FD_ISSET(fd, &sel->write_set))
+	    event.events |= EPOLLOUT;
+	if (FD_ISSET(fd, &sel->except_set))
+	    event.events |= EPOLLERR | EPOLLPRI;
+    }
     epoll_ctl(sel->epollfd, op, fd, &event);
     return 0;
 }
 #else
 static int
-sel_update_epoll(struct selector_s *sel, int fd, int op)
+sel_update_epoll(struct selector_s *sel, int fd, int op, int dummy)
 {
     return 1;
 }
@@ -412,7 +422,7 @@ sel_set_fd_handlers(struct selector_s *sel,
 	    sel->maxfd = fd;
 	}
 
-	if (sel_update_epoll(sel, fd, EPOLL_CTL_ADD)) {
+	if (sel_update_epoll(sel, fd, EPOLL_CTL_ADD, 0)) {
 	    wake_fd_sel_thread(sel);
 	    goto out;
 	}
@@ -449,7 +459,7 @@ sel_clear_fd_handlers(struct selector_s *sel,
 	olddata = fdc->data;
 	fdc->state = NULL;
 
-	sel_update_epoll(sel, fd, EPOLL_CTL_DEL);
+	sel_update_epoll(sel, fd, EPOLL_CTL_DEL, 0);
     }
 
     init_fd(fdc);
@@ -496,7 +506,8 @@ sel_set_fd_read_handler(struct selector_s *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->read_set);
     }
-    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD,
+			 state == SEL_FD_HANDLER_ENABLED)) {
 	wake_fd_sel_thread(sel);
 	return;
     }
@@ -525,7 +536,7 @@ sel_set_fd_write_handler(struct selector_s *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->write_set);
     }
-    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD, 0)) {
 	wake_fd_sel_thread(sel);
 	return;
     }
@@ -554,7 +565,7 @@ sel_set_fd_except_handler(struct selector_s *sel, int fd, int state)
 	    goto out;
 	FD_CLR(fd, &sel->except_set);
     }
-    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD)) {
+    if (sel_update_epoll(sel, fd, EPOLL_CTL_MOD, 0)) {
 	wake_fd_sel_thread(sel);
 	return;
     }
@@ -992,6 +1003,7 @@ process_fds_epoll(struct selector_s *sel, struct timeval *tvtimeout)
     struct epoll_event event;
     int timeout;
     sigset_t sigmask;
+    fd_control_t *fdc;
 
     if (tvtimeout->tv_sec > 600)
 	 /* Don't wait over 10 minutes, to work around an old epoll bug
@@ -1015,19 +1027,31 @@ process_fds_epoll(struct selector_s *sel, struct timeval *tvtimeout)
 
     sel_fd_lock(sel);
     fd = event.data.fd;
+    fdc = (fd_control_t *) &sel->fds[fd];
+    if (event.events & (EPOLLHUP | EPOLLERR)) {
+	/*
+	 * The crazy people that designed epoll made it so that EPOLLHUP
+	 * and EPOLLERR always wake it up, even if they are not set.  That
+	 * makes this fairly inconvenient, because we don't want to wake
+	 * up in that case unless we explicitly ask for it.  Fortunately,
+	 * in those cases we can pretty easily simulate it by just deleting
+	 * it, since in those cases you will not get anything but an
+	 * EPOLLHUP or EPOLLERR, anyway, and then doing the callback
+	 * by hand.
+	 */
+	sel_update_epoll(sel, fd, EPOLL_CTL_DEL, 0);
+	fdc->saved_events = event.events & (EPOLLHUP | EPOLLERR);
+    }
     if (event.events & (EPOLLIN | EPOLLHUP))
-	handle_selector_call(sel, fd, &sel->read_set,
-			     sel->fds[fd].handle_read);
+	handle_selector_call(sel, fd, &sel->read_set, fdc->handle_read);
     if (event.events & EPOLLOUT)
-	handle_selector_call(sel, fd, &sel->write_set,
-			     sel->fds[fd].handle_write);
-    if (event.events & (EPOLLERR | EPOLLPRI))
-	handle_selector_call(sel, fd, &sel->except_set,
-			     sel->fds[fd].handle_except);
+	handle_selector_call(sel, fd, &sel->write_set, fdc->handle_write);
+    if (event.events & (EPOLLPRI | EPOLLERR))
+	handle_selector_call(sel, fd, &sel->except_set, fdc->handle_except);
 
     /* Rearm the event.  Remember it could have been deleted in the handler. */
-    if (sel->fds[fd].state)
-	sel_update_epoll(sel, fd, EPOLL_CTL_MOD);
+    if (fdc->state)
+	sel_update_epoll(sel, fd, EPOLL_CTL_MOD, 0);
     sel_fd_unlock(sel);
 
     return rv;
