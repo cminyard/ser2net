@@ -43,7 +43,8 @@ struct stdiona_data {
     sel_runner_t *connect_runner;
 
     bool enabled;
-    int old_flags;
+    int old_flags_ostdin;
+    int old_flags_ostdout;
 
     /* For the acceptor only. */
     bool in_free;
@@ -522,7 +523,8 @@ __stdion_close(struct stdiona_data *nadata,
     if (nadata->argv) {
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
+	if (nadata->ostderr != -1)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
     } else if (!nadata->deferred_op_pending) {
 	nadata->deferred_op_pending = true;
 	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
@@ -580,7 +582,10 @@ stdiona_fd_cleared(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct genio_acceptor *acceptor = &nadata->acceptor;
 
-    fcntl(0, F_SETFL, nadata->old_flags);
+    LOCK(nadata->lock);
+    nadata->oio_count--;
+    fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
+    fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
 
     if (nadata->shutdown_done)
 	nadata->shutdown_done(acceptor, nadata->shutdown_data);
@@ -607,28 +612,63 @@ stdiona_startup(struct genio_acceptor *acceptor)
 	goto out_unlock;
     }
     if (!nadata->enabled) {
-	rv = fcntl(0, F_GETFL, 0);
+	rv = fcntl(nadata->ostdin, F_GETFL, 0);
 	if (rv == -1) {
 	    rv = errno;
 	    goto out_unlock;
 	}
-	nadata->old_flags = rv;
-	if (fcntl(0, F_SETFL, O_NONBLOCK) == -1) {
+	nadata->old_flags_ostdin = rv;
+
+	rv = fcntl(nadata->ostdout, F_GETFL, 0);
+	if (rv == -1) {
 	    rv = errno;
+	    fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK);
 	    goto out_unlock;
 	}
+	nadata->old_flags_ostdout = rv;
 
-	rv = sel_set_fd_handlers(nadata->sel, 0, nadata, stdion_read_ready,
-				 stdion_write_ready, NULL, stdiona_fd_cleared);
+	if (fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK) == -1) {
+	    rv = errno;
+	    goto out_err;
+	}
+
+	if (fcntl(nadata->ostdout, F_SETFL, O_NONBLOCK) == -1) {
+	    rv = errno;
+	    goto out_err;
+	}
+
+	rv = sel_set_fd_handlers(nadata->sel, nadata->ostdin,
+				 nadata, NULL, stdion_write_ready, NULL,
+				 stdiona_fd_cleared);
 	if (rv)
-	    goto out_unlock;
+	    goto out_err;
+	nadata->oio_count++;
+
+	rv = sel_set_fd_handlers(nadata->sel, nadata->ostdout,
+				 nadata, stdion_read_ready, NULL, NULL,
+				 stdiona_fd_cleared);
+	if (rv)
+	    goto out_err;
+	nadata->oio_count++;
+
 	nadata->enabled = true;
 	sel_run(nadata->connect_runner, stdiona_do_connect, nadata);
     }
  out_unlock:
     UNLOCK(nadata->lock);
-
     return rv;
+
+ out_err:
+    if (nadata->oio_count) {
+	if (nadata->oio_count > 1)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	if (nadata->oio_count > 2)
+	    sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+    } else {
+	fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
+	fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
+    }
+    goto out_unlock;
 }
 
 static int
@@ -646,7 +686,8 @@ stdiona_shutdown(struct genio_acceptor *acceptor,
 	nadata->in_shutdown = true;
 	nadata->shutdown_done = shutdown_done;
 	nadata->shutdown_data = shutdown_data;
-	sel_clear_fd_handlers(nadata->sel, 0);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
     } else {
 	rv = EAGAIN;
     }
@@ -670,7 +711,8 @@ stdiona_free(struct genio_acceptor *acceptor)
     nadata->in_free = true;
     if (nadata->enabled) {
 	nadata->enabled = false;
-	sel_clear_fd_handlers(nadata->sel, 0);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
     } else {
 	UNLOCK(nadata->lock);
 	stdiona_finish_free(nadata);
@@ -757,7 +799,7 @@ stdio_genio_acceptor_alloc(struct selector_s *sel,
     if (err)
 	return err;
 
-    nadata->ostdin = 0;
+    nadata->ostdin = 1;
     nadata->ostdout = 0;
     nadata->ostderr = -1;
 
