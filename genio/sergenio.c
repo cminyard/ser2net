@@ -47,7 +47,7 @@ struct sergenio *
 genio_to_sergenio(struct genio *net)
 {
     if (!is_sergenio(net))
-	abort();
+	return NULL;
     return container_of(net, struct sergenio, net);
 }
 
@@ -102,7 +102,7 @@ sergenio_break(struct sergenio *snet, int breakv,
 			    void *cb_data),
 	       void *cb_data)
 {
-    return snet->funcs->breakv(snet, breakv, done, cb_data);
+    return snet->funcs->sbreak(snet, breakv, done, cb_data);
 }
 
 int
@@ -284,7 +284,7 @@ sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol)
 }
 
 int
-sergenio_break_b(struct sergenio_b *sbnet, int *breakv)
+sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
 {
     struct sergenio_b_data data;
     int err;
