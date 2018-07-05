@@ -172,10 +172,12 @@ genio_got_read(struct genio *io, int readerr,
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
 
-    if (readerr)
+    if (readerr) {
 	o = PyString_FromString(strerror(readerr));
-    else
+    } else {
+	Py_INCREF(Py_None);
 	o = Py_None;
+    }
     PyTuple_SET_ITEM(args, 1, o);
 
     o = OI_PI_FromStringAndSize((char *) buf, buflen);
