@@ -50,10 +50,10 @@ struct sergenio_functions {
 				    int flowcontrol, void *cb_data),
 		       void *cb_data);
 
-    int (*breakv)(struct sergenio *snet, int breakv,
-		 void (*done)(struct sergenio *snet, int err, int breakv,
-			      void *cb_data),
-		 void *cb_data);
+    int (*sbreak)(struct sergenio *snet, int breakv,
+		  void (*done)(struct sergenio *snet, int err, int breakv,
+			       void *cb_data),
+		  void *cb_data);
 
     int (*dtr)(struct sergenio *snet, int dtr,
 	       void (*done)(struct sergenio *snet, int err, int dtr,

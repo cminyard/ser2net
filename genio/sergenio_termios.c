@@ -220,7 +220,10 @@ termios_process(struct sterm_data *sdata)
 	    else
 		err = qe->getset(NULL, &mctl, &val);
 	} else if (qe->op == TERMIO_OP_BRK) {
-	    val = sdata->break_set;
+	    if (sdata->break_set)
+		val = SERGENIO_BREAK_ON;
+	    else
+		val = SERGENIO_BREAK_OFF;
 	}
 
 	UNLOCK(sdata->lock);
@@ -520,7 +523,7 @@ sterm_flowcontrol(struct sergenio *snet, int flowcontrol,
 }
 
 static int
-sterm_breakv(struct sergenio *snet, int breakv,
+sterm_sbreak(struct sergenio *snet, int breakv,
 	     void (*done)(struct sergenio *snet, int err, int breakv,
 			  void *cb_data),
 	     void *cb_data)
@@ -595,7 +598,7 @@ static const struct sergenio_functions sterm_funcs = {
     .parity = sterm_parity,
     .stopbits = sterm_stopbits,
     .flowcontrol = sterm_flowcontrol,
-    .breakv = sterm_breakv,
+    .sbreak = sterm_sbreak,
     .dtr = sterm_dtr,
     .rts = sterm_rts,
 };

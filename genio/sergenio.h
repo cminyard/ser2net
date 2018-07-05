@@ -90,10 +90,10 @@ int sergenio_flowcontrol(struct sergenio *snet, int flowcontrol,
 
 #define SERGENIO_BREAK_ON	1
 #define SERGENIO_BREAK_OFF	2
-int sergenio_break(struct sergenio *snet, int breakv,
-		   void (*done)(struct sergenio *snet, int err, int breakv,
-				void *cb_data),
-		   void *cb_data);
+int sergenio_sbreak(struct sergenio *snet, int breakv,
+		    void (*done)(struct sergenio *snet, int err, int breakv,
+				 void *cb_data),
+		    void *cb_data);
 
 #define SERGENIO_DTR_ON		1
 #define SERGENIO_DTR_OFF	2
@@ -137,7 +137,7 @@ int sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize);
 int sergenio_parity_b(struct sergenio_b *sbnet, int *parity);
 int sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits);
 int sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol);
-int sergenio_break_b(struct sergenio_b *sbnet, int *breakv);
+int sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv);
 int sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr);
 int sergenio_rts_b(struct sergenio_b *sbnet, int *rts);
 

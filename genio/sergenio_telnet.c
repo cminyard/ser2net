@@ -211,7 +211,7 @@ stel_flowcontrol(struct sergenio *snet, int flowcontrol,
 }
 
 static int
-stel_breakv(struct sergenio *snet, int breakv,
+stel_sbreak(struct sergenio *snet, int breakv,
 	    void (*done)(struct sergenio *snet, int err, int breakv,
 			 void *cb_data),
 	    void *cb_data)
@@ -243,7 +243,7 @@ static const struct sergenio_functions stel_funcs = {
     .parity = stel_parity,
     .stopbits = stel_stopbits,
     .flowcontrol = stel_flowcontrol,
-    .breakv = stel_breakv,
+    .sbreak = stel_sbreak,
     .dtr = stel_dtr,
     .rts = stel_rts,
 };
