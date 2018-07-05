@@ -8,7 +8,8 @@ PYPATH=$(top_builddir)/swig/python:$(top_builddir)/swig/python/.libs
 pythonlib_LTLIBRARIES = _genio.la
 
 genio_wrap.c genio.py: $(top_srcdir)/genio/swig/genio.i \
-		$(top_srcdir)/genio/swig/python/genio_python.h
+		$(top_srcdir)/genio/swig/python/genio_python.h \
+		$(top_srcdir)/genio/swig/python/genio_python.i
 	$(SWIG) $(DEFS) -python $(PYTHON_SWIG_FLAGS) -o genio_wrap.c \
 		-I$(top_srcdir)/genio/swig/python $<
 
