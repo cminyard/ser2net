@@ -22,8 +22,6 @@
 %{
 #include <string.h>
 #include <termios.h>
-#include <sys/ioctl.h>
-#include "linux-serial-echo/serialsim.h"
 #include "genio/genio.h"
 #include "genio/sergenio.h"
 #include "utils/selector.h"
@@ -87,9 +85,12 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
     *rbuffer_len = size_to_allocate;
 }
 
+/* Defined in another file to avoid string type collisions. */
+extern int remote_termios(struct termios *termios, int fd);
+
 void get_remote_termios(void *termios, int fd)
 {
-    int rv = ioctl(fd, TIOCSERGREMTERMIOS, termios);
+    int rv = remote_termios(termios, fd);
 
     if (rv)
 	err_handle("get_remote_termios", errno);

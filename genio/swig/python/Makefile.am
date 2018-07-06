@@ -25,7 +25,8 @@ _genio_la_LIBADD = \
 	$(top_builddir)/genio/genio_stdio.lo \
 	$(top_builddir)/genio/sergenio.lo \
 	$(top_builddir)/genio/sergenio_telnet.lo \
-	$(top_builddir)/genio/sergenio_termios.lo
+	$(top_builddir)/genio/sergenio_termios.lo \
+	$(top_builddir)/genio/swig/termios.lo
 _genio_la_LDFLAGS = -module -avoid-version
 
 clean-local:
