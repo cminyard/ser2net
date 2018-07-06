@@ -93,8 +93,9 @@
  *			 to set, bits 0-15 are the actual values.  Settable
  *			 values are TIOCM_CAR, TIOCM_CTS, TIOCM_DSR, and
  *			 TIOC_RNG.  If NULLMODEM is set to true, then only
- *			 TIOC_RNG is settable, the DTR and RTS lines from
- *			 the other end set the other lines.
+ *			 TIOC_RNG is settable.  The DTR and RTS lines are
+ *			 not here, you can set them through the normal
+ *			 interface.
  *
  * TIOCSERSREMERR      - Send an error or errors on the next sent byte.
  *			 arg is a bitwise OR of (1 << TTY_xxx).  Allowed
@@ -655,10 +656,16 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 	int rv = 0;
 	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	unsigned int mask;
+	int val;
 
 	switch (cmd) {
 	case TIOCSERSNULLMODEM:
 		serialsim_set_null_modem(intf, !!arg);
+		break;
+
+	case TIOCSERGNULLMODEM:
+		val = intf->do_null_modem;
+		copy_to_user((int __user *) arg, &val, sizeof(int));
 		break;
 
 	case TIOCSERSREMMCTRL:
@@ -670,11 +677,21 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 			serialsim_set_modem_lines(intf, mask, arg);
 		break;
 
+	case TIOCSERGREMMCTRL:
+		copy_to_user((unsigned int __user *) arg, &intf->mctrl,
+			     sizeof(unsigned int));
+		break;
+
 	case TIOCSERSREMERR:
 		if (arg & ~FLAGS_MASK)
 			rv = -EINVAL;
 		else
 			serialsim_set_flags(intf, arg);
+		break;
+
+	case TIOCSERGREMERR:
+		copy_to_user((unsigned int __user *) arg, &intf->flags,
+			     sizeof(unsigned int));
 		break;
 
 	case TIOCSERGREMTERMIOS:
