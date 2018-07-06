@@ -20,6 +20,8 @@
 #include <sys/ioctl.h>
 #include <asm/termbits.h>
 #include <string.h>
+#include <stdbool.h>
+#include <errno.h>
 
 /*
  * Stolen from glibc, but we can't directly include it from there
@@ -47,7 +49,7 @@ int remote_termios(struct user_termios *termios, int fd)
     int i;
 
     if (rv)
-	return rv;
+	return errno;
 
     memset(termios, 0, sizeof(*termios));
     termios->c_iflag = ktermios.c_iflag;
@@ -63,3 +65,26 @@ int remote_termios(struct user_termios *termios, int fd)
     return 0;
 }
 
+int
+set_remote_mctl(unsigned int mctl, int fd)
+{
+    if (ioctl(fd, TIOCSERSREMMCTRL, mctl))
+	return errno;
+    return 0;
+}
+
+int
+set_remote_sererr(unsigned int err, int fd)
+{
+    if (ioctl(fd, TIOCSERSREMERR, err))
+	return errno;
+    return 0;
+}
+
+int
+set_remote_null_modem(bool val, int fd)
+{
+    if (ioctl(fd, TIOCSERSNULLMODEM, val))
+	return errno;
+    return 0;
+}

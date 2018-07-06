@@ -87,14 +87,9 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
 
 /* Defined in another file to avoid string type collisions. */
 extern int remote_termios(struct termios *termios, int fd);
-
-void get_remote_termios(void *termios, int fd)
-{
-    int rv = remote_termios(termios, fd);
-
-    if (rv)
-	err_handle("get_remote_termios", errno);
-}
+extern int set_remote_mctl(unsigned int mctl, int fd);
+extern int set_remote_sererr(unsigned int err, int fd);
+extern int set_remote_null_modem(bool val, int fd);
 
 %}
 
@@ -284,6 +279,59 @@ struct waiter_s { };
 
     /* SERGENIO_RTS_ entries */
     sgenio_entry(rts);
+
+    /*
+     * Get remote termios.  For Python, this matches what the termios
+     * module does.
+     */
+    void get_remote_termios(void *termios) {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = remote_termios(termios, fd);
+
+	if (rv)
+	    err_handle("get_remote_termios", rv);
+    }
+
+    void set_remote_modem_ctl(unsigned int val) {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = set_remote_mctl(val, fd);
+
+	if (rv)
+	    err_handle("set_remote_modem_ctl", rv);
+    }
+
+    void set_remote_serial_err(unsigned int val) {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = set_remote_sererr(val, fd);
+
+	if (rv)
+	    err_handle("set_remote_modem_ctl", rv);
+    }
+
+
+    void set_remote_null_modem(bool val) {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = set_remote_null_modem(val, fd);
+
+	if (rv)
+	    err_handle("set_remote_modem_ctl", rv);
+    }
 }
 
 %extend genio_acceptor {
@@ -361,9 +409,3 @@ struct waiter_s { };
 /* Get a bunch of random bytes. */
 void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 		      int size_to_allocate);
-
-/*
- * Get remote termios.  For Python, this matches what the termios
- * module does.
- */
-void get_remote_termios(void *termios, int fd);
