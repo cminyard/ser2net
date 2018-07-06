@@ -684,9 +684,19 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 		spin_lock_irq(&intf->ointf->port.lock);
 		otermios = intf->ointf->termios;
 		spin_unlock_irq(&intf->ointf->port.lock);
-		if (kernel_termios_to_user_termio((struct termio __user *) arg,
-						  &otermios))
+#ifdef TCGETS2
+		rv = kernel_termios_to_user_termios((struct termios2 __user *)
+						    arg,
+						    &otermios);
+#else
+		rv = kernel_termios_to_user_termios((struct termios __user *)
+						    arg,
+						    &otermios);
+#endif
+		if (rv)
 			rv = -EFAULT;
+		else
+			rv = 0;
 		break;
 	}
 
