@@ -88,3 +88,27 @@ set_remote_null_modem(bool val, int fd)
 	return errno;
     return 0;
 }
+
+int
+get_remote_mctl(unsigned int *mctl, int fd)
+{
+    if (ioctl(fd, TIOCSERGREMMCTRL, mctl))
+	return errno;
+    return 0;
+}
+
+int
+get_remote_sererr(unsigned int *err, int fd)
+{
+    if (ioctl(fd, TIOCSERGREMERR, err))
+	return errno;
+    return 0;
+}
+
+int
+get_remote_null_modem(int *val, int fd)
+{
+    if (ioctl(fd, TIOCSERGNULLMODEM, val))
+	return errno;
+    return 0;
+}

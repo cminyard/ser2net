@@ -22,6 +22,7 @@
 %{
 #include <string.h>
 #include <termios.h>
+#include <sgtty.h>
 #include "genio/genio.h"
 #include "genio/sergenio.h"
 #include "utils/selector.h"
@@ -90,6 +91,9 @@ extern int remote_termios(struct termios *termios, int fd);
 extern int set_remote_mctl(unsigned int mctl, int fd);
 extern int set_remote_sererr(unsigned int err, int fd);
 extern int set_remote_null_modem(bool val, int fd);
+extern int get_remote_mctl(unsigned int *mctl, int fd);
+extern int get_remote_sererr(unsigned int *err, int fd);
+extern int get_remote_null_modem(int *val, int fd);
 
 %}
 
@@ -250,6 +254,18 @@ struct waiter_s { };
 %constant int SERGENIO_RTS_ON = SERGENIO_RTS_ON;
 %constant int SERGENIO_RTS_OFF = SERGENIO_RTS_OFF;
 
+/* For get/set modem control. */
+%constant int SERGENIO_TIOCM_CAR = TIOCM_CAR;
+%constant int SERGENIO_TIOCM_CTS = TIOCM_CTS;
+%constant int SERGENIO_TIOCM_DSR = TIOCM_DTR;
+%constant int SERGENIO_TIOCM_RNG = TIOCM_RNG;
+
+/* For remote errors.  These are the kernel numbers. */
+%constant int SERGENIO_TTY_BREAK = 1 << 1;
+%constant int SERGENIO_TTY_FRAME = 1 << 2;
+%constant int SERGENIO_TTY_PARITY = 1 << 3;
+%constant int SERGENIO_TTY_OVERRUN = 1 << 4;
+
 %extend sergenio {
     %newobject cast_to_genio;
     struct genio *cast_to_genio() {
@@ -281,6 +297,12 @@ struct waiter_s { };
     sgenio_entry(rts);
 
     /*
+     * From here down get and set the serialsim driver special commands
+     * for remote termios and modem line handling.  See the driver for
+     * details.
+     */
+
+    /*
      * Get remote termios.  For Python, this matches what the termios
      * module does.
      */
@@ -308,6 +330,21 @@ struct waiter_s { };
 	    err_handle("set_remote_modem_ctl", rv);
     }
 
+    unsigned int get_remote_modem_ctl() {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+	unsigned int val;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = get_remote_mctl(&val, fd);
+
+	if (rv)
+	    err_handle("get_remote_modem_ctl", rv);
+
+	return val;
+    }
+
     void set_remote_serial_err(unsigned int val) {
 	struct genio *io = sergenio_to_genio(self);
 	int fd, rv;
@@ -317,9 +354,24 @@ struct waiter_s { };
 	    rv = set_remote_sererr(val, fd);
 
 	if (rv)
-	    err_handle("set_remote_modem_ctl", rv);
+	    err_handle("set_remote_serial_err", rv);
     }
 
+
+    unsigned int get_remote_serial_err() {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv;
+	unsigned int val;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = get_remote_sererr(&val, fd);
+
+	if (rv)
+	    err_handle("get_remote_serial_err", rv);
+
+	return val;
+    }
 
     void set_remote_null_modem(bool val) {
 	struct genio *io = sergenio_to_genio(self);
@@ -330,7 +382,21 @@ struct waiter_s { };
 	    rv = set_remote_null_modem(val, fd);
 
 	if (rv)
-	    err_handle("set_remote_modem_ctl", rv);
+	    err_handle("set_remote_null_modem", rv);
+    }
+
+    bool get_remote_null_modem() {
+	struct genio *io = sergenio_to_genio(self);
+	int fd, rv, val;
+
+	rv = genio_remote_id(io, &fd);
+	if (!rv)
+	    rv = get_remote_null_modem(&val, fd);
+
+	if (rv)
+	    err_handle("get_remote_null_modem", rv);
+
+	return val;
     }
 }
 
