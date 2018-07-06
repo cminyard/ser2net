@@ -38,23 +38,39 @@
 %typemap(argout) (char **rbuffer, size_t *rbuffer_len) {
     PyObject *r = PyString_FromStringAndSize(*$1, *$2);
 
-    if (($result == Py_None)) {
-	Py_XDECREF($result);
-	$result = r;
-    } else {
-	PyObject *seq, *o2;
-
-	if (!PyTuple_Check($result)) {
-	    PyObject *tmpr = $result;
-	    $result = PyTuple_New(1);
-	    PyTuple_SetItem($result, 0, tmpr);
-	}
-	seq = PyTuple_New(1);
-	PyTuple_SetItem(seq, 0, r);
-	o2 = $result;
-	$result = PySequence_Concat(o2, seq);
-	Py_DECREF(o2);
-	Py_DECREF(seq);
-    }
+    $result = add_python_result($result, r);
     free(*$1);
+}
+
+%typemap(in, numinputs=0) void *termios (struct termios temp) {
+    $1 = &temp;
+}
+
+%typemap(argout) (void *termios) {
+    struct termios *t = $1;
+    PyObject *seq, *seq2, *o;
+    int i;
+
+    seq = PyTuple_New(7);
+    o = PyInt_FromLong(t->c_iflag);
+    PyTuple_SET_ITEM(seq, 0, o);
+    o = PyInt_FromLong(t->c_oflag);
+    PyTuple_SET_ITEM(seq, 1, o);
+    o = PyInt_FromLong(t->c_cflag);
+    PyTuple_SET_ITEM(seq, 2, o);
+    o = PyInt_FromLong(t->c_lflag);
+    PyTuple_SET_ITEM(seq, 3, o);
+    o = PyInt_FromLong(cfgetispeed(t));
+    PyTuple_SET_ITEM(seq, 4, o);
+    o = PyInt_FromLong(cfgetospeed(t));
+    PyTuple_SET_ITEM(seq, 5, o);
+
+    seq2 = PyTuple_New(sizeof(t->c_cc));
+    for (i = 0; i < sizeof(t->c_cc); i++) {
+	char c[1] = { t->c_cc[i] };
+
+	PyTuple_SET_ITEM(seq2, i, PyString_FromStringAndSize(c, 1));
+    }
+    PyTuple_SET_ITEM(seq, 6, seq2);
+    $result = add_python_result($result, seq);
 }

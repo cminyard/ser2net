@@ -359,6 +359,31 @@ sergenio_cb(struct sergenio *snet, int err, int val, void *cb_data)
     OI_PY_STATE_PUT(gstate);
 }
 
+static PyObject *
+add_python_result(PyObject *result, PyObject *val)
+{
+    if ((result == Py_None)) {
+	Py_XDECREF(result);
+	result = val;
+    } else {
+	PyObject *seq, *o2;
+
+	if (!PyTuple_Check(result)) {
+	    PyObject *tmpr = result;
+
+	    result = PyTuple_New(1);
+	    PyTuple_SetItem(result, 0, tmpr);
+	}
+	seq = PyTuple_New(1);
+	PyTuple_SetItem(seq, 0, val);
+	o2 = result;
+	result = PySequence_Concat(o2, seq);
+	Py_DECREF(o2);
+	Py_DECREF(seq);
+    }
+    return result;
+}
+
 #define check_for_err PyErr_Occurred
 
 static void err_handle(char *name, int rv)

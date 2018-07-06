@@ -21,6 +21,9 @@
 
 %{
 #include <string.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include "linux-serial-echo/serialsim.h"
 #include "genio/genio.h"
 #include "genio/sergenio.h"
 #include "utils/selector.h"
@@ -82,6 +85,14 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
 	buffer[i] = random();
     *rbuffer = buffer;
     *rbuffer_len = size_to_allocate;
+}
+
+void get_remote_termios(void *termios, int fd)
+{
+    int rv = ioctl(fd, TIOCSERGREMTERMIOS, termios);
+
+    if (rv)
+	err_handle("get_remote_termios", errno);
 }
 
 %}
@@ -346,5 +357,12 @@ struct waiter_s { };
     }
 }
 
+/* Get a bunch of random bytes. */
 void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 		      int size_to_allocate);
+
+/*
+ * Get remote termios.  For Python, this matches what the termios
+ * module does.
+ */
+void get_remote_termios(void *termios, int fd);
