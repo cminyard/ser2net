@@ -200,7 +200,7 @@ struct waiter_s { };
 }
 
 %define sgenio_entry(name)
-    void sg_baud(int name, swig_cb *h) {
+    void sg_##name(int name, swig_cb *h) {
 	struct sergenio_cbdata *cbdata = NULL;
 	int rv;
 
