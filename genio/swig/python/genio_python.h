@@ -124,11 +124,14 @@ swig_finish_call(swig_cb_val *cb, const char *method_name, PyObject *args)
 
 #if PY_VERSION_HEX >= 0x03000000
 #define OI_PI_FromStringAndSize PyUnicode_FromStringAndSize
+#define OI_PI_FromString PyUnicode_FromString
 #else
 #define OI_PI_FromStringAndSize PyString_FromStringAndSize
+#define OI_PI_FromString PyString_FromString
 #endif
 
 struct genio_data {
+    int refcount;
     swig_cb_val *handler_val;
 };
 
@@ -173,7 +176,7 @@ genio_got_read(struct genio *io, int readerr,
     PyTuple_SET_ITEM(args, 0, io_ref.val);
 
     if (readerr) {
-	o = PyString_FromString(strerror(readerr));
+	o = OI_PI_FromString(strerror(readerr));
     } else {
 	Py_INCREF(Py_None);
 	o = Py_None;

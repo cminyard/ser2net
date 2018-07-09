@@ -36,7 +36,7 @@
 }
 
 %typemap(argout) (char **rbuffer, size_t *rbuffer_len) {
-    PyObject *r = PyString_FromStringAndSize(*$1, *$2);
+    PyObject *r = OI_PI_FromStringAndSize(*$1, *$2);
 
     $result = add_python_result($result, r);
     free(*$1);
@@ -72,7 +72,7 @@
 	} else {
 	    char c[1] = { t->c_cc[i] };
 
-	    PyTuple_SET_ITEM(seq2, i, PyString_FromStringAndSize(c, 1));
+	    PyTuple_SET_ITEM(seq2, i, OI_PI_FromStringAndSize(c, 1));
 	}
     }
     PyTuple_SET_ITEM(seq, 6, seq2);

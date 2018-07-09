@@ -119,7 +119,7 @@ struct waiter_s { };
 	data = malloc(sizeof(*data));
 	if (!data)
 	    return NULL;
-
+	data->refcount = 1;
 	data->handler_val = ref_swig_cb(handler, read_callback);
 
 	rv = str_to_genio(str, genio_sel, max_read_size, &gen_cbs,
@@ -136,9 +136,12 @@ struct waiter_s { };
     {
 	struct genio_data *data = genio_get_user_data(self);
 
-	genio_free(self);
-	deref_swig_cb_val(data->handler_val);
-	free(data);
+	data->refcount--;
+	if (data->refcount <= 0) {
+	    genio_free(self);
+	    deref_swig_cb_val(data->handler_val);
+	    free(data);
+	}
     }
 
     %rename (remote_id) remote_idt;
@@ -191,11 +194,13 @@ struct waiter_s { };
 
     %newobject cast_to_sergenio;
     struct sergenio *cast_to_sergenio() {
-	struct sergenio *rv = genio_to_sergenio(self);
+	struct genio_data *data = genio_get_user_data(self);
+	struct sergenio *sio = genio_to_sergenio(self);
 
-	if (!rv)
+	if (!sio)
 	    cast_error("sergenio", "genio");
-	return rv;
+	data->refcount++;
+	return sio;
     }
 }
 
@@ -266,10 +271,28 @@ struct waiter_s { };
 %constant int SERGENIO_TTY_PARITY = 1 << 3;
 %constant int SERGENIO_TTY_OVERRUN = 1 << 4;
 
+%nodefaultctor sergenio;
 %extend sergenio {
+    ~sergenio()
+    {
+	struct genio *io = sergenio_to_genio(self);
+	struct genio_data *data = genio_get_user_data(io);
+
+	data->refcount--;
+	if (data->refcount <= 0) {
+	    genio_free(io);
+	    deref_swig_cb_val(data->handler_val);
+	    free(data);
+	}
+    }
+
     %newobject cast_to_genio;
     struct genio *cast_to_genio() {
-	return sergenio_to_genio(self);
+	struct genio *io = sergenio_to_genio(self);
+	struct genio_data *data = genio_get_user_data(io);
+
+	data->refcount++;
+	return io;
     }
 
     /* Standard baud rates. */
