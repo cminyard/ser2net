@@ -761,7 +761,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
     if (curr) {
 	if (curr->done)
-	    curr->done(&sdata->snet, 0, val, curr->cb_data);
+	    curr->done(&sdata->snet, 0, val - curr->minval, curr->cb_data);
 	free(curr);
     }
 }
