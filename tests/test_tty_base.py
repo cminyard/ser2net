@@ -138,67 +138,67 @@ class baudhandler:
 
 termioschk.test_ser2net_termios("300 baud termios settings",
                                 baudhandler(termios.B300),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 300N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 300N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("600 baud termios settings",
                                 baudhandler(termios.B600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 600N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 600N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("1200 baud termios settings",
                                 baudhandler(termios.B1200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 1200N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 1200N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("2400 baud termios settings",
                                 baudhandler(termios.B2400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 2400N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 2400N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("4800 baud termios settings",
                                 baudhandler(termios.B4800),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 4800N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 4800N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("9600 baud termios settings",
                                 baudhandler(termios.B9600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("19200 baud termios settings",
                                 baudhandler(termios.B19200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 19200N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 19200N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("38400 baud termios settings",
                                 baudhandler(termios.B38400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 38400N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 38400N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("57600 baud termios settings",
                                 baudhandler(termios.B57600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 57600N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 57600N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("115200 baud termios settings",
                                 baudhandler(termios.B115200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 115200N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 115200N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("230400 baud termios settings",
                                 baudhandler(termios.B230400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 230400N81",
+        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 230400N81\n",
         "ser,telnet,tcp,localhost,3023",
         "ser,termios,/dev/ttyPipeB0,9600N81")
 
