@@ -97,10 +97,10 @@ sergenio_flowcontrol(struct sergenio *snet, int flowcontrol,
 }
 
 int
-sergenio_break(struct sergenio *snet, int breakv,
-	       void (*done)(struct sergenio *snet, int err, int breakv,
-			    void *cb_data),
-	       void *cb_data)
+sergenio_sbreak(struct sergenio *snet, int breakv,
+		void (*done)(struct sergenio *snet, int err, int breakv,
+			     void *cb_data),
+		void *cb_data)
 {
     return snet->funcs->sbreak(snet, breakv, done, cb_data);
 }
@@ -294,7 +294,7 @@ sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
 	return ENOMEM;
 
     data.err = 0;
-    err = sergenio_break(sbnet->snet, *breakv, sergenio_done, &data);
+    err = sergenio_sbreak(sbnet->snet, *breakv, sergenio_done, &data);
     if (!err)
 	wait_for_waiter(data.waiter, 1);
     free_waiter(data.waiter);
