@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import termioschk
 import termios
 
