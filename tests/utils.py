@@ -51,6 +51,7 @@ class HandleData:
         self.io = genio.genio(iostr, bufsize, self)
         self.io.handler = self
         self.chunksize = chunksize
+        self.debug = 0
         return
 
     def set_compare(self, to_compare, start_reader = True):
@@ -87,11 +88,11 @@ class HandleData:
     # Everything below here is internal handling functions.
 
     def read_callback(self, io, err, buf, flags):
-        if (debug):
+        if (debug or self.debug) and self.to_compare:
             print "%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
                                                         self.compared,
                                                         len(self.to_compare))
-        if (debug >= 2):
+        if (debug >= 2 or self.debug >= 2):
             print  "%s: Got data: %s" % (self.name, str(buf))
         if (self.ignore_input):
             return len(buf)
@@ -126,7 +127,7 @@ class HandleData:
 
     def write_callback(self, io):
         if (not self.to_write):
-            if (debug):
+            if (debug or self.debug):
                 print self.name + ": Got write, but no data"
             io.write_cb_enable(False)
             return
@@ -136,7 +137,7 @@ class HandleData:
         else:
             wrdata = self.to_write[self.wrpos:self.wrpos + self.chunksize]
         count = io.write(wrdata)
-        if (debug):
+        if (debug or self.debug):
             print self.name + ": wrote %d bytes" % count
 
         if (count + self.wrpos >= self.wrlen):
@@ -152,7 +153,7 @@ class HandleData:
         return
 
     def close_done(self, io):
-        if (debug):
+        if (debug or self.debug):
             print self.name + ": Closed"
         self.waiter.wake()
         return
@@ -189,6 +190,9 @@ class Ser2netDaemon:
         if (debug):
             print "Running: " + args
         self.handler = HandleData(args, 1024, name="ser2net daemon")
+        # Uncomment the following or set it yourself to get output from
+        # the ser2net daemon printed.
+        #self.handler.debug = 2
 
         self.io = self.handler.io
         self.io.open()
@@ -199,6 +203,10 @@ class Ser2netDaemon:
             raise Exception("Timeout waiting for ser2net to start")
 
         self.handler.ignore_input = True
+
+        # Leave read on so if we enable debug we can see output from the
+        # daemon.
+        self.io.read_cb_enable(True)
         return
 
     def __del__(self):
