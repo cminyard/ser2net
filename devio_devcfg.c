@@ -801,7 +801,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 	ival |= TIOCM_DTR;
 	ioctl(d->devfd, TIOCMSET, &ival);
 #endif
-	    goto read_dtr_val;
+	goto read_dtr_val;
 
     case 9:
 #ifndef __CYGWIN__
