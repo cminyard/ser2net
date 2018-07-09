@@ -259,11 +259,16 @@ struct waiter_s { };
 %constant int SERGENIO_RTS_ON = SERGENIO_RTS_ON;
 %constant int SERGENIO_RTS_OFF = SERGENIO_RTS_OFF;
 
-/* For get/set modem control. */
+/*
+ * For get/set modem control.  You cannot set DTR or RTS, they are
+ * outputs from the other side.
+ */
 %constant int SERGENIO_TIOCM_CAR = TIOCM_CAR;
 %constant int SERGENIO_TIOCM_CTS = TIOCM_CTS;
-%constant int SERGENIO_TIOCM_DSR = TIOCM_DTR;
+%constant int SERGENIO_TIOCM_DSR = TIOCM_DSR;
 %constant int SERGENIO_TIOCM_RNG = TIOCM_RNG;
+%constant int SERGENIO_TIOCM_DTR = TIOCM_DTR;
+%constant int SERGENIO_TIOCM_RTS = TIOCM_RTS;
 
 /* For remote errors.  These are the kernel numbers. */
 %constant int SERGENIO_TTY_BREAK = 1 << 1;
