@@ -50,7 +50,7 @@ handle_telnet_cmd(telnet_data_t *td)
 
     if (size < 2)
 	return;
- 
+
     if (cmd_str[1] < TN_SB) { /* A one-byte command. */
 	td->cmd_handler(td->cb_data, cmd_str[1]);
     } else if (cmd_str[1] == TN_SB) { /* Option */
@@ -60,6 +60,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	cmd->option_handler(td->cb_data, cmd_str + 2, size - 2);
     } else if (cmd_str[1] == TN_WILL) {
 	unsigned char option = cmd_str[2];
+
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_do) {
 	    if ((!cmd) || (!cmd->i_will))
@@ -80,6 +81,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	}
     } else if (cmd_str[1] == TN_WONT) {
 	unsigned char option = cmd_str[2];
+
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_do)
 	    send_i(td, TN_DONT, option);
@@ -89,6 +91,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	    cmd->rem_will = 0;
     } else if (cmd_str[1] == TN_DO) {
 	unsigned char option = cmd_str[2];
+
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_will) {
 	    if ((!cmd) || (! cmd->i_do))
@@ -101,6 +104,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	    cmd->rem_do = 1;
     } else if (cmd_str[1] == TN_DONT) {
 	unsigned char option = cmd_str[2];
+
 	cmd = find_cmd(td->cmds, option);
 	if (!cmd || !cmd->sent_will)
 	    send_i(td, TN_WONT, option);
