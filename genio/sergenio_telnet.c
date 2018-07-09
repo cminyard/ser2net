@@ -111,7 +111,7 @@ stel_queue(struct stel_data *sdata, int option,
     LOCK(sdata->lock);
     curr = sdata->reqs;
     if (!curr) {
-	sdata->reqs = curr;
+	sdata->reqs = req;
     } else {
 	while (curr->next)
 	    curr = curr->next;
@@ -619,6 +619,20 @@ stel_genio_read(struct genio *net, int readerr,
     return buf - ibuf;
 }
 
+static int
+buffer_genio_write(void *cbdata, void *buf, size_t buflen, size_t *rwritten)
+{
+    struct genio *net = cbdata;
+    int err;
+    unsigned int written;
+
+    err = genio_write(net, &written, buf, buflen);
+    if (err)
+	return err;
+    *rwritten = written;
+    return 0;
+}
+
 void
 stel_genio_write(struct genio *net)
 {
@@ -626,6 +640,19 @@ stel_genio_write(struct genio *net)
     bool do_cb = true;
 
     LOCK(sdata->lock);
+    if (buffer_cursize(&sdata->tn_data.out_telnet_cmd) > 0) {
+	int err;
+
+	if (buffer_write(buffer_genio_write, net,
+			 &sdata->tn_data.out_telnet_cmd, &err) == -1) {
+	    sdata->saved_xmit_err = err;
+	    if (buffer_cursize(&sdata->tn_data.out_telnet_cmd) > 0) {
+		/* Still data to transmit. */
+		do_cb = false;
+		goto out_unlock;
+	    }
+	}
+    }
     if (sdata->xmit_buf_len) {
 	int err;
 	unsigned int written;
@@ -644,6 +671,7 @@ stel_genio_write(struct genio *net)
 		do_cb = false;
 	}
     }
+ out_unlock:
     UNLOCK(sdata->lock);
 
     if (do_cb) {
@@ -688,13 +716,16 @@ static void
 com_port_handler(void *cb_data, unsigned char *option, int len)
 {
     struct stel_data *sdata = cb_data;
-    int val = 0;
+    int val = 0, cmd;
     struct stel_req *curr, *prev = NULL;
 
     if (len < 2)
 	return;
+    if (option[1] < 100)
+	return;
+    cmd = option[1] - 100;
 
-    switch (option[1]) {
+    switch (cmd) {
     case 1:
 	if (len == 3) {
 	    sdata->cisco_baud = true;
@@ -715,7 +746,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
     LOCK(sdata->lock);
     curr = sdata->reqs;
-    while (curr && curr->option != option[1] &&
+    while (curr && curr->option != cmd &&
 			val >= curr->minval && val <= curr->maxval) {
 	prev = curr;
 	curr = curr->next;
