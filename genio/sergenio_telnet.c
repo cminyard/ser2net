@@ -154,7 +154,7 @@ stel_baud(struct sergenio *snet, int baud,
 static int
 stel_queue_and_send(struct sergenio *snet, int option, int val,
 		    int minval, int maxval,
-		    void (*done)(struct sergenio *snet, int err, int datasize,
+		    void (*done)(struct sergenio *snet, int err, int val,
 				 void *cb_data),
 		    void *cb_data)
 {
