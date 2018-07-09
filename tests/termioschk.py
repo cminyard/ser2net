@@ -53,7 +53,7 @@ def compare_termios(tio1, tio2):
         if tio1[6][i] != tio2[6][i]:
             return i + 6;
     return 0
-        
+
 def test_ser2net_termios(name, handler, config, io1str, io2str):
     """Test the settings of ser2net termios
 
@@ -61,8 +61,8 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
     which will return a termios set.  Then fetch the termios from io2
     and make sure they match.
     """
-    print "termios %s:\n  config=%s  io1=%s\n  io2=%s" % (
-        name, config, io1str, io2str)
+    print("termios %s:\n  config=%s  io1=%s\n  io2=%s" %
+          (name, config, io1str, io2str))
 
     ser2net, io1, io2 = utils.setup_2_ser2net(config, io1str, io2str)
     io1.handler.set_compare("12345")
@@ -70,6 +70,8 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
         raise Exception("%s: %s: Timed out waiting for banner" %
                         (name, io1.handler.name))
     sio2 = io2.cast_to_sergenio()
+    io1.read_cb_enable(True)
+    io2.read_cb_enable(True)
 
     expected_termios = handler.op(io1, io2)
 
@@ -81,4 +83,4 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
                         (c, str(expected_termios), str(io2_rem_termios)))
 
     utils.finish_2_ser2net(ser2net, io1, io2)
-    print "  Success!"
+    print("  Success!")

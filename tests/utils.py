@@ -89,16 +89,16 @@ class HandleData:
 
     def read_callback(self, io, err, buf, flags):
         if (debug or self.debug) and self.to_compare:
-            print "%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
+            print("%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
                                                         self.compared,
-                                                        len(self.to_compare))
+                                                        len(self.to_compare)))
         if (debug >= 2 or self.debug >= 2):
-            print  "%s: Got data: %s" % (self.name, str(buf))
+            print("%s: Got data: %s" % (self.name, str(buf)))
         if (self.ignore_input):
             return len(buf)
         if (not self.to_compare):
             if (debug):
-                print self.name + ": Got data, but nothing to compare"
+                print(self.name + ": Got data, but nothing to compare")
             io.read_cb_enable(False)
             return
         if (err):
@@ -128,7 +128,7 @@ class HandleData:
     def write_callback(self, io):
         if (not self.to_write):
             if (debug or self.debug):
-                print self.name + ": Got write, but no data"
+                print(self.name + ": Got write, but no data")
             io.write_cb_enable(False)
             return
 
@@ -138,7 +138,7 @@ class HandleData:
             wrdata = self.to_write[self.wrpos:self.wrpos + self.chunksize]
         count = io.write(wrdata)
         if (debug or self.debug):
-            print self.name + ": wrote %d bytes" % count
+            print(self.name + ": wrote %d bytes" % count)
 
         if (count + self.wrpos >= self.wrlen):
             io.write_cb_enable(False)
@@ -149,12 +149,12 @@ class HandleData:
         return
 
     def urgent_callback(self, io):
-        print self.name + ": Urgent data"
+        print(self.name + ": Urgent data")
         return
 
     def close_done(self, io):
         if (debug or self.debug):
-            print self.name + ": Closed"
+            print(self.name + ": Closed")
         self.waiter.wake()
         return
 
@@ -182,17 +182,14 @@ class Ser2netDaemon:
         prog = os.getenv("SER2NET_EXEC")
         if (not prog):
             prog = "ser2net"
-        self.cfile = tempfile.NamedTemporaryFile()
+        self.cfile = tempfile.NamedTemporaryFile(mode="w+")
         self.cfile.write(configdata)
         self.cfile.flush()
 
         args = "stdio," + prog + " -r -d -c " + self.cfile.name + " " + extra_args
         if (debug):
-            print "Running: " + args
+            print("Running: " + args)
         self.handler = HandleData(args, 1024, name="ser2net daemon")
-        # Uncomment the following or set it yourself to get output from
-        # the ser2net daemon printed.
-        #self.handler.debug = 2
 
         self.io = self.handler.io
         self.io.open()
@@ -203,6 +200,10 @@ class Ser2netDaemon:
             raise Exception("Timeout waiting for ser2net to start")
 
         self.handler.ignore_input = True
+
+        # Uncomment the following or set it yourself to get output from
+        # the ser2net daemon printed.
+        #self.handler.debug = 2
 
         # Leave read on so if we enable debug we can see output from the
         # daemon.
