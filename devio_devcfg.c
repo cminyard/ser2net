@@ -81,6 +81,11 @@ static void
 devinit(struct termios *termctl)
 {
     cfmakeraw(termctl);
+    cfsetispeed(termctl, B9600);
+    cfsetospeed(termctl, B9600);
+    termctl->c_cflag |= CREAD | CS8;
+    termctl->c_cc[VSTART] = 17;
+    termctl->c_cc[VSTOP] = 19;
 
     set_termios_from_speed(termctl, find_default_int("speed"), "");
     set_termios_datasize(termctl, find_default_int("databits"));

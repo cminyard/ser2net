@@ -67,9 +67,13 @@
 
     seq2 = PyTuple_New(sizeof(t->c_cc));
     for (i = 0; i < sizeof(t->c_cc); i++) {
-	char c[1] = { t->c_cc[i] };
+	if (i == VTIME || i == VMIN) {
+	    PyTuple_SET_ITEM(seq2, i, PyInt_FromLong(t->c_cc[i]));
+	} else {
+	    char c[1] = { t->c_cc[i] };
 
-	PyTuple_SET_ITEM(seq2, i, PyString_FromStringAndSize(c, 1));
+	    PyTuple_SET_ITEM(seq2, i, PyString_FromStringAndSize(c, 1));
+	}
     }
     PyTuple_SET_ITEM(seq, 6, seq2);
     $result = add_python_result($result, seq);

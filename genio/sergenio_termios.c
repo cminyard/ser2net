@@ -934,8 +934,10 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
     cfmakeraw(&sdata->default_termios);
     cfsetispeed(&sdata->default_termios, B9600);
     cfsetospeed(&sdata->default_termios, B9600);
+    sdata->default_termios.c_cflag |= CREAD | CS8;
     sdata->default_termios.c_cc[VSTART] = 17;
     sdata->default_termios.c_cc[VSTOP] = 19;
+    sdata->default_termios.c_iflag |= IGNBRK;
 
     sdata->devname = strdup(devname);
     if (!sdata->devname) {

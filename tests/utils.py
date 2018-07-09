@@ -202,7 +202,8 @@ class Ser2netDaemon:
         return
 
     def __del__(self):
-        self.terminate()
+        if (self.handler):
+            self.terminate()
         return
 
     def signal(self, sig):
@@ -232,6 +233,7 @@ class Ser2netDaemon:
                 time.sleep(.01)
                 pid, rv = os.waitpid(self.pid, os.WNOHANG)
                 if (pid > 0):
+                    self.handler = None
                     return
                 subcount -= 1
             count -= 1
@@ -296,3 +298,38 @@ def io_close(io, timeout = 1000):
     if (io.handler.wait_timeout(timeout)):
         raise Exception("%s: %s: Timed out waiting for close" %
                         ("io_close", io.handler.name))
+    return
+
+def setup_2_ser2net(config, io1str, io2str):
+    """Setup a ser2net daemon and two genio connections
+
+    Create a ser2net daemon instance with the given config and two
+    genio connections with the given strings.
+
+    If io1str is None, use the stdio of the ser2net connection as
+    io1 (generally for testing stdio to ser2net).
+
+    A "closeme" boolean attribute is added to io1 telling if They
+    should be closed upon completion of the test, this is set to false
+    for ser2net stdio.
+    """
+    ser2net = Ser2netDaemon(config)
+
+    if (io1str):
+        io1 = alloc_io(io1str)
+        io1.closeme = True
+    else:
+        io1 = ser2net.io
+        io1.handler.ignore_input = False
+        io1.closeme = False
+    io2 = alloc_io(io2str)
+    return (ser2net, io1, io2)
+
+def finish_2_ser2net(ser2net, io1, io2):
+    if (io1.closeme):
+        io_close(io1)
+    else:
+        io1.handler.ignore_input = True
+    io_close(io2)
+    ser2net.terminate()
+    return
