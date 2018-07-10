@@ -26,9 +26,30 @@ typedef struct swig_ref {
 #define nil_swig_cb(v) ((v) == NULL)
 #define invalidate_swig_cb(v) ((v) = NULL)
 
+#ifdef WITH_THREAD
+static void genio_swig_init_lang(void)
+{
+    PyEval_InitThreads();
+}
+#define OI_PY_STATE PyGILState_STATE
+#define OI_PY_STATE_GET() PyGILState_Ensure()
+#define OI_PY_STATE_PUT(s) PyGILState_Release(s)
+
+/* We do need to work about blocking, though. */
+#define GENIO_SWIG_C_BLOCK_ENTRY Py_BEGIN_ALLOW_THREADS
+#define GENIO_SWIG_C_BLOCK_EXIT Py_END_ALLOW_THREADS
+#else
+static void genio_swig_init_lang(void)
+{
+}
 #define OI_PY_STATE int
 #define OI_PY_STATE_GET() 0
 #define OI_PY_STATE_PUT(s) do { } while(s)
+
+/* No threads */
+#define GENIO_SWIG_C_BLOCK_ENTRY
+#define GENIO_SWIG_C_BLOCK_EXIT
+#endif
 
 static swig_cb_val *
 ref_swig_cb_i(swig_cb *cb)
@@ -104,8 +125,7 @@ swig_finish_call_rv(swig_cb_val *cb, const char *method_name, PyObject *args)
 	PyErr_Format(PyExc_RuntimeError,
 		     "genio callback: Class '%s' has no method '%s'\n",
 		     class, method_name);
-	if (curr_waiter)
-	    wake_waiter(curr_waiter);
+	wake_curr_waiter();
     }
     Py_DECREF(args);
 
@@ -201,8 +221,7 @@ genio_got_read(struct genio *io, int readerr,
 	    PyErr_Format(PyExc_RuntimeError, "genio callback: "
 			 "Class '%s' method 'read_callback' did not return "
 			 "an integer\n", class);
-	    if (curr_waiter)
-		wake_waiter(curr_waiter);
+	    wake_curr_waiter();
 	}
 	Py_DECREF(o);
     }

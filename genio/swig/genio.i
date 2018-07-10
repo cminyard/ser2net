@@ -28,31 +28,110 @@
 #include "utils/selector.h"
 #include "utils/waiter.h"
 
+#if PYTHON_HAS_POSIX_THREADS
+#include <pthread.h>
+#define USE_POSIX_THREADS
+#endif
+
 /*
  * If an exception occurs inside a waiter, we want to stop the wait
  * operation and propagate back.  So we wake it up
  */
+#ifdef USE_POSIX_THREADS
+static void oom_err(void);
+struct genio_wait_block {
+    struct waiter_s *curr_waiter;
+};
+
+static pthread_key_t genio_thread_key;
+
+static void
+genio_key_del(void *data)
+{
+    free(data);
+}
+
+static struct waiter_s *
+save_waiter(struct waiter_s *waiter)
+{
+    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+    struct waiter_s *prev_waiter;
+
+    if (!data) {
+	data = malloc(sizeof(*data));
+	if (!data) {
+	    oom_err();
+	    return NULL;
+	}
+	memset(data, 0, sizeof(*data));
+	pthread_setspecific(genio_thread_key, data);
+    }
+
+    prev_waiter = data->curr_waiter;
+    data->curr_waiter = waiter;
+
+    return prev_waiter;
+}
+
+static void
+restore_waiter(struct waiter_s *prev_waiter)
+{
+    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+
+    data->curr_waiter = prev_waiter;
+}
+
+static void
+wake_curr_waiter(void)
+{
+    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+
+    if (!data)
+	return;
+    if (data->curr_waiter)
+	wake_waiter(data->curr_waiter);
+}
+
+#else
 static struct waiter_s *curr_waiter;
+
+static struct waiter_s *
+save_waiter(struct waiter_s *waiter)
+{
+    struct waiter_s *prev_waiter = curr_waiter;
+
+    curr_waiter = waiter;
+    return prev_waiter;
+}
+
+static void
+restore_waiter(struct waiter_s *prev_waiter)
+{
+    curr_waiter = prev_waiter;
+}
+
+static void
+wake_curr_waiter(void)
+{
+    if (curr_waiter)
+	wake_waiter(curr_waiter);
+}
+#endif
 
 #include "genio_python.h"
 
 static struct selector_s *genio_sel;
 
-static void setup_genio_sel(void)
-{
-    if (!genio_sel)
-	sel_alloc_selector_nothread(&genio_sel);
-}
-
 static int
 genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
 {
     int err;
-    struct waiter_s *prev_waiter = curr_waiter;
+    struct waiter_s *prev_waiter = save_waiter(waiter);
 
-    curr_waiter = waiter;
     do {
+	GENIO_SWIG_C_BLOCK_ENTRY
 	err = wait_for_waiter_timeout_intr(waiter, 1, timeout);
+	GENIO_SWIG_C_BLOCK_EXIT
 	if (check_for_err()) {
 	    if (prev_waiter)
 		wake_waiter(prev_waiter);
@@ -62,7 +141,7 @@ genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
 	    continue;
 	break;
     } while (1);
-    curr_waiter = prev_waiter;
+    restore_waiter(prev_waiter);
 
     return err;
 }
@@ -95,6 +174,47 @@ extern int get_remote_mctl(unsigned int *mctl, int fd);
 extern int get_remote_sererr(unsigned int *err, int fd);
 extern int get_remote_null_modem(int *val, int fd);
 
+#ifdef USE_POSIX_THREADS
+struct sel_lock_s {
+    pthread_mutex_t lock;
+};
+
+static sel_lock_t *
+genio_alloc_lock(void *cb_data)
+{
+    struct sel_lock_s *lock;
+
+    lock = malloc(sizeof(*lock));
+    if (!lock)
+	return NULL;
+    pthread_mutex_init(&lock->lock, NULL);
+    return lock;
+}
+
+static void
+genio_free_lock(sel_lock_t *lock)
+{
+    free(lock);
+}
+
+static void
+genio_lock(sel_lock_t *lock)
+{
+    pthread_mutex_lock(&lock->lock);
+}
+
+static void
+genio_unlock(sel_lock_t *lock)
+{
+    pthread_mutex_unlock(&lock->lock);
+}
+
+static void
+genio_thread_sighandler(int sig)
+{
+    /* Nothing to do, signal just wakes things up. */
+}
+#endif
 %}
 
 %include <typemaps.i>
@@ -113,8 +233,6 @@ struct waiter_s { };
 	int rv;
 	struct genio_data *data;
 	struct genio *io = NULL;
-
-	setup_genio_sel();
 
 	data = malloc(sizeof(*data));
 	if (!data)
@@ -434,8 +552,6 @@ struct waiter_s { };
 	struct genio_acceptor *acc;
 	int rv;
 
-	setup_genio_sel();
-
 	data = malloc(sizeof(*data));
 	if (!data)
 	    return NULL;
@@ -477,7 +593,6 @@ struct waiter_s { };
 
 %extend waiter_s {
     waiter_s() {
-	setup_genio_sel();
 	return alloc_waiter(genio_sel, 0);
     }
 
@@ -487,8 +602,10 @@ struct waiter_s { };
 
     int wait_timeout(int timeout) {
 	struct timeval tv = { timeout / 1000, timeout % 1000 };
+	int rv;
 
-	return genio_do_wait(self, &tv);
+	rv = genio_do_wait(self, &tv);
+	return rv;
     }
 
     void wait() {
@@ -503,3 +620,41 @@ struct waiter_s { };
 /* Get a bunch of random bytes. */
 void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 		      int size_to_allocate);
+
+%init %{
+    if (!genio_sel) {
+	int err;
+#ifdef USE_POSIX_THREADS
+	struct sigaction act;
+
+	err = pthread_key_create(&genio_thread_key, genio_key_del);
+	if (err) {
+	    fprintf(stderr, "Error creating genio thread key: %s, giving up\n",
+		    strerror(err));
+	    exit(1);
+	}
+
+	act.sa_handler = genio_thread_sighandler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	err = sigaction(SIGUSR1, &act, NULL);
+	if (err) {
+	    fprintf(stderr, "Unable to setup wake signal: %s, giving up\n",
+		    strerror(errno));
+	    exit(1);
+	}
+
+	err = sel_alloc_selector_thread(&genio_sel, SIGUSR1,
+					genio_alloc_lock, genio_free_lock,
+					genio_lock, genio_unlock, NULL);
+#else
+	err = sel_alloc_selector_nothread(&genio_sel);
+#endif
+	if (err) {
+	    fprintf(stderr, "Unable to allocate selector: %s, giving up\n",
+		    strerror(err));
+	    exit(1);
+	}
+    }
+    genio_swig_init_lang();
+%}
