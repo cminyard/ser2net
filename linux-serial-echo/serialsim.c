@@ -674,11 +674,11 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 		if (mask & ~LOCAL_MCTRL || arg & ~LOCAL_MCTRL)
 			rv = -EINVAL;
 		else
-			serialsim_set_modem_lines(intf, mask, arg);
+			serialsim_set_modem_lines(intf->ointf, mask, arg);
 		break;
 
 	case TIOCSERGREMMCTRL:
-		copy_to_user((unsigned int __user *) arg, &intf->mctrl,
+		copy_to_user((unsigned int __user *) arg, &intf->ointf->mctrl,
 			     sizeof(unsigned int));
 		break;
 
