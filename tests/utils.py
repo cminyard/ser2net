@@ -10,6 +10,7 @@ import genio
 import tempfile
 import signal
 import time
+import curses.ascii
 
 debug = 0
 
@@ -93,14 +94,20 @@ class HandleData:
                                                         self.compared,
                                                         len(self.to_compare)))
         if (debug >= 2 or self.debug >= 2):
-            print("%s: Got data: %s" % (self.name, str(buf)))
+            s = ""
+            for i in buf:
+                if curses.ascii.isprint(i):
+                    s = s + i
+                else:
+                    s = s + "\\x%2.2x" % ord(i)
+            print("%s: Got data: %s" % (self.name, s))
         if (self.ignore_input):
             return len(buf)
         if (not self.to_compare):
             if (debug):
                 print(self.name + ": Got data, but nothing to compare")
             io.read_cb_enable(False)
-            return
+            return len(buf)
         if (err):
             raise HandlerException(self.name + ": read: " + err)
 
