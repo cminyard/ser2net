@@ -2221,7 +2221,7 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
 {
     port_info_t *port = genio_acceptor_get_user_data(acceptor);
     const char *err = NULL;
-    int i;
+    unsigned int i, j;
     struct sockaddr_storage addr;
     socklen_t socklen;
 
@@ -2244,15 +2244,17 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
 	goto out_err;
     }
 
-    for (i = 0; i < port->max_connections; i++) {
-	if (!port->netcons[i].net)
+    for (j = port->max_connections, i = 0; i < port->max_connections; i++) {
+	if (!port->netcons[i].net && !port->netcons[i].remote_fixed)
 	    break;
+	if (!port->netcons[i].remote_fixed)
+	    j = i;
     }
 
     if (i == port->max_connections) {
-	if (port->kickolduser_mode) {
-	    /* Kick off user 0. */
-	    kick_old_user(port, &port->netcons[0], net);
+	if (port->kickolduser_mode && j < port->max_connections) {
+	    /* Kick off the first non-fixed user. */
+	    kick_old_user(port, &port->netcons[j], net);
 	    goto out;
 	}
 
