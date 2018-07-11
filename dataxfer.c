@@ -339,8 +339,7 @@ struct port_info
  */
 struct port_remaddr
 {
-    struct sockaddr_storage addr;
-    socklen_t addrlen;
+    struct addrinfo *ai;
     bool is_port_set;
     struct port_remaddr *next;
 };
@@ -367,8 +366,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	goto out;
     }
 
-    memcpy(&r->addr, ai->ai_addr, ai->ai_addrlen);
-    r->addrlen = ai->ai_addrlen;
+    r->ai = ai;
     r->is_port_set = is_port_set;
     r->next = NULL;
 
@@ -382,7 +380,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
     }
 
  out:
-    if (ai)
+    if (err && ai)
 	freeaddrinfo(ai);
 
     return err;
@@ -399,9 +397,14 @@ remaddr_check(const struct port_remaddr *list,
 	return true;
 
     while (r) {
-	if (sockaddr_equal(addr, len, (struct sockaddr *) &r->addr, r->addrlen,
-			   r->is_port_set))
-	    return true;
+	struct addrinfo *ai = r->ai;
+
+	while (ai) {
+	    if (sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
+			       r->is_port_set))
+		return true;
+	    ai = ai->ai_next;
+	}
 	r = r->next;
     }
 
@@ -2384,6 +2387,7 @@ free_port(port_info_t *port)
     while (port->remaddrs) {
 	r = port->remaddrs;
 	port->remaddrs = r->next;
+	freeaddrinfo(r->ai);
 	free(r);
     }
     if (port->acceptor)
