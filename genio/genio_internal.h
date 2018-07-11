@@ -44,7 +44,10 @@ struct genio_functions {
 
     int (*remote_id)(struct genio *net, int *id);
 
-    int (*open)(struct genio *net);
+    int (*open)(struct genio *net, void (*open_done)(struct genio *net,
+						     int open,
+						     void *open_data),
+		void *open_data);
 
     int (*close)(struct genio *net, void (*close_done)(struct genio *net,
 						       void *close_data),

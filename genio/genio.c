@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "utils/utils.h"
+#include "utils/waiter.h"
 #include "genio.h"
 #include "genio_internal.h"
 #include "sergenio.h"
@@ -291,9 +292,44 @@ genio_remote_id(struct genio *net, int *id)
 }
 
 int
-genio_open(struct genio *net)
+genio_open(struct genio *net, void (*open_done)(struct genio *net,
+						int err,
+						void *open_data),
+	   void *open_data)
 {
-    return net->funcs->open(net);
+    return net->funcs->open(net, open_done, open_data);
+}
+
+struct genio_open_s_data {
+    int err;
+    struct waiter_s *waiter;
+};
+
+static void
+genio_open_s_done(struct genio *net, int err, void *cb_data)
+{
+    struct genio_open_s_data *data = cb_data;
+
+    data->err = err;
+    wake_waiter(data->waiter);
+}
+
+int
+genio_open_s(struct genio *net, struct selector_s *sel, int wake_sig)
+{
+    struct genio_open_s_data data;
+    int err;
+
+    data.err = 0;
+    data.waiter = alloc_waiter(sel, wake_sig);
+    if (!data.waiter)
+	return ENOMEM;
+    err = genio_open(net, genio_open_s_done, &data);
+    if (!err) {
+	wait_for_waiter(data.waiter, 1);
+	err = data.err;
+    }
+    return err;
 }
 
 int

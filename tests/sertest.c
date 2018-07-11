@@ -290,7 +290,7 @@ open_genio(struct sertest_context *c,
 {
     int err;
 
-    err = genio_open(le->io);
+    err = genio_open_s(le->io, c->sel, 0);
     if (err)
 	abspr(c->out, "Error opening genio\n");
 

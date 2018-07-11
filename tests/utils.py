@@ -199,7 +199,7 @@ class Ser2netDaemon:
         self.handler = HandleData(args, 1024, name="ser2net daemon")
 
         self.io = self.handler.io
-        self.io.open()
+        self.io.open_s()
 
         self.pid = self.io.remote_id()
         self.handler.set_compare("Ready\n")
@@ -262,7 +262,7 @@ def alloc_io(iostr, do_open = True, bufsize = 1024):
     """
     h = HandleData(iostr, bufsize)
     if (do_open):
-        h.io.open()
+        h.io.open_s()
     return h.io
 
 def test_dataxfer(io1, io2, data, timeout = 1000):

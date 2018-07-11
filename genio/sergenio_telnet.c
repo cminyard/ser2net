@@ -47,6 +47,10 @@ struct stel_data {
 
     struct sel_timer_s *timer;
 
+    bool in_open;
+    void (*open_done)(struct genio *net, int err, void *open_data);
+    void *open_data;
+
     bool in_free;
     bool closed;
     unsigned int close_count;
@@ -344,6 +348,8 @@ check_finish_close(struct stel_data *sdata)
     }
     UNLOCK(sdata->lock);
 
+    sdata->in_open = false;
+
     if (sdata->close_done)
 	sdata->close_done(&sdata->snet.net, sdata->close_data);
 
@@ -426,8 +432,31 @@ stel_genio_close_done(struct genio *net, void *close_data)
     check_finish_close(sdata);
 }
 
+static void
+stel_sub_open_done(struct genio *net, int err, void *cb_data)
+{
+    struct stel_data *sdata = cb_data;
+
+    if (sdata->open_done)
+	sdata->open_done(&sdata->snet.net, err, sdata->open_data);
+
+    LOCK(sdata->lock);
+    sdata->in_open = false;
+    if (err) {
+	sdata->closed = true;
+	sel_stop_timer(sdata->timer);
+    } else {
+	genio_set_read_callback_enable(sdata->net, sdata->read_enabled);
+	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
+    }
+    UNLOCK(sdata->lock);
+}
+
 static int
-stel_open(struct genio *net)
+stel_open(struct genio *net, void (*open_done)(struct genio *net,
+					       int err,
+					       void *open_data),
+	  void *open_data)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
     struct timeval timeout;
@@ -435,8 +464,11 @@ stel_open(struct genio *net)
 
     LOCK(sdata->lock);
     if (sdata->closed && !sdata->close_count) {
-	err = genio_open(sdata->net);
+	sdata->open_done = open_done;
+	sdata->open_data = open_data;
+	err = genio_open(sdata->net, stel_sub_open_done, sdata);
 	if (!err) {
+	    sdata->in_open = true;
 	    sdata->closed = false;
 	    sel_get_monotonic_time(&timeout);
 	    timeout.tv_sec += 1;
@@ -508,8 +540,9 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
     if (sdata->closed)
 	goto out_unlock;
     sdata->read_enabled = enabled;
-    if (sdata->in_read || (sdata->data_pending_len && !enabled)) {
-	/* Nothing to do, let the read handling wake things up. */
+    if (sdata->in_read || sdata->in_open ||
+			(sdata->data_pending_len && !enabled)) {
+	/* Nothing to do, let the read/open handling wake things up. */
     } else if (sdata->data_pending_len) {
 	sdata->deferred_read = true;
 	sdata->in_read = true;
@@ -535,7 +568,7 @@ stel_set_write_callback_enable(struct genio *net, bool enabled)
 	goto out_unlock;
     if (sdata->xmit_enabled != enabled) {
 	sdata->xmit_enabled = enabled;
-	if (enabled || !sdata->xmit_buf_len)
+	if ((enabled || !sdata->xmit_buf_len) && !sdata->in_open)
 	    /* Only disable if we don't have data pending. */
 	    genio_set_write_callback_enable(sdata->net, enabled);
     }

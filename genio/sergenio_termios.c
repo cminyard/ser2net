@@ -61,6 +61,10 @@ struct sterm_data {
 
     struct termios default_termios;
 
+    bool in_open;
+    void (*open_done)(struct genio *io, int err, void *open_data);
+    void *open_data;
+
     void (*close_done)(struct genio *io, void *close_data);
     void *close_data;
     bool closed;
@@ -68,6 +72,8 @@ struct sterm_data {
     bool in_free;
 
     bool read_enabled;
+    bool xmit_enabled;
+
     bool in_read;
     bool deferred_read;
     unsigned int read_buffer_size;
@@ -121,6 +127,7 @@ sterm_finish_close(struct sterm_data *sdata)
     if (sdata->close_done)
 	sdata->close_done(&sdata->snet.net, sdata->close_data);
     sdata->in_close = false;
+    sdata->in_open = false;
     if (sdata->in_free)
 	sterm_finish_free(sdata);
 }
@@ -169,6 +176,23 @@ sterm_deferred_op(sel_runner_t *runner, void *cbdata)
 
     LOCK(sdata->lock);
  restart:
+    if (sdata->in_open) {
+	int op;
+
+	if (sdata->open_done) {
+	    UNLOCK(sdata->lock);
+	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
+	    LOCK(sdata->lock);
+	}
+	sdata->in_open = false;
+	op = sdata->read_enabled ? SEL_FD_HANDLER_ENABLED :
+	    SEL_FD_HANDLER_DISABLED;
+	sel_set_fd_read_handler(sdata->sel, sdata->fd, op);
+	op = sdata->xmit_enabled ? SEL_FD_HANDLER_ENABLED :
+	    SEL_FD_HANDLER_DISABLED;
+	sel_set_fd_write_handler(sdata->sel, sdata->fd, op);
+    }
+
     if (sdata->deferred_read) {
 	in_read = sdata->in_read;
 	sdata->deferred_read = false;
@@ -194,6 +218,15 @@ sterm_deferred_op(sel_runner_t *runner, void *cbdata)
 	return;
     }
     UNLOCK(sdata->lock);
+}
+
+static void
+termios_start_deferred_op(struct sterm_data *sdata)
+{
+    if (!sdata->deferred_op_pending) {
+	sdata->deferred_op_pending = true;
+	sel_run(sdata->deferred_op_runner, sterm_deferred_op, sdata);
+    }
 }
 
 static void
@@ -311,10 +344,7 @@ termios_set_get(struct sterm_data *sdata, int val, enum termio_op op,
     if (qe) {
 	if (!sdata->termio_q) {
 	    sdata->termio_q = qe;
-	    if (!sdata->deferred_op_pending) {
-		sdata->deferred_op_pending = true;
-		sel_run(sdata->deferred_op_runner, sterm_deferred_op, sdata);
-	    }
+	    termios_start_deferred_op(sdata);
 	} else {
 	    struct termio_op_q *curr = sdata->termio_q;
 
@@ -715,7 +745,10 @@ handle_write(int fd, void *cb_data)
 }
 
 static int
-sterm_open(struct genio *net)
+sterm_open(struct genio *net, void (*open_done)(struct genio *net,
+						int err,
+						void *open_data),
+	   void *open_data)
 {
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int err;
@@ -756,6 +789,10 @@ sterm_open(struct genio *net)
 	goto out_uucp;
 
     sdata->closed = false;
+    sdata->in_open = true;
+    sdata->open_done = open_done;
+    sdata->open_data = open_data;
+    termios_start_deferred_op(sdata);
     UNLOCK(sdata->lock);
 
     return 0;
@@ -830,16 +867,14 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
     if (sdata->closed)
 	goto out_unlock;
     sdata->read_enabled = enabled;
-    if (sdata->in_read || (sdata->data_pending_len && !enabled)) {
-	/* Nothing to do, let the read handling wake things up. */
+    if (sdata->in_read || sdata->in_open ||
+			(sdata->data_pending_len && !enabled)) {
+	/* Nothing to do, let the read/open handling wake things up. */
     } else if (sdata->data_pending_len) {
 	sdata->deferred_read = true;
 	sdata->in_read = true;
-	if (!sdata->deferred_op_pending) {
-	    /* Call the read from the selector to avoid lock nesting issues. */
-	    sdata->deferred_op_pending = true;
-	    sel_run(sdata->deferred_op_runner, sterm_deferred_op, sdata);
-	}
+	/* Call the read from the selector to avoid lock nesting issues. */
+	termios_start_deferred_op(sdata);
     } else {
 	int op;
 
@@ -862,6 +897,9 @@ sterm_set_write_callback_enable(struct genio *net, bool enabled)
 
     LOCK(sdata->lock);
     if (sdata->closed)
+	goto out_unlock;
+    sdata->xmit_enabled = enabled;
+    if (sdata->in_open)
 	goto out_unlock;
     if (enabled)
 	op = SEL_FD_HANDLER_ENABLED;

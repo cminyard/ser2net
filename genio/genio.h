@@ -141,9 +141,18 @@ int genio_remote_id(struct genio *net, int *id);
 /*
  * Open the genio.  genios recevied from an acceptor are open upon
  * receipt, but client genios are started closed and need to be opened
- * before use.
+ * before use.  If no error is returned, the genio will be open when
+ * the open_done callback is called.
  */
-int genio_open(struct genio *net);
+int genio_open(struct genio *net, void (*open_done)(struct genio *net,
+						    int err,
+						    void *open_data),
+	       void *open_data);
+
+/*
+ * Like genio_open(), but waits for the open to complete.
+ */
+int genio_open_s(struct genio *net, struct selector_s *sel, int wake_sig);
 
 /*
  * Close the genio.  Note that the close operation is not complete

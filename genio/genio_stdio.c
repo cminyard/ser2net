@@ -54,8 +54,13 @@ struct stdiona_data {
     void *shutdown_data;
 
     bool read_enabled;
+    bool xmit_enabled;
     bool in_read;
     bool deferred_read;
+
+    bool in_open;
+    void (*open_done)(struct genio *io, int err, void *open_data);
+    void *open_data;
 
     /* For the client only. */
     bool in_close; /* A close is pending the running running. */
@@ -204,6 +209,25 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 
     LOCK(nadata->lock);
  restart:
+    if (nadata->in_open) {
+	int op;
+
+	if (nadata->open_done) {
+	    UNLOCK(nadata->lock);
+	    nadata->open_done(&nadata->net, 0, nadata->open_data);
+	    LOCK(nadata->lock);
+	}
+	nadata->in_open = false;
+	op = nadata->read_enabled ? SEL_FD_HANDLER_ENABLED :
+	    SEL_FD_HANDLER_DISABLED;
+	sel_set_fd_read_handler(nadata->sel, nadata->ostdout, op);
+	if (nadata->ostderr != -1)
+	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr, op);
+	op = nadata->xmit_enabled ? SEL_FD_HANDLER_ENABLED :
+	    SEL_FD_HANDLER_DISABLED;
+	sel_set_fd_write_handler(nadata->sel, nadata->ostdin, op);
+    }
+
     if (nadata->deferred_read) {
 	in_read = nadata->in_read;
 	nadata->deferred_read = false;
@@ -222,12 +246,23 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
 
     if (nadata->in_close) {
 	nadata->in_close = false;
+	nadata->in_open = false;
 	UNLOCK(nadata->lock);
 	if (nadata->close_done)
 	    nadata->close_done(net, nadata->close_data);
 	return;
     }
     UNLOCK(nadata->lock);
+}
+
+static void
+stdion_start_deferred_op(struct stdiona_data *nadata)
+{
+    if (!nadata->deferred_op_pending) {
+	/* Call the read from the selector to avoid lock nesting issues. */
+	nadata->deferred_op_pending = true;
+	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
+    }
 }
 
 static void
@@ -265,6 +300,7 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 	    nadata->close_done(&nadata->net, nadata->close_data);
 	LOCK(nadata->lock);
 	nadata->in_close = false;
+	nadata->in_open = false;
 	if (nadata->in_free) {
 	    stdiona_finish_free(nadata);
 	    return;
@@ -282,16 +318,13 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
     if (nadata->closed)
 	goto out_unlock;
     nadata->read_enabled = enabled;
-    if (nadata->in_read || (nadata->data_pending_len && !enabled)) {
+    if (nadata->in_read || nadata->in_open ||
+			(nadata->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read handling wake things up. */
     } else if (nadata->data_pending_len) {
 	nadata->deferred_read = true;
 	nadata->in_read = true;
-	if (!nadata->deferred_op_pending) {
-	    /* Call the read from the selector to avoid lock nesting issues. */
-	    nadata->deferred_op_pending = true;
-	    sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
-	}
+	stdion_start_deferred_op(nadata);
     } else {
 	int op;
 
@@ -316,6 +349,9 @@ stdion_set_write_callback_enable(struct genio *net, bool enabled)
 
     LOCK(nadata->lock);
     if (nadata->closed)
+	goto out_unlock;
+    nadata->xmit_enabled = enabled;
+    if (nadata->in_open)
 	goto out_unlock;
     if (enabled)
 	op = SEL_FD_HANDLER_ENABLED;
@@ -379,7 +415,10 @@ stdion_write_ready(int fd, void *cbdata)
 }
 
 static int
-stdion_open(struct genio *net)
+stdion_open(struct genio *net, void (*open_done)(struct genio *net,
+						 int err,
+						 void *open_data),
+	    void *open_data)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
     int err;
@@ -455,7 +494,6 @@ stdion_open(struct genio *net)
 	err = errno;
 	goto out_err;
     }
-    UNLOCK(nadata->lock);
     if (nadata->opid == 0) {
 	close(stdinpipe[1]);
 	close(stdoutpipe[0]);
@@ -479,6 +517,11 @@ stdion_open(struct genio *net)
     close(stderrpipe[1]);
 
     nadata->closed = false;
+    nadata->in_open = true;
+    nadata->open_done = open_done;
+    nadata->open_data = open_data;
+    stdion_start_deferred_op(nadata);
+    UNLOCK(nadata->lock);
 
     return 0;
 
@@ -525,9 +568,8 @@ __stdion_close(struct stdiona_data *nadata,
 	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
 	if (nadata->ostderr != -1)
 	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
-    } else if (!nadata->deferred_op_pending) {
-	nadata->deferred_op_pending = true;
-	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
+    } else {
+	stdion_start_deferred_op(nadata);
     }
 }
 

@@ -156,6 +156,29 @@ struct genio_data {
 };
 
 static void
+genio_open_done(struct genio *io, int err, void *cb_data) {
+    swig_cb_val *cb = cb_data;
+    swig_ref io_ref;
+    PyObject *args, *o;
+    OI_PY_STATE gstate;
+
+    gstate = OI_PY_STATE_GET();
+
+    io_ref = swig_make_ref(io, genio);
+    args = PyTuple_New(2);
+    Py_INCREF(io_ref.val);
+    PyTuple_SET_ITEM(args, 0, io_ref.val);
+    o = PyInt_FromLong(err);
+    PyTuple_SET_ITEM(args, 1, o);
+
+    swig_finish_call(cb, "open_done", args);
+
+    swig_free_ref_check(io_ref, acceptor);
+    deref_swig_cb_val(cb);
+    OI_PY_STATE_PUT(gstate);
+}
+
+static void
 genio_close_done(struct genio *io, void *cb_data) {
     swig_cb_val *cb = cb_data;
     swig_ref io_ref;

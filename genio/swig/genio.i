@@ -270,8 +270,25 @@ struct waiter_s { };
 	return remid;
     }
     %rename(open) opent;
-    void opent() {
-	err_handle("open", genio_open(self));
+    void opent(swig_cb *done) {
+	swig_cb_val *done_val = NULL;
+	void (*open_done)(struct genio *io, int err, void *cb_data) = NULL;
+	int rv;
+	
+	if (!nil_swig_cb(done)) {
+	    open_done = genio_open_done;
+	    done_val = ref_swig_cb(done, open_done);
+	}
+	rv = genio_open(self, open_done, done_val);
+	if (rv && done_val)
+	    deref_swig_cb_val(done_val);
+
+	err_handle("open", rv);
+    }
+
+    %rename(open_s) open_st;
+    void open_st() {
+	err_handle("open_s", genio_open_s(self, genio_sel, 0));
     }
 
     %rename(close) closet;
