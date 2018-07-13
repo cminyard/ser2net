@@ -397,8 +397,7 @@ sel_set_fd_handlers(struct selector_s *sel,
     state = malloc(sizeof(*state));
     if (!state)
 	return ENOMEM;
-    state->deleted = 0;
-    state->use_count = 0;
+    memset(state, 0, sizeof(*state));
     state->done = done;
     memset(&state->done_runner, 0, sizeof(state->done_runner));
     state->done_runner.sel = sel;
@@ -460,6 +459,7 @@ sel_clear_fd_handlers(struct selector_s *sel,
 	fdc->state = NULL;
 
 	sel_update_epoll(sel, fd, EPOLL_CTL_DEL, 0);
+	fdc->saved_events = 0;
     }
 
     init_fd(fdc);
