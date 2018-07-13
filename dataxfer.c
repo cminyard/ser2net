@@ -94,8 +94,9 @@ struct net_info {
     bool remote_fixed;			/* Tells if the remote address was
 					   set in the configuration, and
 					   cannot be changed. */
-    struct sockaddr_storage remote;	/* If remote_fixed is true, the
-					   remote address for the port. */
+    bool connect_back;			/* True if we connect to the remote 
+					   address when data comes in. */
+    struct addrinfo *remote_ai;
 
     unsigned int bytes_received;	/* Number of bytes read from the
 					   network port. */
@@ -164,6 +165,9 @@ struct port_info
 					   as possible. */
     bool send_timer_running;
 
+    unsigned int nocon_read_enable_time_left;
+    /* Used if a connect back is requested an no connections could
+       be made, to try again. */
 
     sel_runner_t *runshutdown;		/* Used to run things at the
 					   base context.  This way we
@@ -201,6 +205,8 @@ struct port_info
     struct genio_acceptor *acceptor;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
+    bool has_connect_back;		/* We have connect back addresses. */
+    unsigned int num_waiting_connect_backs;
 
     int wait_acceptor_shutdown;
     bool acceptor_reinit_on_shutdown;
@@ -333,6 +339,8 @@ struct port_info
     struct led_s *led_rx;
 };
 
+static int setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig);
+
 /*
  * This infrastructure allows a list of addresses to be kept.  This is
  * for checking remote addresses
@@ -341,6 +349,7 @@ struct port_remaddr
 {
     struct addrinfo *ai;
     bool is_port_set;
+    bool is_connect_back;
     struct port_remaddr *next;
 };
 
@@ -350,13 +359,21 @@ remaddr_append(struct port_remaddr **list, const char *str)
 {
     struct port_remaddr *r, *r2;
     struct addrinfo *ai = NULL;
-    bool is_port_set;
+    bool is_port_set, is_connect_back = false;
     bool is_dgram;
     int err;
+
+    if (*str == '!') {
+	str++;
+	is_connect_back = true;
+    }
 
     err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
     if (err)
 	return err;
+
+    if (is_connect_back && !is_port_set)
+	return EINVAL;
 
     /* We don't care about is_dgram, but we want to allow it. */
 
@@ -365,9 +382,11 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	err = ENOMEM;
 	goto out;
     }
+    memset(r, 0, sizeof(*r));
 
     r->ai = ai;
     r->is_port_set = is_port_set;
+    r->is_connect_back = is_connect_back;
     r->next = NULL;
 
     r2 = *list;
@@ -386,6 +405,20 @@ remaddr_append(struct port_remaddr **list, const char *str)
     return err;
 }
 
+static bool
+ai_check(struct addrinfo *ai, const struct sockaddr *addr, socklen_t len,
+	 bool is_port_set)
+{
+    while (ai) {
+	if (sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
+			   is_port_set))
+	    return true;
+	ai = ai->ai_next;
+    }
+
+    return false;
+}
+
 /* Check that the given address matches something in the list. */
 static bool
 remaddr_check(const struct port_remaddr *list,
@@ -397,14 +430,8 @@ remaddr_check(const struct port_remaddr *list,
 	return true;
 
     while (r) {
-	struct addrinfo *ai = r->ai;
-
-	while (ai) {
-	    if (sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
-			       r->is_port_set))
-		return true;
-	    ai = ai->ai_next;
-	}
+	if (ai_check(r->ai, addr, len, r->is_port_set))
+	    return true;
 	r = r->next;
     }
 
@@ -506,14 +533,12 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
 }
 
 static int
-num_connected_net(port_info_t *port, bool include_closing)
+num_connected_net(port_info_t *port)
 {
     net_info_t *netcon;
     int count = 0;
 
     for_each_connection(port, netcon) {
-	if (!include_closing && netcon->closing)
-	    continue;
 	if (netcon->net)
 	    count++;
     }
@@ -795,6 +820,70 @@ enable_all_net_read(port_info_t *port)
     }
 }
 
+static void
+connect_back_done(struct genio *net, int err, void *cb_data)
+{
+    net_info_t *netcon = cb_data;
+    port_info_t *port = netcon->port;
+
+    LOCK(port->lock);
+    if (err) {
+	netcon->net = NULL;
+	genio_free(net);
+    } else {
+	setup_port(port, netcon, false);
+    }
+    assert(port->num_waiting_connect_backs > 0);
+    port->num_waiting_connect_backs--;
+    if (port->num_waiting_connect_backs == 0) {
+	if (num_connected_net(port) == 0)
+	    /* No connections could be made. */
+	    port->nocon_read_enable_time_left = 10;
+	else
+	    port->io.f->read_handler_enable(&port->io, 1);
+    }
+    UNLOCK(port->lock);
+}
+
+static int
+port_check_connect_backs(port_info_t *port)
+{
+    net_info_t *netcon;
+    bool tried = false;
+
+    if (!port->has_connect_back)
+	return false;
+
+    for_each_connection(port, netcon) {
+	if (netcon->connect_back && !netcon->net) {
+	    int err;
+
+	    tried = true;
+	    err = genio_acc_connect(port->acceptor, netcon->remote_ai,
+				    connect_back_done, netcon, &netcon->net);
+	    if (err) {
+		syslog(LOG_ERR, "Unable to start connect on connect "
+		       "back port %s: %s\n", port->portname, strerror(err));
+		continue;
+	    }
+	    port->num_waiting_connect_backs++;
+	}
+    }
+
+    if (tried && !port->num_waiting_connect_backs && !num_connected_net(port)) {
+	/*
+	 * This is kind of a bad situation.  We got some data, attempted
+	 * connects, but failed.  Shut down the read enable for a while.
+	 */
+	port->nocon_read_enable_time_left = 10;
+	port->io.f->read_handler_enable(&port->io, 0);
+    } else if (port->num_waiting_connect_backs) {
+	port->io.f->read_handler_enable(&port->io, 0);
+    }
+
+    return port->num_waiting_connect_backs;
+}
+
 /* Data is ready to read on the serial port. */
 static void
 handle_dev_fd_read(struct devio *io)
@@ -805,9 +894,13 @@ handle_dev_fd_read(struct devio *io)
     bool send_now = false;
     unsigned int readcount, oreadcount;
     const unsigned char *readbuf;
+    int nr_handlers;
 
     LOCK(port->lock);
     if (port->dev_to_net_state != PORT_WAITING_INPUT)
+	goto out_unlock;
+    nr_handlers = port_check_connect_backs(port);
+    if (nr_handlers > 0)
 	goto out_unlock;
 
     curend = port->dev_to_net.cursize;
@@ -886,6 +979,9 @@ handle_dev_fd_read(struct devio *io)
 
     if (port->led_rx)
 	led_flash(port->led_rx);
+
+    if (nr_handlers < 0) /* Nobody to handle the data. */
+	goto out_unlock;
 
     port->dev_bytes_received += count;
 
@@ -1896,12 +1992,55 @@ static const struct genio_callbacks port_callbacks = {
     .urgent_callback = handle_net_fd_urgent
 };
 
+static int
+port_dev_enable(port_info_t *port, net_info_t *netcon,
+		bool is_reconfig, const char **errstr)
+{
+    struct timeval then;
+
+    if (port->io.f->setup(&port->io, port->portname, errstr,
+			  &port->bps, &port->bpc) == -1)
+	    return -1;
+
+    recalc_port_chardelay(port);
+    port->is_2217 = 0;
+
+    if (!is_reconfig) {
+	if (port->devstr) {
+	    free(port->devstr->buf);
+	    free(port->devstr);
+	}
+	port->devstr = process_str_to_buf(port, netcon, port->openstr);
+    }
+    if (port->devstr)
+	port->dev_write_handler = handle_dev_fd_devstr_write;
+    else
+	port->dev_write_handler = handle_dev_fd_normal_write;
+
+    port->io.read_handler = (port->enabled == PORT_RAWLP
+			     ? NULL
+			     : handle_dev_fd_read);
+    port->io.write_handler = handle_dev_fd_write;
+    port->io.except_handler = handle_dev_fd_except;
+    port->io.f->except_handler_enable(&port->io, 1);
+    if (port->devstr)
+	port->io.f->write_handler_enable(&port->io, 1);
+    io_enable_read_handler(port);
+    port->dev_to_net_state = PORT_WAITING_INPUT;
+
+    setup_trace(port);
+
+    sel_get_monotonic_time(&then);
+    then.tv_sec += 1;
+    sel_start_timer(port->timer, &then);
+
+    return 0;
+}
+
 /* Called to set up a new connection's file descriptor. */
 static int
 setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 {
-    struct timeval then;
-    bool i_am_first = false;
     int err;
 
     if (!is_reconfig) {
@@ -1927,44 +2066,18 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	}
     }
 
-    if (num_connected_net(port, true) == 1) {
+    if (num_connected_net(port) == 1 && !port->has_connect_back) {
 	/* We are first, set things up on the device. */
 	const char *errstr = NULL;
 
-	if (port->io.f->setup(&port->io, port->portname, &errstr,
-			      &port->bps, &port->bpc) == -1) {
+	err = port_dev_enable(port, netcon, is_reconfig, &errstr);
+	if (err) {
 	    if (errstr)
 		genio_write(netcon->net, NULL, errstr, strlen(errstr));
 	    genio_free(netcon->net);
 	    netcon->net = NULL;
 	    return -1;
 	}
-	recalc_port_chardelay(port);
-	port->is_2217 = 0;
-
-	if (!is_reconfig) {
-	    if (port->devstr) {
-		free(port->devstr->buf);
-		free(port->devstr);
-	    }
-	    port->devstr = process_str_to_buf(port, netcon, port->openstr);
-	}
-	if (port->devstr)
-	    port->dev_write_handler = handle_dev_fd_devstr_write;
-	else
-	    port->dev_write_handler = handle_dev_fd_normal_write;
-
-	port->io.read_handler = (port->enabled == PORT_RAWLP
-				 ? NULL
-				 : handle_dev_fd_read);
-	port->io.write_handler = handle_dev_fd_write;
-	port->io.except_handler = handle_dev_fd_except;
-	port->io.f->except_handler_enable(&port->io, 1);
-	if (port->devstr)
-	    port->io.f->write_handler_enable(&port->io, 1);
-	io_enable_read_handler(port);
-	port->dev_to_net_state = PORT_WAITING_INPUT;
-	i_am_first = true;
     }
 
     genio_set_callbacks(netcon->net, &port_callbacks, netcon);
@@ -1981,15 +2094,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	    genio_set_write_callback_enable(netcon->net, true);
     }
 
-    if (i_am_first)
-	setup_trace(port);
     header_trace(port, netcon);
-
-    if (i_am_first) {
-	sel_get_monotonic_time(&then);
-	then.tv_sec += 1;
-	sel_start_timer(port->timer, &then);
-    }
 
     reset_timer(netcon);
 
@@ -2248,8 +2353,16 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
     }
 
     for (j = port->max_connections, i = 0; i < port->max_connections; i++) {
-	if (!port->netcons[i].net && !port->netcons[i].remote_fixed)
-	    break;
+	if (!port->netcons[i].net) {
+	    if (port->netcons[i].remote_fixed) {
+		if (ai_check(port->netcons[i].remote_ai,
+			     (struct sockaddr *) &addr, socklen, true)) {
+		    break;
+		}
+	    } else {
+		break;
+	    }
+	}
 	if (!port->netcons[i].remote_fixed)
 	    j = i;
     }
@@ -2284,14 +2397,55 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
     UNLOCK(ports_lock);
 }
 
+static void
+process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r,
+                bool is_reconfig)
+{
+    net_info_t *netcon;
+
+    if (!r->is_connect_back)
+	return;
+
+    for_each_connection(port, netcon) {
+        if (netcon->remote_fixed)
+            continue;
+
+	netcon->remote_fixed = true;
+	netcon->remote_ai = r->ai;
+	port->has_connect_back = true;
+	netcon->connect_back = true;
+	return;
+    }
+
+    if (eout)
+	eout->out(eout, "Too many remote addresses specified for the"
+		  " max-connections given");
+}
+
 static int
 startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 {
     int err = genio_acc_startup(port->acceptor);
+    struct port_remaddr *r;
 
     if (err && eout) {
 	eout->out(eout, "Unable to startup network port %s: %s",
 		  port->portname, strerror(err));
+	return err;
+    }
+
+    for (r = port->remaddrs; r; r = r->next)
+	process_remaddr(eout, port, r, is_reconfig);
+
+    if (port->has_connect_back) {
+	const char *errstr;
+
+	err = port_dev_enable(port, NULL, false, &errstr);
+	if (err && eout)
+	    eout->out(eout, "Unable to enable port device %s: %s",
+		      port->portname, strerror(err));
+	if (err)
+	    genio_acc_shutdown(port->acceptor, NULL, NULL);
     }
 
     return err;
@@ -2687,10 +2841,13 @@ netcon_finish_shutdown(net_info_t *netcon)
     }
     telnet_cleanup(&netcon->tn_data);
 
-    if (num_connected_net(port, true) == 0) {
-	start_shutdown_port(port, "All network connections free");
-	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
-	    sel_run(port->runshutdown, start_shutdown_port_io, port);
+    if (num_connected_net(port) == 0) {
+	if (!port->has_connect_back) {
+	    start_shutdown_port(port, "All network connections free");
+	    if (sel_stop_timer_with_done(port->timer, timer_shutdown_done,
+					 port))
+		sel_run(port->runshutdown, start_shutdown_port_io, port);
+	}
     } else {
 	check_port_new_net(port, netcon);
     }
@@ -2775,9 +2932,16 @@ got_timeout(struct selector_s *sel,
 	return;
     }
 
-    if (port->timeout) {
+    if (port->nocon_read_enable_time_left) {
+	port->nocon_read_enable_time_left--;
+	if (port->nocon_read_enable_time_left == 0)
+	    port->io.f->read_handler_enable(&port->io, 1);
+	goto out;
+    }
+
+    if (port->timeout && port->net_to_dev_state != PORT_UNCONNECTED) {
 	for_each_connection(port, netcon) {
-	    if (!netcon->net || netcon->remote_fixed)
+	    if (!netcon->net)
 		continue;
 	    netcon->timeout_left--;
 	    if (netcon->timeout_left < 0)
@@ -2802,6 +2966,7 @@ got_timeout(struct selector_s *sel,
 	}
     }
 
+ out:
     sel_get_monotonic_time(&then);
     then.tv_sec += 1;
     sel_start_timer(port->timer, &then);
