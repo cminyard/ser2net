@@ -236,6 +236,14 @@ void genio_acc_set_accept_callback_enable(struct genio_acceptor *acceptor,
 void genio_acc_free(struct genio_acceptor *acceptor);
 
 /*
+ * Create a new connection from the given genio acceptor.  For TCP
+ * and UDP, the addr is an addrinfo returned by getaddrinfo.
+ */
+int genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
+		      void (*connect_done)(struct genio *net, int err,
+					   void *cb_data),
+		      void *cb_data, struct genio **new_net);
+/*
  * Returns if the acceptor requests exit on close.  A hack for stdio.
  */
 bool genio_acc_exit_on_close(struct genio_acceptor *acceptor);
@@ -288,8 +296,7 @@ int stdio_genio_acceptor_alloc(struct selector_s *sel,
 /* Client allocators. */
 
 /*
- * Create a TCP genio for the given ai.  Note that if this function
- * does not return an error, it takes over ai and frees it when done.
+ * Create a TCP genio for the given ai.
  */
 int tcp_genio_alloc(struct addrinfo *ai,
 		    struct selector_s *sel,
@@ -299,8 +306,8 @@ int tcp_genio_alloc(struct addrinfo *ai,
 		    struct genio **new_genio);
 
 /*
- * Create a UDP genio for the given ai.  It uses the first entry
- * in ai.
+ * Create a UDP genio for the given ai.  It uses the first entry in
+ * ai.
  */
 int udp_genio_alloc(struct addrinfo *ai,
 		    struct selector_s *sel,

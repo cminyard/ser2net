@@ -91,6 +91,11 @@ struct genio_acceptor_functions {
 				       bool enabled);
 
     void (*free)(struct genio_acceptor *acceptor);
+
+    int (*connect)(struct genio_acceptor *acceptor, void *addr,
+		   void (*connect_done)(struct genio *net, int err,
+					void *cb_data),
+		   void *cb_data, struct genio **new_net);
 };
 
 /*
@@ -133,5 +138,12 @@ struct opensocks *open_socket(struct selector_s *sel,
 			      void (*fd_handler_cleared)(int, void *));
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
+
+/*
+ * There are no provided routines to duplicate addrinfo structures,
+ * so we really need to do it ourselves.
+ */
+struct addrinfo *genio_dup_addrinfo(struct addrinfo *ai);
+void genio_free_addrinfo(struct addrinfo *ai);
 
 #endif /* SER2NET_GENIO_INTERNAL_H */

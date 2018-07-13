@@ -276,19 +276,17 @@ socklen_t
 genio_get_raddr(struct genio *net,
 		struct sockaddr *addr, socklen_t addrlen)
 {
-    if (net->funcs->get_raddr)
-	return net->funcs->get_raddr(net, addr, addrlen);
-    else
+    if (!net->funcs->get_raddr)
 	return ENOTSUP;
+    return net->funcs->get_raddr(net, addr, addrlen);
 }
 
 int
 genio_remote_id(struct genio *net, int *id)
 {
-    if (net->funcs->remote_id)
-	return net->funcs->remote_id(net, id);
-    else
+    if (!net->funcs->remote_id)
 	return ENOTSUP;
+    return net->funcs->remote_id(net, id);
 }
 
 int
@@ -399,6 +397,18 @@ genio_acc_free(struct genio_acceptor *acceptor)
     acceptor->funcs->free(acceptor);
 }
 
+int
+genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
+		  void (*connect_done)(struct genio *net, int err,
+				       void *cb_data),
+		  void *cb_data, struct genio **new_net)
+{
+    if (!acceptor->funcs->connect)
+	return ENOTSUP;
+    return acceptor->funcs->connect(acceptor, addr, connect_done, cb_data,
+				    new_net);
+}
+
 bool
 genio_acc_exit_on_close(struct genio_acceptor *acceptor)
 {
@@ -432,9 +442,7 @@ int str_to_genio_acceptor(const char *str,
 					       user_data, acceptor);
 	    }
 
-	    if (err) {
-		freeaddrinfo(ai);
-	    }
+	    freeaddrinfo(ai);
 	}
     }
 
@@ -485,9 +493,7 @@ str_to_genio(const char *str,
 				      user_data, genio);
 	    }
 
-	    if (err) {
-		freeaddrinfo(ai);
-	    }
+	    freeaddrinfo(ai);
 	}
     }
 
@@ -503,4 +509,60 @@ genio_match_type(struct genio *io, enum genio_type *types)
 	types++;
     }
     return false;
+}
+
+struct addrinfo *
+genio_dup_addrinfo(struct addrinfo *iai)
+{
+    struct addrinfo *ai = NULL, *aic, *aip = NULL;
+
+    while (iai) {
+	aic = malloc(sizeof(*aic));
+	if (!aic)
+	    goto out_nomem;
+	memcpy(aic, iai, sizeof(*aic));
+	aic->ai_next = NULL;
+	aic->ai_addr = malloc(iai->ai_addrlen);
+	if (!aic->ai_addr) {
+	    free(aic);
+	    goto out_nomem;
+	}
+	memcpy(aic->ai_addr, iai->ai_addr, iai->ai_addrlen);
+	if (iai->ai_canonname) {
+	    aic->ai_canonname = strdup(iai->ai_canonname);
+	    if (!aic->ai_canonname) {
+		free(aic->ai_addr);
+		free(aic);
+		goto out_nomem;
+	    }
+	}
+	if (aip) {
+	    aip->ai_next = aic;
+	    aip = aic;
+	} else {
+	    ai = aic;
+	    aip = aic;
+	}
+	iai = iai->ai_next;
+    }
+
+    return ai;
+
+ out_nomem:
+    genio_free_addrinfo(ai);
+    return NULL;
+}
+
+void
+genio_free_addrinfo(struct addrinfo *ai)
+{
+    while (ai) {
+	struct addrinfo *aic = ai;
+
+	ai = ai->ai_next;
+	free(aic->ai_addr);
+	if (aic->ai_canonname)
+	    free(aic->ai_canonname);
+	free(aic);
+    }
 }

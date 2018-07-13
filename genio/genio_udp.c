@@ -273,7 +273,7 @@ static void udpna_do_free(struct udpna_data *nadata)
     if (nadata->name)
 	free(nadata->name);
     if (nadata->ai)
-	freeaddrinfo(nadata->ai);
+	genio_free_addrinfo(nadata->ai);
     if (nadata->fds)
 	free(nadata->fds);
     if (nadata->read_data)
@@ -547,7 +547,7 @@ udpn_open(struct genio *net, void (*open_done)(struct genio *net,
     int err = EBUSY;
 
     LOCK(nadata->lock);
-    if (!ndata->deferred_op_runner) {
+    if (!ndata->net.is_client) {
 	err = ENOTTY;
     } else if (ndata->closed && !ndata->in_close) {
 	udpn_remove_from_list(&nadata->closed_udpns, ndata);
@@ -975,17 +975,87 @@ udpna_free(struct genio_acceptor *acceptor)
     UNLOCK(nadata->lock);
 }
 
+int
+udpna_connect(struct genio_acceptor *acceptor, void *addr,
+	      void (*connect_done)(struct genio *net, int err,
+				   void *cb_data),
+	      void *cb_data, struct genio **new_net)
+{
+    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpn_data *ndata;
+    struct addrinfo *ai = genio_dup_addrinfo(addr);
+    unsigned int fdi;
+    int err;
+
+    if (!ai)
+	return ENOMEM;
+
+    while (ai) {
+	for (fdi = 0; fdi < nadata->nr_fds; fdi++) {
+	    if (nadata->fds[fdi].family == ai->ai_addr->sa_family)
+		goto found;
+	}
+	ai = ai->ai_next;
+    }
+    genio_free_addrinfo(ai);
+    return EINVAL;
+
+ found:
+    if (ai->ai_addrlen > sizeof(struct sockaddr_storage)) {
+	genio_free_addrinfo(ai);
+	return EINVAL;
+    }
+
+    ndata = malloc(sizeof(*ndata));
+    if (!ndata) {
+	genio_free_addrinfo(ai);
+	return ENOMEM;
+    }
+    memset(ndata, 0, sizeof(*ndata));
+    ndata->nadata = nadata;
+
+    err = sel_alloc_runner(nadata->sel, &ndata->deferred_op_runner);
+    if (err) {
+	genio_free_addrinfo(ai);
+	return err;
+    }
+
+    ndata->raddr = (struct sockaddr *) &ndata->remote;
+    memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
+    ndata->raddrlen = ai->ai_addrlen;
+
+    ndata->net.funcs = &genio_udp_funcs;
+    ndata->net.type = GENIO_TYPE_UDP;
+    ndata->myfd = nadata->fds[fdi].fd;
+
+    ndata->in_open = true;
+    ndata->open_done = connect_done;
+    ndata->open_data = cb_data;
+
+    LOCK(nadata->lock);
+    udpn_add_to_list(&nadata->udpns, ndata);
+    nadata->udpn_count++;
+    udpn_start_deferred_op(ndata);
+    nadata->read_disable_count++;
+    UNLOCK(nadata->lock);
+
+    *new_net = &ndata->net;
+
+    return 0;
+}
+
 static const struct genio_acceptor_functions genio_acc_udp_funcs = {
     .startup = udpna_startup,
     .shutdown = udpna_shutdown,
     .set_accept_callback_enable = udpna_set_accept_callback_enable,
-    .free = udpna_free
+    .free = udpna_free,
+    .connect = udpna_connect
 };
 
 int
 udp_genio_acceptor_alloc(const char *name,
 			 struct selector_s *sel,
-			 struct addrinfo *ai,
+			 struct addrinfo *iai,
 			 unsigned int max_read_size,
 			 const struct genio_acceptor_callbacks *cbs,
 			 void *user_data,
@@ -994,6 +1064,10 @@ udp_genio_acceptor_alloc(const char *name,
     int err = ENOMEM;
     struct genio_acceptor *acc;
     struct udpna_data *nadata;
+    struct addrinfo *ai = genio_dup_addrinfo(iai);
+
+    if (!ai && iai) /* Allow a null ai if it was passed in. */
+	return ENOMEM;
 
     nadata = malloc(sizeof(*nadata));
     if (!nadata)
@@ -1027,6 +1101,8 @@ udp_genio_acceptor_alloc(const char *name,
     return 0;
 
  out_err:
+    if (ai)
+	genio_free_addrinfo(ai);
     if (nadata) {
 	if (nadata->name)
 	    free(nadata->name);
@@ -1126,7 +1202,7 @@ udp_genio_alloc(struct addrinfo *ai,
 	udpna_do_free(nadata);
     } else {
 	nadata->nr_accept_close_waiting = 1;
-	freeaddrinfo(ai);
+	genio_free_addrinfo(ai);
 	*new_genio = &ndata->net;
     }
 
