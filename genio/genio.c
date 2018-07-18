@@ -511,6 +511,22 @@ genio_match_type(struct genio *io, enum genio_type *types)
     return false;
 }
 
+const char *
+genio_check_tcpd_ok(int new_fd)
+{
+#ifdef HAVE_TCPD_H
+    struct request_info req;
+
+    request_init(&req, RQ_DAEMON, progname, RQ_FILE, new_fd, NULL);
+    fromhost(&req);
+
+    if (!hosts_access(&req))
+	return "Access denied\r\n";
+#endif
+
+    return NULL;
+}
+
 struct addrinfo *
 genio_dup_addrinfo(struct addrinfo *iai)
 {

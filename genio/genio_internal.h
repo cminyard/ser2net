@@ -139,6 +139,9 @@ struct opensocks *open_socket(struct selector_s *sel,
 
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
+/* Returns a NULL if the fd is ok, a non-NULL error string if not */
+const char *genio_check_tcpd_ok(int new_fd);
+
 /*
  * There are no provided routines to duplicate addrinfo structures,
  * so we really need to do it ourselves.
