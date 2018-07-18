@@ -918,6 +918,7 @@ udpna_startup(struct genio_acceptor *acceptor)
 
     nadata->setup = true;
     nadata->enabled = true;
+    udpna_enable_read(nadata);
  out_unlock:
     UNLOCK(nadata->lock);
 

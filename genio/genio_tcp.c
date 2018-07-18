@@ -839,6 +839,15 @@ tcpna_fd_cleared(int fd, void *cbdata)
     }
 }
 
+static void
+tcpna_set_fd_enables(struct tcpna_data *nadata, int op)
+{
+    unsigned int i;
+
+    for (i = 0; i < nadata->nr_acceptfds; i++)
+	sel_set_fd_read_handler(nadata->sel, nadata->acceptfds[i].fd, op);
+}
+
 static int
 tcpna_startup(struct genio_acceptor *acceptor)
 {
@@ -858,6 +867,7 @@ tcpna_startup(struct genio_acceptor *acceptor)
 	rv = errno;
     } else {
 	nadata->setup = true;
+	tcpna_set_fd_enables(nadata, SEL_FD_HANDLER_ENABLED);
 	nadata->enabled = true;
 	nadata->shutdown_done = NULL;
 	tcpna_ref(nadata);
@@ -909,7 +919,6 @@ static void
 tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    unsigned int i;
     int op;
 
     if (enabled)
@@ -919,8 +928,7 @@ tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 
     tcpna_lock(nadata);
     if (nadata->enabled != enabled) {
-	for (i = 0; i < nadata->nr_acceptfds; i++)
-	    sel_set_fd_read_handler(nadata->sel, nadata->acceptfds[i].fd, op);
+	tcpna_set_fd_enables(nadata, op);
 	nadata->enabled = enabled;
     }
     tcpna_unlock(nadata);

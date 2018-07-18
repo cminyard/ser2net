@@ -86,8 +86,6 @@ open_socket(struct selector_s *sel,
 				 fd_handler_cleared);
 	if (rv)
 	    goto next;
-	sel_set_fd_read_handler(sel, fds[curr_fd].fd,
-				SEL_FD_HANDLER_ENABLED);
 	curr_fd++;
 	continue;
 
