@@ -597,12 +597,9 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
     struct tcpn_data *ndata = net_to_ndata(net);
 
     tcpn_lock(ndata);
-    if (!ndata->open)
-	/* Just ignore this. */
-	goto out_unlock;
-
     ndata->read_enabled = enabled;
-    if (ndata->in_read || ndata->in_open ||
+
+    if (!ndata->open || ndata->in_read || ndata->in_open ||
 			(ndata->data_pending_len && !enabled)) {
 	/* It will be handled in finish_read or open finish. */
     } else if (ndata->data_pending_len) {
@@ -630,12 +627,8 @@ tcpn_set_write_callback_enable(struct genio *net, bool enabled)
     int op;
 
     tcpn_lock(ndata);
-    if (!ndata->open)
-	/* Just ignore this. */
-	goto out_unlock;
-
     ndata->write_enabled = enabled;
-    if (ndata->in_open)
+    if (!ndata->open || ndata->in_open)
 	goto out_unlock;
     if (enabled)
 	op = SEL_FD_HANDLER_ENABLED;
