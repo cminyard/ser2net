@@ -50,6 +50,7 @@
 #include <syslog.h>
 #include <signal.h>
 #include <string.h>
+#include <assert.h>
 #ifdef HAVE_EPOLL_PWAIT
 #include <sys/epoll.h>
 #else
@@ -440,11 +441,8 @@ sel_set_fd_handlers(struct selector_s *sel,
     return 0;
 }
 
-/* Clear the handlers for a file descriptor and remove it from
-   select's monitoring. */
-void
-sel_clear_fd_handlers(struct selector_s *sel,
-		      int        fd)
+static void
+i_sel_clear_fd_handler(struct selector_s *sel, int fd, int imm)
 {
     fd_control_t *fdc;
     fd_state_t   *oldstate = NULL;
@@ -478,12 +476,32 @@ sel_clear_fd_handlers(struct selector_s *sel,
 
     if (oldstate) {
 	oldstate->deleted = 1;
-	if (oldstate->use_count == 0) {
+	if (imm) {
+	    assert(oldstate->use_count == 0);
+	} else if (oldstate->use_count == 0) {
 	    oldstate->tmp_fd = fd;
 	    oldstate->done_cbdata = olddata;
 	    sel_run(&oldstate->done_runner, finish_oldstate, oldstate);
 	}
     }
+}
+
+/* Clear the handlers for a file descriptor and remove it from
+   select's monitoring. */
+void
+sel_clear_fd_handlers(struct selector_s *sel, int fd)
+{
+    i_sel_clear_fd_handler(sel, fd, 0);
+}
+
+/* Clear the handlers for a file descriptor and remove it from
+   select's monitoring, except this can only be called if no
+   callbacks are active (like you haven't started listening
+   yet).  If a callback is active, it will assert. */
+void
+sel_clear_fd_handlers_imm(struct selector_s *sel, int fd)
+{
+    i_sel_clear_fd_handler(sel, fd, 1);
 }
 
 /* Set whether the file descriptor will be monitored for data ready to
