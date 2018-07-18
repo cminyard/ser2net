@@ -1131,7 +1131,7 @@ udp_genio_alloc(struct addrinfo *ai,
     int new_fd;
 
     if (ai->ai_addrlen > sizeof(struct sockaddr_storage))
-	return EINVAL;
+	return E2BIG;
 
     new_fd = socket(ai->ai_family, SOCK_DGRAM, 0);
     if (new_fd == -1)
@@ -1202,7 +1202,6 @@ udp_genio_alloc(struct addrinfo *ai,
 	udpna_do_free(nadata);
     } else {
 	nadata->nr_accept_close_waiting = 1;
-	genio_free_addrinfo(ai);
 	*new_genio = &ndata->net;
     }
 
