@@ -130,7 +130,7 @@ struct opensocks
  * Also, open IPV6 addresses first.  This way, addresses in shared
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
-struct opensocks *open_socket(struct selector_s *sel,
+struct opensocks *open_socket(struct genio_os_funcs *o,
 			      struct addrinfo *ai,
 			      void (*readhndlr)(int, void *),
 			      void (*writehndlr)(int, void *), void *data,
@@ -146,7 +146,8 @@ const char *genio_check_tcpd_ok(int new_fd);
  * There are no provided routines to duplicate addrinfo structures,
  * so we really need to do it ourselves.
  */
-struct addrinfo *genio_dup_addrinfo(struct addrinfo *ai);
-void genio_free_addrinfo(struct addrinfo *ai);
+struct addrinfo *genio_dup_addrinfo(struct genio_os_funcs *o,
+				    struct addrinfo *ai);
+void genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai);
 
 #endif /* SER2NET_GENIO_INTERNAL_H */

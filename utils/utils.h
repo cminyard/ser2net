@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 #include <termios.h>
+#include <sys/time.h> /* struct timeval */
 
 /* Returns true if the string is a numeric zero, false if not. */
 int strisallzero(const char *str);

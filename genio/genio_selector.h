@@ -17,27 +17,13 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef SER2NET_H
-#define SER2NET_H
+#ifndef GENIO_SELECTOR_H
+#define GENIO_SELECTOR_H
 
+#include "genio/genio.h"
 #include "utils/selector.h"
-#include "genio/genio_selector.h"
 
-/* The default rfc2217 signature if none is provided. */
-extern char *rfc2217_signature;
+struct genio_os_funcs *genio_selector_alloc(struct selector_s *sel,
+					    int wake_sig);
 
-extern struct selector_s *ser2net_sel;
-extern struct genio_os_funcs *ser2net_o;
-
-extern int ser2net_debug;
-extern int ser2net_debug_level;
-
-extern int ser2net_wake_sig;
-
-void start_maint_op(void);
-void end_maint_op(void);
-
-int init_dataxfer(void);
-void shutdown_dataxfer(void);
-
-#endif /* SER2NET_H */
+#endif /* GENIO_SELECTOR_H */

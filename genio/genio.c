@@ -24,14 +24,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "utils/utils.h"
-#include "utils/waiter.h"
 #include "genio.h"
 #include "genio_internal.h"
 #include "sergenio.h"
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
-open_socket(struct selector_s *sel,
+open_socket(struct genio_os_funcs *o,
 	    struct addrinfo *ai, void (*readhndlr)(int, void *),
 	    void (*writehndlr)(int, void *), void *data,
 	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
@@ -50,7 +49,7 @@ open_socket(struct selector_s *sel,
     if (max_fds == 0)
 	return NULL;
 
-    fds = malloc(sizeof(*fds) * max_fds);
+    fds = o->zalloc(o, sizeof(*fds) * max_fds);
     if (!fds)
 	return NULL;
 
@@ -81,9 +80,9 @@ open_socket(struct selector_s *sel,
 	if (rp->ai_socktype == SOCK_STREAM && listen(fds[curr_fd].fd, 1) != 0)
 	    goto next;
 
-	rv = sel_set_fd_handlers(sel, fds[curr_fd].fd, data,
-				 readhndlr, writehndlr, NULL,
-				 fd_handler_cleared);
+	rv = o->set_fd_handlers(o, fds[curr_fd].fd, data,
+				readhndlr, writehndlr, NULL,
+				fd_handler_cleared);
 	if (rv)
 	    goto next;
 	curr_fd++;
@@ -98,7 +97,7 @@ open_socket(struct selector_s *sel,
     }
 
     if (curr_fd == 0) {
-	free(fds);
+	o->free(o, fds);
 	fds = NULL;
     }
     *nr_fds = curr_fd;
@@ -297,8 +296,9 @@ genio_open(struct genio *net, void (*open_done)(struct genio *net,
 }
 
 struct genio_open_s_data {
+    struct genio_os_funcs *o;
     int err;
-    struct waiter_s *waiter;
+    struct genio_waiter *waiter;
 };
 
 static void
@@ -307,22 +307,23 @@ genio_open_s_done(struct genio *net, int err, void *cb_data)
     struct genio_open_s_data *data = cb_data;
 
     data->err = err;
-    wake_waiter(data->waiter);
+    data->o->wake(data->waiter);
 }
 
 int
-genio_open_s(struct genio *net, struct selector_s *sel, int wake_sig)
+genio_open_s(struct genio *net, struct genio_os_funcs *o)
 {
     struct genio_open_s_data data;
     int err;
 
+    data.o = o;
     data.err = 0;
-    data.waiter = alloc_waiter(sel, wake_sig);
+    data.waiter = o->alloc_waiter(o);
     if (!data.waiter)
 	return ENOMEM;
     err = genio_open(net, genio_open_s_done, &data);
     if (!err) {
-	wait_for_waiter(data.waiter, 1);
+	o->wait(data.waiter, NULL);
 	err = data.err;
     }
     return err;
@@ -414,7 +415,7 @@ genio_acc_exit_on_close(struct genio_acceptor *acceptor)
 }
 
 int str_to_genio_acceptor(const char *str,
-			  struct selector_s *sel,
+			  struct genio_os_funcs *o,
 			  unsigned int max_read_size,
 			  const struct genio_acceptor_callbacks *cbs,
 			  void *user_data,
@@ -425,7 +426,7 @@ int str_to_genio_acceptor(const char *str,
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_genio_acceptor_alloc(sel, max_read_size, cbs, user_data,
+	err = stdio_genio_acceptor_alloc(o, max_read_size, cbs, user_data,
 					 acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
@@ -433,10 +434,10 @@ int str_to_genio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_genio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
+		err = udp_genio_acceptor_alloc(str, o, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    } else {
-		err = tcp_genio_acceptor_alloc(str, sel, ai, max_read_size, cbs,
+		err = tcp_genio_acceptor_alloc(str, o, ai, max_read_size, cbs,
 					       user_data, acceptor);
 	    }
 
@@ -449,7 +450,7 @@ int str_to_genio_acceptor(const char *str,
 
 int
 str_to_genio(const char *str,
-	     struct selector_s *sel,
+	     struct genio_os_funcs *o,
 	     unsigned int max_read_size,
 	     const struct genio_callbacks *cbs,
 	     void *user_data,
@@ -466,14 +467,14 @@ str_to_genio(const char *str,
 	err = str_to_argv(str + 6, &argc, &argv, NULL);
 	if (err)
 	    return err;
-	err = stdio_genio_alloc(argv, sel, max_read_size, cbs, user_data,
+	err = stdio_genio_alloc(argv, o, max_read_size, cbs, user_data,
 				genio);
 	str_to_argv_free(argc, argv);
     } else if (strncmp(str, "ser,", 4) == 0) {
 	struct sergenio *sio;
 
 	str += 4;
-	err = str_to_sergenio(str, sel, max_read_size, NULL, cbs, user_data,
+	err = str_to_sergenio(str, o, max_read_size, NULL, cbs, user_data,
 			      &sio);
 	if (err)
 	    return err;
@@ -484,10 +485,10 @@ str_to_genio(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_genio_alloc(ai, sel, max_read_size, cbs,
+		err = udp_genio_alloc(ai, o, max_read_size, cbs,
 				      user_data, genio);
 	    } else {
-		err = tcp_genio_alloc(ai, sel, max_read_size, cbs,
+		err = tcp_genio_alloc(ai, o, max_read_size, cbs,
 				      user_data, genio);
 	    }
 
@@ -526,27 +527,27 @@ genio_check_tcpd_ok(int new_fd)
 }
 
 struct addrinfo *
-genio_dup_addrinfo(struct addrinfo *iai)
+genio_dup_addrinfo(struct genio_os_funcs *o, struct addrinfo *iai)
 {
     struct addrinfo *ai = NULL, *aic, *aip = NULL;
 
     while (iai) {
-	aic = malloc(sizeof(*aic));
+	aic = o->zalloc(o, sizeof(*aic));
 	if (!aic)
 	    goto out_nomem;
 	memcpy(aic, iai, sizeof(*aic));
 	aic->ai_next = NULL;
-	aic->ai_addr = malloc(iai->ai_addrlen);
+	aic->ai_addr = o->zalloc(o, iai->ai_addrlen);
 	if (!aic->ai_addr) {
-	    free(aic);
+	    o->free(o, aic);
 	    goto out_nomem;
 	}
 	memcpy(aic->ai_addr, iai->ai_addr, iai->ai_addrlen);
 	if (iai->ai_canonname) {
 	    aic->ai_canonname = strdup(iai->ai_canonname);
 	    if (!aic->ai_canonname) {
-		free(aic->ai_addr);
-		free(aic);
+		o->free(o, aic->ai_addr);
+		o->free(o, aic);
 		goto out_nomem;
 	    }
 	}
@@ -563,20 +564,20 @@ genio_dup_addrinfo(struct addrinfo *iai)
     return ai;
 
  out_nomem:
-    genio_free_addrinfo(ai);
+    genio_free_addrinfo(o, ai);
     return NULL;
 }
 
 void
-genio_free_addrinfo(struct addrinfo *ai)
+genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai)
 {
     while (ai) {
 	struct addrinfo *aic = ai;
 
 	ai = ai->ai_next;
-	free(aic->ai_addr);
+	o->free(o, aic->ai_addr);
 	if (aic->ai_canonname)
-	    free(aic->ai_canonname);
-	free(aic);
+	    o->free(o, aic->ai_canonname);
+	o->free(o, aic);
     }
 }

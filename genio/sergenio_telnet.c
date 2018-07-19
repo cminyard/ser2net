@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "utils/utils.h"
-#include "utils/locking.h"
 #include "utils/telnet.h"
 
 #include "sergenio_internal.h"
@@ -43,9 +42,11 @@ struct stel_req {
 struct stel_data {
     struct sergenio snet;
 
-    DEFINE_LOCK(, lock);
+    struct genio_os_funcs *o;
 
-    struct sel_timer_s *timer;
+    struct genio_lock *lock;
+
+    struct genio_timer *timer;
 
     bool in_open;
     void (*open_done)(struct genio *net, int err, void *open_data);
@@ -83,13 +84,25 @@ struct stel_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    sel_runner_t *deferred_op_runner;
+    struct genio_runner *deferred_op_runner;
 
     struct stel_req *reqs;
 };
 
 #define mygenio_to_stel(v) container_of(v, struct stel_data, snet.net)
 #define mysergenio_to_stel(v) container_of(v, struct stel_data, snet)
+
+static void
+stel_lock(struct stel_data *sdata)
+{
+    sdata->o->lock(sdata->lock);
+}
+
+static void
+stel_unlock(struct stel_data *sdata)
+{
+    sdata->o->unlock(sdata->lock);
+}
 
 static int
 stel_queue(struct stel_data *sdata, int option, 
@@ -98,7 +111,7 @@ stel_queue(struct stel_data *sdata, int option,
 			int baud, void *cb_data),
 	   void *cb_data)
 {
-    struct stel_req *curr, *req = malloc(sizeof(*req));
+    struct stel_req *curr, *req = sdata->o->zalloc(sdata->o, sizeof(*req));
     if (!req)
 	return ENOMEM;
 
@@ -112,7 +125,7 @@ stel_queue(struct stel_data *sdata, int option,
     req->time_left = SERCTL_WAIT_TIME;
     req->next = NULL;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     curr = sdata->reqs;
     if (!curr) {
 	sdata->reqs = req;
@@ -121,7 +134,7 @@ stel_queue(struct stel_data *sdata, int option,
 	    curr = curr->next;
 	curr->next = req;
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     return 0;
 }
@@ -261,7 +274,7 @@ stel_write(struct genio *net, unsigned int *rcount,
     unsigned int inlen = buflen;
     int err = 0;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->closed) {
 	err = EBADF;
 	goto out_unlock;
@@ -296,7 +309,7 @@ stel_write(struct genio *net, unsigned int *rcount,
 
     *rcount = buflen - inlen;
  out_unlock:
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
     return err;
 }
 
@@ -324,43 +337,43 @@ stel_finish_free(struct stel_data *sdata)
     struct stel_req *req, *prev;
 
     genio_free(sdata->net);
-    sel_free_timer(sdata->timer);
+    sdata->o->free_timer(sdata->timer);
     telnet_cleanup(&sdata->tn_data);
     req = sdata->reqs;
     while (req) {
 	prev = req;
 	req = req->next;
-	free(prev);
+	sdata->o->free(sdata->o, prev);
     }
     if (sdata->deferred_op_runner)
-	sel_free_runner(sdata->deferred_op_runner);
-    free(sdata);
+	sdata->o->free_runner(sdata->deferred_op_runner);
+    sdata->o->free(sdata->o, sdata);
 }
 
 static void
 check_finish_close(struct stel_data *sdata)
 {
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->close_count > 1) {
 	sdata->close_count--;
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	return;
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     sdata->in_open = false;
 
     if (sdata->close_done)
 	sdata->close_done(&sdata->snet.net, sdata->close_data);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     /* delay this until here to keep stel_free() from freeing it. */
     sdata->close_count--;
     if (sdata->in_free) {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	stel_finish_free(sdata);
     } else {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
     }
 }
 
@@ -385,14 +398,14 @@ stel_finish_read(struct stel_data *sdata, int err, unsigned int count)
 }
 
 static void
-stel_deferred_op(sel_runner_t *runner, void *cbdata)
+stel_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct stel_data *sdata = cbdata;
     struct genio *net = &sdata->snet.net;
     unsigned int count;
     bool in_read;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
  restart:
     if (sdata->deferred_read) {
 	in_read = sdata->in_read;
@@ -400,11 +413,11 @@ stel_deferred_op(sel_runner_t *runner, void *cbdata)
     }
 
     if (in_read) {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	count = net->cbs->read_callback(net, 0,
 					&sdata->read_data[sdata->data_pos],
 					sdata->data_pending_len, 0);
-	LOCK(sdata->lock);
+	stel_lock(sdata);
 	stel_finish_read(sdata, 0, count);
     }
 
@@ -413,13 +426,12 @@ stel_deferred_op(sel_runner_t *runner, void *cbdata)
 	goto restart;
 
     sdata->deferred_op_pending = false;
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 }
 
 static void
-stel_timer_stopped(struct selector_s *sel,
-		  struct sel_timer_s *timer,
-		  void *cb_data)
+stel_timer_stopped(struct genio_timer *timer,
+		   void *cb_data)
 {
     check_finish_close(cb_data);
 }
@@ -440,16 +452,16 @@ stel_sub_open_done(struct genio *net, int err, void *cb_data)
     if (sdata->open_done)
 	sdata->open_done(&sdata->snet.net, err, sdata->open_data);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     sdata->in_open = false;
     if (err) {
 	sdata->closed = true;
-	sel_stop_timer(sdata->timer);
+	sdata->o->stop_timer(sdata->timer);
     } else {
 	genio_set_read_callback_enable(sdata->net, sdata->read_enabled);
 	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 }
 
 static int
@@ -462,7 +474,7 @@ stel_open(struct genio *net, void (*open_done)(struct genio *net,
     struct timeval timeout;
     int err = EBUSY;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->closed && !sdata->close_count) {
 	sdata->open_done = open_done;
 	sdata->open_data = open_data;
@@ -470,12 +482,12 @@ stel_open(struct genio *net, void (*open_done)(struct genio *net,
 	if (!err) {
 	    sdata->in_open = true;
 	    sdata->closed = false;
-	    sel_get_monotonic_time(&timeout);
-	    timeout.tv_sec += 1;
-	    sel_start_timer(sdata->timer, &timeout);
+	    timeout.tv_sec = 1;
+	    timeout.tv_usec = 0;
+	    sdata->o->start_timer(sdata->timer, &timeout);
 	}
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     return err;
 }
@@ -489,8 +501,8 @@ __stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net,
     sdata->close_data = close_data;
     sdata->closed = true;
     sdata->close_count = 2; /* One for timer and one for genio. */
-    UNLOCK(sdata->lock);
-    sel_stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
+    stel_unlock(sdata);
+    sdata->o->stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
     genio_close(sdata->net, stel_genio_close_done, NULL);
 }
 
@@ -502,9 +514,9 @@ stel_close(struct genio *net, void (*close_done)(struct genio *net,
     struct stel_data *sdata = mygenio_to_stel(net);
     int err = 0;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->closed || sdata->close_count) {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	err = EBUSY;
     } else {
 	__stel_close(sdata, close_done, close_data); /* Releases lock. */
@@ -518,13 +530,13 @@ stel_free(struct genio *net)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     sdata->in_free = true;
     if (sdata->close_count) {
 	sdata->close_done = NULL;
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
     } else if (sdata->closed) {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	stel_finish_free(sdata);
     } else {
 	__stel_close(sdata, NULL, NULL); /* Releases lock */
@@ -536,7 +548,7 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->closed)
 	goto out_unlock;
     sdata->read_enabled = enabled;
@@ -549,13 +561,13 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
 	if (!sdata->deferred_op_pending) {
 	    /* Call the read from the selector to avoid lock nesting issues. */
 	    sdata->deferred_op_pending = true;
-	    sel_run(sdata->deferred_op_runner, stel_deferred_op, sdata);
+	    sdata->o->run(sdata->deferred_op_runner);
 	}
     } else {
 	genio_set_read_callback_enable(sdata->net, enabled);
     }
  out_unlock:
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 }
 
 static void
@@ -563,7 +575,7 @@ stel_set_write_callback_enable(struct genio *net, bool enabled)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->closed)
 	goto out_unlock;
     if (sdata->xmit_enabled != enabled) {
@@ -573,7 +585,7 @@ stel_set_write_callback_enable(struct genio *net, bool enabled)
 	    genio_set_write_callback_enable(sdata->net, enabled);
     }
  out_unlock:
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 }
 
 static const struct genio_functions stel_net_funcs = {
@@ -597,14 +609,14 @@ stel_genio_read(struct genio *net, int readerr,
     unsigned char *buf = ibuf;
     unsigned int count = 0;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (!sdata->read_enabled || sdata->data_pending_len)
 	goto out_unlock;
 
     if (readerr) {
 	/* Do this here so the user can modify it. */
 	sdata->read_enabled = false;
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	mynet->cbs->read_callback(&sdata->snet.net, readerr,
 				  NULL, 0, 0);
 	goto out_finish;
@@ -613,7 +625,7 @@ stel_genio_read(struct genio *net, int readerr,
     genio_set_read_callback_enable(sdata->net, false);
     sdata->in_read = true;
     sdata->data_pos = 0;
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     while (sdata->in_urgent && buflen) {
 	if (sdata->in_urgent == 2) {
@@ -643,11 +655,11 @@ stel_genio_read(struct genio *net, int readerr,
     }
 
  out_finish:
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     stel_finish_read(sdata, readerr, count);
 
  out_unlock:
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
     
     return buf - ibuf;
 }
@@ -672,7 +684,7 @@ stel_genio_write(struct genio *net)
     struct stel_data *sdata = genio_get_user_data(net);
     bool do_cb = true;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (buffer_cursize(&sdata->tn_data.out_telnet_cmd) > 0) {
 	int err;
 
@@ -705,7 +717,7 @@ stel_genio_write(struct genio *net)
 	}
     }
  out_unlock:
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     if (do_cb) {
 	if (!sdata->xmit_enabled)
@@ -719,10 +731,10 @@ stel_genio_urgent(struct genio *net)
 {
     struct stel_data *sdata = genio_get_user_data(net);
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     sdata->in_urgent = 1;
     sdata->data_pending_len = 0;
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
     genio_set_read_callback_enable(sdata->net, true);
 }
 
@@ -777,7 +789,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	break;
     }
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     curr = sdata->reqs;
     while (curr && curr->option != cmd &&
 			val >= curr->minval && val <= curr->maxval) {
@@ -790,12 +802,12 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	else
 	    sdata->reqs = curr->next;
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     if (curr) {
 	if (curr->done)
 	    curr->done(&sdata->snet, 0, val - curr->minval, curr->cb_data);
-	free(curr);
+	sdata->o->free(sdata->o, curr);
     }
 }
 
@@ -812,16 +824,15 @@ static const struct telnet_cmd sergenio_telnet_cmds[] = {
 static const unsigned char sergenio_telnet_init_seq[] = { };
 
 static void
-sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
-			void *cb_data)
+sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
 {
     struct stel_data *sdata = cb_data;
     struct timeval timeout;
     struct stel_req *req, *curr, *prev = NULL, *to_complete = NULL;
 
-    LOCK(sdata->lock);
+    stel_lock(sdata);
     if (sdata->close_count) {
-	UNLOCK(sdata->lock);
+	stel_unlock(sdata);
 	return;
     }
 
@@ -846,48 +857,55 @@ sergenio_telnet_timeout(struct selector_s *sel, struct sel_timer_s *timer,
 	    req = req->next;
 	}
     }
-    UNLOCK(sdata->lock);
+    stel_unlock(sdata);
 
     req = to_complete;
     while (req) {
 	req->done(&sdata->snet, ETIMEDOUT, 0, req->cb_data);
 	prev = req;
 	req = req->next;
-	free(prev);
+	sdata->o->free(sdata->o, prev);
     }
 
-    sel_get_monotonic_time(&timeout);
-    timeout.tv_sec += 1;
-    sel_start_timer(timer, &timeout);
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    sdata->o->start_timer(timer, &timeout);
 }
 
 int
-sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
+sergenio_telnet_alloc(struct genio *net, struct genio_os_funcs *o,
 		      const struct sergenio_callbacks *scbs,
 		      const struct genio_callbacks *cbs, void *user_data,
 		      struct sergenio **snet)
 {
-    struct stel_data *sdata = malloc(sizeof(*sdata));
+    struct stel_data *sdata = o->zalloc(o, sizeof(*sdata));
     int err;
 
     if (!sdata)
 	return ENOMEM;
-    memset(sdata, 0, sizeof(*sdata));
-    INIT_LOCK(sdata->lock);
 
-    err = sel_alloc_timer(sel, sergenio_telnet_timeout, sdata, &sdata->timer);
-    if (err) {
-	free(sdata);
-	return err;
+    sdata->lock = o->alloc_lock(o);
+    if (!sdata->lock) {
+	o->free(o, sdata);
+	return ENOMEM;
     }
 
-    err = sel_alloc_runner(sel, &sdata->deferred_op_runner);
-    if (err) {
-	sel_free_timer(sdata->timer);
-	free(sdata);
-	return err;
+    sdata->timer = o->alloc_timer(o, sergenio_telnet_timeout, sdata);
+    if (!sdata->timer) {
+	o->free_lock(sdata->lock);
+	o->free(o, sdata);
+	return ENOMEM;
     }
 
+    sdata->deferred_op_runner = o->alloc_runner(o, stel_deferred_op, sdata);
+    if (!sdata->deferred_op_runner) {
+	o->free_timer(sdata->timer);
+	o->free_lock(sdata->lock);
+	o->free(o, sdata);
+	return ENOMEM;
+    }
+
+    sdata->o = o;
     sdata->net = net;
     sdata->snet.scbs = scbs;
     sdata->snet.net.user_data = user_data;
@@ -904,8 +922,9 @@ sergenio_telnet_alloc(struct genio *net, struct selector_s *sel,
 		      sergenio_telnet_init_seq,
 		      sizeof(sergenio_telnet_init_seq));
     if (err) {
-	sel_free_timer(sdata->timer);
-	free(sdata);
+	o->free_timer(sdata->timer);
+	o->free_lock(sdata->lock);
+	o->free(o, sdata);
     } else {
 	*snet = &sdata->snet;
     }

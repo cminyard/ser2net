@@ -29,9 +29,8 @@
 #include <stdarg.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include "utils/selector.h"
+#include "genio/genio_selector.h"
 #include "utils/utils.h"
-#include "utils/waiter.h"
 #include "genio/sergenio.h"
 
 static bool tokeq(const char *t, const char *m)
@@ -47,7 +46,7 @@ struct genio_list {
     struct sertest_context *c;
     struct genio_list *next;
 
-    struct waiter_s *waiter;
+    struct genio_waiter *waiter;
     int read_err;
     int write_err;
 
@@ -63,14 +62,16 @@ struct genio_list {
 };
 
 struct sertest_context {
-    struct selector_s *sel;
+    struct genio_os_funcs *o;
     bool *done;
     struct genio_list *genios;
     struct absout *out;
     int debug;
 };
 
-#define dbgout(c, level, fmt, ...)		\
+struct genio_os_funcs *my_o;
+
+#define dbgout(c, level, fmt, ...)				    \
     do { if (c->debug >= level) abspr(c->out, "%s: " fmt, le->name, \
 				      ##__VA_ARGS__); } while(0)
 
@@ -91,7 +92,7 @@ find_genio(struct sertest_context *c, char *name)
 static void
 finish_free_genio(struct genio_list *le)
 {
-    free_waiter(le->waiter);
+    my_o->free_waiter(le->waiter);
     free(le->name);
     free(le);
 }
@@ -101,7 +102,7 @@ free_close_done(struct genio *io, void *close_data)
 {
     struct genio_list *le = genio_get_user_data(io);
 
-    wake_waiter(le->waiter);
+    my_o->wake(le->waiter);
 }
 
 void
@@ -115,7 +116,7 @@ sertest_cleanup(struct sertest_context *c)
 	    /* Already closed, just free it. */
 	    genio_free(le->io);
 	} else {
-	    wait_for_waiter(le->waiter, 1);
+	    my_o->wait(le->waiter, NULL);
 	    genio_free(le->io);
 	}
 	finish_free_genio(le);
@@ -180,7 +181,7 @@ data_read(struct genio *net, int readerr,
     finish_op:
 	le->cmp_read = NULL;
 	genio_set_read_callback_enable(le->io, false);
-	wake_waiter(le->waiter);
+	my_o->wake(le->waiter);
     }
 
     return to_cmp;
@@ -207,7 +208,7 @@ write_ready(struct genio *net)
 	genio_set_write_callback_enable(le->io, false);
 	le->to_write = NULL;
 	le->to_write_len = 0;
-	wake_waiter(le->waiter);
+	my_o->wake(le->waiter);
     } else {
 	dbgout(c, 2, "Partial write, count=%d\n", written);
 	le->to_write += written;
@@ -256,17 +257,17 @@ alloc_genio(struct sertest_context *c,
 	return ENOMEM;
     }
 
-    le->waiter = alloc_waiter(c->sel, 0);
+    le->waiter = c->o->alloc_waiter(c->o);
     if (!le->waiter) {
 	free(le->name);
 	free(le);
 	return ENOMEM;
     }
 
-    err = str_to_genio(argv[2], c->sel, 1024, &gcbs, le, &le->io);
+    err = str_to_genio(argv[2], c->o, 1024, &gcbs, le, &le->io);
     if (err) {
 	abspr(c->out, "Error creating genio\n");
-	free_waiter(le->waiter);
+	my_o->free_waiter(le->waiter);
 	free(le->name);
 	free(le);
     } else {
@@ -290,7 +291,7 @@ open_genio(struct sertest_context *c,
 {
     int err;
 
-    err = genio_open_s(le->io, c->sel, 0);
+    err = genio_open_s(le->io, c->o);
     if (err)
 	abspr(c->out, "Error opening genio\n");
 
@@ -302,7 +303,7 @@ close_genio_done(struct genio *net, void *close_data)
 {
     struct genio_list *le = genio_get_user_data(net);
 
-    wake_waiter(le->waiter);
+    my_o->wake(le->waiter);
 }
 
 static int
@@ -316,7 +317,7 @@ close_genio(struct sertest_context *c,
     if (err) {
 	abspr(c->out, "Error closing genio\n");
     } else {
-	err = wait_for_waiter_timeout(le->waiter, 1, &timeout);
+	err = my_o->wait(le->waiter, &timeout);
 	if (err) {
 	    abspr(c->out, "Timeout out waiting for close\n");
 	    err = -1;
@@ -357,7 +358,7 @@ write_genio(struct sertest_context *c,
     le->to_write = (unsigned char *) argv[2];
     le->to_write_len = lengths[2];
     genio_set_write_callback_enable(le->io, true);
-    err = wait_for_waiter_timeout(le->waiter, 1, &timeout);
+    err = my_o->wait(le->waiter, &timeout);
     if (err) {
 	abspr(c->out, "Timed out writing genio\n");
 	genio_set_write_callback_enable(le->io, true);
@@ -400,7 +401,7 @@ check_read_genio(struct sertest_context *c,
     le->cmp_read_len = lengths[2];
     le->curr_read_byte = 0;
     genio_set_read_callback_enable(le->io, true);
-    err = wait_for_waiter_timeout(le->waiter, 1, &timeout);
+    err = my_o->wait(le->waiter, &timeout);
     if (err) {
 	genio_set_read_callback_enable(le->io, false);
 	abspr(c->out, "Timeout waiting for read data\n");
@@ -424,7 +425,7 @@ flush_read_genio(struct sertest_context *c,
 
     le->flush_read = true;
     genio_set_read_callback_enable(le->io, true);
-    wait_for_waiter_timeout(le->waiter, 1, &timeout);
+    my_o->wait(le->waiter, &timeout);
     genio_set_read_callback_enable(le->io, false);
     le->flush_read = false;
 
@@ -444,6 +445,7 @@ xfer_data_genio(struct sertest_context *c,
     struct genio_list *le2;
     struct timeval test_time, now;
     unsigned int last_read;
+    struct genio_waiter *waiter;
 
     if (argc < 4) {
 	abspr(c->out, "Not enough arguments to function\n");
@@ -466,6 +468,12 @@ xfer_data_genio(struct sertest_context *c,
     if (!data)
 	return ENOMEM;
 
+    waiter = c->o->alloc_waiter(c->o);
+    if (!waiter) {
+	free(data);
+	return ENOMEM;
+    }
+
     for (i = 0; i < size; i++)
 	data[i] = i;
 
@@ -484,7 +492,7 @@ xfer_data_genio(struct sertest_context *c,
 
     last_read = le2->cmp_read_len;
     while (!le2->read_err && !le->write_err && le2->cmp_read_len > 0) {
-	sel_select(c->sel, NULL, 0, NULL, &timeout);
+	my_o->wait(waiter, &timeout);
 	sel_get_monotonic_time(&now);
 	if (cmp_timeval(&now, &test_time) >= 0) {
 	    if (last_read == le2->cmp_read_len) {
@@ -501,11 +509,13 @@ xfer_data_genio(struct sertest_context *c,
 	}
     }
 
+    c->o->free_waiter(waiter);
+
     /* Clear these out to avoid abort on exit. */
     if (!le2->cmp_read)
-	wait_for_waiter(le2->waiter, 1);
+	my_o->wait(le2->waiter, NULL);
     if (!le->to_write)
-	wait_for_waiter(le->waiter, 1);
+	my_o->wait(le->waiter, NULL);
     le2->cmp_read = NULL;
     le->to_write = NULL;
 
@@ -598,7 +608,7 @@ sertest_cmd(struct sertest_context *c, char *cmdline)
 }
 
 struct sertest_context *
-sertest_alloc_context(struct selector_s *sel, bool *done, struct absout *out,
+sertest_alloc_context(struct genio_os_funcs *o, bool *done, struct absout *out,
 		      int debug)
 {
     struct sertest_context *c;
@@ -607,7 +617,7 @@ sertest_alloc_context(struct selector_s *sel, bool *done, struct absout *out,
     if (!c)
 	return NULL;
     memset(c, 0, sizeof(*c));
-    c->sel = sel;
+    c->o = o;
     c->done = done;
     c->out = out;
     c->debug = debug;
@@ -656,31 +666,45 @@ stdio_read_ready(int fd, void *cbdata)
     rl_callback_read_char();
 }
 
-static void
-cleanup_term(struct selector_s *sel)
-{
-    struct timeval timeout = {0, 0};
+struct genio_waiter *waiter;
 
+static void
+stdin_cleared(int fd, void *cb_data)
+{
+    struct genio_waiter *waiter = cb_data;
+
+    my_o->wake(waiter);
+}
+
+static void
+cleanup_term(struct genio_os_funcs *o)
+{
     rl_callback_handler_remove();
     printf("\b\b  \b\b");
-    sel_clear_fd_handlers(sel, 0);
-    while (sel_select(sel, NULL, 0, NULL, &timeout))
-	;
+    o->clear_fd_handlers(o, 0);
+    o->wait(waiter, NULL);
+    o->free_waiter(waiter);
+    waiter = NULL;
 }
 
 static int
-setup_term(struct selector_s *sel)
+setup_term(struct genio_os_funcs *o)
 {
     int rv;
 
-    rv = sel_set_fd_handlers(sel, 0, NULL, stdio_read_ready, NULL, NULL, NULL);
+    waiter = o->alloc_waiter(o);
+    if (!waiter)
+	return ENOMEM;
+
+    rv = o->set_fd_handlers(o, 0, waiter, stdio_read_ready, NULL, NULL,
+			    stdin_cleared);
     if (rv)
 	return rv;
 
     rl_initialize();
     rl_callback_handler_install("> ", cmd_cb_handler);
 
-    sel_set_fd_read_handler(sel, 0, SEL_FD_HANDLER_ENABLED);
+    o->set_read_handler(o, 0, true);
 
     return 0;
 }
@@ -688,7 +712,7 @@ setup_term(struct selector_s *sel)
 static void
 cleanup_sig(int sig)
 {
-    cleanup_term(my_sel);
+    cleanup_term(my_o);
     exit(1);
 }
 
@@ -726,9 +750,8 @@ process_file(const char *filename)
     FILE *f;
     struct absout my_out = { .out = pr_out, .data = NULL };
     int err;
-    struct timeval zerotime = {0, 0};
 
-    c = sertest_alloc_context(my_sel, &my_done, &my_out, debug);
+    c = sertest_alloc_context(my_o, &my_done, &my_out, debug);
     if (!c) {
 	fprintf(stderr, "Could not allocate sertest context\n");
 	exit(1);
@@ -789,9 +812,6 @@ process_file(const char *filename)
     free(buf);
 
     sertest_cleanup(c);
-
-    while (sel_select(my_sel, NULL, 0, NULL, &zerotime) > 0)
-	;
 }
 
 static void
@@ -800,22 +820,22 @@ interactive_term(void)
     struct absout my_out = { .out = pr_out, .data = NULL };
     int rv;
 
-    c = sertest_alloc_context(my_sel, &my_done, &my_out, debug);
+    c = sertest_alloc_context(my_o, &my_done, &my_out, debug);
     if (!c) {
 	fprintf(stderr, "Could not allocate sertest context\n");
 	exit(1);
     }
 
-    rv = setup_term(my_sel);
+    rv = setup_term(my_o);
     if (rv) {
 	fprintf(stderr, "Could not set up terminal: %s\n", strerror(rv));
 	exit(1);
     }
 
     while (!my_done)
-	sel_select(my_sel, NULL, 0, NULL, NULL);
+	my_o->service(my_o, NULL);
 
-    cleanup_term(my_sel);
+    cleanup_term(my_o);
 
     sertest_cleanup(c);
 }
@@ -846,6 +866,12 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
+    my_o = genio_selector_alloc(my_sel, 0);
+    if (!my_o) {
+	fprintf(stderr, "Could not alloc genio selector\n");
+	exit(1);
+    }
+
     setup_sig();
 
     if (curr_arg < argc) {
@@ -855,6 +881,7 @@ main(int argc, char *argv[])
 	interactive_term();
     }
 
+    my_o->free_funcs(my_o);
     sel_free_selector(my_sel);
 
     return 0;

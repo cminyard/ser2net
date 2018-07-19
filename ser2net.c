@@ -38,6 +38,7 @@
 #include "utils/selector.h"
 #include "utils/locking.h"
 #include "utils/uucplock.h"
+#include "genio/genio_selector.h"
 #include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
@@ -62,6 +63,7 @@ struct thread_info *threads;
 
 
 struct selector_s *ser2net_sel;
+struct genio_os_funcs *ser2net_o;
 char *rfc2217_signature = "ser2net";
 
 static char *help_string =
@@ -409,6 +411,7 @@ finish_shutdown_cleanly(void)
 	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
     } while(1);
 
+    ser2net_o->free_funcs(ser2net_o);
     sol_shutdown(); /* Free's the selector. */
 
     shutdown_dataxfer();
@@ -657,6 +660,12 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
+    ser2net_o = genio_selector_alloc(ser2net_sel, ser2net_wake_sig);
+    if (!ser2net_o) {
+	fprintf(stderr, "Could not alloc ser2net genio selector\n");
+	exit(1);
+    }
+
     setup_signals();
 
     err = init_dataxfer();
@@ -748,6 +757,7 @@ main(int argc, char *argv[])
 
     op_loop(NULL);
 
+    ser2net_o->free_funcs(ser2net_o);
     sel_free_selector(ser2net_sel);
 
     return 0;

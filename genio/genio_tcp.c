@@ -32,15 +32,14 @@
 
 #include "genio.h"
 #include "genio_internal.h"
-#include "utils/selector.h"
 #include "utils/locking.h"
 
 struct tcpn_data {
     struct genio net;
 
-    struct selector_s *sel;
+    struct genio_os_funcs *o;
 
-    DEFINE_LOCK(, lock);
+    struct genio_lock *lock;
 
     int fd;
     bool write_enabled;
@@ -73,7 +72,7 @@ struct tcpn_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    sel_runner_t *deferred_op_runner;
+    struct genio_runner *deferred_op_runner;
 
     struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
@@ -90,24 +89,26 @@ static void
 tcpn_finish_free(struct tcpn_data *ndata)
 {
     if (ndata->deferred_op_runner)
-	sel_free_runner(ndata->deferred_op_runner);
+	ndata->o->free_runner(ndata->deferred_op_runner);
     if (ndata->read_data)
-	free(ndata->read_data);
+	ndata->o->free(ndata->o, ndata->read_data);
     if (ndata->ai)
-	genio_free_addrinfo(ndata->ai);
-    free(ndata);
+	genio_free_addrinfo(ndata->o, ndata->ai);
+    if (ndata->lock)
+	ndata->o->free_lock(ndata->lock);
+    ndata->o->free(ndata->o, ndata);
 }
 
 static void
 tcpn_lock(struct tcpn_data *ndata)
 {
-    LOCK(ndata->lock);
+    ndata->o->lock(ndata->lock);
 }
 
 static void
 tcpn_unlock(struct tcpn_data *ndata)
 {
-    UNLOCK(ndata->lock);
+    ndata->o->unlock(ndata->lock);
 }
 
 static void
@@ -119,8 +120,8 @@ tcpn_ref(struct tcpn_data *ndata)
 static void
 tcpn_lock_and_ref(struct tcpn_data *ndata)
 {
+    tcpn_lock(ndata);
     ndata->refcount++;
-    LOCK(ndata->lock);
 }
 
 static void
@@ -140,7 +141,7 @@ tcpn_start_close(struct tcpn_data *ndata)
 {
     ndata->open = false;
     ndata->in_close = true;
-    sel_clear_fd_handlers(ndata->sel, ndata->fd);
+    ndata->o->clear_fd_handlers(ndata->o, ndata->fd);
 }
 
 static void
@@ -161,14 +162,11 @@ tcpn_finish_open(struct tcpn_data *ndata, int err)
 
     if (ndata->open) {
 	if (ndata->read_enabled) {
-	    sel_set_fd_read_handler(ndata->sel, ndata->fd,
-				    SEL_FD_HANDLER_ENABLED);
-	    sel_set_fd_except_handler(ndata->sel, ndata->fd,
-				      SEL_FD_HANDLER_ENABLED);
+	    ndata->o->set_read_handler(ndata->o, ndata->fd, true);
+	    ndata->o->set_except_handler(ndata->o, ndata->fd, true);
 	}
 	if (ndata->write_enabled)
-	    sel_set_fd_write_handler(ndata->sel, ndata->fd,
-				     SEL_FD_HANDLER_ENABLED);
+	    ndata->o->set_write_handler(ndata->o, ndata->fd, true);
     }
 }
 
@@ -219,15 +217,13 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
 	ndata->close_ready = false;
 	tcpn_finish_close(ndata);
     } else if (ndata->open && ndata->read_enabled) {
-	sel_set_fd_read_handler(ndata->sel, ndata->fd,
-				SEL_FD_HANDLER_ENABLED);
-	sel_set_fd_except_handler(ndata->sel, ndata->fd,
-				  SEL_FD_HANDLER_ENABLED);
+	ndata->o->set_read_handler(ndata->o, ndata->fd, true);
+	ndata->o->set_except_handler(ndata->o, ndata->fd, true);
     }
 }
 
 static void
-tcpn_deferred_op(sel_runner_t *runner, void *cbdata)
+tcpn_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct tcpn_data *ndata = cbdata;
 
@@ -246,7 +242,7 @@ tcpn_start_deferred_op(struct tcpn_data *ndata)
     if (!ndata->deferred_op_pending) {
 	tcpn_ref(ndata);
 	ndata->deferred_op_pending = true;
-	sel_run(ndata->deferred_op_runner, tcpn_deferred_op, ndata);
+	ndata->o->run(ndata->deferred_op_runner);
     }
 }
 
@@ -339,8 +335,8 @@ tcpn_handle_incoming(int fd, void *cbdata, bool urgent)
 	return;
     }
     tcpn_ref(ndata);
-    sel_set_fd_read_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
-    sel_set_fd_except_handler(ndata->sel, ndata->fd, SEL_FD_HANDLER_DISABLED);
+    ndata->o->set_read_handler(ndata->o, ndata->fd, false);
+    ndata->o->set_except_handler(ndata->o, ndata->fd, false);
     ndata->in_read = true;
     ndata->data_pos = 0;
     tcpn_unlock(ndata);
@@ -476,9 +472,9 @@ tcpn_finish_setup(struct tcpn_data *ndata, int new_fd,
 		   (void *)&optval, sizeof(optval)) == -1)
 	return errno;
 
-    if (sel_set_fd_handlers(ndata->sel, new_fd, ndata, tcpn_read_ready,
-			    tcpn_write_ready, tcpn_except_ready,
-			    tcpn_fd_cleared))
+    if (ndata->o->set_fd_handlers(ndata->o, new_fd, ndata, tcpn_read_ready,
+				  tcpn_write_ready, tcpn_except_ready,
+				  tcpn_fd_cleared))
 	return ENOMEM;
 
     ndata->raddr = (struct sockaddr *) &ndata->remote;
@@ -535,7 +531,7 @@ tcpn_open(struct genio *net, void (*open_done)(struct genio *net,
 	ai = ai->ai_next;
 	if (ai)
 	    goto retry;
-	sel_clear_fd_handlers_imm(ndata->sel, new_fd);
+	ndata->o->clear_fd_handlers_imm(ndata->o, new_fd);
 	goto out_unlock;
     }
 
@@ -552,8 +548,7 @@ tcpn_open(struct genio *net, void (*open_done)(struct genio *net,
 	ndata->open_done = open_done;
 	ndata->open_data = open_data;
 	/* Report the open from the write callback handler. */
-	sel_set_fd_write_handler(ndata->sel, ndata->fd,
-				 SEL_FD_HANDLER_ENABLED);
+	ndata->o->set_write_handler(ndata->o, ndata->fd, true);
     }
     tcpn_unlock(ndata);
 
@@ -607,16 +602,8 @@ tcpn_set_read_callback_enable(struct genio *net, bool enabled)
 	/* Call the read from the selector to avoid lock nesting issues. */
 	tcpn_start_deferred_op(ndata);
     } else {
-	int op;
-
-	if (enabled)
-	    op = SEL_FD_HANDLER_ENABLED;
-	else
-	    op = SEL_FD_HANDLER_DISABLED;
-
-	sel_set_fd_read_handler(ndata->sel, ndata->fd, op);
+	ndata->o->set_read_handler(ndata->o, ndata->fd, enabled);
     }
- out_unlock:
     tcpn_unlock(ndata);
 }
 
@@ -624,18 +611,12 @@ static void
 tcpn_set_write_callback_enable(struct genio *net, bool enabled)
 {
     struct tcpn_data *ndata = net_to_ndata(net);
-    int op;
 
     tcpn_lock(ndata);
     ndata->write_enabled = enabled;
     if (!ndata->open || ndata->in_open)
 	goto out_unlock;
-    if (enabled)
-	op = SEL_FD_HANDLER_ENABLED;
-    else
-	op = SEL_FD_HANDLER_DISABLED;
-
-    sel_set_fd_write_handler(ndata->sel, ndata->fd, op);
+    ndata->o->set_write_handler(ndata->o, ndata->fd, enabled);
  out_unlock:
     tcpn_unlock(ndata);
 }
@@ -652,28 +633,29 @@ static const struct genio_functions genio_tcp_funcs = {
 };
 
 static int
-tcpn_alloc(struct selector_s *sel,
+tcpn_alloc(struct genio_os_funcs *o,
 	   unsigned int max_read_size,
 	   struct tcpn_data **new_ndata)
 {
     struct tcpn_data *ndata;
-    int err;
 
-    ndata = malloc(sizeof(*ndata));
+    ndata = o->zalloc(o, sizeof(*ndata));
     if (!ndata)
 	goto out_nomem;
-    memset(ndata, 0, sizeof(*ndata));
-    ndata->sel = sel;
+    ndata->o = o;
 
-    err = sel_alloc_runner(ndata->sel, &ndata->deferred_op_runner);
-    if (err)
+    ndata->deferred_op_runner = ndata->o->alloc_runner(ndata->o,
+						       tcpn_deferred_op, ndata);
+    if (!ndata->deferred_op_runner)
 	goto out_nomem;
 
-    INIT_LOCK(ndata->lock);
+    ndata->lock = o->alloc_lock(o);
+    if (!ndata->lock)
+	goto out_nomem;
     tcpn_ref(ndata);
 
     ndata->max_read_size = max_read_size;
-    ndata->read_data = malloc(ndata->max_read_size);
+    ndata->read_data = o->zalloc(o, ndata->max_read_size);
     if (!ndata->read_data)
 	goto out_nomem;
 
@@ -692,7 +674,7 @@ tcpn_alloc(struct selector_s *sel,
 struct tcpna_data {
     struct genio_acceptor acceptor;
 
-    struct selector_s *sel;
+    struct genio_os_funcs *o;
 
     char *name;
 
@@ -735,12 +717,12 @@ static void
 tcpna_finish_free(struct tcpna_data *nadata)
 {
     if (nadata->name)
-	free(nadata->name);
+	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
-	genio_free_addrinfo(nadata->ai);
+	genio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->acceptfds)
-	free(nadata->acceptfds);
-    free(nadata);
+	nadata->o->free(nadata->o, nadata->acceptfds);
+    nadata->o->free(nadata->o, nadata);
 }
 
 static void
@@ -798,7 +780,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    err = tcpn_alloc(nadata->sel, nadata->max_read_size, &ndata);
+    err = tcpn_alloc(nadata->o, nadata->max_read_size, &ndata);
     if (err) {
 	syslog(LOG_ERR, "Error allcoating tcp port %s: %s", nadata->name,
 	       strerror(err));
@@ -840,12 +822,12 @@ tcpna_fd_cleared(int fd, void *cbdata)
 }
 
 static void
-tcpna_set_fd_enables(struct tcpna_data *nadata, int op)
+tcpna_set_fd_enables(struct tcpna_data *nadata, bool enable)
 {
     unsigned int i;
 
     for (i = 0; i < nadata->nr_acceptfds; i++)
-	sel_set_fd_read_handler(nadata->sel, nadata->acceptfds[i].fd, op);
+	nadata->o->set_read_handler(nadata->o, nadata->acceptfds[i].fd, enable);
 }
 
 static int
@@ -860,14 +842,14 @@ tcpna_startup(struct genio_acceptor *acceptor)
 	goto out_unlock;
     }
 
-    nadata->acceptfds = open_socket(nadata->sel,
+    nadata->acceptfds = open_socket(nadata->o,
 				    nadata->ai, tcpna_readhandler, NULL, nadata,
 				    &nadata->nr_acceptfds, tcpna_fd_cleared);
     if (nadata->acceptfds == NULL) {
 	rv = errno;
     } else {
 	nadata->setup = true;
-	tcpna_set_fd_enables(nadata, SEL_FD_HANDLER_ENABLED);
+	tcpna_set_fd_enables(nadata, true);
 	nadata->enabled = true;
 	nadata->shutdown_done = NULL;
 	tcpna_ref(nadata);
@@ -891,7 +873,7 @@ _tcpna_shutdown(struct tcpna_data *nadata,
     nadata->shutdown_data = shutdown_data;
     nadata->nr_accept_close_waiting = nadata->nr_acceptfds;
     for (i = 0; i < nadata->nr_acceptfds; i++)
-	sel_clear_fd_handlers(nadata->sel, nadata->acceptfds[i].fd);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->acceptfds[i].fd);
     nadata->setup = false;
     nadata->enabled = false;
 }
@@ -919,16 +901,10 @@ static void
 tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    int op;
-
-    if (enabled)
-	op = SEL_FD_HANDLER_ENABLED;
-    else
-	op = SEL_FD_HANDLER_DISABLED;
 
     tcpna_lock(nadata);
     if (nadata->enabled != enabled) {
-	tcpna_set_fd_enables(nadata, op);
+	tcpna_set_fd_enables(nadata, enabled);
 	nadata->enabled = enabled;
     }
     tcpna_unlock(nadata);
@@ -955,7 +931,7 @@ tcpna_connect(struct genio_acceptor *acceptor, void *addr,
     struct genio *net;
     int err;
 
-    err = tcp_genio_alloc(addr, nadata->sel, nadata->max_read_size,
+    err = tcp_genio_alloc(addr, nadata->o, nadata->max_read_size,
 			  NULL, NULL, &net);
     if (err)
 	return err;
@@ -975,7 +951,7 @@ static const struct genio_acceptor_functions genio_acc_tcp_funcs = {
 
 int
 tcp_genio_acceptor_alloc(const char *name,
-			 struct selector_s *sel,
+			 struct genio_os_funcs *o,
 			 struct addrinfo *iai,
 			 unsigned int max_read_size,
 			 const struct genio_acceptor_callbacks *cbs,
@@ -984,17 +960,16 @@ tcp_genio_acceptor_alloc(const char *name,
 {
     struct genio_acceptor *acc;
     struct tcpna_data *nadata;
-    struct addrinfo *ai = genio_dup_addrinfo(iai);
+    struct addrinfo *ai = genio_dup_addrinfo(o, iai);
 
     if (!ai)
 	return ENOMEM;
 
-    nadata = malloc(sizeof(*nadata));
+    nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
 	goto out_nomem;
-    memset(nadata, 0, sizeof(*nadata));
 
-    nadata->sel = sel;
+    nadata->o = o;
     tcpna_ref(nadata);
 
     nadata->name = strdup(name);
@@ -1017,7 +992,7 @@ tcp_genio_acceptor_alloc(const char *name,
 
  out_nomem:
     if (ai)
-	genio_free_addrinfo(ai);
+	genio_free_addrinfo(o, ai);
     if (nadata) {
 	if (nadata->name)
 	    free(nadata->name);
@@ -1028,7 +1003,7 @@ tcp_genio_acceptor_alloc(const char *name,
 
 int
 tcp_genio_alloc(struct addrinfo *iai,
-		struct selector_s *sel,
+		struct genio_os_funcs *o,
 		unsigned int max_read_size,
 		const struct genio_callbacks *cbs,
 		void *user_data,
@@ -1043,13 +1018,13 @@ tcp_genio_alloc(struct addrinfo *iai,
 	    return E2BIG;
     }
 
-    ai = genio_dup_addrinfo(iai);
+    ai = genio_dup_addrinfo(o, iai);
     if (!ai)
 	return ENOMEM;
 
-    err = tcpn_alloc(sel, max_read_size, &ndata);
+    err = tcpn_alloc(o, max_read_size, &ndata);
     if (err) {
-	genio_free_addrinfo(ai);
+	genio_free_addrinfo(o, ai);
 	return err;
     }
 

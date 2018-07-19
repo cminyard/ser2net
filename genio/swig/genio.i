@@ -25,7 +25,7 @@
 #include <sgtty.h>
 #include "genio/genio.h"
 #include "genio/sergenio.h"
-#include "utils/selector.h"
+#include "genio/genio_selector.h"
 #include "utils/waiter.h"
 
 #if PYTHON_HAS_POSIX_THREADS
@@ -121,6 +121,8 @@ wake_curr_waiter(void)
 #include "genio_python.h"
 
 static struct selector_s *genio_sel;
+static struct genio_os_funcs *genio_o;
+static int wake_sig;
 
 static int
 genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
@@ -240,11 +242,12 @@ struct waiter_s { };
 	data->refcount = 1;
 	data->handler_val = ref_swig_cb(handler, read_callback);
 
-	rv = str_to_genio(str, genio_sel, max_read_size, &gen_cbs,
+	rv = str_to_genio(str, genio_o, max_read_size, &gen_cbs,
 			  data, &io);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
+	    ser_err_handle("genio alloc", rv);
 	}
 			  
 	return io;
@@ -288,7 +291,7 @@ struct waiter_s { };
 
     %rename(open_s) open_st;
     void open_st() {
-	err_handle("open_s", genio_open_s(self, genio_sel, 0));
+	err_handle("open_s", genio_open_s(self, genio_o));
     }
 
     %rename(close) closet;
@@ -364,7 +367,7 @@ struct waiter_s { };
 	struct sergenio_b *b = NULL;
 	int rv;
 
-	rv = sergenio_b_alloc(self, genio_sel, 0, &b);
+	rv = sergenio_b_alloc(self, genio_o, &b);
 	if (!rv)
 	    rv = sergenio_##name##_b(b, &name);
 	if (rv)
@@ -575,7 +578,7 @@ struct waiter_s { };
 
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_genio_acceptor(str, genio_sel, max_read_size, &gen_acc_cbs,
+	rv = str_to_genio_acceptor(str, genio_o, max_read_size, &gen_acc_cbs,
 			  data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
@@ -610,7 +613,7 @@ struct waiter_s { };
 
 %extend waiter_s {
     waiter_s() {
-	return alloc_waiter(genio_sel, 0);
+	return alloc_waiter(genio_sel, wake_sig);
     }
 
     ~waiter_s() {
@@ -644,6 +647,7 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 #ifdef USE_POSIX_THREADS
 	struct sigaction act;
 
+	wake_sig = SIGUSR1;
 	err = pthread_key_create(&genio_thread_key, genio_key_del);
 	if (err) {
 	    fprintf(stderr, "Error creating genio thread key: %s, giving up\n",
@@ -670,6 +674,12 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 	if (err) {
 	    fprintf(stderr, "Unable to allocate selector: %s, giving up\n",
 		    strerror(err));
+	    exit(1);
+	}
+
+	genio_o = genio_selector_alloc(genio_sel, wake_sig);
+	if (!genio_o) {
+	    fprintf(stderr, "Unable to allocate genio os funcs, giving up\n");
 	    exit(1);
 	}
     }

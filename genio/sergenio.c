@@ -21,7 +21,6 @@
 #include <string.h>
 #include <errno.h>
 
-#include "utils/waiter.h"
 #include "sergenio_internal.h"
 
 struct genio *
@@ -131,19 +130,19 @@ sergenio_get_user_data(struct sergenio *snet)
 
 struct sergenio_b {
     struct sergenio *snet;
-    struct selector_s *sel;
-    int wake_sig;
+    struct genio_os_funcs *o;
 };
 
 struct sergenio_b_data {
-    struct waiter_s *waiter;
+    struct genio_os_funcs *o;
+    struct genio_waiter *waiter;
     int err;
     int val;
 };
 
 int
-sergenio_b_alloc(struct sergenio *snet, struct selector_s *sel,
-		 int wake_sig, struct sergenio_b **new_sbnet)
+sergenio_b_alloc(struct sergenio *snet, struct genio_os_funcs *o,
+		 struct sergenio_b **new_sbnet)
 {
     struct sergenio_b *sbnet = malloc(sizeof(*sbnet));
 
@@ -151,8 +150,7 @@ sergenio_b_alloc(struct sergenio *snet, struct selector_s *sel,
 	return ENOMEM;
 
     sbnet->snet = snet;
-    sbnet->sel = sel;
-    sbnet->wake_sig = wake_sig;
+    sbnet->o = o;
     *new_sbnet = sbnet;
 
     return 0;
@@ -170,7 +168,7 @@ static void sergenio_done(struct sergenio *snet, int err,
 
     data->err = err;
     data->val = val;
-    wake_waiter(data->waiter);
+    data->o->wake(data->waiter);
 }
 
 int
@@ -179,15 +177,16 @@ sergenio_baud_b(struct sergenio_b *sbnet, int *baud)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_baud(sbnet->snet, *baud, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*baud = data.val;
@@ -201,15 +200,16 @@ sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_datasize(sbnet->snet, *datasize, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*datasize = data.val;
@@ -223,15 +223,16 @@ sergenio_parity_b(struct sergenio_b *sbnet, int *parity)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_parity(sbnet->snet, *parity, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*parity = data.val;
@@ -245,15 +246,16 @@ sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_stopbits(sbnet->snet, *stopbits, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*stopbits = data.val;
@@ -267,15 +269,16 @@ sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_flowcontrol(sbnet->snet, *flowcontrol, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*flowcontrol = data.val;
@@ -289,15 +292,16 @@ sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_sbreak(sbnet->snet, *breakv, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*breakv = data.val;
@@ -311,15 +315,16 @@ sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_dtr(sbnet->snet, *dtr, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*dtr = data.val;
@@ -333,15 +338,16 @@ sergenio_rts_b(struct sergenio_b *sbnet, int *rts)
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = alloc_waiter(sbnet->sel, sbnet->wake_sig);
+    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
+    data.o = sbnet->o;
     err = sergenio_rts(sbnet->snet, *rts, sergenio_done, &data);
     if (!err)
-	wait_for_waiter(data.waiter, 1);
-    free_waiter(data.waiter);
+	sbnet->o->wait(data.waiter, NULL);
+    sbnet->o->free_waiter(data.waiter);
     err = data.err;
     if (!err)
 	*rts = data.val;
@@ -358,7 +364,7 @@ sergenio_set_ser_cbs(struct sergenio *sio,
 
 
 int
-str_to_sergenio(const char *str, struct selector_s *sel,
+str_to_sergenio(const char *str, struct genio_os_funcs *o,
 		unsigned int read_buffer_size,
 		const struct sergenio_callbacks *scbs,
 		const struct genio_callbacks *cbs, void *user_data,
@@ -370,15 +376,15 @@ str_to_sergenio(const char *str, struct selector_s *sel,
 	struct genio *io;
 
 	str += 7;
-	err = str_to_genio(str, sel, read_buffer_size, NULL, NULL, &io);
+	err = str_to_genio(str, o, read_buffer_size, NULL, NULL, &io);
 	if (err)
 	    return err;
-	err = sergenio_telnet_alloc(io, sel, scbs, cbs, user_data, snet);
+	err = sergenio_telnet_alloc(io, o, scbs, cbs, user_data, snet);
 	if (err)
 	    genio_free(io);
     } else if (strncmp(str, "termios,", 8) == 0) {
 	str += 8;
-	err = sergenio_termios_alloc(str, sel, read_buffer_size, scbs,
+	err = sergenio_termios_alloc(str, o, read_buffer_size, scbs,
 				     cbs, user_data, snet);
     } else {
 	err = EINVAL;

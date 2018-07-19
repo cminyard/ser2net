@@ -31,7 +31,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include "utils/selector.h"
 
 struct sergenio;
 
@@ -129,8 +128,8 @@ void *sergenio_get_user_data(struct sergenio *net);
  */
 struct sergenio_b;
 
-int sergenio_b_alloc(struct sergenio *snet, struct selector_s *sel,
-		     int wake_sig, struct sergenio_b **new_sbnet);
+int sergenio_b_alloc(struct sergenio *snet, struct genio_os_funcs *o,
+		     struct sergenio_b **new_sbnet);
 void sergenio_b_free(struct sergenio_b *sbnet);
 int sergenio_baud_b(struct sergenio_b *sbnet, int *baud);
 int sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize);
@@ -164,18 +163,18 @@ void sergenio_set_ser_cbs(struct sergenio *sio,
 /*
  * Allocate a sergenio based on a string.
  */
-int str_to_sergenio(const char *str, struct selector_s *sel,
+int str_to_sergenio(const char *str, struct genio_os_funcs *o,
 		    unsigned int read_buffer_size,
 		    const struct sergenio_callbacks *scbs,
 		    const struct genio_callbacks *cbs, void *user_data,
 		    struct sergenio **snet);
 
-int sergenio_telnet_alloc(struct genio *genio, struct selector_s *sel,
+int sergenio_telnet_alloc(struct genio *genio, struct genio_os_funcs *o,
 			  const struct sergenio_callbacks *scbs,
 			  const struct genio_callbacks *cbs, void *user_data,
 			  struct sergenio **snet);
 
-int sergenio_termios_alloc(const char *devname, struct selector_s *sel,
+int sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 			   unsigned int read_buffer_size,
 			   const struct sergenio_callbacks *scbs,
 			   const struct genio_callbacks *cbs, void *user_data,

@@ -30,17 +30,16 @@
 #include "genio.h"
 #include "genio_internal.h"
 #include "utils/locking.h"
-#include "utils/selector.h"
 
 struct stdiona_data {
-    DEFINE_LOCK(, lock);
+    struct genio_lock *lock;
 
-    struct selector_s *sel;
+    struct genio_os_funcs *o;
 
     int argc;
     char **argv;
 
-    sel_runner_t *connect_runner;
+    struct genio_runner *connect_runner;
 
     bool enabled;
     int old_flags_ostdin;
@@ -92,7 +91,7 @@ struct stdiona_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    sel_runner_t *deferred_op_runner;
+    struct genio_runner *deferred_op_runner;
 
     struct genio net;
     struct genio_acceptor acceptor;
@@ -100,6 +99,18 @@ struct stdiona_data {
 
 #define net_to_nadata(net) container_of(net, struct stdiona_data, net);
 #define acc_to_nadata(acc) container_of(acc, struct stdiona_data, acceptor);
+
+static void
+stdiona_lock(struct stdiona_data *nadata)
+{
+    nadata->o->lock(nadata->lock);
+}
+
+static void
+stdiona_unlock(struct stdiona_data *nadata)
+{
+    nadata->o->unlock(nadata->lock);
+}
 
 static int
 stdion_write(struct genio *net, unsigned int *count,
@@ -167,9 +178,9 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 
     if (err) {
 	/* Do this here so the user can modify it. */
-	LOCK(nadata->lock);
+	stdiona_lock(nadata);
 	nadata->read_enabled = false;
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
     }
 
     count = net->cbs->read_callback(net, err,
@@ -177,7 +188,7 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 				    nadata->data_pending_len,
 				    nadata->read_flags);
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (!err && count < nadata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
@@ -191,41 +202,36 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
     nadata->in_read = false;
 
     if (nadata->read_enabled) {
-	sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
-				SEL_FD_HANDLER_ENABLED);
+	nadata->o->set_read_handler(nadata->o, nadata->ostdout, true);
 	if (nadata->ostderr != -1)
-	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr,
-				    SEL_FD_HANDLER_ENABLED);
+	    nadata->o->set_read_handler(nadata->o, nadata->ostderr, true);
     }
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static void
-stdion_deferred_op(sel_runner_t *runner, void *cbdata)
+stdion_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
     struct genio *net = &nadata->net;
     bool in_read;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
  restart:
     if (nadata->in_open) {
-	int op;
-
 	if (nadata->open_done) {
-	    UNLOCK(nadata->lock);
+	    stdiona_unlock(nadata);
 	    nadata->open_done(&nadata->net, 0, nadata->open_data);
-	    LOCK(nadata->lock);
+	    stdiona_lock(nadata);
 	}
 	nadata->in_open = false;
-	op = nadata->read_enabled ? SEL_FD_HANDLER_ENABLED :
-	    SEL_FD_HANDLER_DISABLED;
-	sel_set_fd_read_handler(nadata->sel, nadata->ostdout, op);
+	nadata->o->set_read_handler(nadata->o, nadata->ostdout,
+				    nadata->read_enabled);
 	if (nadata->ostderr != -1)
-	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr, op);
-	op = nadata->xmit_enabled ? SEL_FD_HANDLER_ENABLED :
-	    SEL_FD_HANDLER_DISABLED;
-	sel_set_fd_write_handler(nadata->sel, nadata->ostdin, op);
+	    nadata->o->set_read_handler(nadata->o, nadata->ostderr,
+					nadata->read_enabled);
+	nadata->o->set_write_handler(nadata->o, nadata->ostdout,
+				     nadata->xmit_enabled);
     }
 
     if (nadata->deferred_read) {
@@ -234,9 +240,9 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     }
 
     if (in_read) {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	stdion_finish_read(nadata, 0);
-	LOCK(nadata->lock);
+	stdiona_lock(nadata);
     }
 
     if (nadata->deferred_read)
@@ -247,12 +253,12 @@ stdion_deferred_op(sel_runner_t *runner, void *cbdata)
     if (nadata->in_close) {
 	nadata->in_close = false;
 	nadata->in_open = false;
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	if (nadata->close_done)
 	    nadata->close_done(net, nadata->close_data);
 	return;
     }
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static void
@@ -261,7 +267,7 @@ stdion_start_deferred_op(struct stdiona_data *nadata)
     if (!nadata->deferred_op_pending) {
 	/* Call the read from the selector to avoid lock nesting issues. */
 	nadata->deferred_op_pending = true;
-	sel_run(nadata->deferred_op_runner, stdion_deferred_op, nadata);
+	nadata->o->run(nadata->deferred_op_runner);
     }
 }
 
@@ -272,16 +278,18 @@ stdiona_finish_free(struct stdiona_data *nadata)
 	int i;
 
 	for (i = 0; nadata->argv[i]; i++)
-	    free(nadata->argv[i]);
-	free(nadata->argv);
+	    nadata->o->free(nadata->o, nadata->argv[i]);
+	nadata->o->free(nadata->o, nadata->argv);
     }
     if (nadata->deferred_op_runner)
-	sel_free_runner(nadata->deferred_op_runner);
+	nadata->o->free_runner(nadata->deferred_op_runner);
     if (nadata->connect_runner)
-	sel_free_runner(nadata->connect_runner);
+	nadata->o->free_runner(nadata->connect_runner);
     if (nadata->read_data)
-	free(nadata->read_data);
-    free(nadata);
+	nadata->o->free(nadata->o, nadata->read_data);
+    if (nadata->lock)
+	nadata->o->free_lock(nadata->lock);
+    nadata->o->free(nadata->o, nadata);
 }
 
 static void
@@ -289,16 +297,16 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     nadata->oio_count--;
     if (nadata->oio_count == 0) {
 	close(nadata->ostdin);
 	close(nadata->ostdout);
 	close(nadata->ostderr);
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	if (nadata->close_done)
 	    nadata->close_done(&nadata->net, nadata->close_data);
-	LOCK(nadata->lock);
+	stdiona_lock(nadata);
 	nadata->in_close = false;
 	nadata->in_open = false;
 	if (nadata->in_free) {
@@ -306,7 +314,7 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 	    return;
 	}
     }
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static void
@@ -314,7 +322,7 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (nadata->closed)
 	goto out_unlock;
     nadata->read_enabled = enabled;
@@ -326,41 +334,28 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
 	nadata->in_read = true;
 	stdion_start_deferred_op(nadata);
     } else {
-	int op;
-
-	if (enabled)
-	    op = SEL_FD_HANDLER_ENABLED;
-	else
-	    op = SEL_FD_HANDLER_DISABLED;
-
-	sel_set_fd_read_handler(nadata->sel, nadata->ostdout, op);
+	nadata->o->set_read_handler(nadata->o, nadata->ostdout, enabled);
 	if (nadata->ostderr != -1)
-	    sel_set_fd_read_handler(nadata->sel, nadata->ostderr, op);
+	    nadata->o->set_read_handler(nadata->o, nadata->ostderr, enabled);
     }
  out_unlock:
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static void
 stdion_set_write_callback_enable(struct genio *net, bool enabled)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
-    int op;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (nadata->closed)
 	goto out_unlock;
     nadata->xmit_enabled = enabled;
     if (nadata->in_open)
 	goto out_unlock;
-    if (enabled)
-	op = SEL_FD_HANDLER_ENABLED;
-    else
-	op = SEL_FD_HANDLER_DISABLED;
-
-    sel_set_fd_write_handler(nadata->sel, nadata->ostdin, op);
+    nadata->o->set_write_handler(nadata->o, nadata->ostdin, enabled);
  out_unlock:
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static void
@@ -369,23 +364,21 @@ stdion_read_ready(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     int rv, err = 0;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (!nadata->read_enabled || nadata->in_read) {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	return;
     }
-    sel_set_fd_read_handler(nadata->sel, nadata->ostdout,
-			    SEL_FD_HANDLER_DISABLED);
+    nadata->o->set_read_handler(nadata->o, nadata->ostdout, false);
     if (nadata->ostderr != -1)
-	sel_set_fd_read_handler(nadata->sel, nadata->ostderr,
-				SEL_FD_HANDLER_DISABLED);
+	nadata->o->set_read_handler(nadata->o, nadata->ostderr, false);
     if (fd == nadata->ostderr)
 	nadata->read_flags = GENIO_ERR_OUTPUT;
     else
 	nadata->read_flags = 0;
     nadata->in_read = true;
     nadata->data_pos = 0;
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 
  retry:
     rv = read(fd, nadata->read_data, nadata->max_read_size);
@@ -426,7 +419,7 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
     int stdoutpipe[2] = {-1, -1};
     int stderrpipe[2] = {-1, -1};
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
 
     if (!nadata->closed || nadata->in_close) {
 	err = EBUSY;
@@ -468,23 +461,23 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
 	goto out_err;
     }
 
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostdout, nadata,
-			      stdion_read_ready, NULL, NULL,
-			      stdio_client_fd_cleared);
+    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostdout, nadata,
+				     stdion_read_ready, NULL, NULL,
+				     stdio_client_fd_cleared);
     if (err)
 	goto out_err;
     nadata->oio_count++;
 
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostderr, nadata,
-			      stdion_read_ready, NULL, NULL,
-			      stdio_client_fd_cleared);
+    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostderr, nadata,
+				     stdion_read_ready, NULL, NULL,
+				     stdio_client_fd_cleared);
     if (err)
 	goto out_err;
     nadata->oio_count++;
 
-    err = sel_set_fd_handlers(nadata->sel, nadata->ostdin, nadata,
-			      NULL, stdion_write_ready, NULL,
-			      stdio_client_fd_cleared);
+    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostdin, nadata,
+				     NULL, stdion_write_ready, NULL,
+				     stdio_client_fd_cleared);
     if (err)
 	goto out_err;
     nadata->oio_count++;
@@ -521,7 +514,7 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
     nadata->open_done = open_done;
     nadata->open_data = open_data;
     stdion_start_deferred_op(nadata);
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 
     return 0;
 
@@ -535,11 +528,11 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
 
     if (nadata->oio_count) {
 	if (nadata->oio_count > 0)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
 	if (nadata->oio_count > 1)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostderr);
 	if (nadata->oio_count > 2)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
     } else {
 	if (stdinpipe[1] != -1)
 	    close(stdinpipe[1]);
@@ -549,7 +542,7 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
 	    close(stderrpipe[0]);
     }
  out_unlock:
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 
     return err;
 }
@@ -564,10 +557,10 @@ __stdion_close(struct stdiona_data *nadata,
     nadata->close_done = close_done;
     nadata->close_data = close_data;
     if (nadata->argv) {
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
 	if (nadata->ostderr != -1)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostderr);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostderr);
     } else {
 	stdion_start_deferred_op(nadata);
     }
@@ -581,12 +574,12 @@ stdion_close(struct genio *net, void (*close_done)(struct genio *net,
     struct stdiona_data *nadata = net_to_nadata(net);
     int err = 0;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (nadata->closed || nadata->in_close)
 	err = EBUSY;
     else
 	__stdion_close(nadata, close_done, close_data);
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 
     return err;
 }
@@ -596,22 +589,22 @@ stdion_free(struct genio *net)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     nadata->in_free = true;
     if (nadata->in_close) {
 	nadata->close_done = NULL;
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
     } else if (nadata->closed) {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	stdiona_finish_free(nadata);
     } else {
 	__stdion_close(nadata, NULL, NULL);
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
     }
 }
 
 static void
-stdiona_do_connect(sel_runner_t *runner, void *cbdata)
+stdiona_do_connect(struct genio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
@@ -624,7 +617,7 @@ stdiona_fd_cleared(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct genio_acceptor *acceptor = &nadata->acceptor;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     nadata->oio_count--;
     fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
     fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
@@ -632,13 +625,13 @@ stdiona_fd_cleared(int fd, void *cbdata)
     if (nadata->shutdown_done)
 	nadata->shutdown_done(acceptor, nadata->shutdown_data);
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     nadata->in_shutdown = false;
     if (nadata->in_free) {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	stdiona_finish_free(nadata);
     } else {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
     }
 }
 
@@ -648,7 +641,7 @@ stdiona_startup(struct genio_acceptor *acceptor)
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (nadata->in_shutdown) {
 	rv = EAGAIN;
 	goto out_unlock;
@@ -679,33 +672,33 @@ stdiona_startup(struct genio_acceptor *acceptor)
 	    goto out_err;
 	}
 
-	rv = sel_set_fd_handlers(nadata->sel, nadata->ostdin,
-				 nadata, NULL, stdion_write_ready, NULL,
-				 stdiona_fd_cleared);
+	rv = nadata->o->set_fd_handlers(nadata->o, nadata->ostdin,
+					nadata, NULL, stdion_write_ready, NULL,
+					stdiona_fd_cleared);
 	if (rv)
 	    goto out_err;
 	nadata->oio_count++;
 
-	rv = sel_set_fd_handlers(nadata->sel, nadata->ostdout,
-				 nadata, stdion_read_ready, NULL, NULL,
-				 stdiona_fd_cleared);
+	rv = nadata->o->set_fd_handlers(nadata->o, nadata->ostdout,
+					nadata, stdion_read_ready, NULL, NULL,
+					stdiona_fd_cleared);
 	if (rv)
 	    goto out_err;
 	nadata->oio_count++;
 
 	nadata->enabled = true;
-	sel_run(nadata->connect_runner, stdiona_do_connect, nadata);
+	nadata->o->run(nadata->connect_runner);
     }
  out_unlock:
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
     return rv;
 
  out_err:
     if (nadata->oio_count) {
 	if (nadata->oio_count > 1)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
 	if (nadata->oio_count > 2)
-	    sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
     } else {
 	fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
 	fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
@@ -722,18 +715,18 @@ stdiona_shutdown(struct genio_acceptor *acceptor,
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     if (nadata->enabled) {
 	nadata->enabled = false;
 	nadata->in_shutdown = true;
 	nadata->shutdown_done = shutdown_done;
 	nadata->shutdown_data = shutdown_data;
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
     } else {
 	rv = EAGAIN;
     }
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
     
     return rv;
 }
@@ -749,18 +742,18 @@ stdiona_free(struct genio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
 
-    LOCK(nadata->lock);
+    stdiona_lock(nadata);
     nadata->in_free = true;
     if (nadata->enabled) {
 	nadata->enabled = false;
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdin);
-	sel_clear_fd_handlers(nadata->sel, nadata->ostdout);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
+	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
     } else {
-	UNLOCK(nadata->lock);
+	stdiona_unlock(nadata);
 	stdiona_finish_free(nadata);
 	return;
     }
-    UNLOCK(nadata->lock);
+    stdiona_unlock(nadata);
 }
 
 static const struct genio_functions genio_stdio_funcs = {
@@ -782,32 +775,33 @@ static const struct genio_acceptor_functions genio_acc_stdio_funcs = {
 };
 
 static int
-stdio_nadata_setup(struct selector_s *sel, unsigned int max_read_size,
+stdio_nadata_setup(struct genio_os_funcs *o, unsigned int max_read_size,
 		   struct stdiona_data **new_nadata)
 {
     int err = 0;
     struct stdiona_data *nadata;
 
-    nadata = malloc(sizeof(*nadata));
+    nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
 	goto out_nomem;
-    memset(nadata, 0, sizeof(*nadata));
-    nadata->sel = sel;
+    nadata->o = o;
 
     nadata->max_read_size = max_read_size;
-    nadata->read_data = malloc(max_read_size);
+    nadata->read_data = o->zalloc(o, max_read_size);
     if (!nadata->read_data)
 	goto out_nomem;
 
-    err = sel_alloc_runner(nadata->sel, &nadata->deferred_op_runner);
+    nadata->deferred_op_runner = o->alloc_runner(o, stdion_deferred_op, nadata);
+    if (!nadata->deferred_op_runner)
+	goto out_err;
+
+    nadata->connect_runner = o->alloc_runner(o, stdiona_do_connect, nadata);
     if (err)
 	goto out_err;
 
-    err = sel_alloc_runner(nadata->sel, &nadata->connect_runner);
-    if (err)
+    nadata->lock = o->alloc_lock(o);
+    if (!nadata->lock)
 	goto out_err;
-
-    INIT_LOCK(nadata->lock);
 
     nadata->net.funcs = &genio_stdio_funcs;
     nadata->net.type = GENIO_TYPE_STDIO;
@@ -827,7 +821,7 @@ stdio_nadata_setup(struct selector_s *sel, unsigned int max_read_size,
 }
 
 int
-stdio_genio_acceptor_alloc(struct selector_s *sel,
+stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
 			   unsigned int max_read_size,
 			   const struct genio_acceptor_callbacks *cbs,
 			   void *user_data,
@@ -837,7 +831,7 @@ stdio_genio_acceptor_alloc(struct selector_s *sel,
     struct genio_acceptor *acc;
     struct stdiona_data *nadata = NULL;
 
-    err = stdio_nadata_setup(sel, max_read_size, &nadata);
+    err = stdio_nadata_setup(o, max_read_size, &nadata);
     if (err)
 	return err;
 
@@ -858,7 +852,7 @@ stdio_genio_acceptor_alloc(struct selector_s *sel,
 
 int
 stdio_genio_alloc(char *const argv[],
-		  struct selector_s *sel,
+		  struct genio_os_funcs *o,
 		  unsigned int max_read_size,
 		  const struct genio_callbacks *cbs,
 		  void *user_data,
@@ -868,16 +862,15 @@ stdio_genio_alloc(char *const argv[],
     struct stdiona_data *nadata = NULL;
     int i, argc;
 
-    err = stdio_nadata_setup(sel, max_read_size, &nadata);
+    err = stdio_nadata_setup(o, max_read_size, &nadata);
     if (err)
 	return err;
 
     for (argc = 0; argv[argc]; argc++)
 	;
-    nadata->argv = malloc((argc + 1) * sizeof(*nadata->argv));
+    nadata->argv = o->zalloc(o, (argc + 1) * sizeof(*nadata->argv));
     if (!nadata->argv)
 	goto out_nomem;
-    memset(nadata->argv, 0, (argc + 1) * sizeof(*nadata->argv));
     for (i = 0; i < argc; i++) {
 	nadata->argv[i] = strdup(argv[i]);
 	if (!nadata->argv[i])

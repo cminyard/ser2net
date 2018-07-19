@@ -776,7 +776,7 @@ controller_init(char *controller_port)
 	}
     }
 
-    rv = str_to_genio_acceptor(controller_port, ser2net_sel, 64,
+    rv = str_to_genio_acceptor(controller_port, ser2net_o, 64,
 			       &controller_genio_acceptor_callbacks, NULL,
 			       &controller_acceptor);
     if (rv) {

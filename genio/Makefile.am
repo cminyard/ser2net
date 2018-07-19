@@ -3,10 +3,12 @@ AM_CFLAGS = -I$(top_srcdir)
 
 noinst_LIBRARIES = libgenio.a
 
-noinst_HEADERS = genio.h genio_internal.h sergenio.h sergenio_internal.h
+noinst_HEADERS = genio.h genio_internal.h sergenio.h sergenio_internal.h \
+	genio_selector.h
 
 MY_SOURCES = genio.c genio_tcp.c genio_udp.c genio_stdio.c \
-	sergenio.c sergenio_telnet.c sergenio_termios.c
+	sergenio.c sergenio_telnet.c sergenio_termios.c \
+	genio_selector.c
 
 noinst_lib_LTLIBRARIES = libser2net_genio.la
 noinst_libdir = $(shell readlink -f $(top_builddir)/dummy_install)

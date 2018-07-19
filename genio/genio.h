@@ -30,7 +30,70 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include "utils/selector.h"
+
+/*
+ * Function pointers to provide OS functions.
+ */
+
+struct genio_lock;
+struct genio_timer;
+struct genio_runner;
+
+struct genio_os_funcs {
+    void *user_data;
+
+    void *(*zalloc)(struct genio_os_funcs *f, unsigned int size);
+    void (*free)(struct genio_os_funcs *f, void *data);
+
+    struct genio_lock *(*alloc_lock)(struct genio_os_funcs *f);
+    void (*free_lock)(struct genio_lock *lock);
+    void (*lock)(struct genio_lock *lock);
+    void (*unlock)(struct genio_lock *lock);
+
+    int (*set_fd_handlers)(struct genio_os_funcs *f,
+			   int fd,
+			   void *cb_data,
+			   void (*read_handler)(int fd, void *cb_data),
+			   void (*write_handler)(int fd, void *cb_data),
+			   void (*except_handler)(int fd, void *cb_data),
+			   void (*cleared_handler)(int fd, void *cb_data));
+
+    void (*clear_fd_handlers)(struct genio_os_funcs *f, int fd);
+    void (*clear_fd_handlers_imm)(struct genio_os_funcs *f, int fd);
+
+    void (*set_read_handler)(struct genio_os_funcs *f, int fd, bool enable);
+    void (*set_write_handler)(struct genio_os_funcs *f, int fd, bool enable);
+    void (*set_except_handler)(struct genio_os_funcs *f, int fd, bool enable);
+
+    struct genio_timer *(*alloc_timer)(struct genio_os_funcs *f,
+				       void (*handler)(struct genio_timer *t,
+						       void *cb_data),
+				       void *cb_data);
+    void (*free_timer)(struct genio_timer *timer);
+    int (*start_timer)(struct genio_timer *timer, struct timeval *timeout);
+    int (*stop_timer)(struct genio_timer *timer);
+    int (*stop_timer_with_done)(struct genio_timer *timer,
+				void (*done_handler)(struct genio_timer *t,
+						     void *cb_data),
+				void *cb_data);
+
+    struct genio_runner *(*alloc_runner)(struct genio_os_funcs *f,
+					 void (*handler)(struct genio_runner *r,
+							 void *cb_data),
+					 void *cb_data);
+    void (*free_runner)(struct genio_runner *runner);
+    int (*run)(struct genio_runner *runner);
+
+    struct genio_waiter *(*alloc_waiter)(struct genio_os_funcs *f);
+    void (*free_waiter)(struct genio_waiter *waiter);
+    int (*wait)(struct genio_waiter *waiter, struct timeval *timeout);
+    int (*wait_intr)(struct genio_waiter *waiter, struct timeval *timeout);
+    void (*wake)(struct genio_waiter *waiter);
+
+    int (*service)(struct genio_os_funcs *f, struct timeval *timeout);
+
+    void (*free_funcs)(struct genio_os_funcs *f);
+};
 
 struct genio;
 
@@ -152,7 +215,7 @@ int genio_open(struct genio *net, void (*open_done)(struct genio *net,
 /*
  * Like genio_open(), but waits for the open to complete.
  */
-int genio_open_s(struct genio *net, struct selector_s *sel, int wake_sig);
+int genio_open_s(struct genio *net, struct genio_os_funcs *o);
 
 /*
  * Close the genio.  Note that the close operation is not complete
@@ -253,7 +316,7 @@ bool genio_acc_exit_on_close(struct genio_acceptor *acceptor);
  * acceptor.  max_read_size is the internal read buffer size for the
  * connections.
  */
-int str_to_genio_acceptor(const char *str, struct selector_s *sel,
+int str_to_genio_acceptor(const char *str, struct genio_os_funcs *o,
 			  unsigned int max_read_size,
 			  const struct genio_acceptor_callbacks *cbs,
 			  void *user_data,
@@ -264,7 +327,7 @@ int str_to_genio_acceptor(const char *str, struct selector_s *sel,
  * client genio.
  */
 int str_to_genio(const char *str,
-		 struct selector_s *sel,
+		 struct genio_os_funcs *o,
 		 unsigned int max_read_size,
 		 const struct genio_callbacks *cbs,
 		 void *user_data,
@@ -274,20 +337,20 @@ int str_to_genio(const char *str,
  * Allocators for different I/O types.
  */
 int tcp_genio_acceptor_alloc(const char *name,
-			     struct selector_s *sel,
+			     struct genio_os_funcs *o,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
 			     const struct genio_acceptor_callbacks *cbs,
 			     void *user_data,
 			     struct genio_acceptor **acceptor);
 int udp_genio_acceptor_alloc(const char *name,
-			     struct selector_s *sel,
+			     struct genio_os_funcs *o,
 			     struct addrinfo *ai,
 			     unsigned int max_read_size,
 			     const struct genio_acceptor_callbacks *cbs,
 			     void *user_data,
 			     struct genio_acceptor **acceptor);
-int stdio_genio_acceptor_alloc(struct selector_s *sel,
+int stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
 			       unsigned int max_read_size,
 			       const struct genio_acceptor_callbacks *cbs,
 			       void *user_data,
@@ -299,7 +362,7 @@ int stdio_genio_acceptor_alloc(struct selector_s *sel,
  * Create a TCP genio for the given ai.
  */
 int tcp_genio_alloc(struct addrinfo *ai,
-		    struct selector_s *sel,
+		    struct genio_os_funcs *o,
 		    unsigned int max_read_size,
 		    const struct genio_callbacks *cbs,
 		    void *user_data,
@@ -310,7 +373,7 @@ int tcp_genio_alloc(struct addrinfo *ai,
  * ai.
  */
 int udp_genio_alloc(struct addrinfo *ai,
-		    struct selector_s *sel,
+		    struct genio_os_funcs *o,
 		    unsigned int max_read_size,
 		    const struct genio_callbacks *cbs,
 		    void *user_data,
@@ -318,7 +381,7 @@ int udp_genio_alloc(struct addrinfo *ai,
 
 /* Run a program (in argv[0]) and attach to it's stdio. */
 int stdio_genio_alloc(char *const argv[],
-		      struct selector_s *sel,
+		      struct genio_os_funcs *o,
 		      unsigned int max_read_size,
 		      const struct genio_callbacks *cbs,
 		      void *user_data,
@@ -355,8 +418,8 @@ int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 /*
  * Helper function for dealing with buffers writing to genio.
  */
- int genio_buffer_do_write(void *cb_data,
-			   void  *buf, size_t buflen, size_t *written);
+int genio_buffer_do_write(void *cb_data,
+			  void  *buf, size_t buflen, size_t *written);
 
 #endif /* SER2NET_GENIO_H */
 

@@ -28,7 +28,6 @@
 #include <sys/ioctl.h>
 
 #include "utils/utils.h"
-#include "utils/locking.h"
 #include "utils/uucplock.h"
 
 #include "sergenio_internal.h"
@@ -50,12 +49,12 @@ struct termio_op_q {
 struct sterm_data {
     struct sergenio snet;
 
-    struct selector_s *sel;
+    struct genio_os_funcs *o;
 
     char *devname;
     char *parms;
 
-    DEFINE_LOCK(, lock);
+    struct genio_lock *lock;
 
     int fd;
 
@@ -86,7 +85,7 @@ struct sterm_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    sel_runner_t *deferred_op_runner;
+    struct genio_runner *deferred_op_runner;
 
     struct termio_op_q *termio_q;
     bool break_set;
@@ -98,15 +97,29 @@ static void termios_process(struct sterm_data *sdata);
 #define mysergenio_to_sterm(v) container_of(v, struct sterm_data, snet)
 
 static void
+sterm_lock(struct sterm_data *sdata)
+{
+    sdata->o->lock(sdata->lock);
+}
+
+static void
+sterm_unlock(struct sterm_data *sdata)
+{
+    sdata->o->unlock(sdata->lock);
+}
+
+static void
 sterm_finish_free(struct sterm_data *sdata)
 {
     if (sdata->deferred_op_runner)
-	sel_free_runner(sdata->deferred_op_runner);
+	sdata->o->free_runner(sdata->deferred_op_runner);
     if (sdata->read_data)
-	free(sdata->read_data);
+	sdata->o->free(sdata->o, sdata->read_data);
     if (sdata->devname)
-	free(sdata->devname);
-    free(sdata);
+	sdata->o->free(sdata->o, sdata->devname);
+    if (sdata->lock)
+	sdata->o->free_lock(sdata->lock);
+    sdata->o->free(sdata->o, sdata);
 }
 
 static void
@@ -140,16 +153,16 @@ sterm_finish_read(struct sterm_data *sdata, int err)
     unsigned int count;
 
     if (err) {
-	LOCK(sdata->lock);
+	sterm_lock(sdata);
 	sdata->read_enabled = false;
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
     }
 
     count = net->cbs->read_callback(net, err,
 				    sdata->read_data + sdata->data_pos,
 				    sdata->data_pending_len, 0);
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (count < sdata->data_pending_len) {
 	/* If the user doesn't consume all the data, disable
 	   automatically. */
@@ -163,34 +176,27 @@ sterm_finish_read(struct sterm_data *sdata, int err)
     sdata->in_read = false;
 
     if (sdata->read_enabled)
-	sel_set_fd_read_handler(sdata->sel, sdata->fd,
-				SEL_FD_HANDLER_ENABLED);
-    UNLOCK(sdata->lock);
+	sdata->o->set_read_handler(sdata->o, sdata->fd, true);
+    sterm_unlock(sdata);
 }
 
 static void
-sterm_deferred_op(sel_runner_t *runner, void *cbdata)
+sterm_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct sterm_data *sdata = cbdata;
     bool in_read;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
  restart:
     if (sdata->in_open) {
-	int op;
-
 	if (sdata->open_done) {
-	    UNLOCK(sdata->lock);
+	    sterm_unlock(sdata);
 	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
-	    LOCK(sdata->lock);
+	    sterm_lock(sdata);
 	}
 	sdata->in_open = false;
-	op = sdata->read_enabled ? SEL_FD_HANDLER_ENABLED :
-	    SEL_FD_HANDLER_DISABLED;
-	sel_set_fd_read_handler(sdata->sel, sdata->fd, op);
-	op = sdata->xmit_enabled ? SEL_FD_HANDLER_ENABLED :
-	    SEL_FD_HANDLER_DISABLED;
-	sel_set_fd_write_handler(sdata->sel, sdata->fd, op);
+	sdata->o->set_read_handler(sdata->o, sdata->fd, sdata->read_enabled);
+	sdata->o->set_write_handler(sdata->o, sdata->fd, sdata->xmit_enabled);
     }
 
     if (sdata->deferred_read) {
@@ -199,9 +205,9 @@ sterm_deferred_op(sel_runner_t *runner, void *cbdata)
     }
 
     if (in_read) {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	sterm_finish_read(sdata, 0);
-	LOCK(sdata->lock);
+	sterm_lock(sdata);
     }
 
     termios_process(sdata);
@@ -213,11 +219,11 @@ sterm_deferred_op(sel_runner_t *runner, void *cbdata)
     sdata->deferred_op_pending = false;
 
     if (sdata->in_close) {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	sterm_finish_close(sdata);
 	return;
     }
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 }
 
 static void
@@ -225,7 +231,7 @@ termios_start_deferred_op(struct sterm_data *sdata)
 {
     if (!sdata->deferred_op_pending) {
 	sdata->deferred_op_pending = true;
-	sel_run(sdata->deferred_op_runner, sterm_deferred_op, sdata);
+	sdata->o->run(sdata->deferred_op_runner);
     }
 }
 
@@ -259,10 +265,10 @@ termios_process(struct sterm_data *sdata)
 		val = SERGENIO_BREAK_OFF;
 	}
 
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	qe->done(&sdata->snet, err, val, qe->cb_data);
-	free(qe);
-	LOCK(sdata->lock);
+	sdata->o->free(sdata->o, qe);
+	sterm_lock(sdata);
     }
 }
 
@@ -278,7 +284,7 @@ termios_set_get(struct sterm_data *sdata, int val, enum termio_op op,
     int err = 0;
 
     if (done) {
-	qe = malloc(sizeof(*qe));
+	qe = sdata->o->zalloc(sdata->o, sizeof(*qe));
 	if (!qe)
 	    return ENOMEM;
 	qe->getset = getset;
@@ -288,12 +294,12 @@ termios_set_get(struct sterm_data *sdata, int val, enum termio_op op,
 	qe->next = NULL;
     }
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (val) {
 	if (op == TERMIO_OP_TERMIO) {
 	    if (tcgetattr(sdata->fd, &termio) == -1) {
 		if (qe)
-		    free(qe);
+		    sdata->o->free(sdata->o, qe);
 		err = errno;
 		goto out_unlock;
 	    }
@@ -355,8 +361,8 @@ termios_set_get(struct sterm_data *sdata, int val, enum termio_op op,
     }
  out_unlock:
     if (err && qe)
-	free(qe);
-    UNLOCK(sdata->lock);
+	sdata->o->free(sdata->o, qe);
+    sterm_unlock(sdata);
     return err;
 }
 
@@ -692,12 +698,12 @@ devfd_fd_cleared(int fd, void *cb_data)
 {
     struct sterm_data *sdata = cb_data;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (!sdata->termio_q) {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	sterm_finish_close(sdata);
     } else {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
     }
 }
 
@@ -707,15 +713,15 @@ handle_read(int fd, void *cb_data)
     struct sterm_data *sdata = cb_data;
     int rv, err = 0;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (!sdata->read_enabled || sdata->data_pending_len) {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	return;
     }
-    sel_set_fd_read_handler(sdata->sel, sdata->fd, SEL_FD_HANDLER_DISABLED);
+    sdata->o->set_read_handler(sdata->o, sdata->fd, false);
     sdata->in_read = true;
     sdata->data_pos = 0;
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 
  retry:
     rv = read(fd, sdata->read_data, sdata->read_buffer_size);
@@ -753,7 +759,7 @@ sterm_open(struct genio *net, void (*open_done)(struct genio *net,
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int err;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (!sdata->closed || sdata->in_close) {
 	err = EBUSY;
 	goto out;
@@ -782,9 +788,9 @@ sterm_open(struct genio *net, void (*open_done)(struct genio *net,
 
     ioctl(sdata->fd, TIOCCBRK);
 
-    err = sel_set_fd_handlers(sdata->sel, sdata->fd, sdata,
-			      handle_read, handle_write, NULL,
-			      devfd_fd_cleared);
+    err = sdata->o->set_fd_handlers(sdata->o, sdata->fd, sdata,
+				    handle_read, handle_write, NULL,
+				    devfd_fd_cleared);
     if (err)
 	goto out_uucp;
 
@@ -793,7 +799,7 @@ sterm_open(struct genio *net, void (*open_done)(struct genio *net,
     sdata->open_done = open_done;
     sdata->open_data = open_data;
     termios_start_deferred_op(sdata);
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 
     return 0;
 
@@ -804,7 +810,7 @@ sterm_open(struct genio *net, void (*open_done)(struct genio *net,
 	close(sdata->fd);
 	sdata->fd = -1;
     }
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 
     return err;
 }
@@ -818,7 +824,7 @@ __sterm_close(struct sterm_data *sdata,
     sdata->in_close = true;
     sdata->close_done = close_done;
     sdata->close_data = close_data;
-    sel_clear_fd_handlers(sdata->sel, sdata->fd);
+    sdata->o->clear_fd_handlers(sdata->o, sdata->fd);
 }
 
 static int
@@ -829,12 +835,12 @@ sterm_close(struct genio *net, void (*close_done)(struct genio *net,
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int err = 0;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (sdata->closed || sdata->in_close)
 	err = EBUSY;
     else
 	__sterm_close(sdata, close_done, close_data);
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 
     return err;
 }
@@ -844,17 +850,17 @@ sterm_free(struct genio *net)
 {
     struct sterm_data *sdata = mygenio_to_sterm(net);
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     sdata->in_free = true;
     if (sdata->in_close) {
 	sdata->close_done = NULL;
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
     } else if (sdata->closed) {
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
 	sterm_finish_free(sdata);
     } else {
 	__sterm_close(sdata, NULL, NULL);
-	UNLOCK(sdata->lock);
+	sterm_unlock(sdata);
     }
 }
 
@@ -863,7 +869,7 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
 {
     struct sterm_data *sdata = mygenio_to_sterm(net);
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (sdata->closed)
 	goto out_unlock;
     sdata->read_enabled = enabled;
@@ -876,39 +882,26 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
 	/* Call the read from the selector to avoid lock nesting issues. */
 	termios_start_deferred_op(sdata);
     } else {
-	int op;
-
-	if (enabled)
-	    op = SEL_FD_HANDLER_ENABLED;
-	else
-	    op = SEL_FD_HANDLER_DISABLED;
-
-	sel_set_fd_read_handler(sdata->sel, sdata->fd, op);
+	sdata->o->set_read_handler(sdata->o, sdata->fd, enabled);
     }
  out_unlock:
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 }
 
 static void
 sterm_set_write_callback_enable(struct genio *net, bool enabled)
 {  
     struct sterm_data *sdata = mygenio_to_sterm(net);
-    int op;
 
-    LOCK(sdata->lock);
+    sterm_lock(sdata);
     if (sdata->closed)
 	goto out_unlock;
     sdata->xmit_enabled = enabled;
     if (sdata->in_open)
 	goto out_unlock;
-    if (enabled)
-	op = SEL_FD_HANDLER_ENABLED;
-    else
-	op = SEL_FD_HANDLER_DISABLED;
-
-    sel_set_fd_write_handler(sdata->sel, sdata->fd, op);
+    sdata->o->set_write_handler(sdata->o, sdata->fd, enabled);
  out_unlock:
-    UNLOCK(sdata->lock);
+    sterm_unlock(sdata);
 }
 
 static const struct genio_functions sterm_net_funcs = {
@@ -953,20 +946,19 @@ sergenio_process_parms(struct sterm_data *sdata)
 }
 
 int
-sergenio_termios_alloc(const char *devname, struct selector_s *sel,
+sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 		       unsigned int read_buffer_size,
 		       const struct sergenio_callbacks *scbs,
 		       const struct genio_callbacks *cbs, void *user_data,
 		       struct sergenio **snet)
 {
-    struct sterm_data *sdata = malloc(sizeof(*sdata));
+    struct sterm_data *sdata = o->zalloc(o, sizeof(*sdata));
     int err;
     char *comma;
 
     if (!sdata)
 	return ENOMEM;
 
-    memset(sdata, 0, sizeof(*sdata));
     sdata->fd = -1;
 
     cfmakeraw(&sdata->default_termios);
@@ -992,17 +984,25 @@ sergenio_termios_alloc(const char *devname, struct selector_s *sel,
     }
 
     sdata->read_buffer_size = read_buffer_size;
-    sdata->read_data = malloc(read_buffer_size);
+    sdata->read_data = o->zalloc(o, read_buffer_size);
     if (!sdata->read_data) {
 	err = ENOMEM;
 	goto out;
     }
 
-    err = sel_alloc_runner(sel, &sdata->deferred_op_runner);
-    if (err)
+    sdata->deferred_op_runner = o->alloc_runner(o, sterm_deferred_op, sdata);
+    if (!sdata->deferred_op_runner) {
+	err = ENOMEM;
 	goto out;
+    }
 
-    sdata->sel = sel;
+    sdata->lock = o->alloc_lock(o);
+    if (!sdata->lock) {
+	err = ENOMEM;
+	goto out;
+    }
+
+    sdata->o = o;
     sdata->snet.scbs = scbs;
     sdata->snet.net.user_data = user_data;
     sdata->snet.funcs = &sterm_funcs;

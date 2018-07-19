@@ -2260,7 +2260,7 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_genio_acceptor(rot->portname, ser2net_sel, 64,
+    rv = str_to_genio_acceptor(rot->portname, ser2net_o, 64,
 			       &rotator_cbs, rot, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
@@ -3270,7 +3270,7 @@ portconfig(struct absout *eout,
 	}
     }
 
-    err = str_to_genio_acceptor(new_port->portname, ser2net_sel,
+    err = str_to_genio_acceptor(new_port->portname, ser2net_o,
 				new_port->net_to_dev.maxsize,
 				&port_acceptor_cbs, new_port,
 				&new_port->acceptor);
