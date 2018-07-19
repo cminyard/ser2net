@@ -40,16 +40,44 @@ struct genio_timer;
 struct genio_runner;
 
 struct genio_os_funcs {
+    /* For use by the code doing the os function translation. */
     void *user_data;
 
+    /* For use by other code. */
+    void *other_data;
+
+    /****** Memory Allocation ******/
+    /* Return allocated and zeroed data.  Return NULL on error. */
     void *(*zalloc)(struct genio_os_funcs *f, unsigned int size);
+
+    /* Free data allocated by zalloc. */
     void (*free)(struct genio_os_funcs *f, void *data);
 
+    /****** Mutexes ******/
+    /* Allocate a lock.  Return NULL on error. */
     struct genio_lock *(*alloc_lock)(struct genio_os_funcs *f);
+
+    /* Free a lock allocated with alloc_lock. */
     void (*free_lock)(struct genio_lock *lock);
+
+    /* Lock the lock. */
     void (*lock)(struct genio_lock *lock);
+
+    /* Unlock the lock. */
     void (*unlock)(struct genio_lock *lock);
 
+    /****** File Descriptor Handling ******/
+    /*
+     * Setup handlers to be called on the fd for various reasons:
+     *
+     * read_handler - called when data is ready to read.
+     * write_handler - called when there is room to write data.
+     * except_handler - called on exception cases (tcp urgent data).
+     * cleared_handler - called when clear_fd_handlers completes.
+     *
+     * Note that all handlers are disabled when this returns, you must
+     * enable them for the callbacks to be called.
+     */
     int (*set_fd_handlers)(struct genio_os_funcs *f,
 			   int fd,
 			   void *cb_data,
@@ -58,40 +86,135 @@ struct genio_os_funcs {
 			   void (*except_handler)(int fd, void *cb_data),
 			   void (*cleared_handler)(int fd, void *cb_data));
 
+    /*
+     * Clear the handlers for an fd.  Note that the operation is not
+     * complete when the function returns.  The code may be running in
+     * callbacks during this call, and it won't wait.  Instead,
+     * cleared_handler is called when the operation completes, you
+     * need to wait for that.
+     */
     void (*clear_fd_handlers)(struct genio_os_funcs *f, int fd);
+
+    /*
+     * Like the above, but can only be called before the handlers are
+     * enabled, primarily to handle error situations at startup.
+     */
     void (*clear_fd_handlers_imm)(struct genio_os_funcs *f, int fd);
 
+    /*
+     * Enable/disable the various handlers.  Note that if you disable
+     * a handler, it may still be running in a callback, this does not
+     * wait.
+     */
     void (*set_read_handler)(struct genio_os_funcs *f, int fd, bool enable);
     void (*set_write_handler)(struct genio_os_funcs *f, int fd, bool enable);
     void (*set_except_handler)(struct genio_os_funcs *f, int fd, bool enable);
 
+    /****** Timers ******/
+    /*
+     * Allocate a timer that calls the given handler when it goes
+     * off.  Return NULL on error.
+     */
     struct genio_timer *(*alloc_timer)(struct genio_os_funcs *f,
 				       void (*handler)(struct genio_timer *t,
 						       void *cb_data),
 				       void *cb_data);
+
+    /*
+     * Free a timer allocated with alloc_timer.  The timer should not
+     * be running.
+     */
     void (*free_timer)(struct genio_timer *timer);
+
+    /*
+     * Start the timer running.  Returns EBUSY if the timer is already
+     * running.
+     */
     int (*start_timer)(struct genio_timer *timer, struct timeval *timeout);
+
+    /*
+     * Stop the timer.  Returns ETIMEDOUT if the timer is not running.
+     * Note that the timer may still be running in a timeout handler
+     * when this returns.
+     */
     int (*stop_timer)(struct genio_timer *timer);
+
+    /*
+     * Like the above, but the done_handler is called when the timer is
+     * completely stopped and no handler is running.
+     */
     int (*stop_timer_with_done)(struct genio_timer *timer,
 				void (*done_handler)(struct genio_timer *t,
 						     void *cb_data),
 				void *cb_data);
 
+    /****** Runners ******/
+    /*
+     * Allocate a runner.  Return NULL on error.  A runner runs things
+     * at a base context.  This is useful for handling situations
+     * where you need to run something outside of a lock or context,
+     * you schedule the runner.
+     */
     struct genio_runner *(*alloc_runner)(struct genio_os_funcs *f,
 					 void (*handler)(struct genio_runner *r,
 							 void *cb_data),
 					 void *cb_data);
+
+    /* Free a runner allocated with alloc_runner. */
     void (*free_runner)(struct genio_runner *runner);
+
+    /*
+     * Run a runner.  Return EBUSY if the runner is already scheduled
+     * to run.
+     */
     int (*run)(struct genio_runner *runner);
 
+    /****** Waiters ******/
+    /*
+     * Allocate a waiter, returns NULL on error.  A waiter is used to
+     * wait for some action to occur.  When the action occurs, that code
+     * should call wake to wake the waiter.  Normal operation of the
+     * file descriptors, tiemrs, runners, etc. happens while waiting.
+     * You should be careful of the context of calling a waiter, like
+     * what locks you are holding or what callbacks you are in.
+     *
+     * Note that waiters and wakes are count based, if you call wake()
+     * before wait() that's ok.  If you call wake() 3 times, there
+     * are 3 wakes pending.
+     */
     struct genio_waiter *(*alloc_waiter)(struct genio_os_funcs *f);
+
+    /* Free a waiter allocated by alloc_waiter. */
     void (*free_waiter)(struct genio_waiter *waiter);
+
+    /*
+     * Wait for a wakeup for up to the amount of time (relative) given
+     * in timeout.  If timeout is NULL wait forever.  This return
+     * ETIMEDOUT on a timeout.  It can return other errors.
+     * The timeout is updated to the remaining time.
+     */
     int (*wait)(struct genio_waiter *waiter, struct timeval *timeout);
+
+    /*
+     * Like wait, but return if a signal is received by the thread.
+     * This is useful if you want to handle SIGINT or something like
+     * that.
+     */
     int (*wait_intr)(struct genio_waiter *waiter, struct timeval *timeout);
+
+    /* Wake the given waiter. */
     void (*wake)(struct genio_waiter *waiter);
 
+    /****** Misc ******/
+    /*
+     * Run the timers, fd handling, runners, etc.  This does one
+     * operation and returns.  If timeout is non-NULL, if nothing
+     * happens before the relative time given it will return.
+     * The timeout is updated to the remaining time.
+     */
     int (*service)(struct genio_os_funcs *f, struct timeval *timeout);
 
+    /* Free this structure. */
     void (*free_funcs)(struct genio_os_funcs *f);
 };
 
