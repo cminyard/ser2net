@@ -1,4 +1,5 @@
 
+import genio
 import utils
 
 def test_transfer(name, data, config, io1str, io2str, timeout=1000):
@@ -10,7 +11,8 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000):
     print("Transfer %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    ser2net, io1, io2 = utils.setup_2_ser2net(config, io1str, io2str)
+    o = genio.alloc_genio_selector()
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
 
     print("  io1 to io2")
     utils.test_dataxfer(io1, io2, data, timeout=timeout)

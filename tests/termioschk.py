@@ -2,6 +2,7 @@
 import termios
 import copy
 
+import genio
 import utils
 
 # This is the termios ser2net sets up when it opens a serial port.
@@ -64,7 +65,8 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
     print("termios %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    ser2net, io1, io2 = utils.setup_2_ser2net(config, io1str, io2str)
+    o = genio.alloc_genio_selector();
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     io1.handler.set_compare("12345")
     if (io1.handler.wait_timeout(1000)):
         raise Exception("%s: %s: Timed out waiting for banner" %

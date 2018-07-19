@@ -205,7 +205,8 @@ def test_dtr():
     print("termios dtr rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
 
-    ser2net, io1, io2 = utils.setup_2_ser2net(config, io1str, io2str)
+    o = genio.alloc_genio_selector()
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     sio1 = io1.cast_to_sergenio()
     sio2 = io2.cast_to_sergenio()
     io1.handler.set_compare("12345")
@@ -253,7 +254,8 @@ def test_rts():
     print("termios rts rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
 
-    ser2net, io1, io2 = utils.setup_2_ser2net(config, io1str, io2str)
+    o = genio.alloc_genio_selector()
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     sio1 = io1.cast_to_sergenio()
     sio2 = io2.cast_to_sergenio()
     io1.handler.set_compare("12345")

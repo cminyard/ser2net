@@ -33,6 +33,11 @@
 #define USE_POSIX_THREADS
 #endif
 
+struct waiter {
+    struct genio_os_funcs *o;
+    struct genio_waiter *waiter;
+};
+
 /*
  * If an exception occurs inside a waiter, we want to stop the wait
  * operation and propagate back.  So we wake it up
@@ -40,7 +45,7 @@
 #ifdef USE_POSIX_THREADS
 static void oom_err(void);
 struct genio_wait_block {
-    struct waiter_s *curr_waiter;
+    struct waiter *curr_waiter;
 };
 
 static pthread_key_t genio_thread_key;
@@ -51,11 +56,11 @@ genio_key_del(void *data)
     free(data);
 }
 
-static struct waiter_s *
-save_waiter(struct waiter_s *waiter)
+static struct waiter *
+save_waiter(struct waiter *waiter)
 {
     struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
-    struct waiter_s *prev_waiter;
+    struct waiter *prev_waiter;
 
     if (!data) {
 	data = malloc(sizeof(*data));
@@ -74,7 +79,7 @@ save_waiter(struct waiter_s *waiter)
 }
 
 static void
-restore_waiter(struct waiter_s *prev_waiter)
+restore_waiter(struct waiter *prev_waiter)
 {
     struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
 
@@ -89,23 +94,23 @@ wake_curr_waiter(void)
     if (!data)
 	return;
     if (data->curr_waiter)
-	wake_waiter(data->curr_waiter);
+	data->curr_waiter->o->wake(data->curr_waiter->waiter);
 }
 
 #else
-static struct waiter_s *curr_waiter;
+static struct waiter *curr_waiter;
 
-static struct waiter_s *
-save_waiter(struct waiter_s *waiter)
+static struct waiter *
+save_waiter(struct waiter *waiter)
 {
-    struct waiter_s *prev_waiter = curr_waiter;
+    struct waiter *prev_waiter = curr_waiter;
 
     curr_waiter = waiter;
     return prev_waiter;
 }
 
 static void
-restore_waiter(struct waiter_s *prev_waiter)
+restore_waiter(struct waiter *prev_waiter)
 {
     curr_waiter = prev_waiter;
 }
@@ -114,29 +119,25 @@ static void
 wake_curr_waiter(void)
 {
     if (curr_waiter)
-	wake_waiter(curr_waiter);
+	curr_waiter->waiter->o->wake(curr_waiter->waiter->waiter);
 }
 #endif
 
 #include "genio_python.h"
 
-static struct selector_s *genio_sel;
-static struct genio_os_funcs *genio_o;
-static int wake_sig;
-
 static int
-genio_do_wait(struct waiter_s *waiter, struct timeval *timeout)
+genio_do_wait(struct waiter *waiter, struct timeval *timeout)
 {
     int err;
-    struct waiter_s *prev_waiter = save_waiter(waiter);
+    struct waiter *prev_waiter = save_waiter(waiter);
 
     do {
 	GENIO_SWIG_C_BLOCK_ENTRY
-	err = wait_for_waiter_timeout_intr(waiter, 1, timeout);
+	err = waiter->o->wait_intr(waiter->waiter, timeout);
 	GENIO_SWIG_C_BLOCK_EXIT
 	if (check_for_err()) {
 	    if (prev_waiter)
-		wake_waiter(prev_waiter);
+		prev_waiter->o->wake(prev_waiter->waiter);
 	    break;
 	}
 	if (err == EINTR)
@@ -217,6 +218,83 @@ genio_thread_sighandler(int sig)
     /* Nothing to do, signal just wakes things up. */
 }
 #endif
+
+struct os_funcs_data {
+    unsigned int refcount;
+    struct selector_s *sel;
+};
+
+static void check_os_funcs_free(struct genio_os_funcs *o)
+{
+    struct os_funcs_data *odata = o->other_data;
+
+    if (--odata->refcount == 0) {
+	free(odata);
+	o->free_funcs(o);
+    }
+}
+
+struct genio_os_funcs *alloc_genio_selector(void)
+{
+    struct selector_s *sel;
+    struct genio_os_funcs *o;
+    struct os_funcs_data *odata;
+    int err;
+    int wake_sig;
+#ifdef USE_POSIX_THREADS
+    struct sigaction act;
+
+    wake_sig = SIGUSR1;
+    act.sa_handler = genio_thread_sighandler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    err = sigaction(SIGUSR1, &act, NULL);
+    if (err) {
+	fprintf(stderr, "Unable to setup wake signal: %s, giving up\n",
+		strerror(errno));
+	exit(1);
+    }
+
+    err = sel_alloc_selector_thread(&sel, SIGUSR1,
+				    genio_alloc_lock, genio_free_lock,
+				    genio_lock, genio_unlock, NULL);
+#else
+    err = sel_alloc_selector_nothread(&sel);
+#endif
+    if (err) {
+	fprintf(stderr, "Unable to allocate selector: %s, giving up\n",
+		strerror(err));
+	exit(1);
+    }
+
+    odata = malloc(sizeof(*odata));
+    odata->refcount = 1;
+
+    o = genio_selector_alloc(sel, wake_sig);
+    if (!o) {
+	fprintf(stderr, "Unable to allocate genio os funcs, giving up\n");
+	exit(1);
+    }
+    o->other_data = odata;
+
+    return o;
+}
+%}
+
+%init %{
+#ifdef USE_POSIX_THREADS
+    {
+	int err;
+
+	err = pthread_key_create(&genio_thread_key, genio_key_del);
+	if (err) {
+	    fprintf(stderr, "Error creating genio thread key: %s, giving up\n",
+		    strerror(err));
+	    exit(1);
+	}
+    }
+#endif
+    genio_swig_init_lang();
 %}
 
 %include <typemaps.i>
@@ -225,13 +303,23 @@ genio_thread_sighandler(int sig)
 %include "genio_python.i"
 
 %nodefaultctor sergenio;
+%nodefaultctor genio_os_funcs;
 struct genio { };
 struct sergenio { };
 struct genio_acceptor { };
-struct waiter_s { };
+struct genio_os_funcs { };
+struct waiter { };
+
+%extend genio_os_funcs {
+    ~genio_os_funcs() {
+	check_os_funcs_free(self);
+    }
+}
 
 %extend genio {
-    genio(char *str, int max_read_size, swig_cb *handler) {
+    genio(struct genio_os_funcs *o, char *str, int max_read_size,
+	  swig_cb *handler) {
+	struct os_funcs_data *odata = o->other_data;
 	int rv;
 	struct genio_data *data;
 	struct genio *io = NULL;
@@ -241,13 +329,15 @@ struct waiter_s { };
 	    return NULL;
 	data->refcount = 1;
 	data->handler_val = ref_swig_cb(handler, read_callback);
+	data->o = o;
 
-	rv = str_to_genio(str, genio_o, max_read_size, &gen_cbs,
-			  data, &io);
+	rv = str_to_genio(str, o, max_read_size, &gen_cbs, data, &io);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
 	    ser_err_handle("genio alloc", rv);
+	} else {
+	    odata->refcount++;
 	}
 
 	return io;
@@ -261,6 +351,7 @@ struct waiter_s { };
 	if (data->refcount <= 0) {
 	    genio_free(self);
 	    deref_swig_cb_val(data->handler_val);
+	    check_os_funcs_free(data->o);
 	    free(data);
 	}
     }
@@ -291,7 +382,9 @@ struct waiter_s { };
 
     %rename(open_s) open_st;
     void open_st() {
-	err_handle("open_s", genio_open_s(self, genio_o));
+	struct genio_data *data = genio_get_user_data(self);
+
+	err_handle("open_s", genio_open_s(self, data->o));
     }
 
     %rename(close) closet;
@@ -364,10 +457,12 @@ struct waiter_s { };
     }
 
     int sg_##name##_s(int name) {
+	struct genio *io = sergenio_to_genio(self);
+	struct genio_data *data = genio_get_user_data(io);
 	struct sergenio_b *b = NULL;
 	int rv;
 
-	rv = sergenio_b_alloc(self, genio_o, &b);
+	rv = sergenio_b_alloc(self, data->o, &b);
 	if (!rv)
 	    rv = sergenio_##name##_b(b, &name);
 	if (rv)
@@ -567,7 +662,9 @@ struct waiter_s { };
 }
 
 %extend genio_acceptor {
-    genio_acceptor(char *str, int max_read_size, swig_cb *handler) {
+    genio_acceptor(struct genio_os_funcs *o, char *str, int max_read_size,
+		   swig_cb *handler) {
+	struct os_funcs_data *odata = o->other_data;
 	struct genio_acc_data *data;
 	struct genio_acceptor *acc;
 	int rv;
@@ -576,13 +673,16 @@ struct waiter_s { };
 	if (!data)
 	    return NULL;
 
+	data->o = o;
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_genio_acceptor(str, genio_o, max_read_size, &gen_acc_cbs,
-			  data, &acc);
+	rv = str_to_genio_acceptor(str, o, max_read_size, &gen_acc_cbs,
+				   data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
+	} else {
+	    odata->refcount++;
 	}
 
 	return acc;
@@ -594,6 +694,7 @@ struct waiter_s { };
 
 	genio_acc_free(self);
 	deref_swig_cb_val(data->handler_val);
+	check_os_funcs_free(data->o);
 	free(data);
     }
 
@@ -611,21 +712,38 @@ struct waiter_s { };
     }
 }
 
-%extend waiter_s {
-    waiter_s() {
-	return alloc_waiter(genio_sel, wake_sig);
+%extend waiter {
+    waiter(struct genio_os_funcs *o) {
+	struct os_funcs_data *odata = o->other_data;
+	struct waiter *w = malloc(sizeof(*w));
+
+	if (w) {
+	    w->o = o;
+	    w->waiter = o->alloc_waiter(o);
+	    if (!w->waiter) {
+		free(w);
+		w = NULL;
+		ser_err_handle("waiter", ENOMEM);
+	    } else {
+		odata->refcount++;
+	    }
+	} else {
+	    ser_err_handle("waiter", ENOMEM);
+	}
+
+	return w;
     }
 
-    ~waiter_s() {
-	free_waiter(self);
+    ~waiter() {
+	self->o->free_waiter(self->waiter);
+	check_os_funcs_free(self->o);
+	free(self);
     }
 
     int wait_timeout(int timeout) {
 	struct timeval tv = { timeout / 1000, timeout % 1000 };
-	int rv;
 
-	rv = genio_do_wait(self, &tv);
-	return rv;
+	return genio_do_wait(self, &tv);
     }
 
     void wait() {
@@ -633,7 +751,7 @@ struct waiter_s { };
     }
 
     void wake() {
-	wake_waiter(self);
+	self->o->wake(self->waiter);
     }
 }
 
@@ -641,47 +759,5 @@ struct waiter_s { };
 void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 		      int size_to_allocate);
 
-%init %{
-    if (!genio_sel) {
-	int err;
-#ifdef USE_POSIX_THREADS
-	struct sigaction act;
-
-	wake_sig = SIGUSR1;
-	err = pthread_key_create(&genio_thread_key, genio_key_del);
-	if (err) {
-	    fprintf(stderr, "Error creating genio thread key: %s, giving up\n",
-		    strerror(err));
-	    exit(1);
-	}
-
-	act.sa_handler = genio_thread_sighandler;
-	sigemptyset(&act.sa_mask);
-	act.sa_flags = 0;
-	err = sigaction(SIGUSR1, &act, NULL);
-	if (err) {
-	    fprintf(stderr, "Unable to setup wake signal: %s, giving up\n",
-		    strerror(errno));
-	    exit(1);
-	}
-
-	err = sel_alloc_selector_thread(&genio_sel, SIGUSR1,
-					genio_alloc_lock, genio_free_lock,
-					genio_lock, genio_unlock, NULL);
-#else
-	err = sel_alloc_selector_nothread(&genio_sel);
-#endif
-	if (err) {
-	    fprintf(stderr, "Unable to allocate selector: %s, giving up\n",
-		    strerror(err));
-	    exit(1);
-	}
-
-	genio_o = genio_selector_alloc(genio_sel, wake_sig);
-	if (!genio_o) {
-	    fprintf(stderr, "Unable to allocate genio os funcs, giving up\n");
-	    exit(1);
-	}
-    }
-    genio_swig_init_lang();
-%}
+%newobject alloc_genio_selector;
+struct genio_os_funcs *alloc_genio_selector();

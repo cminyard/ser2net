@@ -39,17 +39,17 @@ class HandleData:
     object of that io will be this object.
     """
 
-    def __init__(self, iostr, bufsize, name = None, chunksize=10240):
+    def __init__(self, o, iostr, bufsize, name = None, chunksize=10240):
         """Start a genio object with this handler"""
         if (name):
             self.name = name
         else:
             self.name = iostr
-        self.waiter = genio.waiter_s()
+        self.waiter = genio.waiter(o)
         self.to_write = None
         self.to_compare = None
         self.ignore_input = False
-        self.io = genio.genio(iostr, bufsize, self)
+        self.io = genio.genio(o, iostr, bufsize, self)
         self.io.handler = self
         self.chunksize = chunksize
         self.debug = 0
@@ -178,7 +178,7 @@ class Ser2netDaemon:
     set it back to True when done.
     """
 
-    def __init__(self, configdata, extra_args = ""):
+    def __init__(self, o, configdata, extra_args = ""):
         """Create a running ser2net program
 
         The given config data is written to a file and used as the config file.
@@ -196,7 +196,7 @@ class Ser2netDaemon:
         args = "stdio," + prog + " -r -d -c " + self.cfile.name + " " + extra_args
         if (debug):
             print("Running: " + args)
-        self.handler = HandleData(args, 1024, name="ser2net daemon")
+        self.handler = HandleData(o, args, 1024, name="ser2net daemon")
 
         self.io = self.handler.io
         self.io.open_s()
@@ -255,12 +255,12 @@ class Ser2netDaemon:
             count -= 1
         raise Exception("ser2net did not terminate");
 
-def alloc_io(iostr, do_open = True, bufsize = 1024):
+def alloc_io(o, iostr, do_open = True, bufsize = 1024):
     """Allocate an io instance with a HandlerData handler
 
     If do_open is True (default), open it, too.
     """
-    h = HandleData(iostr, bufsize)
+    h = HandleData(o, iostr, bufsize)
     if (do_open):
         h.io.open_s()
     return h.io
@@ -316,7 +316,7 @@ def io_close(io, timeout = 1000):
                         ("io_close", io.handler.name))
     return
 
-def setup_2_ser2net(config, io1str, io2str):
+def setup_2_ser2net(o, config, io1str, io2str):
     """Setup a ser2net daemon and two genio connections
 
     Create a ser2net daemon instance with the given config and two
@@ -329,16 +329,16 @@ def setup_2_ser2net(config, io1str, io2str):
     should be closed upon completion of the test, this is set to false
     for ser2net stdio.
     """
-    ser2net = Ser2netDaemon(config)
+    ser2net = Ser2netDaemon(o, config)
 
     if (io1str):
-        io1 = alloc_io(io1str)
+        io1 = alloc_io(o, io1str)
         io1.closeme = True
     else:
         io1 = ser2net.io
         io1.handler.ignore_input = False
         io1.closeme = False
-    io2 = alloc_io(io2str)
+    io2 = alloc_io(o, io2str)
     return (ser2net, io1, io2)
 
 def finish_2_ser2net(ser2net, io1, io2):

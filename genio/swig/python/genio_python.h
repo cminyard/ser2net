@@ -153,6 +153,7 @@ swig_finish_call(swig_cb_val *cb, const char *method_name, PyObject *args)
 struct genio_data {
     int refcount;
     swig_cb_val *handler_val;
+    struct genio_os_funcs *o;
 };
 
 static void
@@ -305,6 +306,7 @@ static struct genio_callbacks gen_cbs = {
 
 struct genio_acc_data {
     swig_cb_val *handler_val;
+    struct genio_os_funcs *o;
 };
 
 static void
