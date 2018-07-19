@@ -120,7 +120,7 @@ struct genio_callbacks {
 
     /* Flags for read callbacks. */
 
-/* For stdin client genio, data is from stderr instead of stdout. */    
+/* For stdin client genio, data is from stderr instead of stdout. */
 #define GENIO_ERR_OUTPUT	1
 
     /*

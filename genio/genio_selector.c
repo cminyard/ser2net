@@ -478,6 +478,6 @@ genio_selector_alloc(struct selector_s *sel, int wake_sig)
     o->wake = genio_sel_wake;
     o->service = genio_sel_service;
     o->free_funcs = genio_sel_free_funcs;
-    
+
     return o;
 }

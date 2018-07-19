@@ -581,7 +581,7 @@ termios_get_set_dtr(struct termios *termio, int *mctl, int *ival)
     } else {
 	if (*mctl & TIOCM_DTR)
 	    *ival = SERGENIO_DTR_ON;
-	else 
+	else
 	    *ival = SERGENIO_DTR_OFF;
     }
 
@@ -611,7 +611,7 @@ termios_get_set_rts(struct termios *termio, int *mctl, int *ival)
     } else {
 	if (*mctl & TIOCM_RTS)
 	    *ival = SERGENIO_RTS_ON;
-	else 
+	else
 	    *ival = SERGENIO_RTS_OFF;
     }
 
@@ -890,7 +890,7 @@ sterm_set_read_callback_enable(struct genio *net, bool enabled)
 
 static void
 sterm_set_write_callback_enable(struct genio *net, bool enabled)
-{  
+{
     struct sterm_data *sdata = mygenio_to_sterm(net);
 
     sterm_lock(sdata);

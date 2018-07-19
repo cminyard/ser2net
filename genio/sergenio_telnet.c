@@ -105,7 +105,7 @@ stel_unlock(struct stel_data *sdata)
 }
 
 static int
-stel_queue(struct stel_data *sdata, int option, 
+stel_queue(struct stel_data *sdata, int option,
 	   int minval, int maxval,
 	   void (*done)(struct sergenio *snet, int err,
 			int baud, void *cb_data),
@@ -660,7 +660,7 @@ stel_genio_read(struct genio *net, int readerr,
 
  out_unlock:
     stel_unlock(sdata);
-    
+
     return buf - ibuf;
 }
 
@@ -779,7 +779,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 	    val = option[2] << 24;
 	    val |= option[3] << 16;
 	    val |= option[4] << 8;
-	    val |= option[5];	    
+	    val |= option[5];
 	}
 	break;
 

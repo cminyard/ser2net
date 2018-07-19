@@ -111,7 +111,7 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
 
     if (family != AF_INET6)
 	return;
-    
+
     if (!IN6_IS_ADDR_UNSPECIFIED(&(((struct sockaddr_in6 *) addr)->sin6_addr)))
 	return;
 

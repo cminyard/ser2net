@@ -789,7 +789,7 @@ controller_init(char *controller_port)
     }
 
     rv = genio_acc_startup(controller_acceptor);
-    if (rv) 
+    if (rv)
 	return CONTROLLER_CANT_OPEN_PORT;
 
     return 0;

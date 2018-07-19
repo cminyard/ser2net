@@ -727,7 +727,7 @@ stdiona_shutdown(struct genio_acceptor *acceptor,
 	rv = EAGAIN;
     }
     stdiona_unlock(nadata);
-    
+
     return rv;
 }
 

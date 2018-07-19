@@ -249,7 +249,7 @@ struct waiter_s { };
 	    free(data);
 	    ser_err_handle("genio alloc", rv);
 	}
-			  
+
 	return io;
     }
 
@@ -277,7 +277,7 @@ struct waiter_s { };
 	swig_cb_val *done_val = NULL;
 	void (*open_done)(struct genio *io, int err, void *cb_data) = NULL;
 	int rv;
-	
+
 	if (!nil_swig_cb(done)) {
 	    open_done = genio_open_done;
 	    done_val = ref_swig_cb(done, open_done);
@@ -299,7 +299,7 @@ struct waiter_s { };
 	swig_cb_val *done_val = NULL;
 	void (*close_done)(struct genio *io, void *cb_data) = NULL;
 	int rv;
-	
+
 	if (!nil_swig_cb(done)) {
 	    close_done = genio_close_done;
 	    done_val = ref_swig_cb(done, close_done);

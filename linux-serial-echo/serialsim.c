@@ -209,7 +209,7 @@ static unsigned int serialsim_tx_empty(struct uart_port *port)
 	if (circ_sbuf_empty(&intf->buf))
 		return TIOCSER_TEMT;
 	return 0;
-} 
+}
 
 /*
  * We have to lock multiple locks, make sure to do it in the same order all
@@ -360,7 +360,7 @@ static void serialsim_set_mctrl(struct uart_port *port, unsigned int mctrl)
 }
 
 static unsigned int serialsim_get_mctrl(struct uart_port *port)
-{ 
+{
 	struct serialsim_intf *intf = serialsim_port_to_intf(port);
 	unsigned int rv;
 

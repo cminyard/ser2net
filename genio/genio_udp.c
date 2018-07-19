@@ -837,7 +837,7 @@ udpna_readhandler(int fd, void *cbdata)
 	if (ndata)
 	    udpn_add_to_list(&nadata->udpns, ndata);
     }
-    
+
     if (ndata) { /* Reuse an existing connection? */
 	ndata->in_free = false;
 	ndata->in_close = false;
@@ -957,7 +957,7 @@ udpna_shutdown(struct genio_acceptor *acceptor,
 	rv = EAGAIN;
     }
     udpna_unlock(nadata);
-	
+
     return rv;
 }
 

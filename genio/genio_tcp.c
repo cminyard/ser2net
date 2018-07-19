@@ -458,7 +458,7 @@ tcpn_fd_cleared(int fd, void *cbdata)
     tcpn_deref_and_unlock(ndata);
 }
 
-static int 
+static int
 tcpn_finish_setup(struct tcpn_data *ndata, int new_fd,
 		  struct sockaddr *addr, socklen_t addrlen)
 {
@@ -893,7 +893,7 @@ tcpna_shutdown(struct genio_acceptor *acceptor,
     else
 	rv = EBUSY;
     tcpna_unlock(nadata);
-	
+
     return rv;
 }
 

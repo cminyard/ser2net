@@ -103,7 +103,6 @@ int baud_to_cisco_baud(int val);
 /*
  * Convert string parameter into a termios setting.  Valid values
  * are 1STOPBIT, 2STOPBITS, 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS,
- * 
  */
 int process_termios_parm(struct termios *termio, char *parm);
 

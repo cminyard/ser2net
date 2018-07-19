@@ -94,7 +94,7 @@ struct net_info {
     bool remote_fixed;			/* Tells if the remote address was
 					   set in the configuration, and
 					   cannot be changed. */
-    bool connect_back;			/* True if we connect to the remote 
+    bool connect_back;			/* True if we connect to the remote
 					   address when data comes in. */
     struct addrinfo *remote_ai;
 
