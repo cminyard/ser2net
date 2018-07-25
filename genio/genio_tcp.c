@@ -680,7 +680,7 @@ struct tcpna_data {
 
     unsigned int max_read_size;
 
-    DEFINE_LOCK(, lock);
+    struct genio_lock *lock;
 
     bool setup;			/* Network sockets are allocated. */
     bool enabled;		/* Accepts are being handled. */
@@ -716,6 +716,8 @@ write_nofail(int fd, const char *data, size_t count)
 static void
 tcpna_finish_free(struct tcpna_data *nadata)
 {
+    if (nadata->lock)
+	nadata->o->free_lock(nadata->lock);
     if (nadata->name)
 	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
@@ -728,13 +730,13 @@ tcpna_finish_free(struct tcpna_data *nadata)
 static void
 tcpna_lock(struct tcpna_data *nadata)
 {
-    LOCK(nadata->lock);
+    nadata->o->lock(nadata->lock);
 }
 
 static void
 tcpna_unlock(struct tcpna_data *nadata)
 {
-    UNLOCK(nadata->lock);
+    nadata->o->unlock(nadata->lock);
 }
 
 static void
@@ -972,6 +974,10 @@ tcp_genio_acceptor_alloc(const char *name,
     nadata->o = o;
     tcpna_ref(nadata);
 
+    nadata->lock = o->alloc_lock(o);
+    if (!nadata->lock)
+	goto out_nomem;
+
     nadata->name = strdup(name);
     if (!nadata->name)
 	goto out_nomem;
@@ -983,7 +989,6 @@ tcp_genio_acceptor_alloc(const char *name,
     acc->funcs = &genio_acc_tcp_funcs;
     acc->type = GENIO_TYPE_TCP;
 
-    INIT_LOCK(nadata->lock);
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
 
@@ -993,6 +998,8 @@ tcp_genio_acceptor_alloc(const char *name,
  out_nomem:
     if (ai)
 	genio_free_addrinfo(o, ai);
+    if (nadata->lock)
+	o->free_lock(nadata->lock);
     if (nadata) {
 	if (nadata->name)
 	    free(nadata->name);
