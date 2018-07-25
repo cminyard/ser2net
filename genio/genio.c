@@ -356,15 +356,24 @@ genio_set_write_callback_enable(struct genio *net, bool enabled)
 }
 
 void *
-genio_acceptor_get_user_data(struct genio_acceptor *acceptor)
+genio_acc_get_user_data(struct genio_acceptor *acceptor)
 {
     return acceptor->user_data;
 }
 
 void
-genio_acceptor_set_user_data(struct genio_acceptor *acceptor,
-			     void *user_data)
+genio_acc_set_user_data(struct genio_acceptor *acceptor,
+			void *user_data)
 {
+    acceptor->user_data = user_data;
+}
+
+void
+genio_acc_set_callbacks(struct genio_acceptor *acceptor,
+			struct genio_acceptor_callbacks *cbs,
+			void *user_data)
+{
+    acceptor->cbs = cbs;
     acceptor->user_data = user_data;
 }
 

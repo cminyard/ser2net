@@ -379,13 +379,21 @@ struct genio_acceptor_callbacks {
 /*
  * Return the user data supplied to the allocator.
  */
-void *genio_acceptor_get_user_data(struct genio_acceptor *acceptor);
+void *genio_acc_get_user_data(struct genio_acceptor *acceptor);
 
 /*
  * Set the user data.  May be called if the acceptor is not enabled.
  */
-void genio_acceptor_set_user_data(struct genio_acceptor *acceptor,
-				  void *user_data);
+void genio_acc_set_user_data(struct genio_acceptor *acceptor,
+			     void *user_data);
+
+/*
+ * Set the callbacks and user data.  May be called if the acceptor is
+ * not enabled.
+ */
+void genio_acc_set_callbacks(struct genio_acceptor *acceptor,
+			     struct genio_acceptor_callbacks *cbs,
+			     void *user_data);
 
 /*
  * An acceptor is allocated without opening any sockets.  This

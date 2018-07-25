@@ -690,7 +690,7 @@ struct waiter { };
 
     ~genio_acceptor()
     {
-	struct genio_acc_data *data = genio_acceptor_get_user_data(self);
+	struct genio_acc_data *data = genio_acc_get_user_data(self);
 
 	genio_acc_free(self);
 	deref_swig_cb_val(data->handler_val);

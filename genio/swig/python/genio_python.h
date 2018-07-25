@@ -334,7 +334,7 @@ genio_acc_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 static void
 genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
 {
-    struct genio_acc_data *data = genio_acceptor_get_user_data(acceptor);
+    struct genio_acc_data *data = genio_acc_get_user_data(acceptor);
     swig_ref acc_ref, io_ref;
     PyObject *args;
     OI_PY_STATE gstate;

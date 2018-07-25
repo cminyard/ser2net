@@ -2171,7 +2171,7 @@ static rotator_t *rotators = NULL;
 static void
 handle_rot_accept(struct genio_acceptor *acceptor, struct genio *net)
 {
-    rotator_t *rot = genio_acceptor_get_user_data(acceptor);
+    rotator_t *rot = genio_acc_get_user_data(acceptor);
     int i;
     const char *err;
 
@@ -2327,7 +2327,7 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 static void
 handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
 {
-    port_info_t *port = genio_acceptor_get_user_data(acceptor);
+    port_info_t *port = genio_acc_get_user_data(acceptor);
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
@@ -2469,7 +2469,7 @@ static waiter_t *acceptor_shutdown_wait;
 static void
 handle_port_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 {
-    port_info_t *port = genio_acceptor_get_user_data(acceptor);
+    port_info_t *port = genio_acc_get_user_data(acceptor);
 
     LOCK(port->lock);
     while (port->wait_acceptor_shutdown--)
@@ -2606,8 +2606,8 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     tmp_acceptor = new_port->acceptor;
     new_port->acceptor = curr->acceptor;
     curr->acceptor = tmp_acceptor;
-    genio_acceptor_set_user_data(curr->acceptor, curr);
-    genio_acceptor_set_user_data(new_port->acceptor, new_port);
+    genio_acc_set_user_data(curr->acceptor, curr);
+    genio_acc_set_user_data(new_port->acceptor, new_port);
 
     for (i = 0; i < new_port->max_connections; i++) {
 	if (i >= curr->max_connections)
