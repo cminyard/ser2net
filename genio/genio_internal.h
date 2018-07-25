@@ -150,4 +150,6 @@ struct addrinfo *genio_dup_addrinfo(struct genio_os_funcs *o,
 				    struct addrinfo *ai);
 void genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai);
 
+char *genio_strdup(struct genio_os_funcs *o, const char *str);
+
 #endif /* SER2NET_GENIO_INTERNAL_H */

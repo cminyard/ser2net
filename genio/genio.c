@@ -553,7 +553,7 @@ genio_dup_addrinfo(struct genio_os_funcs *o, struct addrinfo *iai)
 	}
 	memcpy(aic->ai_addr, iai->ai_addr, iai->ai_addrlen);
 	if (iai->ai_canonname) {
-	    aic->ai_canonname = strdup(iai->ai_canonname);
+	    aic->ai_canonname = genio_strdup(o, iai->ai_canonname);
 	    if (!aic->ai_canonname) {
 		o->free(o, aic->ai_addr);
 		o->free(o, aic);
@@ -589,4 +589,19 @@ genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai)
 	    o->free(o, aic->ai_canonname);
 	o->free(o, aic);
     }
+}
+
+char *
+genio_strdup(struct genio_os_funcs *o, const char *str)
+{
+    char *s;
+
+    if (!str)
+	return NULL;
+
+    s = o->zalloc(o, strlen(str) + 1);
+    if (!s)
+	return NULL;
+    strcpy(s, str);
+    return s;
 }

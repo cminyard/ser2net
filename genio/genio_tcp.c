@@ -978,7 +978,7 @@ tcp_genio_acceptor_alloc(const char *name,
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->name = strdup(name);
+    nadata->name = genio_strdup(o, name);
     if (!nadata->name)
 	goto out_nomem;
 

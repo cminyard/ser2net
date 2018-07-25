@@ -1085,7 +1085,7 @@ udp_genio_acceptor_alloc(const char *name,
 	goto out_err;
     nadata->o = o;
 
-    nadata->name = strdup(name);
+    nadata->name = genio_strdup(o, name);
     if (!nadata->name)
 	goto out_err;
 

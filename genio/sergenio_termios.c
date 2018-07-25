@@ -969,7 +969,7 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
     sdata->default_termios.c_cc[VSTOP] = 19;
     sdata->default_termios.c_iflag |= IGNBRK;
 
-    sdata->devname = strdup(devname);
+    sdata->devname = genio_strdup(o, devname);
     if (!sdata->devname) {
 	err = ENOMEM;
 	goto out;

@@ -872,7 +872,7 @@ stdio_genio_alloc(char *const argv[],
     if (!nadata->argv)
 	goto out_nomem;
     for (i = 0; i < argc; i++) {
-	nadata->argv[i] = strdup(argv[i]);
+	nadata->argv[i] = genio_strdup(o, argv[i]);
 	if (!nadata->argv[i])
 	    goto out_nomem;
     }
