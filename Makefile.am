@@ -4,7 +4,7 @@ AM_CFLAGS=-Wall -I$(top_srcdir)
 ser2net_SOURCES = controller.c dataxfer.c readconfig.c \
 	ser2net.c led.c led_sysfs.c devio_devcfg.c devio_sol.c
 ser2net_LDADD = $(top_builddir)/utils/libutils.a \
-		$(top_builddir)/genio/libgenio.a
+		$(top_builddir)/genio/libgenio.a -lssl -lcrypto
 noinst_HEADERS = controller.h dataxfer.h readconfig.h \
 	ser2net.h led.h led_sysfs.h devio.h
 man_MANS = ser2net.8

@@ -494,6 +494,14 @@ int stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
 			       const struct genio_acceptor_callbacks *cbs,
 			       void *user_data,
 			       struct genio_acceptor **acceptor);
+int ssl_genio_acceptor_alloc(const char *name,
+			     char *args[],
+			     struct genio_os_funcs *o,
+			     struct genio_acceptor *child,
+			     unsigned int max_read_size,
+			     const struct genio_acceptor_callbacks *cbs,
+			     void *user_data,
+			     struct genio_acceptor **acceptor);
 
 /* Client allocators. */
 
@@ -525,6 +533,17 @@ int stdio_genio_alloc(char *const argv[],
 		      const struct genio_callbacks *cbs,
 		      void *user_data,
 		      struct genio **new_genio);
+
+/*
+ * Make an SSL connection over another genio.
+ */
+int ssl_genio_alloc(struct genio *child,
+		    char *args[],
+		    struct genio_os_funcs *o,
+		    unsigned int max_read_size,
+		    const struct genio_callbacks *cbs, void *user_data,
+		    struct genio **net);
+
 
 /*
  * Compare two sockaddr structure and return TRUE if they are equal

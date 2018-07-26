@@ -29,7 +29,8 @@ enum genio_type {
     GENIO_TYPE_UDP,
     GENIO_TYPE_STDIO,
     GENIO_TYPE_SER_TELNET,
-    GENIO_TYPE_SER_TERMIOS
+    GENIO_TYPE_SER_TERMIOS,
+    GENIO_TYPE_SSL
 };
 
 struct genio_functions {
