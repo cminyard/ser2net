@@ -265,7 +265,7 @@ struct port_info
 				     is done. */
 
     /* Is RFC 2217 mode enabled? */
-    int is_2217;
+    bool is_2217;
 
     /* Masks for RFC 2217 */
     unsigned char linestate_mask;
@@ -273,7 +273,7 @@ struct port_info
     unsigned char last_modemstate;
 
     /* Allow RFC 2217 mode */
-    int allow_2217;
+    bool allow_2217;
 
     /* Send a break if we get a sync command? */
     int telnet_brk_on_sync;
@@ -455,11 +455,12 @@ static unsigned char telnet_init_seq[] = {
     TN_IAC, TN_WILL, TN_OPT_ECHO,
     TN_IAC, TN_DONT, TN_OPT_ECHO,
     TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
+    TN_IAC, TN_DO,   TN_OPT_COM_PORT,
 };
 
 /* Our telnet command table. */
 static void com_port_handler(void *cb_data, unsigned char *option, int len);
-static int com_port_will(void *cb_data);
+static int com_port_will_do(void *cb_data, unsigned char cmd);
 
 static struct telnet_cmd telnet_cmds[] =
 {
@@ -467,8 +468,8 @@ static struct telnet_cmd telnet_cmds[] =
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
     { TN_OPT_ECHO,		   0,     1,          1,       1, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
-    { TN_OPT_COM_PORT,		   1,     0,          0,       0, 0, 0,
-      com_port_handler, com_port_will },
+    { TN_OPT_COM_PORT,		   1,     0,          0,       1,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
     { TELNET_CMD_END_OPTION }
 };
 
@@ -2003,7 +2004,7 @@ port_dev_enable(port_info_t *port, net_info_t *netcon,
 	    return -1;
 
     recalc_port_chardelay(port);
-    port->is_2217 = 0;
+    port->is_2217 = false;
 
     if (!is_reconfig) {
 	if (port->devstr) {
@@ -3029,9 +3030,9 @@ myconfig(void *data, struct absout *eout, const char *pos)
     int rv, val;
 
     if (strcmp(pos, "remctl") == 0) {
-	port->allow_2217 = 1;
+	port->allow_2217 = true;
     } else if (strcmp(pos, "-remctl") == 0) {
-	port->allow_2217 = 0;
+	port->allow_2217 = false;
     } else if (strcmp(pos, "kickolduser") == 0) {
         port->kickolduser_mode = 1;
     } else if (strcmp(pos, "-kickolduser") == 0) {
@@ -3885,7 +3886,7 @@ disconnect_port(struct controller_info *cntlr,
 }
 
 static int
-com_port_will(void *cb_data)
+com_port_will_do(void *cb_data, unsigned char cmd)
 {
     net_info_t *netcon = cb_data;
     port_info_t *port = netcon->port;
@@ -3894,8 +3895,19 @@ com_port_will(void *cb_data)
     if (!port->allow_2217)
 	return 0;
 
-    /* The remote end turned on RFC2217 handling. */
-    port->is_2217 = 1;
+    if (cmd != TN_WILL && cmd != TN_WONT)
+	/* We only handle these. */
+	return 0;
+
+    if (cmd == TN_WONT) {
+	/* The remote end turned off RFC2217 handling. */
+	port->is_2217 = false;
+	return 0;
+    }
+
+    port->is_2217 = true;
+
+    /* Set up modem state mask. */
     port->linestate_mask = 0;
     port->modemstate_mask = 255;
     port->last_modemstate = 0;
@@ -3920,6 +3932,9 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
     int val;
     unsigned char ucval;
     int cisco_ios_baud_rates = 0;
+
+    if (!port->is_2217)
+	return;
 
     if (len < 2)
 	return;

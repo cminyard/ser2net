@@ -51,6 +51,7 @@ struct stel_data {
     bool in_open;
     void (*open_done)(struct genio *net, int err, void *open_data);
     void *open_data;
+    unsigned int open_wait_count;
 
     bool in_free;
     bool closed;
@@ -71,6 +72,7 @@ struct stel_data {
 
     struct telnet_data_s tn_data;
     bool cisco_baud;
+    bool do_2217;
 
     bool xmit_enabled;
 
@@ -111,7 +113,12 @@ stel_queue(struct stel_data *sdata, int option,
 			int baud, void *cb_data),
 	   void *cb_data)
 {
-    struct stel_req *curr, *req = sdata->o->zalloc(sdata->o, sizeof(*req));
+    struct stel_req *curr, *req;
+
+    if (!sdata->do_2217)
+	return ENOTSUP;
+
+    req = sdata->o->zalloc(sdata->o, sizeof(*req));
     if (!req)
 	return ENOMEM;
 
@@ -393,7 +400,7 @@ stel_finish_read(struct stel_data *sdata, int err, unsigned int count)
 
     sdata->in_read = false;
 
-    if (sdata->read_enabled)
+    if (sdata->read_enabled || sdata->in_open)
 	genio_set_read_callback_enable(sdata->net, true);
 }
 
@@ -449,17 +456,26 @@ stel_sub_open_done(struct genio *net, int err, void *cb_data)
 {
     struct stel_data *sdata = cb_data;
 
-    if (sdata->open_done)
+    /*
+     * Wait until we get the DO/DONT back from the remote end for the
+     * com port before reporting open success.  That way we don't
+     * issue com port commands before everything is ready.
+     */
+    if (err && sdata->open_done)
 	sdata->open_done(&sdata->snet.net, err, sdata->open_data);
 
     stel_lock(sdata);
-    sdata->in_open = false;
     if (err) {
+	sdata->open_wait_count = 0;
+	sdata->in_open = false;
 	sdata->closed = true;
 	sdata->o->stop_timer(sdata->timer);
     } else {
-	genio_set_read_callback_enable(sdata->net, sdata->read_enabled);
-	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
+	/* Wait three timeouts for com port do/dont. */
+	sdata->open_wait_count = 3;
+	/* Enable low-level for telnet processing. */
+	genio_set_read_callback_enable(sdata->net, true);
+	genio_set_write_callback_enable(sdata->net, true);
     }
     stel_unlock(sdata);
 }
@@ -610,7 +626,19 @@ stel_genio_read(struct genio *net, int readerr,
     unsigned int count = 0;
 
     stel_lock(sdata);
-    if (!sdata->read_enabled || sdata->data_pending_len)
+    if (sdata->in_open && readerr) {
+	stel_unlock(sdata);
+	if (sdata->open_done)
+	    sdata->open_done(&sdata->snet.net, readerr, sdata->open_data);
+	stel_lock(sdata);
+	sdata->open_wait_count = 0;
+	sdata->in_open = false;
+	sdata->closed = true;
+	sdata->o->stop_timer(sdata->timer);
+	goto out_unlock;
+    }
+
+    if (!sdata->in_open && (!sdata->read_enabled || sdata->data_pending_len))
 	goto out_unlock;
 
     if (readerr) {
@@ -645,11 +673,16 @@ stel_genio_read(struct genio *net, int readerr,
 						  sizeof(sdata->read_data),
 						  &buf, &buflen,
 						  &sdata->tn_data);
-
     if (sdata->data_pending_len) {
-	count = mynet->cbs->read_callback(&sdata->snet.net, 0,
-					  sdata->read_data,
-					  sdata->data_pending_len, 0);
+	if (sdata->in_open)
+	    /* Ignore user data until we get the telnet com port do/dont. */
+	    count = sdata->data_pending_len;
+	else if (sdata->read_enabled)
+	    count = mynet->cbs->read_callback(&sdata->snet.net, 0,
+					      sdata->read_data,
+					      sdata->data_pending_len, 0);
+	else
+	    count = 0;
 	if (count == sdata->data_pending_len && buflen)
 	    goto process_more;
     }
@@ -757,6 +790,33 @@ sergenio_telnet_cmd_handler(void *cb_data, unsigned char cmd)
 {
 }
 
+static int
+com_port_will_do(void *cb_data, unsigned char cmd)
+{
+    struct stel_data *sdata = cb_data;
+
+    if (cmd != TN_DO && cmd != TN_DONT)
+	/* We only handle these. */
+	return 0;
+
+    if (sdata->in_open) {
+	if (sdata->open_done)
+	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
+	sdata->in_open = false;
+	sdata->open_wait_count = 0;
+	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
+    }
+
+    if (cmd == TN_WONT) {
+	/* The remote end turned off RFC2217 handling. */
+	sdata->do_2217 = false;
+	return 0;
+    }
+
+    sdata->do_2217 = true;
+    return 1;
+}
+
 static void
 com_port_handler(void *cb_data, unsigned char *option, int len)
 {
@@ -816,12 +876,14 @@ static const struct telnet_cmd sergenio_telnet_cmds[] = {
     { TN_OPT_SUPPRESS_GO_AHEAD,	   1,     0,          0,       0, },
     { TN_OPT_ECHO,		   1,     0,          0,       0, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       0, },
-    { TN_OPT_COM_PORT,		   1,     1,          0,       0,
-      .option_handler = com_port_handler },
+    { TN_OPT_COM_PORT,		   1,     0,          1,       0,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
     { TELNET_CMD_END_OPTION }
 };
 
-static const unsigned char sergenio_telnet_init_seq[] = { };
+static const unsigned char sergenio_telnet_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_COM_PORT,
+};
 
 static void
 sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
@@ -834,6 +896,20 @@ sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
     if (sdata->close_count) {
 	stel_unlock(sdata);
 	return;
+    }
+
+    if (sdata->open_wait_count) {
+	if (--sdata->open_wait_count == 0) {
+	    stel_unlock(sdata);
+	    if (sdata->open_done)
+		sdata->open_done(&sdata->snet.net, ETIMEDOUT, sdata->open_data);
+	    stel_lock(sdata);
+	    sdata->in_open = false;
+	    sdata->closed = true;
+	    sdata->o->stop_timer(sdata->timer);
+	    stel_unlock(sdata);
+	    return;
+	}
     }
 
     req = sdata->reqs;

@@ -61,55 +61,73 @@ handle_telnet_cmd(telnet_data_t *td)
     } else if (cmd_str[1] == TN_WILL) {
 	unsigned char option = cmd_str[2];
 
+	rv = 0;
 	cmd = find_cmd(td->cmds, option);
-	if (!cmd || !cmd->sent_do) {
-	    if ((!cmd) || (!cmd->i_will))
-		send_i(td, TN_DONT, option);
-	    else {
-		rv = 1;
-		if (cmd->will_handler)
-		    rv = cmd->will_handler(td->cb_data);
-		if (rv)
-		    send_i(td, TN_DO, option);
-		else
-		    send_i(td, TN_DONT, option);
-	    }
-	} else if (cmd)
-	    cmd->sent_do = 0;
 	if (cmd) {
-	    cmd->rem_will = 1;
+	    if (cmd->will_do_handler)
+		rv = cmd->will_do_handler(td->cb_data, TN_WILL);
+	    else if (cmd->i_will)
+		rv = 1;
 	}
+
+	if (!cmd || !cmd->sent_do) {
+	    if (rv)
+		send_i(td, TN_DO, option);
+	    else
+		send_i(td, TN_DONT, option);
+	} else if (cmd) {
+	    cmd->sent_do = 0;
+	}
+
+	if (cmd)
+	    cmd->rem_will = 1;
     } else if (cmd_str[1] == TN_WONT) {
 	unsigned char option = cmd_str[2];
 
 	cmd = find_cmd(td->cmds, option);
+	if (cmd && cmd->will_do_handler)
+	    cmd->will_do_handler(td->cb_data, TN_WONT);
 	if (!cmd || !cmd->sent_do)
 	    send_i(td, TN_DONT, option);
 	else if (cmd)
 	    cmd->sent_do = 0;
+
 	if (cmd)
 	    cmd->rem_will = 0;
     } else if (cmd_str[1] == TN_DO) {
 	unsigned char option = cmd_str[2];
 
+	rv = 0;
 	cmd = find_cmd(td->cmds, option);
+	if (cmd) {
+	    if (cmd->will_do_handler)
+		rv = cmd->will_do_handler(td->cb_data, TN_DO);
+	    else if (cmd->i_do)
+		rv = 1;
+	}
+
 	if (!cmd || !cmd->sent_will) {
-	    if ((!cmd) || (! cmd->i_do))
-		send_i(td, TN_WONT, option);
-	    else
+	    if (rv)
 		send_i(td, TN_WILL, option);
-	} else if (cmd)
+	    else
+		send_i(td, TN_WONT, option);
+	} else if (cmd) {
 	    cmd->sent_will = 0;
+	}
+
 	if (cmd)
 	    cmd->rem_do = 1;
     } else if (cmd_str[1] == TN_DONT) {
 	unsigned char option = cmd_str[2];
 
 	cmd = find_cmd(td->cmds, option);
+	if (cmd && cmd->will_do_handler)
+	    cmd->will_do_handler(td->cb_data, TN_DONT);
 	if (!cmd || !cmd->sent_will)
 	    send_i(td, TN_WONT, option);
 	else if (cmd)
 	    cmd->sent_will = 0;
+
 	if (cmd)
 	    cmd->rem_do = 0;
     }

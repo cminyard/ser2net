@@ -187,7 +187,8 @@ sergenio_baud_b(struct sergenio_b *sbnet, int *baud)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*baud = data.val;
 
@@ -210,7 +211,8 @@ sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*datasize = data.val;
 
@@ -233,7 +235,8 @@ sergenio_parity_b(struct sergenio_b *sbnet, int *parity)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*parity = data.val;
 
@@ -256,7 +259,8 @@ sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*stopbits = data.val;
 
@@ -279,7 +283,8 @@ sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*flowcontrol = data.val;
 
@@ -302,7 +307,8 @@ sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*breakv = data.val;
 
@@ -325,7 +331,8 @@ sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*dtr = data.val;
 
@@ -348,7 +355,8 @@ sergenio_rts_b(struct sergenio_b *sbnet, int *rts)
     if (!err)
 	sbnet->o->wait(data.waiter, NULL);
     sbnet->o->free_waiter(data.waiter);
-    err = data.err;
+    if (!err)
+	err = data.err;
     if (!err)
 	*rts = data.val;
 
