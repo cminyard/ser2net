@@ -784,7 +784,7 @@ tcpna_readhandler(int fd, void *cbdata)
 
     err = tcpn_alloc(nadata->o, nadata->max_read_size, &ndata);
     if (err) {
-	syslog(LOG_ERR, "Error allcoating tcp port %s: %s", nadata->name,
+	syslog(LOG_ERR, "Error allocating tcp port %s: %s", nadata->name,
 	       strerror(err));
 	close(new_fd);
     }
