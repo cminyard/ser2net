@@ -11,8 +11,8 @@ class basehandler:
 
 termioschk.test_ser2net_termios("base rfc2217", basehandler(),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class cshandler:
     def __init__(self, cs, bits):
@@ -32,26 +32,26 @@ class cshandler:
 termioschk.test_ser2net_termios("cs5 rfc2217 settings",
                                 cshandler(termios.CS5, 5),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("cs6 rfc2217 settings",
                                 cshandler(termios.CS6, 6),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("cs7 rfc2217 settings",
                                 cshandler(termios.CS7, 7),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("cs8 rfc2217 settings",
                                 cshandler(termios.CS8, 8),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class parhandler:
     def __init__(self, tval, val):
@@ -70,15 +70,15 @@ termioschk.test_ser2net_termios("even parity rfc2217 settings",
                                 parhandler(termios.PARENB,
                                            genio.SERGENIO_PARITY_EVEN),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("odd parity rfc2217 settings",
                                 parhandler(termios.PARENB | termios.PARODD,
                                            genio.SERGENIO_PARITY_ODD),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class twostophandler:
     def op(self, io1, io2):
@@ -89,8 +89,8 @@ class twostophandler:
 termioschk.test_ser2net_termios("2 stop bit rfx2217 settings",
                                 twostophandler(),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class xonhandler:
     def op(self, io1, io2):
@@ -101,8 +101,8 @@ class xonhandler:
 termioschk.test_ser2net_termios("xon/xoff rfc2217 settings",
                                 xonhandler(),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class rtshandler:
     def op(self, io1, io2):
@@ -113,8 +113,8 @@ class rtshandler:
 termioschk.test_ser2net_termios("xon/xoff rfc2217 settings",
                                 xonhandler(),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 class baudhandler:
     def __init__(self, tval, val):
@@ -134,73 +134,73 @@ class baudhandler:
 termioschk.test_ser2net_termios("300 baud rfc2217 settings",
                                 baudhandler(termios.B300, 300),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("600 baud rfc2217 settings",
                                 baudhandler(termios.B600, 600),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("1200 baud rfc2217 settings",
                                 baudhandler(termios.B1200, 1200),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("2400 baud rfc2217 settings",
                                 baudhandler(termios.B2400, 2400),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("4800 baud rfc2217 settings",
                                 baudhandler(termios.B4800, 4800),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("9600 baud rfc2217 settings",
                                 baudhandler(termios.B9600, 9600),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("19200 baud rfc2217 settings",
                                 baudhandler(termios.B19200, 19200),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("38400 baud rfc2217 settings",
                                 baudhandler(termios.B38400, 38400),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("57600 baud rfc2217 settings",
                                 baudhandler(termios.B57600, 57600),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("115200 baud rfc2217 settings",
                                 baudhandler(termios.B115200, 115200),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("230400 baud rfc2217 settings",
                                 baudhandler(termios.B230400, 230400),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
-        "ser,telnet,tcp,localhost,3023",
-        "ser,termios,/dev/ttyPipeB0,9600N81")
+        "telnet,tcp,localhost,3023",
+        "termios,/dev/ttyPipeB0,9600N81")
 
 def test_dtr():
     config = "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n"
-    io1str = "ser,telnet,tcp,localhost,3023"
-    io2str = "ser,termios,/dev/ttyPipeB0,9600N81"
+    io1str = "telnet,tcp,localhost,3023"
+    io2str = "termios,/dev/ttyPipeB0,9600N81"
 
     print("termios dtr rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
@@ -248,8 +248,8 @@ test_dtr()
 
 def test_rts():
     config = "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n"
-    io1str = "ser,telnet,tcp,localhost,3023"
-    io2str = "ser,termios,/dev/ttyPipeB0,9600N81"
+    io1str = "telnet,tcp,localhost,3023"
+    io2str = "termios,/dev/ttyPipeB0,9600N81"
 
     print("termios rts rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))

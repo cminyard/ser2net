@@ -479,15 +479,27 @@ str_to_genio(const char *str,
 	err = stdio_genio_alloc(argv, o, max_read_size, cbs, user_data,
 				genio);
 	str_to_argv_free(argc, argv);
-    } else if (strncmp(str, "ser,", 4) == 0) {
+    } else if (strncmp(str, "telnet,", 7) == 0) {
+	struct genio *io;
 	struct sergenio *sio;
 
-	str += 4;
-	err = str_to_sergenio(str, o, max_read_size, NULL, cbs, user_data,
-			      &sio);
+	str += 7;
+	err = str_to_genio(str, o, max_read_size, NULL, NULL, &io);
 	if (err)
 	    return err;
-	*genio = sergenio_to_genio(sio);
+	err = sergenio_telnet_alloc(io, o, NULL, cbs, user_data, &sio);
+	if (err)
+	    genio_free(io);
+	else
+	    *genio = sergenio_to_genio(sio);
+    } else if (strncmp(str, "termios,", 8) == 0) {
+	struct sergenio *sio;
+
+	str += 8;
+	err = sergenio_termios_alloc(str, o, max_read_size, NULL,
+				     cbs, user_data, &sio);
+	if (!err)
+	    *genio = sergenio_to_genio(sio);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
