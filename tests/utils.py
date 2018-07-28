@@ -235,6 +235,8 @@ class Ser2netDaemon:
         SIGTERM a few more times.  If it still refuses to close, send
         a SIGKILL.  If all that fails, raise an exception.
         """
+        if (debug):
+            print("Terminating")
         self.handler.close()
         count = 10
         while (count > 0):
@@ -329,16 +331,26 @@ def setup_2_ser2net(o, config, io1str, io2str):
     should be closed upon completion of the test, this is set to false
     for ser2net stdio.
     """
+    io1 = None
+    io2 = None
     ser2net = Ser2netDaemon(o, config)
-
-    if (io1str):
-        io1 = alloc_io(o, io1str)
-        io1.closeme = True
-    else:
-        io1 = ser2net.io
-        io1.handler.ignore_input = False
-        io1.closeme = False
-    io2 = alloc_io(o, io2str)
+    try:
+        if (io1str):
+            io1 = alloc_io(o, io1str)
+            io1.closeme = True
+        else:
+            io1 = ser2net.io
+            io1.handler.ignore_input = False
+            io1.closeme = False
+        io2 = alloc_io(o, io2str)
+    except:
+        if io1:
+            if io1.closeme:
+                io_close(io1)
+        if io2:
+            io_close(io2)
+        ser2net.terminate()
+        raise
     return (ser2net, io1, io2)
 
 def finish_2_ser2net(ser2net, io1, io2):
