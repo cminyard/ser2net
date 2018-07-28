@@ -462,13 +462,24 @@ static unsigned char telnet_init_seq[] = {
 static void com_port_handler(void *cb_data, unsigned char *option, int len);
 static int com_port_will_do(void *cb_data, unsigned char cmd);
 
-static struct telnet_cmd telnet_cmds[] =
+static struct telnet_cmd telnet_cmds_2217[] =
 {
     /*                        I will,  I do,  sent will, sent do */
     { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
     { TN_OPT_ECHO,		   0,     1,          1,       1, },
     { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
     { TN_OPT_COM_PORT,		   1,     0,          0,       1,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
+    { TELNET_CMD_END_OPTION }
+};
+
+static struct telnet_cmd telnet_cmds[] =
+{
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
+    { TN_OPT_ECHO,		   0,     1,          1,       1, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
+    { TN_OPT_COM_PORT,		   0,     0,          0,       0,
       .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
     { TELNET_CMD_END_OPTION }
 };
@@ -2055,8 +2066,10 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     if (port->enabled == PORT_TELNET) {
 	err = telnet_init(&netcon->tn_data, netcon, telnet_output_ready,
 			  telnet_cmd_handler,
-			  telnet_cmds,
-			  telnet_init_seq, sizeof(telnet_init_seq));
+			  port->allow_2217 ? telnet_cmds_2217 : telnet_cmds,
+			  telnet_init_seq,
+			  port->allow_2217 ? sizeof(telnet_init_seq)
+			      : sizeof(telnet_init_seq) - 3);
 	if (err) {
 	    char *errstr = "Out of memory\r\n";
 
