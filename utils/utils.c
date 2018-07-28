@@ -94,7 +94,8 @@ write_ignore_fail(int fd, const char *data, size_t count)
     }
 }
 
-void str_to_argv_free(int argc, char **argv)
+void
+str_to_argv_free(int argc, char **argv)
 {
     if (!argv)
 	return;
@@ -105,24 +106,28 @@ void str_to_argv_free(int argc, char **argv)
     free(argv);
 }
 
-static bool is_sep_space(char c, char *seps)
+static bool
+is_sep_space(char c, char *seps)
 {
     return c && strchr(seps, c);
 }
 
-static char *skip_spaces(char *s, char *seps)
+static char *
+skip_spaces(char *s, char *seps)
 {
     while (is_sep_space(*s, seps))
 	s++;
     return s;
 }
 
-static bool isodigit(char c)
+static bool
+isodigit(char c)
 {
     return isdigit(c) && c != '8' && c != '9';
 }
 
-static int gettok(char **s, char **tok, char *seps, unsigned int *len)
+static int
+gettok(char **s, char **tok, char *seps, unsigned int *len, char *endchars)
 {
     char *t = skip_spaces(*s, seps);
     char *p = t;
@@ -132,7 +137,7 @@ static int gettok(char **s, char **tok, char *seps, unsigned int *len)
     unsigned int base = 8;
     char cval = 0;
 
-    if (!*t) {
+    if (!*t || strchr(endchars, *t)) {
 	*s = t;
 	*tok = NULL;
 	return 0;
@@ -191,9 +196,16 @@ static int gettok(char **s, char **tok, char *seps, unsigned int *len)
 	    inquote = *p;
 	} else if (*p == '\\') {
 	    escape = 1;
-	} else if (!inquote && is_sep_space(*p, seps)) {
-	    p++;
-	    break;
+	} else if (!inquote) {
+	    if (is_sep_space(*p, seps)) {
+		p++;
+		break;
+	    } else if (strchr(endchars, *p)) {
+		/* Don't skip endchars. */
+		break;
+	    } else {
+		*o++ = *p;
+	    }
 	} else {
 	    *o++ = *p;
 	}
@@ -206,7 +218,7 @@ static int gettok(char **s, char **tok, char *seps, unsigned int *len)
 
     *s = p;
     if (inquote || escape)
-	return -1;
+	return EINVAL;
 
     *o = '\0';
     if (len)
@@ -215,8 +227,10 @@ static int gettok(char **s, char **tok, char *seps, unsigned int *len)
     return 0;
 }
 
-int str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
-			unsigned int **r_lengths, char *seps)
+int
+str_to_argv_lengths_endchar(const char *ins, int *r_argc, char ***r_argv,
+			    unsigned int **r_lengths, char *seps,
+			    char *endchars, const char **nextptr)
 {
     char *orig_s = strdup(ins);
     unsigned int *lengths = NULL;
@@ -249,7 +263,7 @@ int str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
 	}
     }
 
-    err = gettok(&s, &tok, seps, &len);
+    err = gettok(&s, &tok, seps, &len, endchars);
     while (tok && !err) {
 	/*
 	 * Leave one spot at the end for the NULL and one for the
@@ -281,7 +295,7 @@ int str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
 	    lengths[argc] = len;
 	argv[argc++] = tok;
 
-	err = gettok(&s, &tok, seps, &len);
+	err = gettok(&s, &tok, seps, &len, endchars);
     }
 
     argv[argc] = NULL; /* NULL terminate the array. */
@@ -295,15 +309,31 @@ int str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
 	if (lengths)
 	    free(lengths);
     } else {
-	*r_argc = argc;
+	if (r_argc)
+	    *r_argc = argc;
 	*r_argv = argv;
 	if (r_lengths)
 	    *r_lengths = lengths;
+	if (nextptr) {
+	    if (strchr(endchars, *s))
+		*nextptr = ins + (s - orig_s) + 1;
+	    else
+		*nextptr = NULL;
+	}
     }
     return err;
 }
 
-int str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
+int
+str_to_argv_lengths(const char *ins, int *r_argc, char ***r_argv,
+		    unsigned int **r_lengths, char *seps)
+{
+    return str_to_argv_lengths_endchar(ins, r_argc, r_argv, r_lengths,
+				       seps, "", NULL);
+}
+
+int
+str_to_argv(const char *ins, int *r_argc, char ***r_argv, char *seps)
 {
     return str_to_argv_lengths(ins, r_argc, r_argv, NULL, seps);
 }

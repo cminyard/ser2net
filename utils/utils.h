@@ -59,6 +59,18 @@ int str_to_argv_lengths(const char *s, int *argc, char ***argv,
 			unsigned int **lengths,
 			char *seps);
 
+/*
+ * Like the above, but allows a set of characters to be specified that
+ * end the sequence, in "endchars".  If the scanner encounters one of
+ * those characters outside of an escape or quotes, it will terminate
+ * the scan.  If nextptr is not NULL, it sets it to a pointer to after
+ * the end character if the end character was encountered, or sets it
+ * to NULL if the end character was not encountered.
+ */
+int str_to_argv_lengths_endchar(const char *ins, int *r_argc, char ***r_argv,
+				unsigned int **r_lengths, char *seps,
+				char *endchars, const char **nextptr);
+
 /* Free the return of str_to_argv */
 void str_to_argv_free(int argc, char **argv);
 
