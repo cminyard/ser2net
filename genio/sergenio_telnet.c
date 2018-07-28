@@ -72,6 +72,7 @@ struct stel_data {
 
     struct telnet_data_s tn_data;
     bool cisco_baud;
+    bool allow_2217;
     bool do_2217;
 
     bool xmit_enabled;
@@ -799,6 +800,12 @@ com_port_will_do(void *cb_data, unsigned char cmd)
 	/* We only handle these. */
 	return 0;
 
+    if (cmd == TN_DONT)
+	/* The remote end turned off RFC2217 handling. */
+	sdata->do_2217 = false;
+    else
+	sdata->do_2217 = sdata->allow_2217;
+
     if (sdata->in_open) {
 	if (sdata->open_done)
 	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
@@ -807,13 +814,6 @@ com_port_will_do(void *cb_data, unsigned char cmd)
 	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
     }
 
-    if (cmd == TN_WONT) {
-	/* The remote end turned off RFC2217 handling. */
-	sdata->do_2217 = false;
-	return 0;
-    }
-
-    sdata->do_2217 = true;
     return 1;
 }
 
@@ -948,8 +948,34 @@ sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
     sdata->o->start_timer(timer, &timeout);
 }
 
+static int
+sergenio_process_args(struct stel_data *sdata, char *args[])
+{
+    unsigned int i;
+
+    if (!args)
+	return 0;
+
+    for (i = 0; args[i]; i++) {
+	const char *val;
+
+	if (cmpstrval(args[i], "rfc2217=", &val)) {
+	    if ((strcmp(val, "true") == 0) || (strcmp(val, "1") == 0))
+		sdata->allow_2217 = true;
+	    else if ((strcmp(val, "false") == 0) || (strcmp(val, "0") == 0))
+		sdata->allow_2217 = false;
+	    else
+		return EINVAL;
+	} else {
+	    return EINVAL;
+	}
+    }
+
+    return 0;
+}
+
 int
-sergenio_telnet_alloc(struct genio *net, struct genio_os_funcs *o,
+sergenio_telnet_alloc(struct genio *net, char *args[], struct genio_os_funcs *o,
 		      const struct sergenio_callbacks *scbs,
 		      const struct genio_callbacks *cbs, void *user_data,
 		      struct sergenio **snet)
@@ -960,7 +986,15 @@ sergenio_telnet_alloc(struct genio *net, struct genio_os_funcs *o,
     if (!sdata)
 	return ENOMEM;
 
-    sdata->lock = o->alloc_lock(o);
+    sdata->allow_2217 = true;
+
+    err = sergenio_process_args(sdata, args);
+    if (err) {
+	o->free(o, sdata);
+	return err;
+    }
+
+	sdata->lock = o->alloc_lock(o);
     if (!sdata->lock) {
 	o->free(o, sdata);
 	return ENOMEM;
@@ -996,7 +1030,7 @@ sergenio_telnet_alloc(struct genio *net, struct genio_os_funcs *o,
     err = telnet_init(&sdata->tn_data, sdata, sergenio_telnet_output_ready,
 		      sergenio_telnet_cmd_handler, sergenio_telnet_cmds,
 		      sergenio_telnet_init_seq,
-		      sizeof(sergenio_telnet_init_seq));
+		      sdata->allow_2217 ? sizeof(sergenio_telnet_init_seq) : 0);
     if (err) {
 	o->free_timer(sdata->timer);
 	o->free_lock(sdata->lock);

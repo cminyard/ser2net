@@ -465,7 +465,7 @@ str_to_genio(const char *str,
 	     void *user_data,
 	     struct genio **genio)
 {
-    int err;
+    int err = 0;
     struct addrinfo *ai = NULL;
     bool is_dgram, is_port_set;
 
@@ -479,19 +479,39 @@ str_to_genio(const char *str,
 	err = stdio_genio_alloc(argv, o, max_read_size, cbs, user_data,
 				genio);
 	str_to_argv_free(argc, argv);
-    } else if (strncmp(str, "telnet,", 7) == 0) {
-	struct genio *io;
+    } else if (strncmp(str, "telnet,", 7) == 0 ||
+	       strncmp(str, "telnet(", 7) == 0) {
+	struct genio *io = NULL;
 	struct sergenio *sio;
+	int argc;
+	char **args = NULL;
 
-	str += 7;
-	err = str_to_genio(str, o, max_read_size, NULL, NULL, &io);
-	if (err)
-	    return err;
-	err = sergenio_telnet_alloc(io, o, NULL, cbs, user_data, &sio);
-	if (err)
-	    genio_free(io);
-	else
+	if (str[6] == '(') {
+	    err = str_to_argv_lengths_endchar(str + 7, &argc, &args, NULL,
+					      NULL, ")", &str);
+	    if (!err && (!str || *str != ','))
+		err = EINVAL; /* No terminating ')' or ',' after */
+	    else
+		str++;
+	} else {
+	    str += 7;
+	}
+
+	if (!err)
+	    err = str_to_genio(str, o, max_read_size, NULL, NULL, &io);
+	if (!err)
+	    err = sergenio_telnet_alloc(io, args, o, NULL, cbs, user_data,
+					&sio);
+
+	if (args)
+	    str_to_argv_free(argc, args);
+
+	if (err) {
+	    if (io)
+		genio_free(io);
+	} else {
 	    *genio = sergenio_to_genio(sio);
+	}
     } else if (strncmp(str, "termios,", 8) == 0) {
 	struct sergenio *sio;
 

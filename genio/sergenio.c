@@ -21,6 +21,7 @@
 #include <string.h>
 #include <errno.h>
 
+#include "utils/utils.h"
 #include "sergenio_internal.h"
 
 struct genio *
@@ -380,16 +381,32 @@ str_to_sergenio(const char *str, struct genio_os_funcs *o,
 {
     int err;
 
-    if (strncmp(str, "telnet,", 7) == 0) {
+    if (strncmp(str, "telnet,", 7) == 0 ||
+	strncmp(str, "telnet(", 7) == 0) {
 	struct genio *io;
+	int argc;
+	char **args = NULL;
 
-	str += 7;
-	err = str_to_genio(str, o, read_buffer_size, NULL, NULL, &io);
-	if (err)
-	    return err;
-	err = sergenio_telnet_alloc(io, o, scbs, cbs, user_data, snet);
-	if (err)
-	    genio_free(io);
+	if (str[6] == '(') {
+	    err = str_to_argv_lengths_endchar(str + 7, &argc, &args, NULL,
+					      NULL, ")", &str);
+	    if (!err && !str)
+		err = EINVAL; /* No terminating ')' */
+	} else {
+	    str += 7;
+	}
+
+	if (!err)
+	    err = str_to_genio(str, o, read_buffer_size, NULL, NULL, &io);
+	if (!err)
+	    err = sergenio_telnet_alloc(io, args, o, scbs, cbs, user_data,
+					snet);
+
+	if (args)
+	    str_to_argv_free(argc, args);
+
+	if (err && io)
+		genio_free(io);
     } else if (strncmp(str, "termios,", 8) == 0) {
 	str += 8;
 	err = sergenio_termios_alloc(str, o, read_buffer_size, scbs,

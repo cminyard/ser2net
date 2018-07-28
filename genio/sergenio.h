@@ -169,7 +169,8 @@ int str_to_sergenio(const char *str, struct genio_os_funcs *o,
 		    const struct genio_callbacks *cbs, void *user_data,
 		    struct sergenio **snet);
 
-int sergenio_telnet_alloc(struct genio *genio, struct genio_os_funcs *o,
+int sergenio_telnet_alloc(struct genio *genio, char *args[],
+			  struct genio_os_funcs *o,
 			  const struct sergenio_callbacks *scbs,
 			  const struct genio_callbacks *cbs, void *user_data,
 			  struct sergenio **snet);
