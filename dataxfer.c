@@ -2974,18 +2974,18 @@ got_timeout(struct selector_s *sel,
     UNLOCK(port->lock);
 }
 
-static int cmpstrint(const char *s, const char *prefix, int *val,
+static int cmpstrint(const char *s, const char *prefix, int *rval,
 		     struct absout *eout)
 {
-    unsigned int end;
+    const char *val;
     char *endpos;
 
-    if (!cmpstrval(s, prefix, &end))
+    if (!cmpstrval(s, prefix, &val))
 	return 0;
 
-    *val = strtoul(s + end, &endpos, 10);
-    if (endpos == s + end || *endpos != '\0') {
-	eout->out(eout, "Invalid number for %s: %s\n", prefix, s + end);
+    *rval = strtoul(val, &endpos, 10);
+    if (endpos == val || *endpos != '\0') {
+	eout->out(eout, "Invalid number for %s: %s\n", prefix, val);
 	return -1;
     }
     return 1;
@@ -3026,8 +3026,9 @@ myconfig(void *data, struct absout *eout, const char *pos)
     port_info_t *port = data;
     enum str_type stype;
     char *s;
-    unsigned int len, end;
-    int rv, val;
+    const char *val;
+    unsigned int len;
+    int rv, ival;
 
     if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = true;
@@ -3065,21 +3066,21 @@ myconfig(void *data, struct absout *eout, const char *pos)
     } else if (strcmp(pos, "tb-timestamp") == 0 ||
 	       strcmp(pos, "-tb-timestamp") == 0) {
 	port->trace_both.timestamp = (*pos != '-');
-    } else if (cmpstrval(pos, "tr=", &end)) {
+    } else if (cmpstrval(pos, "tr=", &val)) {
 	/* trace read, data from the port to the socket */
-	port->trace_read.filename = find_tracefile(pos + end);
-    } else if (cmpstrval(pos, "tw=", &end)) {
+	port->trace_read.filename = find_tracefile(val);
+    } else if (cmpstrval(pos, "tw=", &val)) {
 	/* trace write, data from the socket to the port */
-	port->trace_write.filename = find_tracefile(pos + end);
-    } else if (cmpstrval(pos, "tb=", &end)) {
+	port->trace_write.filename = find_tracefile(val);
+    } else if (cmpstrval(pos, "tb=", &val)) {
 	/* trace both directions. */
-	port->trace_both.filename = find_tracefile(pos + end);
-    } else if (cmpstrval(pos, "led-rx=", &end)) {
+	port->trace_both.filename = find_tracefile(val);
+    } else if (cmpstrval(pos, "led-rx=", &val)) {
 	/* LED for UART RX traffic */
-	port->led_rx = find_led(pos + end);
-    } else if (cmpstrval(pos, "led-tx=", &end)) {
+	port->led_rx = find_led(val);
+    } else if (cmpstrval(pos, "led-tx=", &val)) {
 	/* LED for UART TX traffic */
-	port->led_tx = find_led(pos + end);
+	port->led_tx = find_led(val);
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
     } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
@@ -3088,52 +3089,52 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	port->enable_chardelay = true;
     } else if (strcmp(pos, "-chardelay") == 0) {
 	port->enable_chardelay = false;
-    } else if ((rv = cmpstrint(pos, "chardelay-scale=", &val, eout))) {
+    } else if ((rv = cmpstrint(pos, "chardelay-scale=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	port->chardelay_scale = val;
-    } else if ((rv = cmpstrint(pos, "chardelay-min=", &val, eout))) {
+	port->chardelay_scale = ival;
+    } else if ((rv = cmpstrint(pos, "chardelay-min=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	port->chardelay_min = val;
-    } else if ((rv = cmpstrint(pos, "chardelay-max=", &val, eout))) {
+	port->chardelay_min = ival;
+    } else if ((rv = cmpstrint(pos, "chardelay-max=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	port->chardelay_max = val;
-    } else if ((rv = cmpstrint(pos, "dev-to-net-bufsize=", &val, eout))) {
+	port->chardelay_max = ival;
+    } else if ((rv = cmpstrint(pos, "dev-to-net-bufsize=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	if (val < 2)
-	    val = 2;
-	port->dev_to_net.maxsize = val;
-    } else if ((rv = cmpstrint(pos, "net-to-dev-bufsize=", &val, eout))) {
+	if (ival < 2)
+	    ival = 2;
+	port->dev_to_net.maxsize = ival;
+    } else if ((rv = cmpstrint(pos, "net-to-dev-bufsize=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	if (val < 2)
-	    val = 2;
-	port->net_to_dev.maxsize = val;
-    } else if ((rv = cmpstrint(pos, "dev-to-tcp-bufsize=", &val, eout))) {
+	if (ival < 2)
+	    ival = 2;
+	port->net_to_dev.maxsize = ival;
+    } else if ((rv = cmpstrint(pos, "dev-to-tcp-bufsize=", &ival, eout))) {
 	/* deprecated */
 	if (rv == -1)
 	    return -1;
-	if (val < 2)
-	    val = 2;
-	port->dev_to_net.maxsize = val;
-    } else if ((rv = cmpstrint(pos, "tcp-to-dev-bufsize=", &val, eout))) {
+	if (ival < 2)
+	    ival = 2;
+	port->dev_to_net.maxsize = ival;
+    } else if ((rv = cmpstrint(pos, "tcp-to-dev-bufsize=", &ival, eout))) {
 	/* deprecated */
 	if (rv == -1)
 	    return -1;
-	if (val < 2)
-	    val = 2;
-	port->net_to_dev.maxsize = val;
-    } else if ((rv = cmpstrint(pos, "max-connections=", &val, eout))) {
+	if (ival < 2)
+	    ival = 2;
+	port->net_to_dev.maxsize = ival;
+    } else if ((rv = cmpstrint(pos, "max-connections=", &ival, eout))) {
 	if (rv == -1)
 	    return -1;
-	if (val < 1)
-	    val = 1;
-	port->max_connections = val;
-    } else if (cmpstrval(pos, "remaddr=", &end)) {
-	rv = port_add_remaddr(eout, port, pos + end);
+	if (ival < 1)
+	    ival = 1;
+	port->max_connections = ival;
+    } else if (cmpstrval(pos, "remaddr=", &val)) {
+	rv = port_add_remaddr(eout, port, val);
 	if (rv)
 	    return -1;
 	port->remaddr_set = true;

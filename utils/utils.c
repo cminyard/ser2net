@@ -30,13 +30,14 @@
 #include "utils.h"
 
 int
-cmpstrval(const char *s, const char *prefix, unsigned int *end)
+cmpstrval(const char *s, const char *prefix, const char **val)
 {
     int len = strlen(prefix);
 
     if (strncmp(s, prefix, len))
 	return 0;
-    *end = len;
+    *val = s + len;
+
     return 1;
 }
 

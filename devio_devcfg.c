@@ -121,9 +121,8 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	  void *data)
 {
     struct termios *termctl = &d->default_termctl;
-    char *str;
-    unsigned int end;
-    char *pos;
+    char *str, *pos;
+    const char *val;
     char *strtok_data;
     int rv = 0;
 
@@ -152,9 +151,9 @@ devconfig(struct devcfg_data *d, struct absout *eout, const char *instr,
 	} else if (strcmp(pos, "-NOBREAK") == 0) {
 	    d->disablebreak = 0;
 #if HAVE_DECL_TIOCSRS485
-	} else if (cmpstrval(pos, "rs485=", &end)) {
+	} else if (cmpstrval(pos, "rs485=", &val)) {
 	    /* get RS485 configuration. */
-	    d->rs485conf = find_rs485conf(pos + end);
+	    d->rs485conf = find_rs485conf(val);
 #endif
 	} else {
 	    rv = otherconfig(data, eout, pos);

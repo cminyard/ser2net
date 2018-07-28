@@ -29,10 +29,10 @@ int strisallzero(const char *str);
 
 /*
  * Returns true if the first strlen(prefix) characters of s are the
- * same as prefix.  If true is returned, end is set to the character
+ * same as prefix.  If true is returned, val is set to the character
  * after the last byte that compares.
  */
-int cmpstrval(const char *s, const char *prefix, unsigned int *end);
+int cmpstrval(const char *s, const char *prefix, const char **val);
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */
