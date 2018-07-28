@@ -29,6 +29,38 @@ class cshandler:
         return termioschk.dup_base_termios(cflags=self.cs,
                                            cflags_mask=termios.CSIZE)
 
+# Check that setting termios fails if remctl isn't set.
+goterr = False
+try:
+    termioschk.test_ser2net_termios("cs5 rfc2217 settings",
+                                    cshandler(termios.CS5, 5),
+                "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
+                "telnet(rfc2217=false),tcp,localhost,3023",
+                "termios,/dev/ttyPipeB0,9600N81")
+except Exception as E:
+    if str(E) != "sergenio:sg_datasize_s: Operation not supported":
+        raise
+    print "  Success"
+    goterr = True
+if not goterr:
+    raise Exception("Did not get error setting telnet rfc2217 when disabled.")
+
+# Check that setting termios fails if remctl isn't set.
+goterr = False
+try:
+    termioschk.test_ser2net_termios("cs5 rfc2217 settings",
+                                    cshandler(termios.CS5, 5),
+                 "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b\n",
+                 "telnet,tcp,localhost,3023",
+                 "termios,/dev/ttyPipeB0,9600N81")
+except Exception as E:
+    if str(E) != "sergenio:sg_datasize_s: Operation not supported":
+        raise
+    print "  Success"
+    goterr = True
+if not goterr:
+    raise Exception("Did not get error setting telnet rfc2217 when disabled.")
+
 termioschk.test_ser2net_termios("cs5 rfc2217 settings",
                                 cshandler(termios.CS5, 5),
         "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
