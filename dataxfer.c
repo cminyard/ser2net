@@ -4119,7 +4119,7 @@ data_monitor_stop(struct controller_info *cntlr,
 
     LOCK(ports_lock);
     curr = ports;
-    while (curr) {
+    while (curr != NULL) {
 	if (curr == port) {
 	    LOCK(port->lock);
 	    port->net_monitor = NULL;
@@ -4127,6 +4127,7 @@ data_monitor_stop(struct controller_info *cntlr,
 	    UNLOCK(port->lock);
 	    break;
 	}
+        curr = curr->next;
     }
     UNLOCK(ports_lock);
 }
