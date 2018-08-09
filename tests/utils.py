@@ -11,6 +11,7 @@ import tempfile
 import signal
 import time
 import curses.ascii
+import sys
 
 debug = 0
 
@@ -361,3 +362,9 @@ def finish_2_ser2net(ser2net, io1, io2):
     io_close(io2)
     ser2net.terminate()
     return
+
+srcdir = os.getenv("srcdir")
+if not srcdir:
+    srcdir = os.path.dirname(sys.argv[0])
+    if (not srcdir):
+        srcdir = "."
