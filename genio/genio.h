@@ -39,6 +39,10 @@ struct genio_lock;
 struct genio_timer;
 struct genio_runner;
 
+struct genio_once {
+    bool called;
+};
+
 struct genio_os_funcs {
     /* For use by the code doing the os function translation. */
     void *user_data;
@@ -216,6 +220,10 @@ struct genio_os_funcs {
 
     /* Free this structure. */
     void (*free_funcs)(struct genio_os_funcs *f);
+
+    /* Call this function once. */
+    void (*call_once)(struct genio_os_funcs *f, struct genio_once *once,
+		      void (*func)(void *cb_data), void *cb_data);
 };
 
 struct genio;

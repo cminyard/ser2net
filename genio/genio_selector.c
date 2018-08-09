@@ -429,6 +429,22 @@ genio_sel_free_funcs(struct genio_os_funcs *f)
     free(f);
 }
 
+DEFINE_LOCK_INIT(static, once_lock);
+
+static void
+genio_sel_call_once(struct genio_os_funcs *f, struct genio_once *once,
+		    void (*func)(void *cb_data), void *cb_data)
+{
+    if (once->called)
+	return;
+    LOCK(once_lock);
+    if (!once->called) {
+	once->called = true;
+	func(cb_data);
+    }
+    UNLOCK(once_lock);
+}
+
 struct genio_os_funcs *
 genio_selector_alloc(struct selector_s *sel, int wake_sig)
 {
@@ -478,6 +494,7 @@ genio_selector_alloc(struct selector_s *sel, int wake_sig)
     o->wake = genio_sel_wake;
     o->service = genio_sel_service;
     o->free_funcs = genio_sel_free_funcs;
+    o->call_once = genio_sel_call_once;
 
     return o;
 }
