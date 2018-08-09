@@ -423,6 +423,57 @@ genio_acc_exit_on_close(struct genio_acceptor *acceptor)
     return acceptor->type == GENIO_TYPE_STDIO;
 }
 
+static int
+genio_process_acc_filter(const char *str, enum genio_type type,
+			 struct genio_os_funcs *o,
+			 unsigned int max_read_size,
+			 const struct genio_acceptor_callbacks *cbs,
+			 void *user_data,
+			 struct genio_acceptor **acceptor)
+{
+    int err = 0;
+    struct genio_acceptor *acc = NULL, *acc2 = NULL;
+    int argc;
+    char **args = NULL;
+    const char *name = str;
+
+    if (*str== '(') {
+	err = str_to_argv_lengths_endchar(str + 1, &argc, &args, NULL,
+					  " \f\n\r\t\v,", ")", &str);
+	if (!err && (!str || *str != ','))
+	    err = EINVAL; /* No terminating ')' or ',' after */
+	else
+	    str++;
+    } else {
+	str += 1;
+    }
+
+    if (!err)
+	err = str_to_genio_acceptor(str, o, max_read_size, NULL, NULL, &acc2);
+    if (!err) {
+	if (type == GENIO_TYPE_SSL) {
+	    err = ssl_genio_acceptor_alloc(name, args, o, acc2, max_read_size,
+					   cbs, user_data, &acc);
+	} else {
+	    err = EINVAL;
+	}
+    }
+
+    if (args)
+	str_to_argv_free(argc, args);
+
+    if (err) {
+	if (acc)
+	    genio_acc_free(acc);
+	else if (acc2)
+	    genio_acc_free(acc2);
+    } else {
+	*acceptor = acc;
+    }
+
+    return err;
+}
+
 int str_to_genio_acceptor(const char *str,
 			  struct genio_os_funcs *o,
 			  unsigned int max_read_size,
@@ -437,6 +488,10 @@ int str_to_genio_acceptor(const char *str,
     if (strisallzero(str)) {
 	err = stdio_genio_acceptor_alloc(o, max_read_size, cbs, user_data,
 					 acceptor);
+    } else if (strncmp(str, "ssl,", 4) == 0 ||
+	       strncmp(str, "ssl(", 4) == 0) {
+	err = genio_process_acc_filter(str + 3, GENIO_TYPE_SSL, o,
+				       max_read_size, cbs, user_data, acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
@@ -452,6 +507,63 @@ int str_to_genio_acceptor(const char *str,
 
 	    freeaddrinfo(ai);
 	}
+    }
+
+    return err;
+}
+
+static int
+genio_process_filter(const char *str,
+		     enum genio_type type,
+		     struct genio_os_funcs *o,
+		     unsigned int max_read_size,
+		     const struct genio_callbacks *cbs,
+		     void *user_data,
+		     struct genio **genio)
+{
+    int err = 0;
+    struct genio *io = NULL, *io2 = NULL;
+    struct sergenio *sio = NULL;
+    int argc;
+    char **args = NULL;
+
+    if (*str== '(') {
+	err = str_to_argv_lengths_endchar(str + 1, &argc, &args, NULL,
+					  NULL, ")", &str);
+	if (!err && (!str || *str != ','))
+	    err = EINVAL; /* No terminating ')' or ',' after */
+	else
+	    str++;
+    } else {
+	str += 1;
+    }
+
+    if (!err)
+	err = str_to_genio(str, o, max_read_size, NULL, NULL, &io2);
+    if (!err) {
+	if (type == GENIO_TYPE_SER_TELNET) {
+	    err = sergenio_telnet_alloc(io2, args, o, NULL, cbs, user_data,
+					&sio);
+	    if (!err)
+		io = sergenio_to_genio(sio);
+	} else if (type == GENIO_TYPE_SSL) {
+	    err = ssl_genio_alloc(io2, args, o, max_read_size, cbs, user_data,
+				  &io);
+	} else {
+	    err = EINVAL;
+	}
+    }
+
+    if (args)
+	str_to_argv_free(argc, args);
+
+    if (err) {
+	if (io)
+	    genio_free(io);
+	else if (io2)
+	    genio_free(io2);
+    } else {
+	*genio = io;
     }
 
     return err;
@@ -481,37 +593,12 @@ str_to_genio(const char *str,
 	str_to_argv_free(argc, argv);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
-	struct genio *io = NULL;
-	struct sergenio *sio;
-	int argc;
-	char **args = NULL;
-
-	if (str[6] == '(') {
-	    err = str_to_argv_lengths_endchar(str + 7, &argc, &args, NULL,
-					      NULL, ")", &str);
-	    if (!err && (!str || *str != ','))
-		err = EINVAL; /* No terminating ')' or ',' after */
-	    else
-		str++;
-	} else {
-	    str += 7;
-	}
-
-	if (!err)
-	    err = str_to_genio(str, o, max_read_size, NULL, NULL, &io);
-	if (!err)
-	    err = sergenio_telnet_alloc(io, args, o, NULL, cbs, user_data,
-					&sio);
-
-	if (args)
-	    str_to_argv_free(argc, args);
-
-	if (err) {
-	    if (io)
-		genio_free(io);
-	} else {
-	    *genio = sergenio_to_genio(sio);
-	}
+	err = genio_process_filter(str + 3, GENIO_TYPE_SER_TELNET, o,
+				   max_read_size, cbs, user_data, genio);
+    } else if (strncmp(str, "ssl,", 4) == 0 ||
+	       strncmp(str, "ssl(", 4) == 0) {
+	err = genio_process_filter(str + 3, GENIO_TYPE_SSL, o,
+				   max_read_size, cbs, user_data, genio);
     } else if (strncmp(str, "termios,", 8) == 0) {
 	struct sergenio *sio;
 
