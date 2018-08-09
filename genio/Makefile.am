@@ -1,5 +1,5 @@
 
-AM_CFLAGS = -I$(top_srcdir)
+AM_CFLAGS = -I$(top_srcdir) $(OPENSSL_INCLUDES)
 
 noinst_LIBRARIES = libgenio.a
 

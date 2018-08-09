@@ -7,7 +7,7 @@ sertest_SOURCES = sertest.c
 
 sertest_LDADD = $(top_builddir)/genio/libgenio.a \
 		$(top_builddir)/utils/libutils.a \
-		-lreadline -lssl -lcrypto
+		-lreadline $(OPENSSL_LIBS)
 
 can_builddir = $(shell readlink -f $(top_builddir))
 

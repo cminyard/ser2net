@@ -17,8 +17,12 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <stdlib.h>
 #include <errno.h>
+#include "genio_internal.h"
+
+#ifdef HAVE_OPENSSL
+
+#include <stdlib.h>
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
@@ -27,8 +31,6 @@
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
-
-#include "genio_internal.h"
 
 static void
 genio_do_ssl_init(void *cb_data)
@@ -1184,3 +1186,29 @@ out_nomem:
     sslna_finish_free(nadata);
     return ENOMEM;
 }
+
+#else /* HAVE_OPENSSL */
+int
+ssl_genio_alloc(struct genio *child, char *args[],
+		struct genio_os_funcs *o,
+		unsigned int max_read_size,
+		const struct genio_callbacks *cbs, void *user_data,
+		struct genio **net)
+{
+    return ENOTSUP;
+}
+
+int
+ssl_genio_acceptor_alloc(const char *name,
+			 char *args[],
+			 struct genio_os_funcs *o,
+			 struct genio_acceptor *child,
+			 unsigned int max_read_size,
+			 const struct genio_acceptor_callbacks *cbs,
+			 void *user_data,
+			 struct genio_acceptor **acceptor)
+{
+    return ENOTSUP;
+}
+
+#endif /* HAVE_OPENSSL */

@@ -94,6 +94,8 @@ if test "x$HAVE_OPENIPMI" != "xno"; then
    AC_DEFINE(HAVE_OPENIPMI)
 fi
 
+AX_CHECK_OPENSSL([AC_DEFINE(HAVE_OPENSSL)])
+
 tryswig=yes
 swigprog=
 AC_ARG_WITH(swig,

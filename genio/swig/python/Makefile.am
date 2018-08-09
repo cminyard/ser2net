@@ -29,8 +29,8 @@ _genio_la_LIBADD = \
 	$(top_builddir)/genio/sergenio_termios.lo \
 	$(top_builddir)/genio/genio_selector.lo \
 	$(top_builddir)/genio/swig/termios.lo \
-	-lssl -lcrypto
-_genio_la_LDFLAGS = -module -avoid-version
+	$(OPENSSL_LIBS)
+_genio_la_LDFLAGS = -module -avoid-version $(OPENSSL_LDFLAGS)
 
 clean-local:
 	rm -rf __pycache__ genio_wrap.c
