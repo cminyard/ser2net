@@ -2889,10 +2889,13 @@ static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
 {
     net_info_t *netcon = cb_data;
 
-    if (netcon->net)
-	genio_close(netcon->net, handle_net_fd_closed, NULL);
-    else
+    if (netcon->net) {
+	int err = genio_close(netcon->net, handle_net_fd_closed, NULL);
+	if (err)
+	    handle_net_fd_closed(netcon->net, NULL);
+    } else {
 	netcon_finish_shutdown(netcon);
+    }
 }
 
 static void
