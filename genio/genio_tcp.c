@@ -581,8 +581,10 @@ tcpn_free(struct genio *net)
     struct tcpn_data *ndata = net_to_ndata(net);
 
     tcpn_lock(ndata);
-    if (ndata->open)
+    if (ndata->open) {
+	tcpn_ref(ndata);
 	tcpn_start_close(ndata);
+    }
     tcpn_deref_and_unlock(ndata);
 }
 
