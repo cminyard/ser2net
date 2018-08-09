@@ -593,7 +593,7 @@ str_to_genio(const char *str,
 	str_to_argv_free(argc, argv);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
-	err = genio_process_filter(str + 3, GENIO_TYPE_SER_TELNET, o,
+	err = genio_process_filter(str + 6, GENIO_TYPE_SER_TELNET, o,
 				   max_read_size, cbs, user_data, genio);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
