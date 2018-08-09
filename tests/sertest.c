@@ -143,6 +143,11 @@ data_read(struct genio *net, int readerr,
     unsigned int i;
 
     if (le->flush_read) {
+	if (readerr) {
+	    printf("Error from read: %s\n", strerror(readerr));
+	    genio_set_read_callback_enable(le->io, false);
+	    return 0;
+	}
 	dbgout(c, 1, "flush %u bytes\n", buflen);
 	return buflen;
     }
@@ -150,6 +155,13 @@ data_read(struct genio *net, int readerr,
     if (!le->cmp_read) {
 	dbgout(c, 1, "***No read data on read handler call\n");
 	genio_set_read_callback_enable(le->io, false);
+	return 0;
+    }
+
+    if (readerr) {
+	printf("Error from read: %s\n", strerror(readerr));
+	genio_set_read_callback_enable(le->io, false);
+	my_o->wake(le->waiter);
 	return 0;
     }
 
@@ -653,7 +665,7 @@ cmd_cb_handler(char *cmdline)
 
     err = sertest_cmd(c, cmdline);
     if (err && err != -1)
-	printf("Error: %s\n", strerror(i));
+	printf("Error: %s\n", strerror(err));
 
  out:
     rl_free(cmdline);
