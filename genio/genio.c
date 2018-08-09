@@ -637,3 +637,16 @@ genio_strdup(struct genio_os_funcs *o, const char *str)
     strcpy(s, str);
     return s;
 }
+
+int
+genio_check_keyvalue(const char *str, const char *key, const char **value)
+{
+    unsigned int keylen = strlen(key);
+
+    if (strncmp(str, key, keylen) != 0)
+	return 0;
+    if (str[keylen] != '=')
+	return 0;
+    *value = str + keylen + 1;
+    return 1;
+}

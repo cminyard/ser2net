@@ -152,4 +152,5 @@ void genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai);
 
 char *genio_strdup(struct genio_os_funcs *o, const char *str);
 
+int genio_check_keyvalue(const char *str, const char *key, const char **value);
 #endif /* SER2NET_GENIO_INTERNAL_H */
