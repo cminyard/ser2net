@@ -80,6 +80,10 @@ struct ssln_data {
     unsigned int data_pending_len;
     unsigned int max_read_size;
 
+    unsigned char *write_data;
+    unsigned int max_write_size;
+    unsigned int curr_write_size;
+
     bool xmit_enabled;
 
     unsigned char xmit_buf[1024];
@@ -111,6 +115,15 @@ ssln_unlock(struct ssln_data *ndata)
     ndata->o->unlock(ndata->lock);
 }
 
+static void
+ssln_set_child_enables(struct ssln_data *ndata)
+{
+    if (BIO_pending(ndata->io_bio))
+	genio_set_write_callback_enable(ndata->child, true);
+    if (ndata->read_enabled || ndata->in_close || ndata->in_open)
+	genio_set_read_callback_enable(ndata->child, true);
+}
+
 static int
 ssln_write(struct genio *net, unsigned int *rcount,
 	   const void *buf, unsigned int buflen)
@@ -128,11 +141,31 @@ ssln_write(struct genio *net, unsigned int *rcount,
 	ndata->saved_xmit_err = 0;
 	goto out_unlock;
     }
+    if (ndata->curr_write_size || buflen == 0) {
+	*rcount = 0;
+	goto out_unlock;
+    }
+    if (buflen > ndata->max_write_size)
+	buflen = ndata->max_write_size;
 
-    err = SSL_write(ndata->ssl, buf, buflen);
+    memcpy(ndata->write_data, buf, buflen);
+    ndata->curr_write_size = buflen;
+
+    err = SSL_write(ndata->ssl, ndata->write_data, ndata->curr_write_size);
     if (err < 0) {
-	err = ECOMM; /* FIXME */
+	err = SSL_get_error(ndata->ssl, err);
+	switch (err) {
+	case SSL_ERROR_WANT_READ:
+	case SSL_ERROR_WANT_WRITE:
+	    *rcount = buflen;
+	    err = 0;
+	    break;
+
+	default:
+	    err = ECOMM; /* FIXME */
+	}
     } else {
+	ndata->curr_write_size = 0;
 	*rcount = err;
 	err = 0;
     }
@@ -148,7 +181,9 @@ ssln_write(struct genio *net, unsigned int *rcount,
 	}
     }
  out_unlock:
+    ssln_set_child_enables(ndata);
     ssln_unlock(ndata);
+
     return err;
 }
 
@@ -184,13 +219,17 @@ static int
 ssln_ssl_setup(struct ssln_data *ndata)
 {
     int success;
+    unsigned int bio_size = ndata->max_read_size;
 
     ndata->ssl = SSL_new(ndata->ctx);
     if (!ndata->ssl)
 	return ENOMEM;
 
-    success = BIO_new_bio_pair(&ndata->ssl_bio, ndata->max_read_size,
-			       &ndata->io_bio, ndata->max_read_size);
+    /* The BIO has to be large enough to hold a full SSL key transaction. */
+    if (bio_size < 4096)
+	bio_size = 4096;
+    success = BIO_new_bio_pair(&ndata->ssl_bio, bio_size,
+			       &ndata->io_bio, bio_size);
     if (!success) {
 	SSL_free(ndata->ssl);
 	ndata->ssl = NULL;
@@ -204,14 +243,20 @@ ssln_ssl_setup(struct ssln_data *ndata)
 static void
 ssln_finish_free(struct ssln_data *ndata)
 {
+    if (ndata->child)
+	genio_free(ndata->child);
     if (ndata->ssl)
 	SSL_free(ndata->ssl);
+    if (ndata->io_bio)
+	BIO_destroy_bio_pair(ndata->io_bio);
     if (ndata->ctx)
 	SSL_CTX_free(ndata->ctx);
     if (ndata->lock)
 	ndata->o->free_lock(ndata->lock);
     if (ndata->read_data)
 	ndata->o->free(ndata->o, ndata->read_data);
+    if (ndata->write_data)
+	ndata->o->free(ndata->o, ndata->write_data);
     if (ndata->deferred_op_runner)
 	ndata->o->free_runner(ndata->deferred_op_runner);
     ndata->o->free(ndata->o, ndata);
@@ -273,13 +318,12 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
 }
 
 static void
-ssln_genio_close_done(struct genio *net, void *close_data)
+ssln_child_close_done(struct genio *net, void *close_data)
 {
     struct ssln_data *ndata = genio_get_user_data(net);
 
     ssln_lock(ndata);
     ndata->in_open = false;
-    ndata->in_close = false;
     ssln_ssl_cleanup(ndata);
     ssln_unlock(ndata);
 
@@ -287,6 +331,7 @@ ssln_genio_close_done(struct genio *net, void *close_data)
 	ndata->close_done(&ndata->net, ndata->close_data);
 
     ssln_lock(ndata);
+    ndata->in_close = false;
     if (ndata->in_free) {
 	ssln_unlock(ndata);
 	ssln_finish_free(ndata);
@@ -295,32 +340,43 @@ ssln_genio_close_done(struct genio *net, void *close_data)
     }
 }
 
+static void ssln_finish_open(struct ssln_data *ndata, int err);
+
+static void
+ssln_child_close_on_cert_fail(struct genio *net, void *close_data)
+{
+    struct ssln_data *ndata = genio_get_user_data(net);
+
+    ssln_finish_open(ndata, EKEYREJECTED);
+}
+
 static void
 ssln_finish_open(struct ssln_data *ndata, int err)
 {
+    if (!err) {
+	long verify_err = SSL_get_verify_result(ndata->ssl);
+
+	if (verify_err != X509_V_OK) {
+	    genio_close(ndata->child, ssln_child_close_on_cert_fail, NULL);
+	    return;
+	}
+    }
+
     ssln_lock(ndata);
     ndata->closed = false;
     if (err) {
 	ndata->closed = true;
 	ssln_ssl_cleanup(ndata);
-    } else {
-	long verify_err = SSL_get_verify_result(ndata->ssl);
-
-	if (verify_err != X509_V_OK)
-	    err = EKEYREJECTED;
     }
+    ndata->in_open = false;
     ssln_unlock(ndata);
 
     if (ndata->open_done)
 	ndata->open_done(&ndata->net, err, ndata->open_data);
-
-    ssln_lock(ndata);
-    ndata->in_open = false;
-    ssln_unlock(ndata);
 }
 
 static void
-ssln_genio_close_on_open_fail(struct genio *net, void *close_data)
+ssln_child_close_on_open_fail(struct genio *net, void *close_data)
 {
     struct ssln_data *ndata = genio_get_user_data(net);
 
@@ -342,8 +398,7 @@ ssln_try_connect(struct ssln_data *ndata)
 
     if (!success) {
     failure:
-        ERR_print_errors_fp(stderr);
-	genio_close(ndata->child, ssln_genio_close_on_open_fail, NULL);
+	genio_close(ndata->child, ssln_child_close_on_open_fail, NULL);
     } else if (success == 1) {
 	ssln_unlock(ndata);
 	ssln_finish_open(ndata, 0);
@@ -363,16 +418,7 @@ ssln_try_connect(struct ssln_data *ndata)
 }
 
 static void
-ssln_set_child_enables(struct ssln_data *ndata)
-{
-    if (BIO_pending(ndata->io_bio))
-	genio_set_write_callback_enable(ndata->child, true);
-    if (ndata->read_enabled || ndata->in_close || ndata->in_open)
-	genio_set_read_callback_enable(ndata->child, true);
-}
-
-static void
-ssln_sub_open_done(struct genio *net, int err, void *cb_data)
+ssln_child_open_done(struct genio *net, int err, void *cb_data)
 {
     struct ssln_data *ndata = cb_data;
 
@@ -405,7 +451,7 @@ ssln_open(struct genio *net, void (*open_done)(struct genio *net,
 
 	ndata->open_done = open_done;
 	ndata->open_data = open_data;
-	err = genio_open(ndata->child, ssln_sub_open_done, ndata);
+	err = genio_open(ndata->child, ssln_child_open_done, ndata);
 	if (err)
 	    goto out_err;
 
@@ -432,7 +478,7 @@ ssln_try_close(struct ssln_data *ndata)
 
     if (ndata->finish_close_on_write) {
 	ndata->finish_close_on_write = false;
-	genio_close(ndata->child, ssln_genio_close_done, NULL);
+	genio_close(ndata->child, ssln_child_close_done, NULL);
 	return;
     }
 
@@ -442,7 +488,7 @@ ssln_try_close(struct ssln_data *ndata)
 	if (BIO_pending(ndata->io_bio))
 	    ndata->finish_close_on_write = true;
 	else
-	    genio_close(ndata->child, ssln_genio_close_done, NULL);
+	    genio_close(ndata->child, ssln_child_close_done, NULL);
     }
 }
 
@@ -558,7 +604,7 @@ static const struct genio_functions ssln_net_funcs = {
 };
 
 static unsigned int
-ssln_genio_read(struct genio *net, int readerr,
+ssln_child_read(struct genio *net, int readerr,
 		unsigned char *ibuf, unsigned int buflen,
 		unsigned int flags)
 {
@@ -573,9 +619,8 @@ ssln_genio_read(struct genio *net, int readerr,
 	ndata->read_enabled = false;
 	ndata->data_pending_len = 0;
 	if (ndata->in_open) {
-	    genio_close(ndata->child, ssln_genio_close_on_open_fail, NULL);
+	    genio_close(ndata->child, ssln_child_close_on_open_fail, NULL);
 	} else if (mynet->cbs && !ndata->in_open) {
-	    ndata->closed = true;
 	    SSL_clear(ndata->ssl);
 	    ssln_unlock(ndata);
 	    mynet->cbs->read_callback(mynet, readerr, NULL, 0, 0);
@@ -638,7 +683,7 @@ ssln_genio_read(struct genio *net, int readerr,
 }
 
 void
-ssln_genio_write_ready(struct genio *net)
+ssln_child_write_ready(struct genio *net)
 {
     struct ssln_data *ndata = genio_get_user_data(net);
     bool do_cb = true;
@@ -664,8 +709,26 @@ ssln_genio_write_ready(struct genio *net)
 	}
     }
     if (ndata->xmit_buf_len == 0) {
-	int rdlen = BIO_read(ndata->io_bio, ndata->xmit_buf,
-			     sizeof(ndata->xmit_buf));
+	int rdlen, err;
+
+	err = SSL_write(ndata->ssl, ndata->write_data, ndata->curr_write_size);
+	if (err < 0) {
+	    err = SSL_get_error(ndata->ssl, err);
+	    switch (err) {
+	    case SSL_ERROR_WANT_READ:
+	    case SSL_ERROR_WANT_WRITE:
+		break;
+
+	    default:
+		ndata->saved_xmit_err = ECOMM; /* FIXME */
+	    }
+	} else {
+	    ndata->curr_write_size = 0;
+	    err = 0;
+	}
+
+	rdlen = BIO_read(ndata->io_bio, ndata->xmit_buf,
+			 sizeof(ndata->xmit_buf));
 
 	/* FIXME - error handling? */
 	if (rdlen > 0) {
@@ -679,7 +742,7 @@ ssln_genio_write_ready(struct genio *net)
 	ssln_try_connect(ndata);
     if (ndata->in_close)
 	ssln_try_close(ndata);
-    if (!ndata->in_open && do_cb) {
+    if (!ndata->in_open && ndata->curr_write_size == 0 && do_cb) {
 	if (!ndata->xmit_enabled) {
 	    genio_set_write_callback_enable(ndata->child, false);
 	} else {
@@ -689,27 +752,27 @@ ssln_genio_write_ready(struct genio *net)
 	}
     }
 
-    if (ndata->xmit_buf_len)
+    if (ndata->xmit_buf_len || ndata->curr_write_size)
 	genio_set_write_callback_enable(ndata->child, true);
     ssln_set_child_enables(ndata);
     ssln_unlock(ndata);
 }
 
 void
-ssln_genio_urgent(struct genio *net)
+ssln_child_urgent(struct genio *net)
 {
 }
 
-static const struct genio_callbacks ssln_genio_callbacks = {
-    .read_callback = ssln_genio_read,
-    .write_callback = ssln_genio_write_ready,
-    .urgent_callback = ssln_genio_urgent,
+static const struct genio_callbacks ssln_child_callbacks = {
+    .read_callback = ssln_child_read,
+    .write_callback = ssln_child_write_ready,
+    .urgent_callback = ssln_child_urgent,
 };
 
 static struct ssln_data *
 ssln_alloc(struct genio *child, struct genio_os_funcs *o,
 	   SSL_CTX *ctx,
-	   unsigned int max_read_size,
+	   unsigned int max_read_size, unsigned int max_write_size,
 	   const struct genio_callbacks *cbs, void *user_data)
 {
     struct ssln_data *ndata = o->zalloc(o, sizeof(*ndata));
@@ -720,6 +783,7 @@ ssln_alloc(struct genio *child, struct genio_os_funcs *o,
     SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
     ndata->max_read_size = max_read_size;
+    ndata->max_write_size = max_write_size;
     ndata->o = o;
 
     ndata->lock = o->alloc_lock(o);
@@ -727,6 +791,10 @@ ssln_alloc(struct genio *child, struct genio_os_funcs *o,
 	goto out_nomem;
 
     ndata->read_data = o->zalloc(o, max_read_size);
+    if (!ndata->read_data)
+	goto out_nomem;
+
+    ndata->write_data = o->zalloc(o, max_write_size);
     if (!ndata->read_data)
 	goto out_nomem;
 
@@ -740,7 +808,7 @@ ssln_alloc(struct genio *child, struct genio_os_funcs *o,
     ndata->net.cbs = cbs;
     ndata->net.funcs = &ssln_net_funcs;
     ndata->net.type = GENIO_TYPE_SSL;
-    genio_set_callbacks(child, &ssln_genio_callbacks, ndata);
+    genio_set_callbacks(child, &ssln_child_callbacks, ndata);
     ndata->closed = true;
 
     return ndata;
@@ -763,11 +831,14 @@ ssl_genio_alloc(struct genio *child, char *args[],
     SSL_CTX *ctx;
     int success;
     unsigned int i;
+    unsigned int max_write_size = 4096; /* FIXME - magic number. */
 
     genio_ssl_initialize(o);
 
     for (i = 0; args[i]; i++) {
 	if (genio_check_keyvalue(args[i], "CA", &CAfilepath))
+	    continue;
+	if (genio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
 	    continue;
 	return EINVAL;
     }
@@ -786,12 +857,12 @@ ssl_genio_alloc(struct genio *child, char *args[],
 
     success = SSL_CTX_load_verify_locations(ctx, CAfile, CApath);
     if (!success) {
-        ERR_print_errors_fp(stderr);
 	SSL_CTX_free(ctx);
 	return ENOMEM;
     }
 
-    ndata = ssln_alloc(child, o, ctx, max_read_size, cbs, user_data);
+    ndata = ssln_alloc(child, o, ctx, max_read_size, max_write_size,
+		       cbs, user_data);
     if (ndata) {
 	ndata->net.is_client = true;
 	*net = &ndata->net;
@@ -807,6 +878,7 @@ struct sslna_data {
 
     char *name;
     unsigned int max_read_size;
+    unsigned int max_write_size;
 
     struct genio_os_funcs *o;
 
@@ -844,6 +916,8 @@ sslna_unlock(struct sslna_data *nadata)
 static void
 sslna_finish_free(struct sslna_data *nadata)
 {
+    if (nadata->child)
+	genio_acc_free(nadata->child);
     if (nadata->keyfile)
 	nadata->o->free(nadata->o, nadata->keyfile);
     if (nadata->certfile)
@@ -1047,10 +1121,8 @@ sslna_new_child_connection(struct genio_acceptor *acceptor, struct genio *net)
     SSL_CTX *ctx = NULL;
 
     ctx = SSL_CTX_new(SSLv23_server_method());
-    if (!ctx) {
-        ERR_print_errors_fp(stderr);
+    if (!ctx)
 	goto err;
-    }
 
     if (nadata->CAfilepath) {
 	char *CAfilepath = nadata->CAfilepath;
@@ -1071,7 +1143,8 @@ sslna_new_child_connection(struct genio_acceptor *acceptor, struct genio *net)
     if (!SSL_CTX_check_private_key(ctx))
         goto err;
 
-    ndata = ssln_alloc(net, nadata->o, ctx, nadata->max_read_size, NULL, NULL);
+    ndata = ssln_alloc(net, nadata->o, ctx, nadata->max_read_size,
+		       nadata->max_write_size, NULL, NULL);
     if (ndata) {
 	int err;
 
@@ -1122,6 +1195,7 @@ ssl_genio_acceptor_alloc(const char *name,
     const char *certfile = NULL;
     const char *CAfilepath = NULL;
     unsigned int i;
+    unsigned int max_write_size = 4096; /* FIXME - magic number. */
 
     genio_ssl_initialize(o);
 
@@ -1132,6 +1206,8 @@ ssl_genio_acceptor_alloc(const char *name,
 	    continue;
 	if (genio_check_keyvalue(args[i], "cert", &certfile))
 	    continue;
+	if (genio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	    continue;
 	return EINVAL;
     }
 
@@ -1141,6 +1217,8 @@ ssl_genio_acceptor_alloc(const char *name,
     nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
 	return ENOMEM;
+
+    nadata->max_write_size = max_write_size;
 
     nadata->name = genio_strdup(o, name);
     if (!nadata->name)
