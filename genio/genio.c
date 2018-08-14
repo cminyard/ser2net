@@ -737,3 +737,25 @@ genio_check_keyvalue(const char *str, const char *key, const char **value)
     *value = str + keylen + 1;
     return 1;
 }
+
+int
+genio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
+{
+    const char *sval;
+    char *end;
+    int rv = genio_check_keyvalue(str, key, &sval);
+    unsigned int value;
+
+    if (!rv)
+	return 0;
+
+    if (!*sval)
+	return -1;
+
+    value = strtoul(sval, &end, 0);
+    if (*end != '\0')
+	return -1;
+
+    *rvalue = value;
+    return 1;
+}

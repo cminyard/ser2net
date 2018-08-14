@@ -580,4 +580,3 @@ int genio_buffer_do_write(void *cb_data,
 			  void  *buf, size_t buflen, size_t *written);
 
 #endif /* SER2NET_GENIO_H */
-
