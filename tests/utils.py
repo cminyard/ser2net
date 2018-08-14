@@ -101,7 +101,10 @@ class HandleData:
                     s = s + i
                 else:
                     s = s + "\\x%2.2x" % ord(i)
-            print("%s: Got data: %s" % (self.name, s))
+            print("%s: Got data: (err %s %d bytes) %s" % (self.name, str(err),
+                                                          len(buf), s))
+        if (err):
+            raise HandlerException(self.name + ": read: " + err)
         if (self.ignore_input):
             return len(buf)
         if (not self.to_compare):
@@ -109,8 +112,6 @@ class HandleData:
                 print(self.name + ": Got data, but nothing to compare")
             io.read_cb_enable(False)
             return len(buf)
-        if (err):
-            raise HandlerException(self.name + ": read: " + err)
 
         if (len(buf) > len(self.to_compare)):
             count = len(self.to_compare)
@@ -277,11 +278,15 @@ def test_dataxfer(io1, io2, data, timeout = 1000):
     io1.handler.set_write_data(data)
     io2.handler.set_compare(data)
     if (io1.handler.wait_timeout(timeout)):
-        raise Exception("%s: %s: Timed out waiting for write completion" %
-                        ("test_dataxfer", io1.handler.name))
+        raise Exception(("%s: %s: " % ("test_dataxfer", io1.handler.name)) +
+
+                        ("Timed out waiting for write completion at byte %d" %
+                         io1.handler.wrpos))
     if (io2.handler.wait_timeout(timeout)):
-        raise Exception("%s: %s: Timed out waiting for read completion" %
-                        ("test_dataxfer", io2.handler.name))
+        raise Exception(("%s: %s: " % ("test_dataxfer", io2.handler.name)) +
+
+                        ("Timed out waiting for read completion at byte %d" %
+                         io2.handler.compared))
     return
 
 def test_dataxfer_simul(io1, io2, data, timeout = 10000):
