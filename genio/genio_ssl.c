@@ -76,7 +76,6 @@ struct ssln_data {
 
     bool read_enabled;
     bool in_read;
-    bool deferred_read;
     unsigned char *read_data;
     unsigned int data_pos;
     unsigned int data_pending_len;
@@ -173,8 +172,9 @@ ssln_set_child_enables(struct ssln_data *ndata)
 {
     if (BIO_pending(ndata->io_bio))
 	genio_set_write_callback_enable(ndata->child, true);
-    if (ndata->read_enabled || ndata->state == SSLN_IN_CLOSE ||
-		ndata->state == SSLN_IN_OPEN)
+    if ((ndata->read_enabled && !ndata->data_pending_len) ||
+		BIO_should_read(ndata->io_bio) ||
+		ndata->state == SSLN_IN_CLOSE || ndata->state == SSLN_IN_OPEN)
 	genio_set_read_callback_enable(ndata->child, true);
 }
 
@@ -300,19 +300,12 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
     struct ssln_data *ndata = cbdata;
     struct genio *net = &ndata->net;
     unsigned int count;
-    bool in_read;
 
     ssln_lock(ndata);
     if (ndata->state != SSLN_OPEN)
 	goto out_unlock;
 
- restart:
-    if (ndata->deferred_read) {
-	in_read = ndata->in_read;
-	ndata->deferred_read = false;
-    }
-
-    if (in_read) {
+    if (ndata->in_read) {
     process_more:
 	if (!ndata->data_pending_len) {
 	    int rlen = SSL_read(ndata->ssl, ndata->read_data,
@@ -338,18 +331,11 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
 	    }
 	}
 	ndata->in_read = false;
-
-
-	if (ndata->read_enabled || BIO_should_read(ndata->io_bio))
-	    genio_set_read_callback_enable(ndata->child, true);
     }
-
-    if (ndata->deferred_read)
-	/* Something was added, process it. */
-	goto restart;
 
  out_unlock:
     ndata->deferred_op_pending = false;
+    ssln_set_child_enables(ndata);
     ssln_deref_and_unlock(ndata);
 }
 
@@ -609,11 +595,10 @@ ssln_set_read_callback_enable(struct genio *net, bool enabled)
 	 * Note that SSL_pending() was not working, so SSL_peek was used.
 	 * openssl version 1.0.2g.
 	 */
-	ndata->deferred_read = true;
 	ndata->in_read = true;
 	ssln_sched_deferred_op(ndata);
     } else {
-	genio_set_read_callback_enable(ndata->child, enabled);
+	ssln_set_child_enables(ndata);
     }
  out_unlock:
     ssln_unlock(ndata);
@@ -675,8 +660,11 @@ ssln_child_read(struct genio *net, int readerr,
 	}
 	goto out_finish;
     }
-
     genio_set_read_callback_enable(ndata->child, false);
+
+    if (ndata->in_read)
+	/* Currently in a deferred read, just let that handle it. */
+	goto out_unlock;
 
     ndata->in_read = true;
  process_more:
@@ -722,6 +710,7 @@ ssln_child_read(struct genio *net, int readerr,
 
  out_finish:
     ssln_set_child_enables(ndata);
+ out_unlock:
     ssln_unlock(ndata);
 
     return buf - ibuf;
