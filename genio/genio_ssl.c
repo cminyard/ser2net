@@ -926,9 +926,11 @@ struct sslna_data {
     char *CAfilepath;
 
     unsigned int refcount;
+    unsigned int in_cb_count;
 
     bool enabled;
     bool in_shutdown;
+    bool call_shutdown_done;
     void (*shutdown_done)(struct genio_acceptor *acceptor,
 			  void *shutdown_data);
     void *shutdown_data;
@@ -984,6 +986,43 @@ sslna_deref_and_unlock(struct sslna_data *nadata)
 	sslna_finish_free(nadata);
 }
 
+static void
+sslna_finish_shutdown_unlock(struct sslna_data *nadata)
+{
+    void *shutdown_data;
+    void (*shutdown_done)(struct genio_acceptor *acceptor,
+			  void *shutdown_data);
+
+    nadata->in_shutdown = false;
+    shutdown_done = nadata->shutdown_done;
+    shutdown_data = nadata->shutdown_data;
+    nadata->shutdown_done = NULL;
+    sslna_unlock(nadata);
+
+    if (shutdown_done)
+	shutdown_done(&nadata->acceptor, shutdown_data);
+
+    sslna_lock(nadata);
+    sslna_deref_and_unlock(nadata);
+}
+
+static void
+sslna_in_cb(struct sslna_data *nadata)
+{
+    sslna_ref(nadata);
+    nadata->in_cb_count++;
+}
+
+static void
+sslna_leave_cb_unlock(struct sslna_data *nadata)
+{
+    nadata->in_cb_count--;
+    if (nadata->in_cb_count == 0 && nadata->call_shutdown_done)
+	sslna_finish_shutdown_unlock(nadata);
+    else
+	sslna_deref_and_unlock(nadata);
+}
+
 static int
 sslna_startup(struct genio_acceptor *acceptor)
 {
@@ -997,42 +1036,14 @@ sslna_child_shutdown(struct genio_acceptor *acceptor,
 		     void *shutdown_data)
 {
     struct sslna_data *nadata = shutdown_data;
-    void (*shutdown_done)(struct genio_acceptor *acceptor,
-			  void *shutdown_data);
 
     sslna_lock(nadata);
-    nadata->in_shutdown = false;
-    shutdown_done = nadata->shutdown_done;
-    shutdown_data = nadata->shutdown_data;
-    nadata->shutdown_done = NULL;
-    sslna_ref(nadata);
-    sslna_unlock(nadata);
-
-    if (shutdown_done)
-	shutdown_done(&nadata->acceptor, shutdown_data);
-
-    sslna_lock(nadata);
-    sslna_deref_and_unlock(nadata);
-}
-
-static int
-i_sslna_shutdown(struct sslna_data *nadata,
-		 void (*shutdown_done)(struct genio_acceptor *acceptor,
-				       void *shutdown_data),
-		 void *shutdown_data)
-{
-    int rv;
-
-    nadata->shutdown_done = shutdown_done;
-    nadata->shutdown_data = shutdown_data;
-
-    rv = genio_acc_shutdown(nadata->child, sslna_child_shutdown, nadata);
-    if (!rv) {
-	nadata->enabled = false;
-	nadata->in_shutdown = true;
+    if (nadata->in_cb_count) {
+	nadata->call_shutdown_done = true;
+	sslna_unlock(nadata);
+    } else {
+	sslna_finish_shutdown_unlock(nadata);
     }
-
-    return rv;
 }
 
 static int
@@ -1045,8 +1056,17 @@ sslna_shutdown(struct genio_acceptor *acceptor,
     int rv = EBUSY;
 
     sslna_lock(nadata);
-    if (nadata->enabled)
-	rv = i_sslna_shutdown(nadata, shutdown_done, shutdown_data);
+    if (nadata->enabled) {
+	nadata->shutdown_done = shutdown_done;
+	nadata->shutdown_data = shutdown_data;
+
+	rv = genio_acc_shutdown(nadata->child, sslna_child_shutdown, nadata);
+	if (!rv) {
+	    sslna_ref(nadata);
+	    nadata->enabled = false;
+	    nadata->in_shutdown = true;
+	}
+    }
     sslna_unlock(nadata);
     return rv;
 }
@@ -1143,9 +1163,13 @@ sslna_finish_server_open(struct genio *net, int err, void *cb_data)
 {
     struct sslna_data *nadata = cb_data;
 
-    /* FIXME - need to make sure nadata stays around for this. */
-    if (!err)
+    if (err)
+	genio_free(net);
+    else
 	nadata->acceptor.cbs->new_connection(&nadata->acceptor, net);
+
+    sslna_lock(nadata);
+    sslna_leave_cb_unlock(nadata);
 }
 
 static void
@@ -1192,6 +1216,9 @@ sslna_new_child_connection(struct genio_acceptor *acceptor, struct genio *net)
 	SSL_set_accept_state(ndata->ssl);
 	ssln_ref(ndata);
 	ndata->state = SSLN_IN_OPEN;
+	sslna_lock(nadata);
+	sslna_in_cb(nadata);
+	sslna_unlock(nadata);
 	ndata->open_done = sslna_finish_server_open;
 	ndata->open_data = nadata;
 	ssln_try_connect(ndata);
