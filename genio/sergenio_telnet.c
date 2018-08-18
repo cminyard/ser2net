@@ -387,22 +387,17 @@ check_finish_close(struct stel_data *sdata)
 
 /* Must be called with sdata->lock held */
 static void
-stel_finish_read(struct stel_data *sdata, int err, unsigned int count)
+stel_finish_read(struct stel_data *sdata, unsigned int count)
 {
-    if (!err && count < sdata->data_pending_len) {
-	/* If the user doesn't consume all the data, disable
-	   automatically. */
+    if (count < sdata->data_pending_len) {
+	/* The user didn't consume all the data. */
 	sdata->data_pending_len -= count;
 	sdata->data_pos += count;
-	sdata->read_enabled = false;
     } else {
 	sdata->data_pending_len = 0;
     }
 
     sdata->in_read = false;
-
-    if (sdata->read_enabled || sdata->in_open)
-	genio_set_read_callback_enable(sdata->net, true);
 }
 
 static void
@@ -421,17 +416,23 @@ stel_deferred_op(struct genio_runner *runner, void *cbdata)
     }
 
     if (in_read) {
+    retry:
 	stel_unlock(sdata);
 	count = net->cbs->read_callback(net, 0,
 					&sdata->read_data[sdata->data_pos],
 					sdata->data_pending_len, 0);
 	stel_lock(sdata);
-	stel_finish_read(sdata, 0, count);
+	stel_finish_read(sdata, count);
+	if (sdata->data_pending_len)
+	    goto retry;
     }
 
     if (sdata->deferred_read)
 	/* Something was added, process it. */
 	goto restart;
+
+    if (sdata->read_enabled || sdata->in_open)
+	genio_set_read_callback_enable(sdata->net, true);
 
     sdata->deferred_op_pending = false;
     stel_unlock(sdata);
@@ -624,7 +625,7 @@ stel_genio_read(struct genio *net, int readerr,
     struct stel_data *sdata = genio_get_user_data(net);
     struct genio *mynet = &sdata->snet.net;
     unsigned char *buf = ibuf;
-    unsigned int count = 0;
+    unsigned int count = 0, len;
 
     stel_lock(sdata);
     if (sdata->in_open && readerr) {
@@ -648,13 +649,11 @@ stel_genio_read(struct genio *net, int readerr,
 	stel_unlock(sdata);
 	mynet->cbs->read_callback(&sdata->snet.net, readerr,
 				  NULL, 0, 0);
-	goto out_finish;
+	goto out_unlock;
     }
 
     genio_set_read_callback_enable(sdata->net, false);
-    sdata->in_read = true;
     sdata->data_pos = 0;
-    stel_unlock(sdata);
 
     while (sdata->in_urgent && buflen) {
 	if (sdata->in_urgent == 2) {
@@ -670,27 +669,39 @@ stel_genio_read(struct genio *net, int readerr,
     }
 
  process_more:
-    sdata->data_pending_len = process_telnet_data(sdata->read_data,
-						  sizeof(sdata->read_data),
-						  &buf, &buflen,
-						  &sdata->tn_data);
+    sdata->in_read = true;
+    stel_unlock(sdata);
+    len = process_telnet_data(sdata->read_data,
+			      sizeof(sdata->read_data),
+			      &buf, &buflen,
+			      &sdata->tn_data);
+    stel_lock(sdata);
+    sdata->in_read = false;
+    sdata->data_pending_len = len;
     if (sdata->data_pending_len) {
 	if (sdata->in_open)
 	    /* Ignore user data until we get the telnet com port do/dont. */
 	    count = sdata->data_pending_len;
-	else if (sdata->read_enabled)
+	else if (sdata->read_enabled) {
+	retry:
+	    sdata->in_read = true;
+	    stel_unlock(sdata);
 	    count = mynet->cbs->read_callback(&sdata->snet.net, 0,
 					      sdata->read_data,
 					      sdata->data_pending_len, 0);
-	else
+	    stel_lock(sdata);
+	    stel_finish_read(sdata, count);
+	    if (sdata->data_pending_len)
+		goto retry;
+	} else {
 	    count = 0;
+	}
 	if (count == sdata->data_pending_len && buflen)
 	    goto process_more;
     }
 
- out_finish:
-    stel_lock(sdata);
-    stel_finish_read(sdata, readerr, count);
+    if ((!buflen && sdata->read_enabled) || sdata->in_open)
+	genio_set_read_callback_enable(sdata->net, true);
 
  out_unlock:
     stel_unlock(sdata);

@@ -183,6 +183,7 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 	stdiona_unlock(nadata);
     }
 
+ retry:
     count = net->cbs->read_callback(net, err,
 				    nadata->read_data + nadata->data_pos,
 				    nadata->data_pending_len,
@@ -190,11 +191,11 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 
     stdiona_lock(nadata);
     if (!err && count < nadata->data_pending_len) {
-	/* If the user doesn't consume all the data, disable
-	   automatically. */
+	/* The user didn't consume all the data. */
 	nadata->data_pending_len -= count;
 	nadata->data_pos += count;
-	nadata->read_enabled = false;
+	if (!nadata->closed && nadata->read_enabled)
+	    goto retry;
     } else {
 	nadata->data_pending_len = 0;
     }

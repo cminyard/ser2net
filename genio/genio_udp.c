@@ -448,6 +448,7 @@ udpn_finish_read(struct udpn_data *ndata)
     struct genio *net = &ndata->net;
     unsigned int count;
 
+ retry:
     udpna_unlock(nadata);
     count = net->cbs->read_callback(net, 0, nadata->read_data,
 				    nadata->data_pending_len, 0);
@@ -460,14 +461,11 @@ udpn_finish_read(struct udpn_data *ndata)
     nadata->pending_data_owner = NULL;
 
     if (count < nadata->data_pending_len) {
-	/* If the user doesn't consume all the data, disable
-	   automatically. */
+	/* The user didn't comsume all the data */
 	nadata->data_pending_len -= count;
 	nadata->data_pos += count;
-	if (ndata->read_enabled) {
-	    ndata->read_enabled = false;
-	    nadata->read_disable_count++;
-	}
+	if (!ndata->closed && ndata->read_enabled)
+	    goto retry;
     } else {
 	nadata->data_pending_len = 0;
     }

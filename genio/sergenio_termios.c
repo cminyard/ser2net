@@ -145,7 +145,6 @@ sterm_finish_close(struct sterm_data *sdata)
 	sterm_finish_free(sdata);
 }
 
-/* Must be called with sdata->lock held */
 static void
 sterm_finish_read(struct sterm_data *sdata, int err)
 {
@@ -158,17 +157,20 @@ sterm_finish_read(struct sterm_data *sdata, int err)
 	sterm_unlock(sdata);
     }
 
+ retry:
     count = net->cbs->read_callback(net, err,
 				    sdata->read_data + sdata->data_pos,
 				    sdata->data_pending_len, 0);
 
     sterm_lock(sdata);
     if (count < sdata->data_pending_len) {
-	/* If the user doesn't consume all the data, disable
-	   automatically. */
+	/* The user didn't consume all the data. */
 	sdata->data_pending_len -= count;
 	sdata->data_pos += count;
-	sdata->read_enabled = false;
+	if (sdata->read_enabled && !sdata->closed) {
+	    sterm_unlock(sdata);
+	    goto retry;
+	}
     } else {
 	sdata->data_pending_len = 0;
     }

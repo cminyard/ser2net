@@ -194,6 +194,7 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
 	 */
 	ndata->read_enabled = false;
 
+ retry:
     if (ndata->open) {
 	tcpn_unlock(ndata);
 	count = net->cbs->read_callback(net, err,
@@ -201,11 +202,11 @@ tcpn_finish_read(struct tcpn_data *ndata, int err)
 					ndata->data_pending_len, 0);
 	tcpn_lock(ndata);
 	if (!err && count < ndata->data_pending_len) {
-	    /* If the user doesn't consume all the data, disable
-	       automatically. */
+	    /* The user didn't consume all the data. */
 	    ndata->data_pending_len -= count;
 	    ndata->data_pos += count;
-	    ndata->read_enabled = false;
+	    if (ndata->read_enabled)
+		goto retry;
 	} else {
 	    ndata->data_pending_len = 0;
 	}

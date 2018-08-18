@@ -238,9 +238,9 @@ struct genio_callbacks {
      * If readerr is set, buf and buflen are undefined.  readerr is
      * a standard *nix errno.
      *
-     * The user must return the number of bytes consumed.  If the full
-     * number of bytes is not consumed, read will automatically be
-     * disabled.  Read is also disabled if an error is reported.
+     * Note that you must disable read if you don't consume all
+     * the bytes or in other situations where you don't want the
+     * read handler called.
      *
      * Flags are per-type options, they generally don't matter except
      * for some specific situations.

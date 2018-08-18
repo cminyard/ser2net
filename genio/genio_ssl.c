@@ -315,6 +315,7 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
 		ndata->data_pending_len = rlen;
 	}
 	if (ndata->data_pending_len) {
+	retry:
 	    ssln_unlock(ndata);
 	    count = net->cbs->read_callback(net, 0,
 					    ndata->read_data + ndata->data_pos,
@@ -328,6 +329,8 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
 		ndata->read_enabled = false;
 		ndata->data_pending_len -= count;
 		ndata->data_pos += count;
+		if (ndata->state == SSLN_OPEN && ndata->read_enabled)
+		    goto retry;
 	    }
 	}
 	ndata->in_read = false;
@@ -479,6 +482,12 @@ ssln_open(struct genio *net, void (*open_done)(struct genio *net,
 	if (err)
 	    goto out_err;
 	SSL_set_connect_state(ndata->ssl);
+
+	ndata->in_read = false;
+	ndata->read_enabled = false;
+	ndata->xmit_enabled = false;
+	ndata->data_pending_len = 0;
+	ndata->curr_write_size = 0;
 
 	ndata->open_done = open_done;
 	ndata->open_data = open_data;
@@ -691,6 +700,7 @@ ssln_child_read(struct genio *net, int readerr,
 	if (rlen > 0)
 	    ndata->data_pending_len = rlen;
 	if (ndata->data_pending_len) {
+	retry:
 	    ssln_unlock(ndata);
 	    count = mynet->cbs->read_callback(&ndata->net, 0,
 					      ndata->read_data,
@@ -700,9 +710,10 @@ ssln_child_read(struct genio *net, int readerr,
 		ndata->data_pending_len = 0;
 		goto process_more;
 	    } else {
-		ndata->read_enabled = false;
 		ndata->data_pending_len -= count;
 		ndata->data_pos = count;
+		if (ndata->state == SSLN_OPEN && ndata->read_enabled)
+		    goto retry;
 	    }
 	}
     }
@@ -813,8 +824,6 @@ ssln_alloc(struct genio *child, struct genio_os_funcs *o,
 
     if (!ndata)
 	return NULL;
-
-    SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE);
 
     ndata->max_read_size = max_read_size;
     ndata->max_write_size = max_write_size;
