@@ -86,5 +86,5 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
                             (c, str(expected_termios), str(io2_rem_termios)))
 
     finally:
-        utils.finish_2_ser2net(ser2net, io1, io2)
+        utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
     print("  Success!")

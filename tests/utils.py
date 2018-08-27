@@ -361,7 +361,7 @@ def setup_2_ser2net(o, config, io1str, io2str):
         raise
     return (ser2net, io1, io2)
 
-def finish_2_ser2net(ser2net, io1, io2):
+def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
     if (io1.closeme):
         try:
             io_close(io1)
@@ -373,7 +373,7 @@ def finish_2_ser2net(ser2net, io1, io2):
         io_close(io2)
     except:
         pass
-    if sys.exc_info()[0]:
+    if handle_except and sys.exc_info()[0]:
         g = genio.waiter(ser2net.o)
         print("Exception occurred, waiting a bit for things to clear o")
         g.wait_timeout(2000)

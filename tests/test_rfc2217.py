@@ -272,7 +272,7 @@ def test_dtr():
     if (not (val & genio.SERGENIO_TIOCM_DTR)):
         raise Exception("Expected remote DTR on");
 
-    utils.finish_2_ser2net(ser2net, io1, io2)
+    utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
     print("  Success!")
     return
 
@@ -321,7 +321,7 @@ def test_rts():
     if (not (val & genio.SERGENIO_TIOCM_RTS)):
         raise Exception("Expected remote RTS on");
 
-    utils.finish_2_ser2net(ser2net, io1, io2)
+    utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
     print("  Success!")
     return
 
