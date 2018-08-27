@@ -46,7 +46,12 @@ genio_ssl_initialize(struct genio_os_funcs *o)
     o->call_once(o, &genio_ssl_init_once, genio_do_ssl_init, NULL);
 }
 
-enum ssln_state { SSLN_CLOSED, SSLN_IN_OPEN, SSLN_OPEN, SSLN_IN_CLOSE };
+enum ssln_state { SSLN_CLOSED,
+		  SSLN_IN_CHILD_OPEN,
+		  SSLN_IN_OPEN,
+		  SSLN_OPEN,
+		  SSLN_IN_CLOSE,
+		  SSLN_IN_CHILD_CLOSE };
 
 struct ssln_data {
     struct genio net;
@@ -91,6 +96,12 @@ struct ssln_data {
     unsigned int xmit_buf_curr;
     unsigned int xmit_buf_len;
     int saved_xmit_err;
+
+    /*
+     * We got an error from the child genio, it's probably not working
+     * any more.
+     */
+    bool child_err_occurred;
 
     /*
      * Used to run read callbacks from the selector to avoid running
@@ -170,13 +181,29 @@ ssln_deref_and_unlock(struct ssln_data *ndata)
 static void
 ssln_set_child_enables(struct ssln_data *ndata)
 {
-    if (BIO_pending(ndata->io_bio))
+    if (BIO_pending(ndata->io_bio) || ndata->xmit_buf_len ||
+		ndata->curr_write_size || ndata->xmit_enabled)
 	genio_set_write_callback_enable(ndata->child, true);
-    if ((ndata->read_enabled && !ndata->data_pending_len) ||
-		BIO_should_read(ndata->io_bio) ||
-		ndata->state == SSLN_IN_CLOSE || ndata->state == SSLN_IN_OPEN)
+    if ((((ndata->read_enabled && !ndata->data_pending_len) ||
+		BIO_should_read(ndata->io_bio)) && ndata->state == SSLN_OPEN) ||
+	    ndata->state == SSLN_IN_OPEN || ndata->state == SSLN_IN_CLOSE)
 	genio_set_read_callback_enable(ndata->child, true);
 }
+
+#if 0
+static void prbuf(const unsigned char *buf, unsigned int len)
+{
+    unsigned int i;
+
+    for (i = 0; i < len; i++) {
+	if (i % 16 == 0)
+	    printf("\n");
+	printf(" %2.2x", buf[i]);
+    }
+    printf("\n");
+    fflush(stdout);
+}
+#endif
 
 static int
 ssln_write(struct genio *net, unsigned int *rcount,
@@ -204,36 +231,8 @@ ssln_write(struct genio *net, unsigned int *rcount,
 
     memcpy(ndata->write_data, buf, buflen);
     ndata->curr_write_size = buflen;
+    *rcount = buflen;
 
-    err = SSL_write(ndata->ssl, ndata->write_data, ndata->curr_write_size);
-    if (err < 0) {
-	err = SSL_get_error(ndata->ssl, err);
-	switch (err) {
-	case SSL_ERROR_WANT_READ:
-	case SSL_ERROR_WANT_WRITE:
-	    *rcount = buflen;
-	    err = 0;
-	    break;
-
-	default:
-	    err = ECOMM; /* FIXME */
-	}
-    } else {
-	ndata->curr_write_size = 0;
-	*rcount = err;
-	err = 0;
-    }
-
-    if (!ndata->xmit_buf_len) {
-	int rdlen = BIO_read(ndata->io_bio, ndata->xmit_buf,
-			     sizeof(ndata->xmit_buf));
-
-	if (rdlen > 0) {
-	    ndata->xmit_buf_len = rdlen;
-	    ndata->xmit_buf_curr = 0;
-	    genio_set_write_callback_enable(ndata->child, true);
-	}
-    }
  out_unlock:
     ssln_set_child_enables(ndata);
     ssln_unlock(ndata);
@@ -273,7 +272,7 @@ static int
 ssln_ssl_setup(struct ssln_data *ndata)
 {
     int success;
-    unsigned int bio_size = ndata->max_read_size;
+    unsigned int bio_size = ndata->max_read_size * 2;
 
     ndata->ssl = SSL_new(ndata->ctx);
     if (!ndata->ssl)
@@ -302,19 +301,20 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
     unsigned int count;
 
     ssln_lock(ndata);
-    if (ndata->state != SSLN_OPEN)
-	goto out_unlock;
-
     if (ndata->in_read) {
     process_more:
-	if (!ndata->data_pending_len) {
+	if (ndata->state != SSLN_OPEN)
+	    goto out_unlock;
+
+	if (ndata->read_enabled && !ndata->data_pending_len) {
 	    int rlen = SSL_read(ndata->ssl, ndata->read_data,
 				ndata->max_read_size);
 
 	    if (rlen > 0)
 		ndata->data_pending_len = rlen;
+	    ndata->data_pos = 0;
 	}
-	if (ndata->data_pending_len) {
+	if (ndata->read_enabled && ndata->data_pending_len) {
 	retry:
 	    ssln_unlock(ndata);
 	    count = net->cbs->read_callback(net, 0,
@@ -326,7 +326,6 @@ ssln_deferred_op(struct genio_runner *runner, void *cbdata)
 		ndata->data_pos = 0;
 		goto process_more;
 	    } else {
-		ndata->read_enabled = false;
 		ndata->data_pending_len -= count;
 		ndata->data_pos += count;
 		if (ndata->state == SSLN_OPEN && ndata->read_enabled)
@@ -432,6 +431,7 @@ ssln_try_connect(struct ssln_data *ndata)
 
     if (!success) {
     failure:
+	ndata->state = SSLN_IN_CHILD_CLOSE;
 	genio_close(ndata->child, ssln_child_close_on_open_fail, NULL);
     } else if (success == 1) {
 	ssln_unlock(ndata);
@@ -462,6 +462,7 @@ ssln_child_open_done(struct genio *net, int err, void *cb_data)
     }
 
     ssln_lock(ndata);
+    ndata->state = SSLN_IN_OPEN;
     ssln_try_connect(ndata);
     ssln_set_child_enables(ndata);
     ssln_unlock(ndata);
@@ -496,7 +497,7 @@ ssln_open(struct genio *net, void (*open_done)(struct genio *net,
 	    goto out_err;
 
 	ssln_ref(ndata);
-	ndata->state = SSLN_IN_OPEN;
+	ndata->state = SSLN_IN_CHILD_OPEN;
     }
     ssln_unlock(ndata);
 
@@ -518,16 +519,19 @@ ssln_try_close(struct ssln_data *ndata)
 
     if (ndata->finish_close_on_write) {
 	ndata->finish_close_on_write = false;
+	ndata->state = SSLN_IN_CHILD_CLOSE;
 	genio_close(ndata->child, ssln_child_close_done, NULL);
 	return;
     }
 
     success = SSL_shutdown(ndata->ssl);
     if (success == 1 || success < 0) {
-	if (BIO_pending(ndata->io_bio))
+	if (BIO_pending(ndata->io_bio)) {
 	    ndata->finish_close_on_write = true;
-	else
+	} else {
+	    ndata->state = SSLN_IN_CHILD_CLOSE;
 	    genio_close(ndata->child, ssln_child_close_done, NULL);
+	}
     }
 }
 
@@ -538,9 +542,14 @@ ssln_i_close(struct ssln_data *ndata, void (*close_done)(struct genio *net,
 {
     ndata->close_done = close_done;
     ndata->close_data = close_data;
-    ndata->state = SSLN_IN_CLOSE;
-    ssln_ref(ndata);
-    ssln_try_close(ndata);
+    if (ndata->child_err_occurred) {
+	ndata->state = SSLN_IN_CHILD_CLOSE;
+	genio_close(ndata->child, ssln_child_close_done, NULL);
+    } else {
+	ndata->state = SSLN_IN_CLOSE;
+	ssln_ref(ndata);
+	ssln_try_close(ndata);
+    }
     ssln_set_child_enables(ndata);
 }
 
@@ -554,7 +563,8 @@ ssln_close(struct genio *net, void (*close_done)(struct genio *net,
 
     ssln_lock(ndata);
     if (ndata->state != SSLN_OPEN) {
-	if (ndata->state == SSLN_IN_OPEN) {
+	if (ndata->state == SSLN_IN_OPEN ||
+			ndata->state == SSLN_IN_CHILD_OPEN) {
 	    ssln_i_close(ndata, close_done, close_data);
 	    ssln_deref(ndata);
 	} else {
@@ -574,9 +584,10 @@ ssln_free(struct genio *net)
     struct ssln_data *ndata = mygenio_to_ssln(net);
 
     ssln_lock(ndata);
-    if (ndata->state == SSLN_IN_CLOSE)
+    if (ndata->state == SSLN_IN_CLOSE || ndata->state == SSLN_IN_CHILD_CLOSE) {
 	ndata->close_done = NULL;
-    else if (ndata->state == SSLN_IN_OPEN) {
+    } else if (ndata->state == SSLN_IN_OPEN ||
+			ndata->state == SSLN_IN_CHILD_OPEN) {
 	ssln_i_close(ndata, NULL, NULL);
 	/* We have to lose the reference that in_open state is holding. */
 	ssln_deref(ndata);
@@ -593,10 +604,12 @@ ssln_set_read_callback_enable(struct genio *net, bool enabled)
     char buf[1];
 
     ssln_lock(ndata);
-    if (ndata->state == SSLN_CLOSED || ndata->state == SSLN_IN_CLOSE)
+    if (ndata->state == SSLN_CLOSED || ndata->state == SSLN_IN_CLOSE ||
+		ndata->state == SSLN_IN_CHILD_CLOSE)
 	goto out_unlock;
     ndata->read_enabled = enabled;
     if (ndata->in_read || ndata->state == SSLN_IN_OPEN ||
+			ndata->state == SSLN_IN_CHILD_OPEN ||
 			(ndata->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read/open handling wake things up. */
     } else if (ndata->data_pending_len || SSL_peek(ndata->ssl, buf, 1) > 0) {
@@ -619,13 +632,12 @@ ssln_set_write_callback_enable(struct genio *net, bool enabled)
     struct ssln_data *ndata = mygenio_to_ssln(net);
 
     ssln_lock(ndata);
-    if (ndata->state == SSLN_CLOSED || ndata->state == SSLN_IN_CLOSE)
+    if (ndata->state == SSLN_CLOSED || ndata->state == SSLN_IN_CLOSE ||
+			ndata->state == SSLN_IN_CHILD_CLOSE)
 	goto out_unlock;
     if (ndata->xmit_enabled != enabled) {
 	ndata->xmit_enabled = enabled;
-	if ((enabled || !ndata->xmit_buf_len) && ndata->state != SSLN_IN_OPEN)
-	    /* Only disable if we don't have data pending. */
-	    genio_set_write_callback_enable(ndata->child, enabled);
+	ssln_set_child_enables(ndata);
     }
  out_unlock:
     ssln_unlock(ndata);
@@ -653,13 +665,17 @@ ssln_child_read(struct genio *net, int readerr,
     unsigned int count = 0;
 
     ssln_lock(ndata);
+    genio_set_read_callback_enable(ndata->child, false);
     if (readerr) {
 	/* Do this here so the user can modify it. */
 	ndata->read_enabled = false;
 	ndata->data_pending_len = 0;
-	if (ndata->state == SSLN_IN_OPEN) {
+	ndata->child_err_occurred = true;
+	if (ndata->state == SSLN_IN_OPEN ||
+			ndata->state == SSLN_IN_CHILD_OPEN) {
+	    ndata->state = SSLN_IN_CHILD_CLOSE;
 	    genio_close(ndata->child, ssln_child_close_on_open_fail, NULL);
-	} else if (mynet->cbs && ndata->state != SSLN_IN_OPEN) {
+	} else if (mynet->cbs) {
 	    SSL_clear(ndata->ssl);
 	    ssln_unlock(ndata);
 	    mynet->cbs->read_callback(mynet, readerr, NULL, 0, 0);
@@ -669,7 +685,6 @@ ssln_child_read(struct genio *net, int readerr,
 	}
 	goto out_finish;
     }
-    genio_set_read_callback_enable(ndata->child, false);
 
     if (ndata->in_read)
 	/* Currently in a deferred read, just let that handle it. */
@@ -678,7 +693,7 @@ ssln_child_read(struct genio *net, int readerr,
     ndata->in_read = true;
  process_more:
     if (buflen > 0) {
-	unsigned int wrlen = BIO_write(ndata->io_bio, buf, buflen);
+	int wrlen = BIO_write(ndata->io_bio, buf, buflen);
 
 	/* FIXME - do we need error handling? */
 	if (wrlen < 0)
@@ -694,11 +709,11 @@ ssln_child_read(struct genio *net, int readerr,
 
     if (ndata->state == SSLN_OPEN &&
 		ndata->read_enabled && !ndata->data_pending_len) {
-	int rlen;
+	int rlen = SSL_read(ndata->ssl, ndata->read_data, ndata->max_read_size);
 
-	rlen = SSL_read(ndata->ssl, ndata->read_data, ndata->max_read_size);
 	if (rlen > 0)
 	    ndata->data_pending_len = rlen;
+	ndata->data_pos = 0;
 	if (ndata->data_pending_len) {
 	retry:
 	    ssln_unlock(ndata);
@@ -706,12 +721,12 @@ ssln_child_read(struct genio *net, int readerr,
 					      ndata->read_data,
 					      ndata->data_pending_len, 0);
 	    ssln_lock(ndata);
-	    if (count == ndata->data_pending_len) {
+	    if (count >= ndata->data_pending_len) {
 		ndata->data_pending_len = 0;
 		goto process_more;
 	    } else {
 		ndata->data_pending_len -= count;
-		ndata->data_pos = count;
+		ndata->data_pos += count;
 		if (ndata->state == SSLN_OPEN && ndata->read_enabled)
 		    goto retry;
 	    }
@@ -727,16 +742,17 @@ ssln_child_read(struct genio *net, int readerr,
     return buf - ibuf;
 }
 
-void
+static void
 ssln_child_write_ready(struct genio *net)
 {
     struct ssln_data *ndata = genio_get_user_data(net);
     bool do_cb = true;
+    int err;
 
     ssln_lock(ndata);
+    genio_set_write_callback_enable(ndata->child, false);
  restart:
     if (ndata->xmit_buf_len) {
-	int err;
 	unsigned int written;
 
 	err = genio_write(net, &written, ndata->xmit_buf + ndata->xmit_buf_curr,
@@ -746,18 +762,17 @@ ssln_child_write_ready(struct genio *net)
 	    ndata->xmit_buf_len = 0;
 	} else {
 	    ndata->xmit_buf_curr += written;
-	    if (ndata->xmit_buf_curr == ndata->xmit_buf_len)
+	    if (ndata->xmit_buf_curr >= ndata->xmit_buf_len)
 		ndata->xmit_buf_len = 0;
 	    else
 		/* Still more data to write. */
 		do_cb = false;
 	}
     }
-    if (ndata->xmit_buf_len == 0) {
-	int rdlen, err;
 
+    if (ndata->xmit_buf_len == 0 && ndata->curr_write_size > 0) {
 	err = SSL_write(ndata->ssl, ndata->write_data, ndata->curr_write_size);
-	if (err < 0) {
+	if (err <= 0) {
 	    err = SSL_get_error(ndata->ssl, err);
 	    switch (err) {
 	    case SSL_ERROR_WANT_READ:
@@ -768,12 +783,15 @@ ssln_child_write_ready(struct genio *net)
 		ndata->saved_xmit_err = ECOMM; /* FIXME */
 	    }
 	} else {
+	    assert(err == ndata->curr_write_size);
 	    ndata->curr_write_size = 0;
 	    err = 0;
 	}
+    }
 
-	rdlen = BIO_read(ndata->io_bio, ndata->xmit_buf,
-			 sizeof(ndata->xmit_buf));
+    if (ndata->xmit_buf_len == 0) {
+	int rdlen = BIO_read(ndata->io_bio, ndata->xmit_buf,
+			     sizeof(ndata->xmit_buf));
 
 	/* FIXME - error handling? */
 	if (rdlen > 0) {
@@ -788,22 +806,18 @@ ssln_child_write_ready(struct genio *net)
     if (ndata->state == SSLN_IN_CLOSE)
 	ssln_try_close(ndata);
     if (ndata->state != SSLN_IN_OPEN && ndata->curr_write_size == 0 && do_cb) {
-	if (!ndata->xmit_enabled) {
-	    genio_set_write_callback_enable(ndata->child, false);
-	} else {
+	if (ndata->xmit_enabled) {
 	    ssln_unlock(ndata);
 	    ndata->net.cbs->write_callback(&ndata->net);
 	    ssln_lock(ndata);
 	}
     }
 
-    if (ndata->xmit_buf_len || ndata->curr_write_size)
-	genio_set_write_callback_enable(ndata->child, true);
     ssln_set_child_enables(ndata);
     ssln_unlock(ndata);
 }
 
-void
+static void
 ssln_child_urgent(struct genio *net)
 {
 }
