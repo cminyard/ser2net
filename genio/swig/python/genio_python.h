@@ -113,10 +113,8 @@ swig_finish_call_rv(swig_cb_val *cb, const char *method_name, PyObject *args)
     if (p) {
 	o = PyObject_CallObject(p, args);
 	Py_DECREF(p);
-	if (PyErr_Occurred()) {
-	    PyErr_Print();
-	    exit(1);
-	}
+	if (PyErr_Occurred())
+	    wake_curr_waiter();
     } else {
 	PyObject *t = PyObject_GetAttrString(cb, "__class__");
 	PyObject *c = PyObject_GetAttrString(t, "__name__");
