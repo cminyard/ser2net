@@ -77,6 +77,7 @@ class HandleData:
         return
 
     def close(self):
+        self.ignore_input = True
         self.io.close(self)
         return
 
@@ -120,7 +121,7 @@ class HandleData:
 
         for i in range(0, count):
             if (buf[i] != self.to_compare[self.compared]):
-                raise HandlerException("%s: compare falure on byte %d, "
+                raise HandlerException("%s: compare failure on byte %d, "
                                        "expected %x, got %x" %
                                        (self.name, self.compared,
                                         ord(self.to_compare[self.compared]),
@@ -194,6 +195,7 @@ class Ser2netDaemon:
         self.cfile = tempfile.NamedTemporaryFile(mode="w+")
         self.cfile.write(configdata)
         self.cfile.flush()
+        self.o = o
 
         args = "stdio," + prog + " -r -d -c " + self.cfile.name + " " + extra_args
         if (debug):
@@ -361,10 +363,20 @@ def setup_2_ser2net(o, config, io1str, io2str):
 
 def finish_2_ser2net(ser2net, io1, io2):
     if (io1.closeme):
-        io_close(io1)
+        try:
+            io_close(io1)
+        except:
+            pass
     else:
         io1.handler.ignore_input = True
-    io_close(io2)
+    try:
+        io_close(io2)
+    except:
+        pass
+    if sys.exc_info()[0]:
+        g = genio.waiter(ser2net.o)
+        print("Exception occurred, waiting a bit for things to clear o")
+        g.wait_timeout(2000)
     ser2net.terminate()
     return
 
