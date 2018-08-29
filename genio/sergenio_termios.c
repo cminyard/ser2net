@@ -51,6 +51,9 @@ struct sterm_data {
 
     struct genio_os_funcs *o;
 
+    struct genio_timer *close_timer;
+    unsigned int close_timeouts_left;
+
     char *devname;
     char *parms;
 
@@ -68,6 +71,7 @@ struct sterm_data {
     void *close_data;
     bool closed;
     bool in_close;
+    bool deferred_close;
     bool in_free;
 
     bool read_enabled;
@@ -119,6 +123,8 @@ sterm_finish_free(struct sterm_data *sdata)
 	sdata->o->free(sdata->o, sdata->devname);
     if (sdata->lock)
 	sdata->o->free_lock(sdata->lock);
+    if (sdata->close_timer)
+	sdata->o->free_timer(sdata->close_timer);
     sdata->o->free(sdata->o, sdata);
 }
 
@@ -220,7 +226,8 @@ sterm_deferred_op(struct genio_runner *runner, void *cbdata)
 
     sdata->deferred_op_pending = false;
 
-    if (sdata->in_close) {
+    if (sdata->deferred_close) {
+	sdata->deferred_close = false;
 	sterm_unlock(sdata);
 	sterm_finish_close(sdata);
 	return;
@@ -648,6 +655,11 @@ sterm_write(struct genio *net, unsigned int *rcount,
     struct sterm_data *sdata = mygenio_to_sterm(net);
     int rv, err = 0;
 
+    sterm_lock(sdata);
+    if (sdata->closed) {
+	err = EBUSY;
+	goto out_unlock;
+    }
  retry:
     rv = write(sdata->fd, buf, buflen);
     if (rv < 0) {
@@ -660,6 +672,8 @@ sterm_write(struct genio *net, unsigned int *rcount,
     } else if (rv == 0) {
 	err = EPIPE;
     }
+ out_unlock:
+    sterm_unlock(sdata);
 
     if (!err && rcount)
 	*rcount = rv;
@@ -696,17 +710,58 @@ sterm_remote_id(struct genio *net, int *id)
 }
 
 static void
-devfd_fd_cleared(int fd, void *cb_data)
+sterm_check_termio_q_shutdown(struct sterm_data *sdata)
 {
-    struct sterm_data *sdata = cb_data;
-
     sterm_lock(sdata);
     if (!sdata->termio_q) {
 	sterm_unlock(sdata);
 	sterm_finish_close(sdata);
     } else {
+	/* Catch it when the termio_q finishes. */
+	sdata->deferred_close = true;
 	sterm_unlock(sdata);
     }
+}
+
+static void
+sterm_check_close_drain(struct sterm_data *sdata)
+{
+    int rv, count = 0;
+    struct timeval timeout;
+
+    rv = ioctl(sdata->fd, TIOCOUTQ, &count);
+    if (rv || count == 0) {
+	sterm_check_termio_q_shutdown(sdata);
+	return;
+    }
+
+    sdata->close_timeouts_left--;
+    if (sdata->close_timeouts_left == 0) {
+	sterm_check_termio_q_shutdown(sdata);
+	return;
+    }
+
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10000;
+    sdata->o->start_timer(sdata->close_timer, &timeout);
+}
+
+static void
+sterm_close_timeout(struct genio_timer *t, void *cb_data)
+{
+    struct sterm_data *sdata = cb_data;
+
+    sterm_check_close_drain(sdata);
+}
+
+static void
+devfd_fd_cleared(int fd, void *cb_data)
+{
+    struct sterm_data *sdata = cb_data;
+
+    /* FIXME - this should be calculated. */
+    sdata->close_timeouts_left = 200;
+    sterm_check_close_drain(sdata);
 }
 
 static void
@@ -960,6 +1015,12 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 
     if (!sdata)
 	return ENOMEM;
+
+    sdata->close_timer = o->alloc_timer(o, sterm_close_timeout, sdata);
+    if (!sdata->close_timer) {
+	err = ENOMEM;
+	goto out;
+    }
 
     sdata->fd = -1;
 
