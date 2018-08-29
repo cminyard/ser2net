@@ -155,8 +155,8 @@ class HandleData:
         if (count + self.wrpos >= self.wrlen):
             io.write_cb_enable(False)
             if (self.close_on_done):
-                self.close()
                 self.io.closeme = False
+                self.close()
             self.to_write = None
             self.waiter.wake()
         else:
@@ -208,6 +208,7 @@ class Ser2netDaemon:
         self.handler = HandleData(o, args, 1024, name="ser2net daemon")
 
         self.io = self.handler.io
+        self.io.closeme = True
         self.io.open_s()
 
         self.pid = self.io.remote_id()
@@ -246,7 +247,8 @@ class Ser2netDaemon:
         """
         if (debug):
             print("Terminating")
-        self.handler.close()
+        if self.io.closeme:
+            self.handler.close()
         count = 10
         while (count > 0):
             if (count < 6):
