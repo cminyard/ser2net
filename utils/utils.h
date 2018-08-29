@@ -180,4 +180,8 @@ void add_to_timeval(struct timeval *tv1, struct timeval *tv2);
 /* Subtract tv2 from tv1 */
 void sub_from_timeval(struct timeval *tv1, struct timeval *tv2);
 
+void add_usec_to_timeval(struct timeval *tv, int usec);
+
+int sub_timeval_us(struct timeval *left, struct timeval *right);
+
 #endif /* UTILS */

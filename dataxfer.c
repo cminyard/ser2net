@@ -484,32 +484,6 @@ static struct telnet_cmd telnet_cmds[] =
     { TELNET_CMD_END_OPTION }
 };
 
-static void
-add_usec_to_timeval(struct timeval *tv, int usec)
-{
-    tv->tv_usec += usec;
-    while (usec >= 1000000) {
-	usec -= 1000000;
-	tv->tv_sec += 1;
-    }
-}
-
-static int
-sub_timeval_us(struct timeval *left,
-	       struct timeval *right)
-{
-    struct timeval dest;
-
-    dest.tv_sec = left->tv_sec - right->tv_sec;
-    dest.tv_usec = left->tv_usec - right->tv_usec;
-    while (dest.tv_usec < 0) {
-	dest.tv_usec += 1000000;
-	dest.tv_sec--;
-    }
-
-    return (dest.tv_sec * 1000000) + dest.tv_usec;
-}
-
 
 /*
  * Generic output function for using a controller output for
