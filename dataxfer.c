@@ -169,6 +169,13 @@ struct port_info
     /* Used if a connect back is requested an no connections could
        be made, to try again. */
 
+    /*
+     * Used to count timeouts during a shutdown, to make sure close
+     * happens in a reasonable amount of time.  If this is zero, this
+     * means that shutdown_port_io() has already been called.
+     */
+    unsigned int shutdown_timeout_count;
+
     sel_runner_t *runshutdown;		/* Used to run things at the
 					   base context.  This way we
 					   don't have to worry that we
@@ -2721,48 +2728,62 @@ io_shutdown_done(struct devio *io)
 }
 
 static void
-shutdown_port_io(sel_runner_t *runner, void *cb_data)
+shutdown_port_io(port_info_t *port)
 {
-    port_info_t *port = cb_data;
-
     if (port->io.f)
 	port->io.f->shutdown(&port->io, io_shutdown_done);
     else
 	finish_shutdown_port(port);
 }
 
-/* Output the devstr buffer */
+static void
+timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
+{
+    shutdown_port_io(cb_data);
+}
+
+/* Output any pending data and the devstr buffer. */
 static void
 handle_dev_fd_close_write(port_info_t *port)
 {
     int reterr, buferr;
 
-    reterr = buffer_write(io_do_write, &port->io, port->devstr, &buferr);
+    if (buffer_cursize(&port->net_to_dev) != 0)
+	reterr = buffer_write(io_do_write, &port->io, &port->net_to_dev,
+			      &buferr);
+    else if (port->devstr)
+	reterr = buffer_write(io_do_write, &port->io, port->devstr, &buferr);
+    else
+	goto closeit;
+
     if (reterr == -1) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->portname, strerror(buferr));
 	goto closeit;
     }
 
-    if (buffer_cursize(port->devstr) != 0)
+    if (buffer_cursize(&port->net_to_dev) ||
+		(port->devstr && buffer_cursize(port->devstr)))
 	return;
 
 closeit:
-    sel_run(port->runshutdown, shutdown_port_io, port);
+    if (port->shutdown_timeout_count) {
+	port->shutdown_timeout_count = 0;
+	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
+	    shutdown_port_io(port);
+    }
 }
 
 static void
-start_shutdown_port_io(sel_runner_t *runner, void *cb_data)
+start_shutdown_port_io(port_info_t *port)
 {
-    port_info_t *port = cb_data;
-
     LOCK(port->lock);
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
     }
     port->devstr = process_str_to_buf(port, NULL, port->closestr);
-    if (port->devstr && (port->net_to_dev_state != PORT_UNCONNECTED)) {
+    if (port->net_to_dev_state != PORT_UNCONNECTED) {
 	port->io.f->read_handler_enable(&port->io, 0);
 	port->io.f->except_handler_enable(&port->io, 0);
 	port->dev_write_handler = handle_dev_fd_close_write;
@@ -2770,14 +2791,8 @@ start_shutdown_port_io(sel_runner_t *runner, void *cb_data)
 	UNLOCK(port->lock);
     } else {
 	UNLOCK(port->lock);
-	shutdown_port_io(NULL, port);
+	shutdown_port_io(port);
     }
-}
-
-static void
-timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
-{
-    start_shutdown_port_io(NULL, cb_data);
 }
 
 static void
@@ -2808,6 +2823,8 @@ start_shutdown_port(port_info_t *port, char *reason)
     }
     port->tw = port->tr = port->tb = NULL;
 
+    /* FIXME - this should be calculated somehow, not a raw number .*/
+    port->shutdown_timeout_count = 4;
     port->dev_to_net_state = PORT_CLOSING;
 }
 
@@ -2832,9 +2849,7 @@ netcon_finish_shutdown(net_info_t *netcon)
     if (num_connected_net(port) == 0) {
 	if (!port->has_connect_back) {
 	    start_shutdown_port(port, "All network connections free");
-	    if (sel_stop_timer_with_done(port->timer, timer_shutdown_done,
-					 port))
-		sel_run(port->runshutdown, start_shutdown_port_io, port);
+	    start_shutdown_port_io(port);
 	}
     } else {
 	check_port_new_net(port, netcon);
@@ -2900,10 +2915,8 @@ shutdown_port(port_info_t *port, char *reason)
 	}
     }
 
-    if (!some_to_close) {
-	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
-	    sel_run(port->runshutdown, start_shutdown_port_io, port);
-    }
+    if (!some_to_close)
+	start_shutdown_port_io(port);
 }
 
 void
@@ -2919,8 +2932,18 @@ got_timeout(struct selector_s *sel,
     LOCK(port->lock);
 
     if (port->dev_to_net_state == PORT_CLOSING) {
-	UNLOCK(port->lock);
-	return;
+	if (port->shutdown_timeout_count <= 1) {
+	    int count = port->shutdown_timeout_count;
+
+	    port->shutdown_timeout_count = 0;
+	    UNLOCK(port->lock);
+	    if (count == 1)
+		shutdown_port_io(port);
+	    return;
+	} else {
+	    port->shutdown_timeout_count--;
+	    goto out;
+	}
     }
 
     if (port->nocon_read_enable_time_left) {
