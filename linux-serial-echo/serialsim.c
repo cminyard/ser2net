@@ -397,11 +397,10 @@ static void serialsim_set_baud_rate(struct serialsim_intf *intf,
 	intf->per_interval_residual = baud % intf->div;
 }
 
-static void serialsim_transfer_data(struct serialsim_intf *intf)
+static void serialsim_transfer_data(struct uart_port *port,
+				    struct circ_buf *tbuf)
 {
-	struct uart_port *port = &intf->port;
 	struct circ_buf *cbuf = &port->state->xmit;
-	struct circ_buf *tbuf = &intf->buf;
 
 	while (!uart_circ_empty(cbuf) && circ_sbuf_space(tbuf)) {
 		unsigned char c = cbuf->buf[cbuf->tail];
@@ -471,8 +470,9 @@ static void serialsim_thread_delay(void)
 static int serialsim_thread(void *data)
 {
 	struct serialsim_intf *intf = data;
+	struct serialsim_intf *ointf = intf->ointf;
 	struct uart_port *port = &intf->port;
-	struct uart_port *oport = &intf->ointf->port;
+	struct uart_port *oport = &ointf->port;
 	struct circ_buf *tbuf = &intf->buf;
 	unsigned int residual = 0;
 
@@ -484,16 +484,19 @@ static int serialsim_thread(void *data)
 		unsigned int flag;
 		unsigned int status = 0;
 
-		spin_lock_irq(&port->lock);
-		if (!intf->tx_enabled) {
-			spin_unlock_irq(&port->lock);
-			goto do_delay;
-		}
+		spin_lock_irq(&oport->lock);
+		if (ointf->tx_enabled)
+			/*
+			 * Move bytes from the other port's transmit buffer to
+			 * the interface buffer.
+			 */
+			serialsim_transfer_data(oport, tbuf);
+		spin_unlock_irq(&oport->lock);
 
-		/* Move the data into the transmit buffer. */
-		serialsim_transfer_data(intf);
-
-		/* Send the data to the other side. */
+		/*
+		 *  Move from the interface buffer into the local
+		 *  buffer based on the simulated serial speed.
+		 */
 		to_send = intf->bytes_per_interval;
 		residual += intf->per_interval_residual;
 		div = intf->div;
@@ -509,25 +512,28 @@ static int serialsim_thread(void *data)
 				tbuf->tail = circ_sbuf_next(tbuf->tail);
 			}
 		}
-		spin_unlock_irq(&port->lock);
 
-		spin_lock_irq(&oport->lock);
-		flag = serialsim_get_flag(intf->ointf, &status);
-		if (intf->ointf->rx_enabled) {
+		/*
+		 * Move from the internal buffer into my receive
+		 * buffer.
+		 */
+		spin_lock_irq(&port->lock);
+		flag = serialsim_get_flag(intf, &status);
+		if (intf->rx_enabled) {
 			for (to_send = 0; to_send < pos; to_send++) {
-				oport->icount.rx++;
-				uart_insert_char(oport, status,
+				port->icount.rx++;
+				uart_insert_char(port, status,
 						 DO_OVERRUN_ERR,
 						 buf[to_send], flag);
 				flag = 0;
 				status = 0;
 			}
 		}
-		spin_unlock_irq(&oport->lock);
+		spin_unlock_irq(&port->lock);
 
 		if (pos)
-			tty_flip_buffer_push(&oport->state->port);
-	do_delay:
+			tty_flip_buffer_push(&port->state->port);
+
 		serialsim_thread_delay();
 	}
 
