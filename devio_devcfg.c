@@ -53,6 +53,10 @@ struct devcfg_data {
 
     void (*shutdown_done)(struct devio *);
 
+    /* Used to make sure the shutdown isn't stuck. */
+    sel_timer_t *shutdown_timer;
+    unsigned int shutdown_retries;
+
     /* Holds whether break is on or not. */
     int break_set;
 
@@ -388,9 +392,8 @@ static int calc_bpc(struct devcfg_data *d)
 }
 
 static void
-devfd_fd_cleared(int fd, void *cb_data)
+devcfg_finish_shutdown(struct devio *io)
 {
-    struct devio *io = cb_data;
     struct devcfg_data *d = io->my_data;
     void (*shutdown_done)(struct devio *) = d->shutdown_done;
     struct termios termio;
@@ -401,11 +404,55 @@ devfd_fd_cleared(int fd, void *cb_data)
 	termio.c_cflag &= ~CRTSCTS;
 	tcsetattr(d->devfd, TCSANOW, &termio);
     }
+    /* To avoid blocking on close if we have written bytes and are in
+       flow-control, we flush the output queue. */
     tcflush(d->devfd, TCOFLUSH);
     close(d->devfd);
     d->devfd = -1;
     uucp_rm_lock(io->devname);
     shutdown_done(io);
+}
+
+static void
+devcfg_check_drained(struct devio *io)
+{
+    struct devcfg_data *d = io->my_data;
+    int rv, count = 0;
+    struct timeval timeout;
+
+    rv = ioctl(d->devfd, TIOCOUTQ, &count);
+    if (rv || count == 0) {
+	devcfg_finish_shutdown(io);
+	return;
+    }
+
+    d->shutdown_retries--;
+    if (d->shutdown_retries == 0) {
+	devcfg_finish_shutdown(io);
+	return;
+    }
+
+    sel_get_monotonic_time(&timeout);
+    add_usec_to_timeval(&timeout, 10000);
+    sel_start_timer(d->shutdown_timer, &timeout);
+}
+
+void
+shutdown_timeout(struct selector_s *sel,
+		 sel_timer_t *timer,
+		 void        *cb_data)
+{
+    struct devio *io = cb_data;
+    
+    devcfg_check_drained(io);
+}
+
+static void
+devfd_fd_cleared(int fd, void *cb_data)
+{
+    struct devio *io = cb_data;
+
+    devcfg_check_drained(io);
 }
 
 static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
@@ -499,10 +546,13 @@ static void devcfg_shutdown(struct devio *io,
 {
     struct devcfg_data *d = io->my_data;
 
-    /* To avoid blocking on close if we have written bytes and are in
-       flow-control, we flush the output queue. */
     if (d->devfd != -1) {
 	d->shutdown_done = shutdown_done;
+	/*
+	 * FIXME - we should calculate the amount of time it should
+	 * take to send the pending data based upon baud and count.
+	 */
+	d->shutdown_retries = 200; /* 2 seconds. */
 	sel_clear_fd_handlers(ser2net_sel, d->devfd);
     } else {
 	shutdown_done(io);
@@ -889,6 +939,7 @@ static void devcfg_free(struct devio *io)
     if (d->devfd != -1)
 	close(d->devfd);
     io->my_data = NULL;
+    sel_free_timer(d->shutdown_timer);
     free(d);
 }
 
@@ -942,7 +993,14 @@ devcfg_init(struct devio *io, struct absout *eout, const char *instr,
     memset(d, 0, sizeof(*d));
     d->devfd = -1;
 
+    if (sel_alloc_timer(ser2net_sel, shutdown_timeout, io,
+			&d->shutdown_timer)) {
+	free(d);
+	return -1;
+    }
+
     if (devconfig(d, eout, instr, otherconfig, data) == -1) {
+	sel_free_timer(d->shutdown_timer);
 	free(d);
 	return -1;
     }
