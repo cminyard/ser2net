@@ -68,7 +68,9 @@ class HandleData:
             self.io.read_cb_enable(True)
         return
 
-    def set_write_data(self, to_write, start_writer = True):
+    def set_write_data(self, to_write, start_writer = True,
+                       close_on_done = False):
+        self.close_on_done = close_on_done
         self.wrpos = 0
         self.wrlen = len(to_write)
         self.to_write = to_write
@@ -152,6 +154,9 @@ class HandleData:
 
         if (count + self.wrpos >= self.wrlen):
             io.write_cb_enable(False)
+            if (self.close_on_done):
+                self.close()
+                self.io.closeme = False
             self.to_write = None
             self.waiter.wake()
         else:
@@ -315,6 +320,26 @@ def test_dataxfer_simul(io1, io2, data, timeout = 10000):
                         ("test_dataxfer", io2.handler.name))
     return
 
+def test_write_drain(io1, io2, data, timeout = 1000):
+    """Test that a close does not loose data.
+
+    If the transfer does not complete by "timeout" milliseconds, raise
+    an exception.
+    """
+    io1.handler.set_write_data(data, close_on_done = True)
+    io2.handler.set_compare(data)
+    if (io1.handler.wait_timeout(timeout)):
+        raise Exception(("%s: %s: " % ("test_dataxfer", io1.handler.name)) +
+
+                        ("Timed out waiting for write completion at byte %d" %
+                         io1.handler.wrpos))
+    if (io2.handler.wait_timeout(timeout)):
+        raise Exception(("%s: %s: " % ("test_dataxfer", io2.handler.name)) +
+
+                        ("Timed out waiting for read completion at byte %d" %
+                         io2.handler.compared))
+    return
+
 def io_close(io, timeout = 1000):
     """close the given genio
 
@@ -351,6 +376,7 @@ def setup_2_ser2net(o, config, io1str, io2str):
             io1.handler.ignore_input = False
             io1.closeme = False
         io2 = alloc_io(o, io2str)
+        io2.closeme = True
     except:
         if io1:
             if io1.closeme:
@@ -362,20 +388,23 @@ def setup_2_ser2net(o, config, io1str, io2str):
     return (ser2net, io1, io2)
 
 def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
-    if (io1.closeme):
+    if io1.closeme:
         try:
             io_close(io1)
         except:
             pass
     else:
         io1.handler.ignore_input = True
-    try:
-        io_close(io2)
-    except:
-        pass
+    if io2.closeme:
+        try:
+            io_close(io2)
+        except:
+            pass
+    else:
+        io2.handler.ignore_input = True
     if handle_except and sys.exc_info()[0]:
         g = genio.waiter(ser2net.o)
-        print("Exception occurred, waiting a bit for things to clear o")
+        print("Exception occurred, waiting a bit for things to clear.")
         g.wait_timeout(2000)
     ser2net.terminate()
     return
