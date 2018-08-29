@@ -50,6 +50,7 @@ enum ssln_state { SSLN_CLOSED,
 		  SSLN_IN_CHILD_OPEN,
 		  SSLN_IN_OPEN,
 		  SSLN_OPEN,
+		  SSLN_CLOSE_WAIT_DRAIN,
 		  SSLN_IN_CLOSE,
 		  SSLN_IN_CHILD_CLOSE };
 
@@ -549,6 +550,9 @@ ssln_i_close(struct ssln_data *ndata, void (*close_done)(struct genio *net,
     if (ndata->child_err_occurred) {
 	ndata->state = SSLN_IN_CHILD_CLOSE;
 	genio_close(ndata->child, ssln_child_close_done, NULL);
+    } else if (ndata->curr_write_size || ndata->xmit_buf_len) {
+	ssln_ref(ndata);
+	ndata->state = SSLN_CLOSE_WAIT_DRAIN;
     } else {
 	ndata->state = SSLN_IN_CLOSE;
 	ssln_ref(ndata);
@@ -680,6 +684,10 @@ ssln_child_read(struct genio *net, int readerr,
 			ndata->state == SSLN_IN_CHILD_OPEN) {
 	    ndata->state = SSLN_IN_CHILD_CLOSE;
 	    genio_close(ndata->child, ssln_child_close_on_open_fail, NULL);
+	} else if (ndata->state == SSLN_CLOSE_WAIT_DRAIN ||
+			ndata->state == SSLN_IN_CLOSE) {
+	    ndata->state = SSLN_IN_CHILD_CLOSE;
+	    genio_close(ndata->child, ssln_child_close_done, NULL);
 	} else if (mynet->cbs) {
 	    SSL_clear(ndata->ssl);
 	    ssln_unlock(ndata);
@@ -776,6 +784,7 @@ ssln_child_write_ready(struct genio *net)
     }
 
     if (ndata->xmit_buf_len == 0 && ndata->curr_write_size > 0) {
+    do_ssl_write:
 	err = SSL_write(ndata->ssl, ndata->write_data, ndata->curr_write_size);
 	if (err <= 0) {
 	    err = SSL_get_error(ndata->ssl, err);
@@ -806,7 +815,10 @@ ssln_child_write_ready(struct genio *net)
 	}
     }
 
-    if (ndata->state ==  SSLN_IN_OPEN)
+    if (ndata->state == SSLN_CLOSE_WAIT_DRAIN && !ndata->curr_write_size &&
+		!ndata->xmit_buf_len)
+	ndata->state = SSLN_IN_CLOSE;
+    if (ndata->state == SSLN_IN_OPEN)
 	ssln_try_connect(ndata);
     if (ndata->state == SSLN_IN_CLOSE)
 	ssln_try_close(ndata);
@@ -815,6 +827,8 @@ ssln_child_write_ready(struct genio *net)
 	    ssln_unlock(ndata);
 	    ndata->net.cbs->write_callback(&ndata->net);
 	    ssln_lock(ndata);
+	    if (ndata->xmit_buf_len == 0 && ndata->curr_write_size > 0)
+		goto do_ssl_write;
 	}
     }
 
