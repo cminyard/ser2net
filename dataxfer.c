@@ -912,10 +912,10 @@ handle_dev_fd_read(struct devio *io)
 
     if (port->tr)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, port->tr, port->dev_to_net.buf, count, SERIAL);
+	do_trace(port, port->tr, port->dev_to_net.buf + curend, count, SERIAL);
     if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->tb, port->dev_to_net.buf, count, SERIAL);
+	do_trace(port, port->tb, port->dev_to_net.buf + curend, count, SERIAL);
 
     if (port->led_rx) {
 	led_flash(port->led_rx);
