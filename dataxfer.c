@@ -4127,6 +4127,7 @@ data_monitor_stop(struct controller_info *cntlr,
 	    UNLOCK(port->lock);
 	    break;
 	}
+	curr = curr->next;
     }
     UNLOCK(ports_lock);
 }
