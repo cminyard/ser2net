@@ -527,8 +527,8 @@ init_port_data(port_info_t *port)
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");
     port->chardelay_max = find_default_int("chardelay-max");
-    port->dev_to_net_bufsize = find_default_int("dev-to-tcp-bufsize");
-    port->net_to_dev_bufsize = find_default_int("tcp-to-dev-bufsize");
+    port->dev_to_net_bufsize = find_default_int("dev-to-net-bufsize");
+    port->net_to_dev_bufsize = find_default_int("net-to-dev-bufsize");
     port->max_connections = find_default_int("max-connections");
 
     if (buffer_init(&port->net_to_dev, NULL, port->net_to_dev_bufsize))
