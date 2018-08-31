@@ -462,6 +462,7 @@ static unsigned char telnet_init_seq[] = {
     TN_IAC, TN_WILL, TN_OPT_ECHO,
     TN_IAC, TN_DONT, TN_OPT_ECHO,
     TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
+    TN_IAC, TN_WILL, TN_OPT_BINARY_TRANSMISSION,
     TN_IAC, TN_DO,   TN_OPT_COM_PORT,
 };
 
