@@ -21,6 +21,9 @@ _genio_la_LIBADD = \
 	$(top_builddir)/utils/telnet.lo $(top_builddir)/utils/buffer.lo \
 	$(top_builddir)/utils/waiter.lo $(top_builddir)/utils/uucplock.lo \
 	$(top_builddir)/genio/genio.lo $(top_builddir)/genio/genio_tcp.lo \
+	$(top_builddir)/genio/genio_base.lo \
+	$(top_builddir)/genio/genio_filter_ssl.lo \
+	$(top_builddir)/genio/genio_ll_fd.lo \
 	$(top_builddir)/genio/genio_udp.lo \
 	$(top_builddir)/genio/genio_stdio.lo \
 	$(top_builddir)/genio/genio_ssl.lo \

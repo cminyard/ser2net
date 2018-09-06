@@ -215,7 +215,6 @@ stdion_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
     struct genio *net = &nadata->net;
-    bool in_read;
 
     stdiona_lock(nadata);
  restart:
@@ -236,11 +235,7 @@ stdion_deferred_op(struct genio_runner *runner, void *cbdata)
     }
 
     if (nadata->deferred_read) {
-	in_read = nadata->in_read;
 	nadata->deferred_read = false;
-    }
-
-    if (in_read) {
 	stdiona_unlock(nadata);
 	stdion_finish_read(nadata, 0);
 	stdiona_lock(nadata);
