@@ -326,6 +326,7 @@ genio_open_s(struct genio *net, struct genio_os_funcs *o)
 	o->wait(data.waiter, NULL);
 	err = data.err;
     }
+    o->free_waiter(data.waiter);
     return err;
 }
 

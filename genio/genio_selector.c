@@ -107,11 +107,11 @@ genio_sel_clear_fd_handlers(struct genio_os_funcs *f, int fd)
 }
 
 static void
-genio_sel_clear_fd_handlers_imm(struct genio_os_funcs *f, int fd)
+genio_sel_clear_fd_handlers_norpt(struct genio_os_funcs *f, int fd)
 {
     struct genio_data *d = f->user_data;
 
-    return sel_clear_fd_handlers_imm(d->sel, fd);
+    return sel_clear_fd_handlers_norpt(d->sel, fd);
 }
 
 static void
@@ -475,7 +475,7 @@ genio_selector_alloc(struct selector_s *sel, int wake_sig)
     o->unlock = genio_sel_unlock;
     o->set_fd_handlers = genio_sel_set_fd_handlers;
     o->clear_fd_handlers = genio_sel_clear_fd_handlers;
-    o->clear_fd_handlers_imm = genio_sel_clear_fd_handlers_imm;
+    o->clear_fd_handlers_norpt = genio_sel_clear_fd_handlers_norpt;
     o->set_read_handler = genio_sel_set_read_handler;
     o->set_write_handler = genio_sel_set_write_handler;
     o->set_except_handler = genio_sel_set_except_handler;

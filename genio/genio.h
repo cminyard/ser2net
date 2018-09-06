@@ -100,10 +100,10 @@ struct genio_os_funcs {
     void (*clear_fd_handlers)(struct genio_os_funcs *f, int fd);
 
     /*
-     * Like the above, but can only be called before the handlers are
-     * enabled, primarily to handle error situations at startup.
+     * Like the above, but does not call the cleared_handler function
+     * when done.
      */
-    void (*clear_fd_handlers_imm)(struct genio_os_funcs *f, int fd);
+    void (*clear_fd_handlers_norpt)(struct genio_os_funcs *f, int fd);
 
     /*
      * Enable/disable the various handlers.  Note that if you disable
