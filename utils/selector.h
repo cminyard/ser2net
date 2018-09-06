@@ -88,11 +88,8 @@ int sel_set_fd_handlers(struct selector_s *sel,
    sure to not be called again. */
 void sel_clear_fd_handlers(struct selector_s *sel,
 			   int        fd);
-/* Like above, but can only be called if no handlers are active.
-   If it detects a handler is active, it will assert.  This should
-   only be used at startup to clear the fd handler after an error
-   before any handlers are enabled. */
-void sel_clear_fd_handlers_imm(struct selector_s *sel, int fd);
+/* Like above, but the fd_cleared function will not be called. */
+void sel_clear_fd_handlers_norpt(struct selector_s *sel, int fd);
 
 /* Turn on and off handling for I/O from a file descriptor. */
 #define SEL_FD_HANDLER_ENABLED	0

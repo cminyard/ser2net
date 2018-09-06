@@ -442,7 +442,7 @@ sel_set_fd_handlers(struct selector_s *sel,
 }
 
 static void
-i_sel_clear_fd_handler(struct selector_s *sel, int fd, int imm)
+i_sel_clear_fd_handler(struct selector_s *sel, int fd, int rpt)
 {
     fd_control_t *fdc;
     fd_state_t   *oldstate = NULL;
@@ -472,18 +472,18 @@ i_sel_clear_fd_handler(struct selector_s *sel, int fd, int imm)
 	}
     }
 
-    sel_fd_unlock(sel);
-
     if (oldstate) {
 	oldstate->deleted = 1;
-	if (imm) {
-	    assert(oldstate->use_count == 0);
-	} else if (oldstate->use_count == 0) {
+	if (!rpt)
+	    oldstate->done = NULL;
+	if (oldstate->use_count == 0) {
 	    oldstate->tmp_fd = fd;
 	    oldstate->done_cbdata = olddata;
 	    sel_run(&oldstate->done_runner, finish_oldstate, oldstate);
 	}
     }
+
+    sel_fd_unlock(sel);
 }
 
 /* Clear the handlers for a file descriptor and remove it from
@@ -491,17 +491,15 @@ i_sel_clear_fd_handler(struct selector_s *sel, int fd, int imm)
 void
 sel_clear_fd_handlers(struct selector_s *sel, int fd)
 {
-    i_sel_clear_fd_handler(sel, fd, 0);
+    i_sel_clear_fd_handler(sel, fd, 1);
 }
 
 /* Clear the handlers for a file descriptor and remove it from
-   select's monitoring, except this can only be called if no
-   callbacks are active (like you haven't started listening
-   yet).  If a callback is active, it will assert. */
+   select's monitoring, except that fd_cleared is not called. */
 void
-sel_clear_fd_handlers_imm(struct selector_s *sel, int fd)
+sel_clear_fd_handlers_norpt(struct selector_s *sel, int fd)
 {
-    i_sel_clear_fd_handler(sel, fd, 1);
+    i_sel_clear_fd_handler(sel, fd, 0);
 }
 
 /* Set whether the file descriptor will be monitored for data ready to
