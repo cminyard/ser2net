@@ -211,6 +211,14 @@ genio_got_read(struct genio *io, int readerr,
 
     gstate = OI_PY_STATE_GET();
 
+    if (!data->handler_val) {
+	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+		     "genio handler was not set");
+	wake_curr_waiter();
+	rv = 0;
+	goto out_put;
+    }
+
     args = PyTuple_New(4);
 
     io_ref = swig_make_ref(io, genio);
@@ -249,6 +257,7 @@ genio_got_read(struct genio *io, int readerr,
     }
 
     swig_free_ref_check(io_ref, acceptor);
+ out_put:
     OI_PY_STATE_PUT(gstate);
 
     return rv;
@@ -264,6 +273,13 @@ genio_write_read(struct genio *io)
 
     gstate = OI_PY_STATE_GET();
 
+    if (!data->handler_val) {
+	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+		     "genio handler was not set");
+	wake_curr_waiter();
+	goto out_put;
+    }
+
     io_ref = swig_make_ref(io, genio);
     args = PyTuple_New(1);
     Py_INCREF(io_ref.val);
@@ -272,6 +288,7 @@ genio_write_read(struct genio *io)
     swig_finish_call(data->handler_val, "write_callback", args);
 
     swig_free_ref_check(io_ref, acceptor);
+ out_put:
     OI_PY_STATE_PUT(gstate);
 }
 
@@ -285,6 +302,13 @@ genio_got_urgent(struct genio *io)
 
     gstate = OI_PY_STATE_GET();
 
+    if (!data->handler_val) {
+	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+		     "genio handler was not set");
+	wake_curr_waiter();
+	goto out_put;
+    }
+
     io_ref = swig_make_ref(io, genio);
     args = PyTuple_New(1);
     Py_INCREF(io_ref.val);
@@ -293,6 +317,7 @@ genio_got_urgent(struct genio *io)
     swig_finish_call(data->handler_val, "urgent_callback", args);
 
     swig_free_ref_check(io_ref, acceptor);
+ out_put:
     OI_PY_STATE_PUT(gstate);
 }
 
@@ -336,6 +361,15 @@ genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
     swig_ref acc_ref, io_ref;
     PyObject *args;
     OI_PY_STATE gstate;
+    struct genio_data *iodata;
+
+    iodata = malloc(sizeof(*data));
+    if (!iodata)
+	return;
+    iodata->refcount = 1;
+    iodata->handler_val = NULL;
+    iodata->o = data->o;
+    genio_set_callbacks(io, &gen_cbs, iodata);
 
     gstate = OI_PY_STATE_GET();
 

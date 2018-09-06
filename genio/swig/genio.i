@@ -356,6 +356,14 @@ struct waiter { };
 	}
     }
 
+    void set_cbs(swig_cb *handler) {
+	struct genio_data *data = genio_get_user_data(self);
+
+	if (data->handler_val)
+	    deref_swig_cb_val(data->handler_val);
+	data->handler_val = ref_swig_cb(handler, read_callback);
+    }
+
     %rename (remote_id) remote_idt;
     int remote_idt() {
 	int remid;
@@ -696,6 +704,12 @@ struct waiter { };
 	deref_swig_cb_val(data->handler_val);
 	check_os_funcs_free(data->o);
 	free(data);
+    }
+
+    void startup() {
+	int rv = genio_acc_startup(self);
+
+	err_handle("startup", rv);
     }
 
     void shutdown(swig_cb *done) {
