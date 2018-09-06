@@ -453,7 +453,6 @@ udpn_finish_read(struct udpn_data *ndata)
     count = net->cbs->read_callback(net, 0, nadata->read_data,
 				    nadata->data_pending_len, 0);
     udpna_lock(nadata);
-    ndata->in_read = false;
 
     if (ndata->closed)
 	udpn_add_to_closed(nadata, ndata);
@@ -469,6 +468,7 @@ udpn_finish_read(struct udpn_data *ndata)
     } else {
 	nadata->data_pending_len = 0;
     }
+    ndata->in_read = false;
 }
 
 static void
@@ -865,7 +865,8 @@ udpna_readhandler(int fd, void *cbdata)
     nadata->udpn_count++;
 
  restart_net:
-    ndata->read_enabled = true;
+    ndata->read_enabled = false;
+    nadata->read_disable_count++;
     ndata->myfd = fd;
     ndata->raddrlen = addrlen;
     memcpy(ndata->raddr, &addr, addrlen);
