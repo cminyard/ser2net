@@ -40,7 +40,8 @@ class HandleData:
     object of that io will be this object.
     """
 
-    def __init__(self, o, iostr, bufsize, name = None, chunksize=10240):
+    def __init__(self, o, iostr, bufsize, name = None, chunksize=10240,
+                 io = None):
         """Start a genio object with this handler"""
         if (name):
             self.name = name
@@ -50,7 +51,11 @@ class HandleData:
         self.to_write = None
         self.to_compare = None
         self.ignore_input = False
-        self.io = genio.genio(o, iostr, bufsize, self)
+        if (io):
+            self.io = io
+            io.set_cbs(self)
+        else:
+            self.io = genio.genio(o, iostr, bufsize, self)
         self.io.handler = self
         self.chunksize = chunksize
         self.debug = 0
