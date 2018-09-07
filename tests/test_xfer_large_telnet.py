@@ -10,4 +10,3 @@ test_transfer("telnet large random", rb,
               "telnet,tcp,localhost,3023",
               "termios,/dev/ttyPipeB0,115200N81",
               timeout=100000)
-

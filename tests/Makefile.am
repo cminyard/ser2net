@@ -15,9 +15,10 @@ AM_TESTS_ENVIRONMENT = PYTHONPATH=$(can_builddir)/genio/swig/python:$(can_buildd
 
 TESTS = test_genio.py \
 	test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
-	test_xfer_basic_ssl_tcp.py \
+	test_xfer_basic_ssl_tcp.py test_xfer_basic_telnet.py \
 	test_tty_base.py test_rfc2217.py \
 	test_xfer_small_tcp.py test_xfer_small_udp.py test_xfer_small_stdio.py \
-	test_xfer_small_ssl_tcp.py \
+	test_xfer_small_ssl_tcp.py test_xfer_small_telnet.py \
 	test_xfer_large_stdio.py test_xfer_large_tcp.py \
-	test_xfer_large_telnet.py test_xfer_large_ssl_tcp.py
+	test_xfer_large_telnet.py test_xfer_large_ssl_tcp.py \
+	test_xfer_large_telnet.py 
