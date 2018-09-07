@@ -519,36 +519,43 @@ static const struct sergenio_functions sterm_funcs = {
 };
 
 static int
-sterm_check_close_drain(void *handler_data, struct timeval *next_timeout)
+sterm_check_close_drain(void *handler_data, enum genio_ll_close_state state,
+			struct timeval *next_timeout)
 {
     struct sterm_data *sdata = handler_data;
-    int rv, count = 0, err = EAGAIN;
+    int rv, count = 0, err = 0;
 
     sterm_lock(sdata);
-    if (sdata->open)
+    if (state == GENIO_LL_CLOSE_STATE_START) {
+	sdata->open = false;
 	/* FIXME - this should be calculated. */
 	sdata->close_timeouts_left = 200;
+    }
+
+    if (state != GENIO_LL_CLOSE_STATE_DONE)
+	goto out_unlock;
 
     sdata->open = false;
     if (sdata->termio_q)
-	goto out_unlock;
+	goto out_eagain;
 
-    err = 0;
     rv = ioctl(sdata->fd, TIOCOUTQ, &count);
     if (rv || count == 0)
-	goto out_unlock;
+	goto out_rm_uucp;
 
     sdata->close_timeouts_left--;
     if (sdata->close_timeouts_left == 0)
-	goto out_unlock;
+	goto out_rm_uucp;
 
+ out_eagain:
     err = EAGAIN;
     next_timeout->tv_sec = 0;
     next_timeout->tv_usec = 10000;
- out_unlock:
-    sterm_unlock(sdata);
+ out_rm_uucp:
     if (!err)
 	uucp_rm_lock(sdata->devname);
+ out_unlock:
+    sterm_unlock(sdata);
     return err;
 }
 

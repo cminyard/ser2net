@@ -224,6 +224,9 @@ fd_deliver_read_data(struct fd_ll *fdll, int err)
 static void
 fd_start_close(struct fd_ll *fdll)
 {
+    if (fdll->ops->check_close)
+	fdll->ops->check_close(fdll->handler_data,
+			       GENIO_LL_CLOSE_STATE_START, NULL);
     fdll->state = FD_IN_CLOSE;
     fdll->o->clear_fd_handlers(fdll->o, fdll->fd);
 }
@@ -458,7 +461,11 @@ fd_close_timeout(struct genio_timer *t, void *cb_data)
 {
     struct fd_ll *fdll = cb_data;
     struct timeval timeout;
-    int err = fdll->ops->check_close(fdll->handler_data, &timeout);
+    int err = 0;
+
+    if (fdll->ops->check_close)
+	err = fdll->ops->check_close(fdll->handler_data,
+				     GENIO_LL_CLOSE_STATE_DONE, &timeout);
 
     if (err == EAGAIN) {
 	fdll->o->start_timer(fdll->close_timer, &timeout);

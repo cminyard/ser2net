@@ -158,6 +158,11 @@ struct genio_ll_ops {
     void (*free)(struct genio_ll *ll);
 };
 
+enum genio_ll_close_state {
+    GENIO_LL_CLOSE_STATE_START,
+    GENIO_LL_CLOSE_STATE_DONE
+};
+
 struct genio_fd_ll_ops {
     int (*sub_open)(void *handler_data,
 		    int (**check_open)(void *handler_data, int fd),
@@ -173,10 +178,13 @@ struct genio_fd_ll_ops {
     int (*remote_id)(void *handler_data, int *id);
 
     /*
-     * Return EAGAIN to get called again after next_timeout milliseconds,
-     * zero to continue the close.
+     * When GENIO_LL_CLOSE_STATE_START, timeout will be NULL and the
+     * return value is ignored.  Return 0.  When
+     * GENIO_LL_CLOSE_STATE_DONE, return EAGAIN to get called again
+     * after next_timeout milliseconds, zero to continue the close.
      */
-    int (*check_close)(void *handler_data, struct timeval *next_timeout);
+    int (*check_close)(void *handler_data, enum genio_ll_close_state state,
+		       struct timeval *next_timeout);
 
     void (*free)(void *handler_data);
 };
