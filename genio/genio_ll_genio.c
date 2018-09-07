@@ -71,11 +71,19 @@ child_raddr_to_str(struct genio_ll *ll, int *pos,
 
 static int
 child_get_raddr(struct genio_ll *ll,
-		struct sockaddr *addr, socklen_t addrlen)
+		struct sockaddr *addr, socklen_t *addrlen)
 {
     struct genio_ll_child *cdata = ll_to_child(ll);
 
     return genio_get_raddr(cdata->child, addr, addrlen);
+}
+
+static int
+child_remote_id(struct genio_ll *ll, int *id)
+{
+    struct genio_ll_child *cdata = ll_to_child(ll);
+
+    return genio_remote_id(cdata->child, id);
 }
 
 static void
@@ -149,6 +157,7 @@ const static struct genio_ll_ops child_ll_ops = {
     .write = child_write,
     .raddr_to_str = child_raddr_to_str,
     .get_raddr = child_get_raddr,
+    .remote_id = child_remote_id,
     .open = child_open,
     .close = child_close,
     .set_read_callback_enable = child_set_read_callback_enable,

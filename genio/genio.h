@@ -245,7 +245,7 @@ struct genio_callbacks {
      * Flags are per-type options, they generally don't matter except
      * for some specific situations.
      */
-    unsigned int (*read_callback)(struct genio *net, int readerr,
+    unsigned int (*read_callback)(struct genio *io, int readerr,
 				  unsigned char *buf, unsigned int buflen,
 				  unsigned int flags);
 
@@ -257,13 +257,13 @@ struct genio_callbacks {
     /*
      * Called when the user may write to the genio.
      */
-    void (*write_callback)(struct genio *net);
+    void (*write_callback)(struct genio *io);
 
     /*
      * Called when urgent data is available.  This should only be done
      * on TCP sockets.  Optional.
      */
-    void (*urgent_callback)(struct genio *net);
+    void (*urgent_callback)(struct genio *io);
 };
 
 /*
@@ -273,18 +273,18 @@ struct genio_callbacks {
  * be called with callbacks not set.  This function may be called
  * again if the genio is not enabled.
  */
-void genio_set_callbacks(struct genio *net,
+void genio_set_callbacks(struct genio *io,
 			 const struct genio_callbacks *cbs, void *user_data);
 
 /*
  * Return the user data supplied in genio_set_callbacks().
  */
-void *genio_get_user_data(struct genio *net);
+void *genio_get_user_data(struct genio *io);
 
 /*
  * Set the user data.  May be called if the genio is not enabled.
  */
-void genio_set_user_data(struct genio *net, void *user_data);
+void genio_set_user_data(struct genio *io, void *user_data);
 
 /*
  * Write data to the genio.  This should only be called from the
@@ -300,7 +300,7 @@ void genio_set_user_data(struct genio *net, void *user_data);
  * Note that count may be set to zero.  This can happen on an
  * EAGAIN type situation.  count may be NULL if you don't care.
  */
-int genio_write(struct genio *net, unsigned int *count,
+int genio_write(struct genio *io, unsigned int *count,
 		const void *buf, unsigned int buflen);
 
 /*
@@ -316,21 +316,22 @@ int genio_write(struct genio *net, unsigned int *count,
  * NIL char after the last byte of the string, where you would
  * want to put any new data into the string.
  */
-int genio_raddr_to_str(struct genio *net, int *pos,
+int genio_raddr_to_str(struct genio *io, int *pos,
 		       char *buf, unsigned int buflen);
 
 /*
- * Return the remote address for the connection.
+ * Return the remote address for the connection.  addrlen must be
+ * set to the size of addr and will be updated to the actual size.
  */
-socklen_t genio_get_raddr(struct genio *net,
-			  struct sockaddr *addr, socklen_t addrlen);
+int genio_get_raddr(struct genio *io,
+		    struct sockaddr *addr, socklen_t *addrlen);
 
 /*
  * Returns an id for the remote end.  For stdio clients this is the
  * pid.  For sergenio_termios this is the fd.  It returns an error
  * for all others.
  */
-int genio_remote_id(struct genio *net, int *id);
+int genio_remote_id(struct genio *io, int *id);
 
 /*
  * Open the genio.  genios recevied from an acceptor are open upon
@@ -338,23 +339,22 @@ int genio_remote_id(struct genio *net, int *id);
  * before use.  If no error is returned, the genio will be open when
  * the open_done callback is called.
  */
-int genio_open(struct genio *net, void (*open_done)(struct genio *net,
-						    int err,
-						    void *open_data),
+int genio_open(struct genio *io,
+	       void (*open_done)(struct genio *io, int err, void *open_data),
 	       void *open_data);
 
 /*
  * Like genio_open(), but waits for the open to complete.
  */
-int genio_open_s(struct genio *net, struct genio_os_funcs *o);
+int genio_open_s(struct genio *io, struct genio_os_funcs *o);
 
 /*
  * Close the genio.  Note that the close operation is not complete
  * until close_done() is called.  This shuts down internal file
  * descriptors and such, but does not free the genio.
  */
-int genio_close(struct genio *net, void (*close_done)(struct genio *net,
-						      void *close_data),
+int genio_close(struct genio *io,
+		void (*close_done)(struct genio *io, void *close_data),
 		void *close_data);
 
 /*
@@ -362,26 +362,26 @@ int genio_close(struct genio *net, void (*close_done)(struct genio *net,
  * closed.  Note that you should not call genio_free() after genio_close()
  * before the done callback is called.  The results are undefined.
  */
-void genio_free(struct genio *net);
+void genio_free(struct genio *io);
 
 /*
  * Enable or disable data to be read from the network connection.
  */
-void genio_set_read_callback_enable(struct genio *net, bool enabled);
+void genio_set_read_callback_enable(struct genio *io, bool enabled);
 
 /*
  * Enable the write_callback when data can be written on the
  * network connection.
  */
-void genio_set_write_callback_enable(struct genio *net, bool enabled);
+void genio_set_write_callback_enable(struct genio *io, bool enabled);
 
 struct genio_acceptor;
 
 struct genio_acceptor_callbacks {
     /*
-     * A new net connection for the acceptor is in net.
+     * A new connection for the acceptor is in io.
      */
-    void (*new_connection)(struct genio_acceptor *acceptor, struct genio *net);
+    void (*new_connection)(struct genio_acceptor *acceptor, struct genio *io);
 };
 
 /*
@@ -442,9 +442,9 @@ void genio_acc_free(struct genio_acceptor *acceptor);
  * and UDP, the addr is an addrinfo returned by getaddrinfo.
  */
 int genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
-		      void (*connect_done)(struct genio *net, int err,
+		      void (*connect_done)(struct genio *io, int err,
 					   void *cb_data),
-		      void *cb_data, struct genio **new_net);
+		      void *cb_data, struct genio **new_io);
 /*
  * Returns if the acceptor requests exit on close.  A hack for stdio.
  */
@@ -542,7 +542,7 @@ int ssl_genio_alloc(struct genio *child,
 		    struct genio_os_funcs *o,
 		    unsigned int max_read_size,
 		    const struct genio_callbacks *cbs, void *user_data,
-		    struct genio **net);
+		    struct genio **io);
 
 
 /*

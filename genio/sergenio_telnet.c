@@ -33,14 +33,14 @@ struct stel_req {
     int option;
     int minval;
     int maxval;
-    void (*done)(struct sergenio *snet, int err, int val, void *cb_data);
+    void (*done)(struct sergenio *sio, int err, int val, void *cb_data);
     void *cb_data;
     int time_left;
     struct stel_req *next;
 };
 
 struct stel_data {
-    struct sergenio snet;
+    struct sergenio sio;
 
     struct genio_os_funcs *o;
 
@@ -60,7 +60,7 @@ struct stel_data {
     void (*close_done)(struct genio *net, void *close_data);
     void *close_data;
 
-    struct genio *net;
+    struct genio *child;
 
     bool read_enabled;
     bool in_read;
@@ -92,8 +92,9 @@ struct stel_data {
     struct stel_req *reqs;
 };
 
-#define mygenio_to_stel(v) container_of(v, struct stel_data, snet.net)
-#define mysergenio_to_stel(v) container_of(v, struct stel_data, snet)
+#define mygenio_to_stel(v) container_of((struct sergenio *) v->parent_object, \
+					struct stel_data, sio)
+#define mysergenio_to_stel(v) container_of(v, struct stel_data, sio)
 
 static void
 stel_lock(struct stel_data *sdata)
@@ -110,7 +111,7 @@ stel_unlock(struct stel_data *sdata)
 static int
 stel_queue(struct stel_data *sdata, int option,
 	   int minval, int maxval,
-	   void (*done)(struct sergenio *snet, int err,
+	   void (*done)(struct sergenio *sio, int err,
 			int baud, void *cb_data),
 	   void *cb_data)
 {
@@ -148,12 +149,12 @@ stel_queue(struct stel_data *sdata, int option,
 }
 
 static int
-stel_baud(struct sergenio *snet, int baud,
-	  void (*done)(struct sergenio *snet, int err,
+stel_baud(struct sergenio *sio, int baud,
+	  void (*done)(struct sergenio *sio, int err,
 		       int baud, void *cb_data),
 	  void *cb_data)
 {
-    struct stel_data *sdata = mysergenio_to_stel(snet);
+    struct stel_data *sdata = mysergenio_to_stel(sio);
     unsigned char buf[6];
     int err;
 
@@ -177,13 +178,13 @@ stel_baud(struct sergenio *snet, int baud,
 }
 
 static int
-stel_queue_and_send(struct sergenio *snet, int option, int val,
+stel_queue_and_send(struct sergenio *sio, int option, int val,
 		    int minval, int maxval,
-		    void (*done)(struct sergenio *snet, int err, int val,
+		    void (*done)(struct sergenio *sio, int err, int val,
 				 void *cb_data),
 		    void *cb_data)
 {
-    struct stel_data *sdata = mysergenio_to_stel(snet);
+    struct stel_data *sdata = mysergenio_to_stel(sio);
     unsigned char buf[3];
     int err;
 
@@ -200,66 +201,66 @@ stel_queue_and_send(struct sergenio *snet, int option, int val,
 }
 
 static int
-stel_datasize(struct sergenio *snet, int datasize,
-	      void (*done)(struct sergenio *snet, int err, int datasize,
+stel_datasize(struct sergenio *sio, int datasize,
+	      void (*done)(struct sergenio *sio, int err, int datasize,
 			   void *cb_data),
 	      void *cb_data)
 {
-    return stel_queue_and_send(snet, 2, datasize, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 2, datasize, 0, 0, done, cb_data);
 }
 
 static int
-stel_parity(struct sergenio *snet, int parity,
-	    void (*done)(struct sergenio *snet, int err, int parity,
+stel_parity(struct sergenio *sio, int parity,
+	    void (*done)(struct sergenio *sio, int err, int parity,
 			 void *cb_data),
 	    void *cb_data)
 {
-    return stel_queue_and_send(snet, 3, parity, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 3, parity, 0, 0, done, cb_data);
 }
 
 static int
-stel_stopbits(struct sergenio *snet, int stopbits,
-	      void (*done)(struct sergenio *snet, int err, int stopbits,
+stel_stopbits(struct sergenio *sio, int stopbits,
+	      void (*done)(struct sergenio *sio, int err, int stopbits,
 			   void *cb_data),
 	      void *cb_data)
 {
-    return stel_queue_and_send(snet, 4, stopbits, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 4, stopbits, 0, 0, done, cb_data);
 }
 
 static int
-stel_flowcontrol(struct sergenio *snet, int flowcontrol,
-		 void (*done)(struct sergenio *snet, int err,
+stel_flowcontrol(struct sergenio *sio, int flowcontrol,
+		 void (*done)(struct sergenio *sio, int err,
 			      int flowcontrol, void *cb_data),
 		 void *cb_data)
 {
-    return stel_queue_and_send(snet, 5, flowcontrol, 0, 3, done, cb_data);
+    return stel_queue_and_send(sio, 5, flowcontrol, 0, 3, done, cb_data);
 }
 
 static int
-stel_sbreak(struct sergenio *snet, int breakv,
-	    void (*done)(struct sergenio *snet, int err, int breakv,
+stel_sbreak(struct sergenio *sio, int breakv,
+	    void (*done)(struct sergenio *sio, int err, int breakv,
 			 void *cb_data),
 	    void *cb_data)
 {
-    return stel_queue_and_send(snet, 5, breakv, 4, 6, done, cb_data);
+    return stel_queue_and_send(sio, 5, breakv, 4, 6, done, cb_data);
 }
 
 static int
-stel_dtr(struct sergenio *snet, int dtr,
-	 void (*done)(struct sergenio *snet, int err, int dtr,
+stel_dtr(struct sergenio *sio, int dtr,
+	 void (*done)(struct sergenio *sio, int err, int dtr,
 		      void *cb_data),
 	 void *cb_data)
 {
-    return stel_queue_and_send(snet, 5, dtr, 7, 9, done, cb_data);
+    return stel_queue_and_send(sio, 5, dtr, 7, 9, done, cb_data);
 }
 
 static int
-stel_rts(struct sergenio *snet, int rts,
-	 void (*done)(struct sergenio *snet, int err, int rts,
+stel_rts(struct sergenio *sio, int rts,
+	 void (*done)(struct sergenio *sio, int err, int rts,
 		      void *cb_data),
 	 void *cb_data)
 {
-    return stel_queue_and_send(snet, 5, rts, 10, 12, done, cb_data);
+    return stel_queue_and_send(sio, 5, rts, 10, 12, done, cb_data);
 }
 
 static const struct sergenio_functions stel_funcs = {
@@ -302,7 +303,7 @@ stel_write(struct genio *net, unsigned int *rcount,
     sdata->xmit_buf_len = process_telnet_xmit(sdata->xmit_buf,
 					      sizeof(sdata->xmit_buf),
 					      &inbuf, &inlen);
-    err = genio_write(sdata->net, &sdata->xmit_buf_curr,
+    err = genio_write(sdata->child, &sdata->xmit_buf_curr,
 		      sdata->xmit_buf, sdata->xmit_buf_len);
     if (err) {
 	sdata->xmit_buf_len = 0;
@@ -327,26 +328,25 @@ stel_raddr_to_str(struct genio *net, int *pos,
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    return genio_raddr_to_str(sdata->net, pos, buf, buflen);
+    return genio_raddr_to_str(sdata->child, pos, buf, buflen);
 }
 
-static socklen_t
+static int
 stel_get_raddr(struct genio *net,
-	       struct sockaddr *addr, socklen_t addrlen)
+	       struct sockaddr *addr, socklen_t *addrlen)
 {
     struct stel_data *sdata = mygenio_to_stel(net);
 
-    return genio_get_raddr(sdata->net, addr, addrlen);
+    return genio_get_raddr(sdata->child, addr, addrlen);
 }
 
 static void
-stel_finish_free(struct stel_data *sdata)
+stel_free_data(struct stel_data *sdata)
 {
     struct stel_req *req, *prev;
 
-    genio_free(sdata->net);
-    sdata->o->free_timer(sdata->timer);
-    telnet_cleanup(&sdata->tn_data);
+    if (sdata->timer)
+	sdata->o->free_timer(sdata->timer);
     req = sdata->reqs;
     while (req) {
 	prev = req;
@@ -355,7 +355,17 @@ stel_finish_free(struct stel_data *sdata)
     }
     if (sdata->deferred_op_runner)
 	sdata->o->free_runner(sdata->deferred_op_runner);
+    if (sdata->sio.io)
+	sdata->o->free(sdata->o, sdata->sio.io);
     sdata->o->free(sdata->o, sdata);
+}
+
+static void
+stel_finish_free(struct stel_data *sdata)
+{
+    genio_free(sdata->child);
+    telnet_cleanup(&sdata->tn_data);
+    stel_free_data(sdata);
 }
 
 static void
@@ -372,7 +382,7 @@ check_finish_close(struct stel_data *sdata)
     sdata->in_open = false;
 
     if (sdata->close_done)
-	sdata->close_done(&sdata->snet.net, sdata->close_data);
+	sdata->close_done(sdata->sio.io, sdata->close_data);
 
     stel_lock(sdata);
     /* delay this until here to keep stel_free() from freeing it. */
@@ -404,7 +414,7 @@ static void
 stel_deferred_op(struct genio_runner *runner, void *cbdata)
 {
     struct stel_data *sdata = cbdata;
-    struct genio *net = &sdata->snet.net;
+    struct genio *io = sdata->sio.io;
     unsigned int count;
     bool in_read;
 
@@ -418,9 +428,9 @@ stel_deferred_op(struct genio_runner *runner, void *cbdata)
     if (in_read) {
     retry:
 	stel_unlock(sdata);
-	count = net->cbs->read_callback(net, 0,
-					&sdata->read_data[sdata->data_pos],
-					sdata->data_pending_len, 0);
+	count = io->cbs->read_callback(io, 0,
+				       &sdata->read_data[sdata->data_pos],
+				       sdata->data_pending_len, 0);
 	stel_lock(sdata);
 	stel_finish_read(sdata, count);
 	if (sdata->data_pending_len)
@@ -432,7 +442,7 @@ stel_deferred_op(struct genio_runner *runner, void *cbdata)
 	goto restart;
 
     if (sdata->read_enabled || sdata->in_open)
-	genio_set_read_callback_enable(sdata->net, true);
+	genio_set_read_callback_enable(sdata->child, true);
 
     sdata->deferred_op_pending = false;
     stel_unlock(sdata);
@@ -446,15 +456,15 @@ stel_timer_stopped(struct genio_timer *timer,
 }
 
 static void
-stel_genio_close_done(struct genio *net, void *close_data)
+stel_genio_close_done(struct genio *io, void *close_data)
 {
-    struct stel_data *sdata = genio_get_user_data(net);
+    struct stel_data *sdata = genio_get_user_data(io);
 
     check_finish_close(sdata);
 }
 
 static void
-stel_sub_open_done(struct genio *net, int err, void *cb_data)
+stel_sub_open_done(struct genio *io, int err, void *cb_data)
 {
     struct stel_data *sdata = cb_data;
 
@@ -464,7 +474,7 @@ stel_sub_open_done(struct genio *net, int err, void *cb_data)
      * issue com port commands before everything is ready.
      */
     if (err && sdata->open_done)
-	sdata->open_done(&sdata->snet.net, err, sdata->open_data);
+	sdata->open_done(sdata->sio.io, err, sdata->open_data);
 
     stel_lock(sdata);
     if (err) {
@@ -476,19 +486,19 @@ stel_sub_open_done(struct genio *net, int err, void *cb_data)
 	/* Wait three timeouts for com port do/dont. */
 	sdata->open_wait_count = 3;
 	/* Enable low-level for telnet processing. */
-	genio_set_read_callback_enable(sdata->net, true);
-	genio_set_write_callback_enable(sdata->net, true);
+	genio_set_read_callback_enable(sdata->child, true);
+	genio_set_write_callback_enable(sdata->child, true);
     }
     stel_unlock(sdata);
 }
 
 static int
-stel_open(struct genio *net, void (*open_done)(struct genio *net,
-					       int err,
-					       void *open_data),
+stel_open(struct genio *io, void (*open_done)(struct genio *io,
+					      int err,
+					      void *open_data),
 	  void *open_data)
 {
-    struct stel_data *sdata = mygenio_to_stel(net);
+    struct stel_data *sdata = mygenio_to_stel(io);
     struct timeval timeout;
     int err = EBUSY;
 
@@ -496,7 +506,7 @@ stel_open(struct genio *net, void (*open_done)(struct genio *net,
     if (sdata->closed && !sdata->close_count) {
 	sdata->open_done = open_done;
 	sdata->open_data = open_data;
-	err = genio_open(sdata->net, stel_sub_open_done, sdata);
+	err = genio_open(sdata->child, stel_sub_open_done, sdata);
 	if (!err) {
 	    sdata->in_open = true;
 	    sdata->closed = false;
@@ -511,7 +521,7 @@ stel_open(struct genio *net, void (*open_done)(struct genio *net,
 }
 
 static void
-__stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net,
+__stel_close(struct stel_data *sdata, void (*close_done)(struct genio *io,
 							 void *close_data),
 	     void *close_data)
 {
@@ -521,15 +531,15 @@ __stel_close(struct stel_data *sdata, void (*close_done)(struct genio *net,
     sdata->close_count = 2; /* One for timer and one for genio. */
     stel_unlock(sdata);
     sdata->o->stop_timer_with_done(sdata->timer, stel_timer_stopped, sdata);
-    genio_close(sdata->net, stel_genio_close_done, NULL);
+    genio_close(sdata->child, stel_genio_close_done, NULL);
 }
 
 static int
-stel_close(struct genio *net, void (*close_done)(struct genio *net,
-						 void *close_data),
+stel_close(struct genio *io, void (*close_done)(struct genio *io,
+						void *close_data),
 	   void *close_data)
 {
-    struct stel_data *sdata = mygenio_to_stel(net);
+    struct stel_data *sdata = mygenio_to_stel(io);
     int err = 0;
 
     stel_lock(sdata);
@@ -544,9 +554,9 @@ stel_close(struct genio *net, void (*close_done)(struct genio *net,
 }
 
 static void
-stel_free(struct genio *net)
+stel_free(struct genio *io)
 {
-    struct stel_data *sdata = mygenio_to_stel(net);
+    struct stel_data *sdata = mygenio_to_stel(io);
 
     stel_lock(sdata);
     sdata->in_free = true;
@@ -562,9 +572,9 @@ stel_free(struct genio *net)
 }
 
 static void
-stel_set_read_callback_enable(struct genio *net, bool enabled)
+stel_set_read_callback_enable(struct genio *io, bool enabled)
 {
-    struct stel_data *sdata = mygenio_to_stel(net);
+    struct stel_data *sdata = mygenio_to_stel(io);
 
     stel_lock(sdata);
     if (sdata->closed)
@@ -582,16 +592,16 @@ stel_set_read_callback_enable(struct genio *net, bool enabled)
 	    sdata->o->run(sdata->deferred_op_runner);
 	}
     } else {
-	genio_set_read_callback_enable(sdata->net, enabled);
+	genio_set_read_callback_enable(sdata->child, enabled);
     }
  out_unlock:
     stel_unlock(sdata);
 }
 
 static void
-stel_set_write_callback_enable(struct genio *net, bool enabled)
+stel_set_write_callback_enable(struct genio *io, bool enabled)
 {
-    struct stel_data *sdata = mygenio_to_stel(net);
+    struct stel_data *sdata = mygenio_to_stel(io);
 
     stel_lock(sdata);
     if (sdata->closed)
@@ -600,13 +610,13 @@ stel_set_write_callback_enable(struct genio *net, bool enabled)
 	sdata->xmit_enabled = enabled;
 	if ((enabled || !sdata->xmit_buf_len) && !sdata->in_open)
 	    /* Only disable if we don't have data pending. */
-	    genio_set_write_callback_enable(sdata->net, enabled);
+	    genio_set_write_callback_enable(sdata->child, enabled);
     }
  out_unlock:
     stel_unlock(sdata);
 }
 
-static const struct genio_functions stel_net_funcs = {
+static const struct genio_functions stel_io_funcs = {
     .write = stel_write,
     .raddr_to_str = stel_raddr_to_str,
     .get_raddr = stel_get_raddr,
@@ -618,12 +628,12 @@ static const struct genio_functions stel_net_funcs = {
 };
 
 static unsigned int
-stel_genio_read(struct genio *net, int readerr,
+stel_genio_read(struct genio *io, int readerr,
 		unsigned char *ibuf, unsigned int buflen,
 		unsigned int flags)
 {
-    struct stel_data *sdata = genio_get_user_data(net);
-    struct genio *mynet = &sdata->snet.net;
+    struct stel_data *sdata = genio_get_user_data(io);
+    struct genio *myio = sdata->sio.io;
     unsigned char *buf = ibuf;
     unsigned int count = 0, len;
 
@@ -631,7 +641,7 @@ stel_genio_read(struct genio *net, int readerr,
     if (sdata->in_open && readerr) {
 	stel_unlock(sdata);
 	if (sdata->open_done)
-	    sdata->open_done(&sdata->snet.net, readerr, sdata->open_data);
+	    sdata->open_done(sdata->sio.io, readerr, sdata->open_data);
 	stel_lock(sdata);
 	sdata->open_wait_count = 0;
 	sdata->in_open = false;
@@ -647,12 +657,11 @@ stel_genio_read(struct genio *net, int readerr,
 	/* Do this here so the user can modify it. */
 	sdata->read_enabled = false;
 	stel_unlock(sdata);
-	mynet->cbs->read_callback(&sdata->snet.net, readerr,
-				  NULL, 0, 0);
+	myio->cbs->read_callback(sdata->sio.io, readerr, NULL, 0, 0);
 	goto out_unlock;
     }
 
-    genio_set_read_callback_enable(sdata->net, false);
+    genio_set_read_callback_enable(sdata->child, false);
     sdata->data_pos = 0;
 
     while (sdata->in_urgent && buflen) {
@@ -686,9 +695,9 @@ stel_genio_read(struct genio *net, int readerr,
 	retry:
 	    sdata->in_read = true;
 	    stel_unlock(sdata);
-	    count = mynet->cbs->read_callback(&sdata->snet.net, 0,
-					      sdata->read_data,
-					      sdata->data_pending_len, 0);
+	    count = myio->cbs->read_callback(sdata->sio.io, 0,
+					     sdata->read_data,
+					     sdata->data_pending_len, 0);
 	    stel_lock(sdata);
 	    stel_finish_read(sdata, count);
 	    if (sdata->data_pending_len)
@@ -701,7 +710,7 @@ stel_genio_read(struct genio *net, int readerr,
     }
 
     if ((!buflen && sdata->read_enabled) || sdata->in_open)
-	genio_set_read_callback_enable(sdata->net, true);
+	genio_set_read_callback_enable(sdata->child, true);
 
  out_unlock:
     stel_unlock(sdata);
@@ -712,11 +721,11 @@ stel_genio_read(struct genio *net, int readerr,
 static int
 buffer_genio_write(void *cbdata, void *buf, size_t buflen, size_t *rwritten)
 {
-    struct genio *net = cbdata;
+    struct genio *io = cbdata;
     int err;
     unsigned int written;
 
-    err = genio_write(net, &written, buf, buflen);
+    err = genio_write(io, &written, buf, buflen);
     if (err)
 	return err;
     *rwritten = written;
@@ -724,16 +733,16 @@ buffer_genio_write(void *cbdata, void *buf, size_t buflen, size_t *rwritten)
 }
 
 void
-stel_genio_write(struct genio *net)
+stel_genio_write(struct genio *io)
 {
-    struct stel_data *sdata = genio_get_user_data(net);
+    struct stel_data *sdata = genio_get_user_data(io);
     bool do_cb = true;
 
     stel_lock(sdata);
     if (buffer_cursize(&sdata->tn_data.out_telnet_cmd) > 0) {
 	int err;
 
-	if (buffer_write(buffer_genio_write, net,
+	if (buffer_write(buffer_genio_write, io,
 			 &sdata->tn_data.out_telnet_cmd, &err) == -1) {
 	    sdata->saved_xmit_err = err;
 	    if (buffer_cursize(&sdata->tn_data.out_telnet_cmd) > 0) {
@@ -747,7 +756,7 @@ stel_genio_write(struct genio *net)
 	int err;
 	unsigned int written;
 
-	err = genio_write(net, &written, sdata->xmit_buf + sdata->xmit_buf_curr,
+	err = genio_write(io, &written, sdata->xmit_buf + sdata->xmit_buf_curr,
 			  sdata->xmit_buf_len - sdata->xmit_buf_curr);
 	if (err) {
 	    sdata->saved_xmit_err = err;
@@ -766,21 +775,21 @@ stel_genio_write(struct genio *net)
 
     if (do_cb) {
 	if (!sdata->xmit_enabled)
-	    genio_set_write_callback_enable(sdata->net, false);
-	sdata->snet.net.cbs->write_callback(&sdata->snet.net);
+	    genio_set_write_callback_enable(sdata->child, false);
+	sdata->sio.io->cbs->write_callback(sdata->sio.io);
     }
 }
 
 void
-stel_genio_urgent(struct genio *net)
+stel_genio_urgent(struct genio *io)
 {
-    struct stel_data *sdata = genio_get_user_data(net);
+    struct stel_data *sdata = genio_get_user_data(io);
 
     stel_lock(sdata);
     sdata->in_urgent = 1;
     sdata->data_pending_len = 0;
     stel_unlock(sdata);
-    genio_set_read_callback_enable(sdata->net, true);
+    genio_set_read_callback_enable(sdata->child, true);
 }
 
 static const struct genio_callbacks stel_genio_callbacks = {
@@ -794,7 +803,7 @@ sergenio_telnet_output_ready(void *cb_data)
 {
     struct stel_data *sdata = cb_data;
 
-    genio_set_write_callback_enable(sdata->net, true);
+    genio_set_write_callback_enable(sdata->child, true);
 }
 
 static void
@@ -819,10 +828,10 @@ com_port_will_do(void *cb_data, unsigned char cmd)
 
     if (sdata->in_open) {
 	if (sdata->open_done)
-	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
+	    sdata->open_done(sdata->sio.io, 0, sdata->open_data);
 	sdata->in_open = false;
 	sdata->open_wait_count = 0;
-	genio_set_write_callback_enable(sdata->net, sdata->xmit_enabled);
+	genio_set_write_callback_enable(sdata->child, sdata->xmit_enabled);
     }
 
     return 1;
@@ -877,7 +886,7 @@ com_port_handler(void *cb_data, unsigned char *option, int len)
 
     if (curr) {
 	if (curr->done)
-	    curr->done(&sdata->snet, 0, val - curr->minval, curr->cb_data);
+	    curr->done(&sdata->sio, 0, val - curr->minval, curr->cb_data);
 	sdata->o->free(sdata->o, curr);
     }
 }
@@ -913,7 +922,7 @@ sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
 	if (--sdata->open_wait_count == 0) {
 	    stel_unlock(sdata);
 	    if (sdata->open_done)
-		sdata->open_done(&sdata->snet.net, ETIMEDOUT, sdata->open_data);
+		sdata->open_done(sdata->sio.io, ETIMEDOUT, sdata->open_data);
 	    stel_lock(sdata);
 	    sdata->in_open = false;
 	    sdata->closed = true;
@@ -948,7 +957,7 @@ sergenio_telnet_timeout(struct genio_timer *timer, void *cb_data)
 
     req = to_complete;
     while (req) {
-	req->done(&sdata->snet, ETIMEDOUT, 0, req->cb_data);
+	req->done(&sdata->sio, ETIMEDOUT, 0, req->cb_data);
 	prev = req;
 	req = req->next;
 	sdata->o->free(sdata->o, prev);
@@ -986,10 +995,11 @@ sergenio_process_args(struct stel_data *sdata, char *args[])
 }
 
 int
-sergenio_telnet_alloc(struct genio *net, char *args[], struct genio_os_funcs *o,
+sergenio_telnet_alloc(struct genio *child, char *args[],
+		      struct genio_os_funcs *o,
 		      const struct sergenio_callbacks *scbs,
 		      const struct genio_callbacks *cbs, void *user_data,
-		      struct sergenio **snet)
+		      struct sergenio **sio)
 {
     struct stel_data *sdata = o->zalloc(o, sizeof(*sdata));
     int err;
@@ -1000,55 +1010,52 @@ sergenio_telnet_alloc(struct genio *net, char *args[], struct genio_os_funcs *o,
     sdata->allow_2217 = true;
 
     err = sergenio_process_args(sdata, args);
-    if (err) {
-	o->free(o, sdata);
-	return err;
-    }
+    if (err)
+	goto out_err;
 
-	sdata->lock = o->alloc_lock(o);
-    if (!sdata->lock) {
-	o->free(o, sdata);
-	return ENOMEM;
-    }
+    sdata->lock = o->alloc_lock(o);
+    if (!sdata->lock)
+	goto out_nomem;
 
     sdata->timer = o->alloc_timer(o, sergenio_telnet_timeout, sdata);
-    if (!sdata->timer) {
-	o->free_lock(sdata->lock);
-	o->free(o, sdata);
-	return ENOMEM;
-    }
+    if (!sdata->timer)
+	goto out_nomem;
 
     sdata->deferred_op_runner = o->alloc_runner(o, stel_deferred_op, sdata);
-    if (!sdata->deferred_op_runner) {
-	o->free_timer(sdata->timer);
-	o->free_lock(sdata->lock);
-	o->free(o, sdata);
-	return ENOMEM;
-    }
+    if (!sdata->deferred_op_runner)
+	goto out_nomem;
+
+    sdata->sio.io = o->zalloc(o, sizeof(*sdata->sio.io));
+    if (!sdata->sio.io)
+	goto out_nomem;
 
     sdata->o = o;
-    sdata->net = net;
-    sdata->snet.scbs = scbs;
-    sdata->snet.net.user_data = user_data;
-    sdata->snet.funcs = &stel_funcs;
-    sdata->snet.net.cbs = cbs;
-    sdata->snet.net.funcs = &stel_net_funcs;
-    sdata->snet.net.type = GENIO_TYPE_SER_TELNET;
-    sdata->snet.net.is_client = true;
-    genio_set_callbacks(net, &stel_genio_callbacks, sdata);
+    sdata->child = child;
+    sdata->sio.scbs = scbs;
+    sdata->sio.io->parent_object = &sdata->sio;
+    sdata->sio.io->user_data = user_data;
+    sdata->sio.funcs = &stel_funcs;
+    sdata->sio.io->cbs = cbs;
+    sdata->sio.io->funcs = &stel_io_funcs;
+    sdata->sio.io->type = GENIO_TYPE_SER_TELNET;
+    sdata->sio.io->is_client = true;
+    genio_set_callbacks(child, &stel_genio_callbacks, sdata);
     sdata->closed = true;
 
     err = telnet_init(&sdata->tn_data, sdata, sergenio_telnet_output_ready,
 		      sergenio_telnet_cmd_handler, sergenio_telnet_cmds,
 		      sergenio_telnet_init_seq,
 		      sdata->allow_2217 ? sizeof(sergenio_telnet_init_seq) : 0);
-    if (err) {
-	o->free_timer(sdata->timer);
-	o->free_lock(sdata->lock);
-	o->free(o, sdata);
-    } else {
-	*snet = &sdata->snet;
-    }
+    if (err)
+	goto out_err;
 
+    *sio = &sdata->sio;
+
+    return 0;
+
+ out_nomem:
+    err = ENOMEM;
+ out_err:
+    stel_free_data(sdata);
     return err;
 }

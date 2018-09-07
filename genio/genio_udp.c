@@ -378,17 +378,17 @@ udpn_raddr_to_str(struct genio *net, int *epos,
     return 0;
 }
 
-static socklen_t
+static int
 udpn_get_raddr(struct genio *net,
-	       struct sockaddr *addr, socklen_t addrlen)
+	       struct sockaddr *addr, socklen_t *addrlen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
 
-    if (addrlen > ndata->raddrlen)
-	addrlen = ndata->raddrlen;
+    if (*addrlen > ndata->raddrlen)
+	*addrlen = ndata->raddrlen;
 
-    memcpy(addr, ndata->raddr, addrlen);
-    return addrlen;
+    memcpy(addr, ndata->raddr, *addrlen);
+    return 0;
 }
 
 static void

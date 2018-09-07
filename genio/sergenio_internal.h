@@ -71,7 +71,7 @@ struct sergenio_functions {
  * acceptor callback in sergenio_acceptor.
  */
 struct sergenio {
-    struct genio net;
+    struct genio *io;
 
     const struct sergenio_callbacks *scbs;
 

@@ -58,6 +58,7 @@ struct fd_ll {
     void *open_data;
     int open_err;
 
+    struct genio_timer *close_timer;
     genio_ll_close_done close_done;
     void *close_data;
 
@@ -110,6 +111,8 @@ static void fd_finish_free(struct fd_ll *fdll)
 {
     if (fdll->lock)
 	fdll->o->free_lock(fdll->lock);
+    if (fdll->close_timer)
+	fdll->o->free_timer(fdll->close_timer);
     if (fdll->deferred_op_runner)
 	fdll->o->free_runner(fdll->deferred_op_runner);
     if (fdll->read_data)
@@ -178,11 +181,23 @@ fd_raddr_to_str(struct genio_ll *ll, int *pos,
 }
 
 static int
-fd_get_raddr(struct genio_ll *ll, struct sockaddr *addr, socklen_t addrlen)
+fd_get_raddr(struct genio_ll *ll, struct sockaddr *addr, socklen_t *addrlen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
-    return fdll->ops->get_raddr(fdll->handler_data, addr, addrlen);
+    if (fdll->ops->get_raddr)
+	return fdll->ops->get_raddr(fdll->handler_data, addr, addrlen);
+    return ENOTSUP;
+}
+
+static int
+fd_remote_id(struct genio_ll *ll, int *id)
+{
+    struct fd_ll *fdll = ll_to_fd(ll);
+
+    if (fdll->ops->remote_id)
+	return fdll->ops->remote_id(fdll->handler_data, id);
+    return ENOTSUP;
 }
 
 static void
@@ -414,10 +429,8 @@ fd_write_ready(int fd, void *cbdata)
 }
 
 static void
-fd_cleared(int fd, void *cbdata)
+fd_finish_cleared(struct fd_ll *fdll)
 {
-    struct fd_ll *fdll = cbdata;
-
     fd_lock_and_ref(fdll);
     close(fdll->fd);
     fdll->fd = -1;
@@ -438,6 +451,32 @@ fd_cleared(int fd, void *cbdata)
 	fd_finish_close(fdll);
 
     fd_deref_and_unlock(fdll);
+}
+
+static void
+fd_close_timeout(struct genio_timer *t, void *cb_data)
+{
+    struct fd_ll *fdll = cb_data;
+    struct timeval timeout;
+    int err = fdll->ops->check_close(fdll->handler_data, &timeout);
+
+    if (err == EAGAIN) {
+	fdll->o->start_timer(fdll->close_timer, &timeout);
+	return;
+    }
+
+    fd_finish_cleared(fdll);
+}
+
+static void
+fd_cleared(int fd, void *cb_data)
+{
+    struct fd_ll *fdll = cb_data;
+
+    if (fdll->ops->check_close)
+	fd_close_timeout(NULL, fdll);
+    else
+	fd_finish_cleared(fdll);
 }
 
 static int
@@ -551,6 +590,7 @@ const static struct genio_ll_ops fd_ll_ops = {
     .write = fd_write,
     .raddr_to_str = fd_raddr_to_str,
     .get_raddr = fd_get_raddr,
+    .remote_id = fd_remote_id,
     .open = fd_open,
     .close = fd_close,
     .set_read_callback_enable = fd_set_read_callback_enable,
@@ -560,8 +600,8 @@ const static struct genio_ll_ops fd_ll_ops = {
 
 struct genio_ll *
 fd_genio_ll_alloc(struct genio_os_funcs *o,
-		  const struct genio_fd_ll_ops *ops,
 		  int fd,
+		  const struct genio_fd_ll_ops *ops,
 		  void *handler_data,
 		  unsigned int max_read_size)
 {
@@ -580,6 +620,10 @@ fd_genio_ll_alloc(struct genio_os_funcs *o,
 	fdll->state = FD_CLOSED;
     else
 	fdll->state = FD_OPEN;
+
+    fdll->close_timer = o->alloc_timer(o, fd_close_timeout, fdll);
+    if (!fdll->close_timer)
+	goto out_nomem;
 
     fdll->deferred_op_runner = o->alloc_runner(o, fd_deferred_op, fdll);
     if (!fdll->deferred_op_runner)

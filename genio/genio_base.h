@@ -134,7 +134,9 @@ struct genio_ll_ops {
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(struct genio_ll *ll,
-		     struct sockaddr *addr, socklen_t addrlen);
+		     struct sockaddr *addr, socklen_t *addrlen);
+
+    int (*remote_id)(struct genio_ll *ll, int *id);
 
     /*
      * Returns 0 if the open was immediate, EINPROGRESS if it was deferred,
@@ -166,14 +168,22 @@ struct genio_fd_ll_ops {
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(void *handler_data,
-			struct sockaddr *addr, socklen_t addrlen);
+		     struct sockaddr *addr, socklen_t *addrlen);
+
+    int (*remote_id)(void *handler_data, int *id);
+
+    /*
+     * Return EAGAIN to get called again after next_timeout milliseconds,
+     * zero to continue the close.
+     */
+    int (*check_close)(void *handler_data, struct timeval *next_timeout);
 
     void (*free)(void *handler_data);
 };
 
 struct genio_ll *fd_genio_ll_alloc(struct genio_os_funcs *o,
-				   const struct genio_fd_ll_ops *ops,
 				   int fd,
+				   const struct genio_fd_ll_ops *ops,
 				   void *handler_data,
 				   unsigned int max_read_size);
 

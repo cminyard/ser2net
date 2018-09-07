@@ -224,11 +224,11 @@ sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
 int
 genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
 {
-    struct genio *net = cb_data;
+    struct genio *io = cb_data;
     int err = 0;
     unsigned int count;
 
-    err = genio_write(net, &count, buf, buflen);
+    err = genio_write(io, &count, buf, buflen);
     if (!err)
 	*written = count;
 
@@ -236,63 +236,63 @@ genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
 }
 
 void
-genio_set_callbacks(struct genio *net,
+genio_set_callbacks(struct genio *io,
 		    const struct genio_callbacks *cbs, void *user_data)
 {
-    net->cbs = cbs;
-    net->user_data = user_data;
+    io->cbs = cbs;
+    io->user_data = user_data;
 }
 
 void *
-genio_get_user_data(struct genio *net)
+genio_get_user_data(struct genio *io)
 {
-    return net->user_data;
+    return io->user_data;
 }
 
 void
-genio_set_user_data(struct genio *net, void *user_data)
+genio_set_user_data(struct genio *io, void *user_data)
 {
-    net->user_data = user_data;
+    io->user_data = user_data;
 }
 
 int
-genio_write(struct genio *net, unsigned int *count,
+genio_write(struct genio *io, unsigned int *count,
 	    const void *buf, unsigned int buflen)
 {
-    return net->funcs->write(net, count, buf, buflen);
+    return io->funcs->write(io, count, buf, buflen);
 }
 
 int
-genio_raddr_to_str(struct genio *net, int *pos,
-		       char *buf, unsigned int buflen)
+genio_raddr_to_str(struct genio *io, int *pos,
+		   char *buf, unsigned int buflen)
 {
-    return net->funcs->raddr_to_str(net, pos, buf, buflen);
+    return io->funcs->raddr_to_str(io, pos, buf, buflen);
 }
 
-socklen_t
-genio_get_raddr(struct genio *net,
-		struct sockaddr *addr, socklen_t addrlen)
+int
+genio_get_raddr(struct genio *io,
+		struct sockaddr *addr, socklen_t *addrlen)
 {
-    if (!net->funcs->get_raddr)
+    if (!io->funcs->get_raddr)
 	return ENOTSUP;
-    return net->funcs->get_raddr(net, addr, addrlen);
+    return io->funcs->get_raddr(io, addr, addrlen);
 }
 
 int
-genio_remote_id(struct genio *net, int *id)
+genio_remote_id(struct genio *io, int *id)
 {
-    if (!net->funcs->remote_id)
+    if (!io->funcs->remote_id)
 	return ENOTSUP;
-    return net->funcs->remote_id(net, id);
+    return io->funcs->remote_id(io, id);
 }
 
 int
-genio_open(struct genio *net, void (*open_done)(struct genio *net,
-						int err,
-						void *open_data),
+genio_open(struct genio *io, void (*open_done)(struct genio *io,
+					       int err,
+					       void *open_data),
 	   void *open_data)
 {
-    return net->funcs->open(net, open_done, open_data);
+    return io->funcs->open(io, open_done, open_data);
 }
 
 struct genio_open_s_data {
@@ -302,7 +302,7 @@ struct genio_open_s_data {
 };
 
 static void
-genio_open_s_done(struct genio *net, int err, void *cb_data)
+genio_open_s_done(struct genio *io, int err, void *cb_data)
 {
     struct genio_open_s_data *data = cb_data;
 
@@ -311,7 +311,7 @@ genio_open_s_done(struct genio *net, int err, void *cb_data)
 }
 
 int
-genio_open_s(struct genio *net, struct genio_os_funcs *o)
+genio_open_s(struct genio *io, struct genio_os_funcs *o)
 {
     struct genio_open_s_data data;
     int err;
@@ -321,7 +321,7 @@ genio_open_s(struct genio *net, struct genio_os_funcs *o)
     data.waiter = o->alloc_waiter(o);
     if (!data.waiter)
 	return ENOMEM;
-    err = genio_open(net, genio_open_s_done, &data);
+    err = genio_open(io, genio_open_s_done, &data);
     if (!err) {
 	o->wait(data.waiter, NULL);
 	err = data.err;
@@ -331,29 +331,29 @@ genio_open_s(struct genio *net, struct genio_os_funcs *o)
 }
 
 int
-genio_close(struct genio *net, void (*close_done)(struct genio *net,
-						  void *close_data),
+genio_close(struct genio *io, void (*close_done)(struct genio *io,
+						 void *close_data),
 	    void *close_data)
 {
-    return net->funcs->close(net, close_done, close_data);
+    return io->funcs->close(io, close_done, close_data);
 }
 
 void
-genio_free(struct genio *net)
+genio_free(struct genio *io)
 {
-    return net->funcs->free(net);
+    return io->funcs->free(io);
 }
 
 void
-genio_set_read_callback_enable(struct genio *net, bool enabled)
+genio_set_read_callback_enable(struct genio *io, bool enabled)
 {
-    net->funcs->set_read_callback_enable(net, enabled);
+    io->funcs->set_read_callback_enable(io, enabled);
 }
 
 void
-genio_set_write_callback_enable(struct genio *net, bool enabled)
+genio_set_write_callback_enable(struct genio *io, bool enabled)
 {
-    net->funcs->set_write_callback_enable(net, enabled);
+    io->funcs->set_write_callback_enable(io, enabled);
 }
 
 void *
@@ -408,14 +408,14 @@ genio_acc_free(struct genio_acceptor *acceptor)
 
 int
 genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
-		  void (*connect_done)(struct genio *net, int err,
+		  void (*connect_done)(struct genio *io, int err,
 				       void *cb_data),
-		  void *cb_data, struct genio **new_net)
+		  void *cb_data, struct genio **new_io)
 {
     if (!acceptor->funcs->connect)
 	return ENOTSUP;
     return acceptor->funcs->connect(acceptor, addr, connect_done, cb_data,
-				    new_net);
+				    new_io);
 }
 
 bool

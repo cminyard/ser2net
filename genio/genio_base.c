@@ -252,9 +252,15 @@ ll_raddr_to_str(struct basen_data *ndata, int *pos,
 
 static int
 ll_get_raddr(struct basen_data *ndata,
-	     struct sockaddr *addr, socklen_t addrlen)
+	     struct sockaddr *addr, socklen_t *addrlen)
 {
     return ndata->ll_ops->get_raddr(ndata->ll, addr, addrlen);
+}
+
+static int
+ll_remote_id(struct basen_data *ndata, int *id)
+{
+    return ndata->ll_ops->remote_id(ndata->ll, id);
 }
 
 /*
@@ -355,13 +361,21 @@ basen_raddr_to_str(struct genio *net, int *pos,
     return ll_raddr_to_str(ndata, pos, buf, buflen);
 }
 
-static socklen_t
+static int
 basen_get_raddr(struct genio *net,
-		struct sockaddr *addr, socklen_t addrlen)
+		struct sockaddr *addr, socklen_t *addrlen)
 {
     struct basen_data *ndata = mygenio_to_basen(net);
 
     return ll_get_raddr(ndata, addr, addrlen);
+}
+
+static int
+basen_remote_id(struct genio *net, int *id)
+{
+    struct basen_data *ndata = mygenio_to_basen(net);
+
+    return ll_remote_id(ndata, id);
 }
 
 static int
@@ -705,6 +719,7 @@ static const struct genio_functions basen_net_funcs = {
     .write = basen_write,
     .raddr_to_str = basen_raddr_to_str,
     .get_raddr = basen_get_raddr,
+    .remote_id = basen_remote_id,
     .open = basen_open,
     .close = basen_close,
     .free = basen_free,

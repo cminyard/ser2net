@@ -182,15 +182,15 @@ tcp_raddr_to_str(void *handler_data, int *epos,
 
 static int
 tcp_get_raddr(void *handler_data,
-	      struct sockaddr *addr, socklen_t addrlen)
+	      struct sockaddr *addr, socklen_t *addrlen)
 {
     struct tcp_data *tdata = handler_data;
 
-    if (addrlen > tdata->raddrlen)
-	addrlen = tdata->raddrlen;
+    if (*addrlen > tdata->raddrlen)
+	*addrlen = tdata->raddrlen;
 
-    memcpy(addr, tdata->raddr, addrlen);
-    return addrlen;
+    memcpy(addr, tdata->raddr, *addrlen);
+    return 0;
 }
 
 static void
@@ -242,7 +242,7 @@ tcp_genio_alloc(struct addrinfo *iai,
     tdata->ai = ai;
     tdata->raddr = (struct sockaddr *) &tdata->remote;
 
-    ll = fd_genio_ll_alloc(o, &tcp_fd_ll_ops, -1, tdata, max_read_size);
+    ll = fd_genio_ll_alloc(o, -1, &tcp_fd_ll_ops, tdata, max_read_size);
     if (!ll) {
 	genio_free_addrinfo(o, ai);
 	o->free(o, tdata);
@@ -402,7 +402,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    ll = fd_genio_ll_alloc(nadata->o, &tcp_server_fd_ll_ops, new_fd, tdata,
+    ll = fd_genio_ll_alloc(nadata->o, new_fd, &tcp_server_fd_ll_ops, tdata,
 			   nadata->max_read_size);
     if (!ll) {
 	syslog(LOG_ERR, "No memory allocating tcp ll %s", nadata->name);

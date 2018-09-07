@@ -2108,14 +2108,17 @@ find_rotator_port(char *portname, struct genio *net, unsigned int *netconnum)
 	    unsigned int i;
 	    struct sockaddr_storage addr;
 	    socklen_t socklen;
+	    int err;
 
 	    LOCK(port->lock);
 	    if (port->enabled == PORT_DISABLED)
 		goto next;
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
-	    socklen = genio_get_raddr(net, (struct sockaddr *) &addr,
-				      sizeof(addr));
+	    socklen = sizeof(addr);
+	    err = genio_get_raddr(net, (struct sockaddr *) &addr, &socklen);
+	    if (err)
+		goto next;
 	    if (!remaddr_check(port->remaddrs,
 			       (struct sockaddr *) &addr, socklen))
 		goto next;
@@ -2340,12 +2343,13 @@ handle_port_accept(struct genio_acceptor *acceptor, struct genio *net)
     if (port->dev_to_net_state == PORT_CLOSING)
 	goto out;
 
-    socklen = genio_get_raddr(net, (struct sockaddr *) &addr,
-			      sizeof(addr));
-    if (!remaddr_check(port->remaddrs,
-		       (struct sockaddr *) &addr, socklen)) {
-	err = "Accessed denied due to your net address\r\n";
-	goto out_err;
+    socklen = sizeof(addr);
+    if (!genio_get_raddr(net, (struct sockaddr *) &addr, &socklen)) {
+	if (!remaddr_check(port->remaddrs,
+			   (struct sockaddr *) &addr, socklen)) {
+	    err = "Accessed denied due to your net address\r\n";
+	    goto out_err;
+	}
     }
 
     for (j = port->max_connections, i = 0; i < port->max_connections; i++) {

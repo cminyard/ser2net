@@ -97,7 +97,8 @@ struct sterm_data {
 
 static void termios_process(struct sterm_data *sdata);
 
-#define mygenio_to_sterm(v) container_of(v, struct sterm_data, snet.net)
+#define mygenio_to_sterm(v) container_of((struct sergenio *) v->parent_object, \
+					 struct sterm_data, snet)
 #define mysergenio_to_sterm(v) container_of(v, struct sterm_data, snet)
 
 static void
@@ -125,6 +126,8 @@ sterm_finish_free(struct sterm_data *sdata)
 	sdata->o->free_lock(sdata->lock);
     if (sdata->close_timer)
 	sdata->o->free_timer(sdata->close_timer);
+    if (sdata->snet.io)
+	sdata->o->free(sdata->o, sdata->snet.io);
     sdata->o->free(sdata->o, sdata);
 }
 
@@ -144,7 +147,7 @@ sterm_finish_close(struct sterm_data *sdata)
     sdata->fd = -1;
     uucp_rm_lock(sdata->devname);
     if (sdata->close_done)
-	sdata->close_done(&sdata->snet.net, sdata->close_data);
+	sdata->close_done(sdata->snet.io, sdata->close_data);
     sdata->in_close = false;
     sdata->in_open = false;
     if (sdata->in_free)
@@ -154,7 +157,7 @@ sterm_finish_close(struct sterm_data *sdata)
 static void
 sterm_finish_read(struct sterm_data *sdata, int err)
 {
-    struct genio *net = &sdata->snet.net;
+    struct genio *net = sdata->snet.io;
     unsigned int count;
 
     if (err) {
@@ -199,7 +202,7 @@ sterm_deferred_op(struct genio_runner *runner, void *cbdata)
     if (sdata->in_open) {
 	if (sdata->open_done) {
 	    sterm_unlock(sdata);
-	    sdata->open_done(&sdata->snet.net, 0, sdata->open_data);
+	    sdata->open_done(sdata->snet.io, 0, sdata->open_data);
 	    sterm_lock(sdata);
 	}
 	sdata->in_open = false;
@@ -802,7 +805,7 @@ static void
 handle_write(int fd, void *cb_data)
 {
     struct sterm_data *sdata = cb_data;
-    struct genio *net = &sdata->snet.net;
+    struct genio *net = sdata->snet.io;
 
     net->cbs->write_callback(net);
 }
@@ -1016,11 +1019,13 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
     if (!sdata)
 	return ENOMEM;
 
+    sdata->snet.io = o->zalloc(0, sizeof(*sdata->snet.io));
+    if (!sdata->snet.io)
+	goto out_nomem;
+
     sdata->close_timer = o->alloc_timer(o, sterm_close_timeout, sdata);
-    if (!sdata->close_timer) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!sdata->close_timer)
+	goto out_nomem;
 
     sdata->fd = -1;
 
@@ -1033,52 +1038,48 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
     sdata->default_termios.c_iflag |= IGNBRK;
 
     sdata->devname = genio_strdup(o, devname);
-    if (!sdata->devname) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!sdata->devname)
+	goto out_nomem;
+
     comma = strchr(sdata->devname, ',');
     if (comma) {
 	*comma++ = '\0';
 	sdata->parms = comma;
 	err = sergenio_process_parms(sdata);
 	if (err)
-	    goto out;
+	    goto out_err;
     }
 
     sdata->read_buffer_size = read_buffer_size;
     sdata->read_data = o->zalloc(o, read_buffer_size);
-    if (!sdata->read_data) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!sdata->read_data)
+	goto out_nomem;
 
     sdata->deferred_op_runner = o->alloc_runner(o, sterm_deferred_op, sdata);
-    if (!sdata->deferred_op_runner) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!sdata->deferred_op_runner)
+	goto out_nomem;
 
     sdata->lock = o->alloc_lock(o);
-    if (!sdata->lock) {
-	err = ENOMEM;
-	goto out;
-    }
+    if (!sdata->lock)
+	goto out_nomem;
 
     sdata->o = o;
     sdata->snet.scbs = scbs;
-    sdata->snet.net.user_data = user_data;
+    sdata->snet.io->parent_object = &sdata->snet;
+    sdata->snet.io->user_data = user_data;
     sdata->snet.funcs = &sterm_funcs;
-    sdata->snet.net.cbs = cbs;
-    sdata->snet.net.funcs = &sterm_net_funcs;
-    sdata->snet.net.type = GENIO_TYPE_SER_TERMIOS;
-    sdata->snet.net.is_client = true;
+    sdata->snet.io->cbs = cbs;
+    sdata->snet.io->funcs = &sterm_net_funcs;
+    sdata->snet.io->type = GENIO_TYPE_SER_TERMIOS;
+    sdata->snet.io->is_client = true;
     sdata->closed = true;
 
     *snet = &sdata->snet;
     return 0;
 
- out:
+ out_nomem:
+    err = ENOMEM;
+ out_err:
     sterm_finish_free(sdata);
     return err;
 }

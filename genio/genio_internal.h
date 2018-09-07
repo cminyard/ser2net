@@ -34,31 +34,31 @@ enum genio_type {
 };
 
 struct genio_functions {
-    int (*write)(struct genio *net, unsigned int *count,
+    int (*write)(struct genio *io, unsigned int *count,
 		 const void *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct genio *net, int *pos,
+    int (*raddr_to_str)(struct genio *io, int *pos,
 			char *buf, unsigned int buflen);
 
-    socklen_t (*get_raddr)(struct genio *net,
-			   struct sockaddr *addr, socklen_t addrlen);
+    int (*get_raddr)(struct genio *io,
+		     struct sockaddr *addr, socklen_t *addrlen);
 
-    int (*remote_id)(struct genio *net, int *id);
+    int (*remote_id)(struct genio *io, int *id);
 
-    int (*open)(struct genio *net, void (*open_done)(struct genio *net,
-						     int open,
-						     void *open_data),
+    int (*open)(struct genio *io,
+		void (*open_done)(struct genio *io, int open,
+				  void *open_data),
 		void *open_data);
 
-    int (*close)(struct genio *net, void (*close_done)(struct genio *net,
-						       void *close_data),
+    int (*close)(struct genio *io,
+		 void (*close_done)(struct genio *io, void *close_data),
 		 void *close_data);
 
-    void (*free)(struct genio *net);
+    void (*free)(struct genio *io);
 
-    void (*set_read_callback_enable)(struct genio *net, bool enabled);
+    void (*set_read_callback_enable)(struct genio *io, bool enabled);
 
-    void (*set_write_callback_enable)(struct genio *net, bool enabled);
+    void (*set_write_callback_enable)(struct genio *io, bool enabled);
 };
 
 /*
@@ -67,6 +67,7 @@ struct genio_functions {
  */
 struct genio {
     void *user_data;
+    void *parent_object;
     const struct genio_callbacks *cbs;
 
     const struct genio_functions *funcs;
@@ -94,9 +95,9 @@ struct genio_acceptor_functions {
     void (*free)(struct genio_acceptor *acceptor);
 
     int (*connect)(struct genio_acceptor *acceptor, void *addr,
-		   void (*connect_done)(struct genio *net, int err,
+		   void (*connect_done)(struct genio *io, int err,
 					void *cb_data),
-		   void *cb_data, struct genio **new_net);
+		   void *cb_data, struct genio **new_io);
 };
 
 /*
