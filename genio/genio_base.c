@@ -837,6 +837,20 @@ static const struct genio_ll_callbacks basen_ll_callbacks = {
     .urgent_callback = basen_ll_urgent,
 };
 
+static void
+basen_output_ready(void *cb_data)
+{
+    struct basen_data *ndata = cb_data;
+
+    basen_lock(ndata);
+    basen_set_ll_enables(ndata);
+    basen_unlock(ndata);
+}
+
+static const struct genio_filter_callbacks basen_filter_cbs = {
+    .output_ready = basen_output_ready
+};
+
 static struct genio *
 genio_alloc(struct genio_os_funcs *o,
 	    struct genio_ll *ll,
@@ -868,8 +882,10 @@ genio_alloc(struct genio_os_funcs *o,
     ndata->ll = ll;
     ndata->ll_ops = ll->ops;
     ndata->filter = filter;
-    if (filter)
+    if (filter) {
 	ndata->filter_ops = filter->ops;
+	filter->ops->set_callbacks(filter, &basen_filter_cbs, ndata);
+    }
     ndata->net.user_data = user_data;
     ndata->net.cbs = cbs;
     ndata->net.funcs = &basen_net_funcs;

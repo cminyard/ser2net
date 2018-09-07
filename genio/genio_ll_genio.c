@@ -199,9 +199,7 @@ static const struct genio_callbacks genio_ll_genio_cbs = {
 
 struct genio_ll *
 genio_genio_ll_alloc(struct genio_os_funcs *o,
-		     struct genio *child,
-		     const struct genio_ll_callbacks *cbs,
-		     void *cb_data)
+		     struct genio *child)
 {
     struct genio_ll_child *cdata;
 
@@ -211,8 +209,6 @@ genio_genio_ll_alloc(struct genio_os_funcs *o,
 
     cdata->o = o;
     cdata->child = child;
-    cdata->cbs = cbs;
-    cdata->cb_data = cb_data;
     cdata->ll.ops = &child_ll_ops;
 
     genio_set_callbacks(child, &genio_ll_genio_cbs, cdata);

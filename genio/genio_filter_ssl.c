@@ -58,8 +58,8 @@ struct ssl_filter {
 
     /* This is data from SSL_read() that is waiting to be sent to the user. */
     unsigned char *read_data;
-    unsigned int data_pos;
-    unsigned int data_pending_len;
+    unsigned int read_data_pos;
+    unsigned int read_data_len;
     unsigned int max_read_size;
 
     /*
@@ -69,11 +69,11 @@ struct ssl_filter {
      */
     unsigned char *write_data;
     unsigned int max_write_size;
-    unsigned int curr_write_size;
+    unsigned int write_data_len;
 
     /* This is data from BIO_read() waiting to be sent to the lower layer. */
     unsigned char xmit_buf[1024];
-    unsigned int xmit_buf_curr;
+    unsigned int xmit_buf_pos;
     unsigned int xmit_buf_len;
 };
 
@@ -91,6 +91,14 @@ ssl_unlock(struct ssl_filter *sfilter)
     sfilter->o->unlock(sfilter->lock);
 }
 
+static void
+ssl_set_callbacks(struct genio_filter *filter,
+		  const struct genio_filter_callbacks *cbs,
+		  void *cb_data)
+{
+    /* We don't currently use callbacks. */
+}
+
 static bool
 ssl_ul_read_pending(struct genio_filter *filter)
 {
@@ -99,7 +107,7 @@ ssl_ul_read_pending(struct genio_filter *filter)
     bool rv;
 
     ssl_lock(sfilter);
-    rv = sfilter->data_pending_len || SSL_peek(sfilter->ssl, buf, 1) > 0;
+    rv = sfilter->read_data_len || SSL_peek(sfilter->ssl, buf, 1) > 0;
     ssl_unlock(sfilter);
     return rv;
 }
@@ -111,7 +119,7 @@ ssl_ll_write_pending(struct genio_filter *filter)
     bool rv;
 
     ssl_lock(sfilter);
-    rv = BIO_pending(sfilter->io_bio) || sfilter->curr_write_size ||
+    rv = BIO_pending(sfilter->io_bio) || sfilter->write_data_len ||
 	sfilter->xmit_buf_len;
     ssl_unlock(sfilter);
     return rv;
@@ -215,14 +223,14 @@ ssl_ul_write(struct genio_filter *filter,
     int err = 0;
 
     ssl_lock(sfilter);
-    if (sfilter->curr_write_size || buflen == 0) {
+    if (sfilter->write_data_len || buflen == 0) {
 	if (rcount)
 	    *rcount = 0;
     } else {
 	if (buflen > sfilter->max_write_size)
 	    buflen = sfilter->max_write_size;
 	memcpy(sfilter->write_data, buf, buflen);
-	sfilter->curr_write_size = buflen;
+	sfilter->write_data_len = buflen;
 	*rcount = buflen;
 	buflen = 0;
     }
@@ -232,20 +240,20 @@ ssl_ul_write(struct genio_filter *filter,
 	unsigned int written;
 
 	err = handler(cb_data, &written,
-		      sfilter->xmit_buf + sfilter->xmit_buf_curr,
-		      sfilter->xmit_buf_len - sfilter->xmit_buf_curr);
+		      sfilter->xmit_buf + sfilter->xmit_buf_pos,
+		      sfilter->xmit_buf_len - sfilter->xmit_buf_pos);
 	if (err) {
 	    sfilter->xmit_buf_len = 0;
 	} else {
-	    sfilter->xmit_buf_curr += written;
-	    if (sfilter->xmit_buf_curr >= sfilter->xmit_buf_len)
+	    sfilter->xmit_buf_pos += written;
+	    if (sfilter->xmit_buf_pos >= sfilter->xmit_buf_len)
 		sfilter->xmit_buf_len = 0;
 	}
     }
 
-    if (!err && sfilter->xmit_buf_len == 0 && sfilter->curr_write_size > 0) {
+    if (!err && sfilter->xmit_buf_len == 0 && sfilter->write_data_len > 0) {
 	err = SSL_write(sfilter->ssl, sfilter->write_data,
-			sfilter->curr_write_size);
+			sfilter->write_data_len);
 	if (err <= 0) {
 	    err = SSL_get_error(sfilter->ssl, err);
 	    switch (err) {
@@ -258,8 +266,8 @@ ssl_ul_write(struct genio_filter *filter,
 		err = ECOMM;
 	    }
 	} else {
-	    assert(err == sfilter->curr_write_size);
-	    sfilter->curr_write_size = 0;
+	    assert(err == sfilter->write_data_len);
+	    sfilter->write_data_len = 0;
 	    err = 0;
 	}
     }
@@ -271,7 +279,7 @@ ssl_ul_write(struct genio_filter *filter,
 	/* FIXME - error handling? */
 	if (rdlen > 0) {
 	    sfilter->xmit_buf_len = rdlen;
-	    sfilter->xmit_buf_curr = 0;
+	    sfilter->xmit_buf_pos = 0;
 	    goto restart;
 	}
     }
@@ -300,31 +308,32 @@ ssl_ll_write(struct genio_filter *filter,
     }
 
  process_more:
-    if (!sfilter->data_pending_len && sfilter->connected) {
+    if (!sfilter->read_data_len && sfilter->connected) {
 	int rlen;
 
 	rlen = SSL_read(sfilter->ssl, sfilter->read_data,
 			sfilter->max_read_size);
 	if (rlen > 0)
-	    sfilter->data_pending_len = rlen;
-	sfilter->data_pos = 0;
+	    sfilter->read_data_len = rlen;
+	sfilter->read_data_pos = 0;
     }
 
-    if (sfilter->data_pending_len) {
+    if (sfilter->read_data_len) {
 	unsigned int count = 0;
 
 	ssl_unlock(sfilter);
-	err = handler(cb_data, &count, sfilter->read_data + sfilter->data_pos,
-		      sfilter->data_pending_len);
+	err = handler(cb_data, &count,
+		      sfilter->read_data + sfilter->read_data_pos,
+		      sfilter->read_data_len);
 	ssl_lock(sfilter);
 	if (!err) {
-	    if (count >= sfilter->data_pending_len) {
-		sfilter->data_pending_len = 0;
-		sfilter->data_pos = 0;
+	    if (count >= sfilter->read_data_len) {
+		sfilter->read_data_len = 0;
+		sfilter->read_data_pos = 0;
 		goto process_more;
 	    } else {
-		sfilter->data_pending_len -= count;
-		sfilter->data_pos += count;
+		sfilter->read_data_len -= count;
+		sfilter->read_data_pos += count;
 	    }
 	}
     }
@@ -380,6 +389,11 @@ ssl_cleanup(struct genio_filter *filter)
     sfilter->ssl = NULL;
     sfilter->ssl_bio = NULL;
     sfilter->io_bio = NULL;
+    sfilter->read_data_len = 0;
+    sfilter->read_data_pos = 0;
+    sfilter->xmit_buf_len = 0;
+    sfilter->xmit_buf_pos = 0;
+    sfilter->write_data_len = 0;
 }
 
 static void
@@ -403,6 +417,7 @@ ssl_free(struct genio_filter *filter)
 }
 
 const static struct genio_filter_ops ssl_filter_ops = {
+    .set_callbacks = ssl_set_callbacks,
     .ul_read_pending = ssl_ul_read_pending,
     .ll_write_pending = ssl_ll_write_pending,
     .ll_read_needed = ssl_ll_read_needed,

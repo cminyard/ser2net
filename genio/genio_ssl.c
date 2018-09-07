@@ -50,7 +50,7 @@ ssl_genio_alloc(struct genio *child, char *args[],
     if (err)
 	return err;
 
-    ll = genio_genio_ll_alloc(o, child, NULL, NULL);
+    ll = genio_genio_ll_alloc(o, child);
     if (!ll) {
 	filter->ops->free(filter);
 	return ENOMEM;
@@ -390,7 +390,7 @@ sslna_new_child_connection(struct genio_acceptor *acceptor, struct genio *io)
     if (err)
 	goto out_err;
 
-    ll = genio_genio_ll_alloc(o, io, NULL, NULL);
+    ll = genio_genio_ll_alloc(o, io);
     if (!ll) {
 	filter->ops->free(filter);
 	goto out_nomem;
