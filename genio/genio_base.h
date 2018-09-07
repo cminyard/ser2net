@@ -95,7 +95,6 @@ struct genio_filter_ops {
     void (*free)(struct genio_filter *filter);
 };
 
-
 struct genio_ll {
     const struct genio_ll_ops *ops;
 };
@@ -165,6 +164,11 @@ struct genio_ll *fd_genio_ll_alloc(struct genio_os_funcs *o,
 				   int fd,
 				   void *handler_data,
 				   unsigned int max_read_size);
+
+struct genio_ll *genio_genio_ll_alloc(struct genio_os_funcs *o,
+				      struct genio *child,
+				      const struct genio_ll_callbacks *cbs,
+				      void *cb_data);
 
 struct genio *base_genio_alloc(struct genio_os_funcs *o,
 			       struct genio_ll *ll,
