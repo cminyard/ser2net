@@ -95,6 +95,18 @@ struct genio_filter_ops {
     void (*free)(struct genio_filter *filter);
 };
 
+int genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
+			   unsigned int max_read_size,
+			   struct genio_filter **rfilter);
+
+int genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
+				  char *keyfile,
+				  char *certfile,
+				  char *CAfilepath,
+				  unsigned int max_read_size,
+				  unsigned int max_write_size,
+				  struct genio_filter **rfilter);
+
 struct genio_ll {
     const struct genio_ll_ops *ops;
 };
