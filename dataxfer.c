@@ -2720,12 +2720,19 @@ finish_shutdown_port(port_info_t *port)
     }
 }
 
+static void call_finish_shutdown_port(sel_runner_t *runner, void *cb_data)
+{
+    port_info_t *port = cb_data;
+
+    finish_shutdown_port(port);
+}
+
 static void
 io_shutdown_done(struct devio *io)
 {
     port_info_t *port = io->user_data;
 
-    finish_shutdown_port(port);
+    sel_run(port->runshutdown, call_finish_shutdown_port, port);
 }
 
 static void
@@ -2734,7 +2741,7 @@ shutdown_port_io(port_info_t *port)
     if (port->io.f)
 	port->io.f->shutdown(&port->io, io_shutdown_done);
     else
-	finish_shutdown_port(port);
+	sel_run(port->runshutdown, call_finish_shutdown_port, port);
 }
 
 static void
@@ -2778,7 +2785,6 @@ closeit:
 static void
 start_shutdown_port_io(port_info_t *port)
 {
-    LOCK(port->lock);
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
@@ -2789,9 +2795,7 @@ start_shutdown_port_io(port_info_t *port)
 	port->io.f->except_handler_enable(&port->io, 0);
 	port->dev_write_handler = handle_dev_fd_close_write;
 	port->io.f->write_handler_enable(&port->io, 1);
-	UNLOCK(port->lock);
     } else {
-	UNLOCK(port->lock);
 	shutdown_port_io(port);
     }
 }
