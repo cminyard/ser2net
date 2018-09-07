@@ -2630,7 +2630,14 @@ finish_shutdown_port(port_info_t *port)
 {
     bool reinit_now = true;
 
-    /* At this point nothing can happen on the port, so no need for a lock */
+    /*
+     * At this point nothing can happen on the port, so no need for a
+     * lock over the data.  However, we need to make sure the process
+     * that caused the port shutdown has released it's lock because we
+     * might free the port.
+     */
+    LOCK(port->lock);
+    UNLOCK(port->lock);
 
     port->net_to_dev_state = PORT_UNCONNECTED;
     buffer_reset(&port->net_to_dev);
