@@ -134,7 +134,8 @@ handle_telnet_cmd(telnet_data_t *td)
 }
 
 void
-telnet_send_option(telnet_data_t *td, unsigned char *option, int len)
+telnet_send_option(telnet_data_t *td, const unsigned char *option,
+		   unsigned int len)
 {
     unsigned int real_len;
     unsigned int i;
