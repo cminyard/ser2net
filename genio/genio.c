@@ -526,9 +526,9 @@ genio_process_filter(const char *str,
     struct genio *io = NULL, *io2 = NULL;
     struct sergenio *sio = NULL;
     int argc;
-    char **args = NULL;
+    char **args;
 
-    if (*str== '(') {
+    if (*str == '(') {
 	err = str_to_argv_lengths_endchar(str + 1, &argc, &args, NULL,
 					  NULL, ")", &str);
 	if (!err && (!str || *str != ','))
@@ -537,6 +537,7 @@ genio_process_filter(const char *str,
 	    str++;
     } else {
 	str += 1;
+	err = str_to_argv_lengths("()", &argc, &args, NULL, ")");
     }
 
     if (!err)
