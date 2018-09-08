@@ -119,6 +119,35 @@ int genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
 				  unsigned int max_write_size,
 				  struct genio_filter **rfilter);
 
+struct genio_telnet_filter_callbacks {
+    void (*got_sync)(void *handler_data);
+    int (*com_port_will_do)(void *handler_data, unsigned char cmd);
+    void (*com_port_cmd)(void *handler_data, const unsigned char *option,
+			 unsigned int len);
+    void (*free)(void *handler_data);
+};
+
+struct genio_telnet_filter_rops {
+    void (*send_option)(struct genio_filter *filter,
+			const unsigned char *buf, unsigned int len);
+};
+
+int genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
+			      const struct genio_telnet_filter_callbacks *cbs,
+			      void *handler_data,
+			      const struct genio_telnet_filter_rops **rops,
+			      struct genio_filter **rfilter);
+
+int genio_telnet_server_filter_alloc(
+		     struct genio_os_funcs *o,
+		     bool allow_rfc2217,
+		     unsigned int max_read_size,
+		     unsigned int max_write_size,
+		     const struct genio_telnet_filter_callbacks *cbs,
+		     void *handler_data,
+		     const struct genio_telnet_filter_rops **rops,
+		     struct genio_filter **rfilter);
+
 struct genio_ll {
     const struct genio_ll_ops *ops;
 };

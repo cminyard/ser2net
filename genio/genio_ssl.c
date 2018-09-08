@@ -55,6 +55,7 @@ ssl_genio_alloc(struct genio *child, char *args[],
 	filter->ops->free(filter);
 	return ENOMEM;
     }
+    child->funcs->ref(child);
 
     io = base_genio_alloc(o, ll, filter, GENIO_TYPE_SSL, cbs, user_data);
     if (!io) {
@@ -62,6 +63,7 @@ ssl_genio_alloc(struct genio *child, char *args[],
 	filter->ops->free(filter);
 	return ENOMEM;
     }
+    genio_free(child); /* Lose the ref we acquired. */
 
     *net = io;
     return 0;

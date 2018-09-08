@@ -48,6 +48,8 @@ struct basen_data {
 
     unsigned int refcount;
 
+    unsigned int freeref;
+
     enum basen_state state;
 
     void (*open_done)(struct genio *net, int err, void *open_data);
@@ -651,6 +653,12 @@ basen_free(struct genio *net)
     struct basen_data *ndata = mygenio_to_basen(net);
 
     basen_lock(ndata);
+    assert(ndata->freeref > 0);
+    if (--ndata->freeref > 0) {
+	basen_unlock(ndata);
+	return;
+    }
+
     if (ndata->state == BASEN_IN_FILTER_CLOSE ||
 		ndata->state == BASEN_IN_LL_CLOSE) {
 	ndata->close_done = NULL;
@@ -663,6 +671,16 @@ basen_free(struct genio *net)
 	basen_i_close(ndata, NULL, NULL);
     /* Lose the initial ref so it will be freed when done. */
     basen_deref_and_unlock(ndata);
+}
+
+static void
+basen_do_ref(struct genio *net)
+{
+    struct basen_data *ndata = mygenio_to_basen(net);
+
+    basen_lock(ndata);
+    ndata->freeref++;
+    basen_unlock(ndata);
 }
 
 static void
@@ -723,6 +741,7 @@ static const struct genio_functions basen_net_funcs = {
     .open = basen_open,
     .close = basen_close,
     .free = basen_free,
+    .ref = basen_do_ref,
     .set_read_callback_enable = basen_set_read_callback_enable,
     .set_write_callback_enable = basen_set_write_callback_enable
 };
@@ -870,6 +889,7 @@ genio_alloc(struct genio_os_funcs *o,
 
     ndata->o = o;
     ndata->refcount = 1;
+    ndata->freeref = 1;
 
     ndata->lock = o->alloc_lock(o);
     if (!ndata->lock)

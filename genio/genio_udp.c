@@ -41,6 +41,8 @@ struct udpn_data {
 
     struct genio_os_funcs *o;
 
+    unsigned int refcount;
+
     int myfd; /* fd the original request came in on, for sending. */
 
     bool read_enabled;	/* Read callbacks are enabled. */
@@ -318,6 +320,18 @@ static void udpna_check_finish_free(struct udpna_data *nadata)
 	nadata->o->clear_fd_handlers(nadata->o, nadata->fds[i].fd);
 }
 
+static void udpn_finish_free(struct udpn_data *ndata)
+{
+    struct udpna_data *nadata = ndata->nadata;
+
+    udpn_remove_from_list(&nadata->closed_udpns, ndata);
+    nadata->udpn_count--;
+    if (ndata->deferred_op_runner)
+	ndata->o->free_runner(ndata->deferred_op_runner);
+    ndata->o->free(ndata->o, ndata);
+    udpna_check_finish_free(nadata);
+}
+
 static int
 udpn_write(struct genio *net, unsigned int *count,
 	   const void *buf, unsigned int buflen)
@@ -413,14 +427,8 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 	nadata->data_pending_len = 0;
     }
 
-    if (ndata->in_free) {
-	udpn_remove_from_list(&nadata->closed_udpns, ndata);
-	nadata->udpn_count--;
-	if (ndata->deferred_op_runner)
-	    nadata->o->free_runner(ndata->deferred_op_runner);
-	ndata->o->free(ndata->o, ndata);
-    }
-    udpna_check_finish_free(nadata);
+    if (ndata->in_free)
+	udpn_finish_free(ndata);
 }
 
 static void
@@ -618,6 +626,10 @@ udpn_free(struct genio *net)
     struct udpna_data *nadata = ndata->nadata;
 
     udpna_lock(nadata);
+    assert(ndata->refcount > 0);
+    if (--ndata->refcount > 0)
+	goto out_unlock;
+
     if (ndata->in_close) {
 	ndata->in_free = true;
 	ndata->close_done = NULL;
@@ -625,13 +637,20 @@ udpn_free(struct genio *net)
 	ndata->in_free = true;
 	udpn_start_close(ndata, NULL, NULL);
     } else {
-	udpn_remove_from_list(&nadata->closed_udpns, ndata);
-	nadata->udpn_count--;
-	udpna_check_finish_free(nadata);
-	if (ndata->deferred_op_runner)
-	    ndata->o->free_runner(ndata->deferred_op_runner);
-	ndata->o->free(ndata->o, ndata);
+	udpn_finish_free(ndata);
     }
+ out_unlock:
+    udpna_unlock(nadata);
+}
+
+static void
+udpn_ref(struct genio *net)
+{
+    struct udpn_data *ndata = net_to_ndata(net);
+    struct udpna_data *nadata = ndata->nadata;
+
+    udpna_lock(nadata);
+    ndata->refcount++;
     udpna_unlock(nadata);
 }
 
@@ -754,6 +773,7 @@ static const struct genio_functions genio_udp_funcs = {
     .open = udpn_open,
     .close = udpn_close,
     .free = udpn_free,
+    .ref = udpn_ref,
     .set_read_callback_enable = udpn_set_read_callback_enable,
     .set_write_callback_enable = udpn_set_write_callback_enable
 };
@@ -854,6 +874,7 @@ udpna_readhandler(int fd, void *cbdata)
 	goto out_nomem;
 
     ndata->o = nadata->o;
+    ndata->refcount = 1;
     ndata->nadata = nadata;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
@@ -1021,6 +1042,7 @@ udpna_connect(struct genio_acceptor *acceptor, void *addr,
 	return ENOMEM;
     }
     ndata->o = nadata->o;
+    ndata->refcount = 1;
     ndata->nadata = nadata;
 
     ndata->deferred_op_runner = ndata->o->alloc_runner(ndata->o,
@@ -1162,6 +1184,7 @@ udp_genio_alloc(struct addrinfo *ai,
 	return ENOMEM;
 
     ndata->o = o;
+    ndata->refcount = 1;
 
     /* Allocate a dummy network acceptor. */
     err = udp_genio_acceptor_alloc("dummy", o, NULL, max_read_size,

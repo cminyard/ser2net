@@ -26,6 +26,7 @@
 #include <syslog.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "genio.h"
 #include "genio_internal.h"
@@ -35,6 +36,8 @@ struct stdiona_data {
     struct genio_lock *lock;
 
     struct genio_os_funcs *o;
+
+    unsigned int refcount;
 
     int argc;
     char **argv;
@@ -586,6 +589,12 @@ stdion_free(struct genio *net)
     struct stdiona_data *nadata = net_to_nadata(net);
 
     stdiona_lock(nadata);
+    assert(nadata->refcount > 0);
+    if (--nadata->refcount > 0) {
+	stdiona_unlock(nadata);
+	return;
+    }
+	
     nadata->in_free = true;
     if (nadata->in_close) {
 	nadata->close_done = NULL;
@@ -597,6 +606,16 @@ stdion_free(struct genio *net)
 	__stdion_close(nadata, NULL, NULL);
 	stdiona_unlock(nadata);
     }
+}
+
+static void
+stdion_ref(struct genio *net)
+{
+    struct stdiona_data *nadata = net_to_nadata(net);
+
+    stdiona_lock(nadata);
+    nadata->refcount++;
+    stdiona_unlock(nadata);
 }
 
 static void
@@ -759,6 +778,7 @@ static const struct genio_functions genio_stdio_funcs = {
     .open = stdion_open,
     .close = stdion_close,
     .free = stdion_free,
+    .ref = stdion_ref,
     .set_read_callback_enable = stdion_set_read_callback_enable,
     .set_write_callback_enable = stdion_set_write_callback_enable
 };
@@ -781,6 +801,7 @@ stdio_nadata_setup(struct genio_os_funcs *o, unsigned int max_read_size,
     if (!nadata)
 	goto out_nomem;
     nadata->o = o;
+    nadata->refcount = 1;
 
     nadata->max_read_size = max_read_size;
     nadata->read_data = o->zalloc(o, max_read_size);

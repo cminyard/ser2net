@@ -56,6 +56,15 @@ struct genio_functions {
 
     void (*free)(struct genio *io);
 
+    /*
+     * Increment the genio's refcount.  There are situations where one
+     * piece of code passes a genio into another piece of code, and
+     * that other piece of code that might free it on an error, but
+     * the upper layer gets the error and wants to free it, too.  This
+     * keeps it around for that situation.
+     */
+    void (*ref)(struct genio *io);
+
     void (*set_read_callback_enable)(struct genio *io, bool enabled);
 
     void (*set_write_callback_enable)(struct genio *io, bool enabled);
