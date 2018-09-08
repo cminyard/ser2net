@@ -537,7 +537,7 @@ genio_process_filter(const char *str,
 	    str++;
     } else {
 	str += 1;
-	err = str_to_argv_lengths("()", &argc, &args, NULL, ")");
+	err = str_to_argv_lengths("", &argc, &args, NULL, ")");
     }
 
     if (!err)
