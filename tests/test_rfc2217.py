@@ -32,7 +32,7 @@ class cshandler:
 # Check that setting termios fails if remctl isn't set.
 goterr = False
 try:
-    termioschk.test_ser2net_termios("cs5 rfc2217 settings",
+    termioschk.test_ser2net_termios("rfc2217 setting fail on remctl not set",
                                     cshandler(termios.CS5, 5),
                 "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b remctl\n",
                 "telnet(rfc2217=false),tcp,localhost,3023",
@@ -45,10 +45,10 @@ except Exception as E:
 if not goterr:
     raise Exception("Did not get error setting telnet rfc2217 when disabled.")
 
-# Check that setting termios fails if remctl isn't set.
+# Check that setting termios fails if local rfc2217 isn't set.
 goterr = False
 try:
-    termioschk.test_ser2net_termios("cs5 rfc2217 settings",
+    termioschk.test_ser2net_termios("rfc2217 settings fail on no local rfc2217",
                                     cshandler(termios.CS5, 5),
                  "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b\n",
                  "telnet,tcp,localhost,3023",
