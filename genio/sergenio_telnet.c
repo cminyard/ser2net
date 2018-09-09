@@ -421,6 +421,10 @@ sergenio_telnet_alloc(struct genio *child, char *args[],
     sdata->o = o;
     sdata->allow_2217 = allow_2217;
 
+    sdata->lock = o->alloc_lock(o);
+    if (!sdata->lock)
+	goto out_nomem;
+
     sdata->timer = o->alloc_timer(o, telnet_timeout, sdata);
     if (!sdata->timer)
 	goto out_nomem;
@@ -447,6 +451,7 @@ sergenio_telnet_alloc(struct genio *child, char *args[],
     genio_free(child); /* Lose the ref we acquired. */
 
     sdata->o = o;
+    sdata->filter = filter;
     sdata->sio.scbs = scbs;
     sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &stel_funcs;
