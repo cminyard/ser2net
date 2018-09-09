@@ -224,6 +224,8 @@ struct genio_os_funcs {
     /* Call this function once. */
     void (*call_once)(struct genio_os_funcs *f, struct genio_once *once,
 		      void (*func)(void *cb_data), void *cb_data);
+
+    void (*get_monotonic_time)(struct genio_os_funcs *f, struct timeval *time);
 };
 
 struct genio;

@@ -445,6 +445,12 @@ genio_sel_call_once(struct genio_os_funcs *f, struct genio_once *once,
     UNLOCK(once_lock);
 }
 
+static void
+genio_sel_get_monotonic_time(struct genio_os_funcs *f, struct timeval *time)
+{
+    sel_get_monotonic_time(time);
+}
+
 struct genio_os_funcs *
 genio_selector_alloc(struct selector_s *sel, int wake_sig)
 {
@@ -495,6 +501,7 @@ genio_selector_alloc(struct selector_s *sel, int wake_sig)
     o->service = genio_sel_service;
     o->free_funcs = genio_sel_free_funcs;
     o->call_once = genio_sel_call_once;
+    o->get_monotonic_time = genio_sel_get_monotonic_time;
 
     return o;
 }
