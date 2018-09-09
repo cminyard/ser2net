@@ -53,8 +53,6 @@ struct stel_data {
     bool do_2217;
     bool cisco_baud;
 
-    struct genio_timer *timer;
-
     struct stel_req *reqs;
 };
 
@@ -312,9 +310,9 @@ sergenio_com_port_cmd(void *handler_data, const unsigned char *option,
 }
 
 static void
-telnet_timeout(struct genio_timer *timer, void *cb_data)
+telnet_timeout(void *handler_data)
 {
-    struct stel_data *sdata = cb_data;
+    struct stel_data *sdata = handler_data;
     struct timeval timeout;
     struct stel_req *req, *curr, *prev = NULL, *to_complete = NULL;
 
@@ -352,7 +350,7 @@ telnet_timeout(struct genio_timer *timer, void *cb_data)
 
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    sdata->o->start_timer(timer, &timeout);
+    sdata->rops->start_timer(sdata->filter, &timeout);
 }
 
 static void
@@ -368,8 +366,6 @@ sergenio_free(void *handler_data)
 
     if (sdata->lock)
 	sdata->o->free_lock(sdata->lock);
-    if (sdata->timer)
-	sdata->o->free_timer(sdata->timer);
     while (sdata->reqs) {
 	struct stel_req *req = sdata->reqs;
 
@@ -383,6 +379,7 @@ struct genio_telnet_filter_callbacks sergenio_telnet_filter_cbs = {
     .got_sync = sergenio_got_sync,
     .com_port_will_do = sergenio_com_port_will_do,
     .com_port_cmd = sergenio_com_port_cmd,
+    .timeout = telnet_timeout,
     .free = sergenio_free
 };
 
@@ -423,10 +420,6 @@ sergenio_telnet_alloc(struct genio *child, char *args[],
 
     sdata->lock = o->alloc_lock(o);
     if (!sdata->lock)
-	goto out_nomem;
-
-    sdata->timer = o->alloc_timer(o, telnet_timeout, sdata);
-    if (!sdata->timer)
 	goto out_nomem;
 
     ll = genio_genio_ll_alloc(o, child);

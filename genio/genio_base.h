@@ -131,12 +131,14 @@ struct genio_telnet_filter_callbacks {
     int (*com_port_will_do)(void *handler_data, unsigned char cmd);
     void (*com_port_cmd)(void *handler_data, const unsigned char *option,
 			 unsigned int len);
+    void (*timeout)(void *handler_data);
     void (*free)(void *handler_data);
 };
 
 struct genio_telnet_filter_rops {
     void (*send_option)(struct genio_filter *filter,
 			const unsigned char *buf, unsigned int len);
+    void (*start_timer)(struct genio_filter *filter, struct timeval *timeout);
 };
 
 int genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],

@@ -386,7 +386,7 @@ telnet_setup(struct genio_filter *filter)
 	tfilter->rfc2217_set = !tfilter->allow_2217;
 	tfilter->o->get_monotonic_time(tfilter->o,
 				       &tfilter->rfc2217_end_wait);
-	tfilter->rfc2217_end_wait.tv_sec += 4; /* FIXME */
+	tfilter->rfc2217_end_wait.tv_sec += 4; /* FIXME - magic number */
 	tfilter->setup_done = true;
 	if (buffer_cursize(&tfilter->tn_data.out_telnet_cmd))
 	    tfilter->write_state = TELNET_IN_TN_WRITE;
@@ -408,6 +408,15 @@ telnet_filter_cleanup(struct genio_filter *filter)
     tfilter->write_data_len = 0;
     tfilter->write_data_pos = 0;
     telnet_cleanup(&tfilter->tn_data);
+}
+
+static void
+telnet_filter_timeout(struct genio_filter *filter)
+{
+    struct telnet_filter *tfilter = filter_to_telnet(filter);
+
+    if (tfilter->telnet_cbs && tfilter->telnet_cbs->timeout)
+	tfilter->telnet_cbs->timeout(tfilter->handler_data);
 }
 
 static void
@@ -438,6 +447,7 @@ const static struct genio_filter_ops telnet_filter_ops = {
     .ul_write = telnet_ul_write,
     .ll_write = telnet_ll_write,
     .ll_urgent = telnet_ll_urgent,
+    .timeout = telnet_filter_timeout,
     .setup = telnet_setup,
     .cleanup = telnet_filter_cleanup,
     .free = telnet_free
@@ -454,8 +464,17 @@ static void telnet_filter_send_option(struct genio_filter *filter,
     telnet_unlock(tfilter);
 }
 
+static void telnet_filter_start_timer(struct genio_filter *filter,
+				      struct timeval *timeout)
+{
+    struct telnet_filter *tfilter = filter_to_telnet(filter);
+
+    tfilter->filter_cbs->start_timer(tfilter->cb_data, timeout);
+}
+
 const struct genio_telnet_filter_rops telnet_filter_rops = {
-    .send_option = telnet_filter_send_option
+    .send_option = telnet_filter_send_option,
+    .start_timer = telnet_filter_start_timer
 };
 
 static struct genio_filter *
