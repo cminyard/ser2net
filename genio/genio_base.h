@@ -128,6 +128,7 @@ int genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
 
 struct genio_telnet_filter_callbacks {
     void (*got_sync)(void *handler_data);
+    void (*got_cmd)(void *handler_data, unsigned char cmd);
     int (*com_port_will_do)(void *handler_data, unsigned char cmd);
     void (*com_port_cmd)(void *handler_data, const unsigned char *option,
 			 unsigned int len);

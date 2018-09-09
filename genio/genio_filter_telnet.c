@@ -41,6 +41,10 @@ struct telnet_filter {
     bool setup_done;
     int in_urgent;
 
+    const struct telnet_cmd *telnet_cmds;
+    const unsigned char *telnet_init_seq;
+    unsigned int telnet_init_seq_len;
+
     bool allow_2217;
     bool rfc2217_set;
     struct timeval rfc2217_end_wait;
@@ -263,7 +267,8 @@ telnet_ll_write(struct genio_filter *filter,
 		    if (*buf == TN_DATA_MARK) {
 			/* Found it. */
 			tfilter->in_urgent = 0;
-			if (tfilter->telnet_cbs) {
+			if (tfilter->telnet_cbs &&
+				    tfilter->telnet_cbs->got_sync) {
 			    telnet_unlock(tfilter);
 			    tfilter->telnet_cbs->got_sync
 				(tfilter->handler_data);
@@ -356,21 +361,11 @@ telnet_output_ready(void *cb_data)
 static void
 telnet_cmd_handler(void *cb_data, unsigned char cmd)
 {
+    struct telnet_filter *tfilter = cb_data;
+
+    if (tfilter->telnet_cbs && tfilter->telnet_cbs->got_cmd)
+	tfilter->telnet_cbs->got_cmd(tfilter->handler_data, cmd);
 }
-
-static const struct telnet_cmd telnet_cmds[] = {
-    /*                        I will,  I do,  sent will, sent do */
-    { TN_OPT_SUPPRESS_GO_AHEAD,	   1,     0,          0,       0, },
-    { TN_OPT_ECHO,		   1,     0,          0,       0, },
-    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       0, },
-    { TN_OPT_COM_PORT,		   1,     0,          1,       0,
-      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
-    { TELNET_CMD_END_OPTION }
-};
-
-static const unsigned char telnet_init_seq[] = {
-    TN_IAC, TN_WILL, TN_OPT_COM_PORT,
-};
 
 static int
 telnet_setup(struct genio_filter *filter)
@@ -379,9 +374,8 @@ telnet_setup(struct genio_filter *filter)
     int err;
 
     err = telnet_init(&tfilter->tn_data, tfilter, telnet_output_ready,
-		      telnet_cmd_handler, telnet_cmds,
-		      telnet_init_seq,
-		      tfilter->allow_2217 ? sizeof(telnet_init_seq) : 0);
+		      telnet_cmd_handler, tfilter->telnet_cmds,
+		      tfilter->telnet_init_seq, tfilter->telnet_init_seq_len);
     if (!err) {
 	tfilter->rfc2217_set = !tfilter->allow_2217;
 	tfilter->o->get_monotonic_time(tfilter->o,
@@ -485,6 +479,9 @@ genio_telnet_filter_raw_alloc(struct genio_os_funcs *o,
 			      unsigned int max_write_size,
 			      const struct genio_telnet_filter_callbacks *cbs,
 			      void *handler_data,
+			      const struct telnet_cmd *telnet_cmds,
+			      const unsigned char *telnet_init_seq,
+			      unsigned int telnet_init_seq_len,
 			      const struct genio_telnet_filter_rops **rops)
 {
     struct telnet_filter *tfilter;
@@ -498,6 +495,9 @@ genio_telnet_filter_raw_alloc(struct genio_os_funcs *o,
     tfilter->allow_2217 = allow_2217;
     tfilter->max_write_size = max_write_size;
     tfilter->max_read_size = max_read_size;
+    tfilter->telnet_cmds = telnet_cmds;
+    tfilter->telnet_init_seq = telnet_init_seq;
+    tfilter->telnet_init_seq_len = telnet_init_seq_len;
 
     tfilter->lock = o->alloc_lock(o);
     if (!tfilter->lock)
@@ -523,6 +523,37 @@ genio_telnet_filter_raw_alloc(struct genio_os_funcs *o,
     return NULL;
 }
 
+static struct telnet_cmd telnet_server_cmds_2217[] =
+{
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
+    { TN_OPT_ECHO,		   0,     1,          1,       1, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          1,       1, },
+    { TN_OPT_COM_PORT,		   1,     0,          0,       1,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
+    { TELNET_CMD_END_OPTION }
+};
+
+static struct telnet_cmd telnet_server_cmds[] =
+{
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
+    { TN_OPT_ECHO,		   0,     1,          1,       1, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          1,       1, },
+    { TN_OPT_COM_PORT,		   0,     0,          0,       0,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
+    { TELNET_CMD_END_OPTION }
+};
+
+static unsigned char telnet_server_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
+    TN_IAC, TN_WILL, TN_OPT_ECHO,
+    TN_IAC, TN_DONT, TN_OPT_ECHO,
+    TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
+    TN_IAC, TN_WILL, TN_OPT_BINARY_TRANSMISSION,
+    TN_IAC, TN_DO,   TN_OPT_COM_PORT,
+};
+
 int
 genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 		 bool allow_rfc2217,
@@ -534,10 +565,21 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 		 struct genio_filter **rfilter)
 {
     struct genio_filter *filter;
+    const struct telnet_cmd *telnet_cmds;
+    unsigned int init_seq_len = sizeof(telnet_server_init_seq);
+
+    if (allow_rfc2217)
+	telnet_cmds = telnet_server_cmds_2217;
+    else
+	telnet_cmds = telnet_server_cmds;
 
     filter = genio_telnet_filter_raw_alloc(o, false, allow_rfc2217,
 					   max_read_size, max_write_size,
-					   cbs, handler_data, rops);
+					   cbs, handler_data,
+					   telnet_cmds,
+					   telnet_server_init_seq,
+					   init_seq_len,
+					   rops);
 
     if (!filter)
 	return ENOMEM;
@@ -545,6 +587,20 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
     *rfilter = filter;
     return 0;
 }
+
+static const struct telnet_cmd telnet_client_cmds[] = {
+    /*                        I will,  I do,  sent will, sent do */
+    { TN_OPT_SUPPRESS_GO_AHEAD,	   1,     0,          0,       0, },
+    { TN_OPT_ECHO,		   1,     0,          0,       0, },
+    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       0, },
+    { TN_OPT_COM_PORT,		   1,     0,          1,       0,
+      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
+    { TELNET_CMD_END_OPTION }
+};
+
+static const unsigned char telnet_client_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_COM_PORT,
+};
 
 int
 genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
@@ -557,7 +613,8 @@ genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
     unsigned int i;
     unsigned int max_read_size = 4096; /* FIXME - magic number. */
     unsigned int max_write_size = 4096; /* FIXME - magic number. */
-    bool allow_2217;
+    bool allow_2217 = true;
+    unsigned int init_seq_len;
 
     for (i = 0; args[i]; i++) {
 	const char *val;
@@ -578,9 +635,15 @@ genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
 	return EINVAL;
     }
 
+    init_seq_len = (allow_2217 ? sizeof(telnet_client_init_seq) : 0);
+
     filter = genio_telnet_filter_raw_alloc(o, true, allow_2217,
 					   max_read_size, max_write_size,
-					   cbs, handler_data, rops);
+					   cbs, handler_data,
+					   telnet_client_cmds,
+					   telnet_client_init_seq,
+					   init_seq_len,
+					   rops);
 
     if (!filter)
 	return ENOMEM;
