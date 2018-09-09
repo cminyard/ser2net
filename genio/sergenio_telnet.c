@@ -343,6 +343,12 @@ telnet_timeout(void *handler_data)
 	    req = req->next;
 	}
     }
+
+    if (sdata->reqs) {
+	timeout.tv_sec = 1;
+	timeout.tv_usec = 0;
+	sdata->rops->start_timer(sdata->filter, &timeout);
+    }
     stel_unlock(sdata);
 
     req = to_complete;
@@ -352,10 +358,6 @@ telnet_timeout(void *handler_data)
 	req = req->next;
 	sdata->o->free(sdata->o, prev);
     }
-
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    sdata->rops->start_timer(sdata->filter, &timeout);
 }
 
 static void
