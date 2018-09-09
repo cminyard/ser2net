@@ -78,6 +78,7 @@ stel_queue(struct stel_data *sdata, int option,
 	   void *cb_data)
 {
     struct stel_req *curr, *req;
+    struct timeval timeout;
 
     if (!sdata->do_2217)
 	return ENOTSUP;
@@ -106,6 +107,10 @@ stel_queue(struct stel_data *sdata, int option,
 	curr->next = req;
     }
     stel_unlock(sdata);
+
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    sdata->rops->start_timer(sdata->filter, &timeout);
 
     return 0;
 }
