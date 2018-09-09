@@ -737,8 +737,11 @@ basen_timeout(struct genio_timer *timer, void *cb_data)
 	break;
 
     case BASEN_OPEN:
-	if (ndata->filter_ops->timeout)
+	if (ndata->filter_ops->timeout) {
+	    basen_unlock(ndata);
 	    ndata->filter_ops->timeout(ndata->filter);
+	    basen_lock(ndata);
+	}
 	break;
 
     default:
