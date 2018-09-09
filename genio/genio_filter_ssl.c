@@ -154,7 +154,7 @@ ssl_check_open_done(struct genio_filter *filter)
 }
 
 static int
-ssl_try_connect(struct genio_filter *filter)
+ssl_try_connect(struct genio_filter *filter, struct timeval *timeout)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     int rv, success;
@@ -188,7 +188,7 @@ ssl_try_connect(struct genio_filter *filter)
 }
 
 static int
-ssl_try_disconnect(struct genio_filter *filter)
+ssl_try_disconnect(struct genio_filter *filter, struct timeval *timeout)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     int success;

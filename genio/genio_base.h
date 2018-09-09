@@ -42,6 +42,8 @@ struct genio_filter_callbacks {
      * to send, tell the genio base to recalculate its enables.
      */
     void (*output_ready)(void *cb_data);
+
+    void (*start_timer)(void *cb_data, struct timeval *timeout);
 };
 
 struct genio_filter_ops {
@@ -68,16 +70,19 @@ struct genio_filter_ops {
     /*
      * Attempt to start a connection on the filter.  Returns 0 on
      * immediate success.  Returns EINPROGRESS if the connect attempt
-     * should be retried.
+     * should be retried when any I/O occurs.  Returns EAGAIN if the
+     * connect attempt should be retried after any I/O or when the
+     * timeout occurs.
      */
-    int (*try_connect)(struct genio_filter *filter);
+    int (*try_connect)(struct genio_filter *filter, struct timeval *timeout);
 
     /*
      * Attempt to disconnect the filter.  Returns 0 on immediate
      * success.  Returns EINPROGRESS if the connect attempt should be
-     * retried.
+     * retried.  Returns EAGAIN if the connect attempt should be
+     * retried after any I/O or when the timeout occurs.
      */
-    int (*try_disconnect)(struct genio_filter *filter);
+    int (*try_disconnect)(struct genio_filter *filter, struct timeval *timeout);
 
     /*
      * Write data into the top of the filter.  If no data is provided
@@ -101,6 +106,8 @@ struct genio_filter_ops {
 
     /* Handle urgent data. */
     void (*ll_urgent)(struct genio_filter *filter);
+
+    void (*timeout)(struct genio_filter *filter);
 
     int (*setup)(struct genio_filter *filter);
     void (*cleanup)(struct genio_filter *filter);

@@ -42,6 +42,8 @@ struct telnet_filter {
     int in_urgent;
 
     bool allow_2217;
+    bool rfc2217_set;
+    struct timeval rfc2217_end_wait;
 
     const struct genio_telnet_filter_callbacks *telnet_cbs;
     void *handler_data;
@@ -134,13 +136,27 @@ telnet_check_open_done(struct genio_filter *filter)
 }
 
 static int
-telnet_try_connect(struct genio_filter *filter)
+telnet_try_connect(struct genio_filter *filter, struct timeval *timeout)
 {
-    return 0;
+    struct telnet_filter *tfilter = filter_to_telnet(filter);
+    struct timeval now;
+
+    if (tfilter->rfc2217_set)
+	return 0;
+
+    tfilter->o->get_monotonic_time(tfilter->o, &now);
+    if (cmp_timeval(&now, &tfilter->rfc2217_end_wait) > 0) {
+	tfilter->rfc2217_set = true;
+	return 0;
+    }
+
+    timeout->tv_sec = 0;
+    timeout->tv_usec = 500000;
+    return EAGAIN;
 }
 
 static int
-telnet_try_disconnect(struct genio_filter *filter)
+telnet_try_disconnect(struct genio_filter *filter, struct timeval *timeout)
 {
     return 0;
 }
@@ -310,11 +326,12 @@ static int
 com_port_will_do(void *cb_data, unsigned char cmd)
 {
     struct telnet_filter *tfilter = cb_data;
+    int err = 0;
 
     if (tfilter->telnet_cbs)
-	return tfilter->telnet_cbs->com_port_will_do(tfilter->handler_data,
-						     cmd);
-    return 0;
+	err = tfilter->telnet_cbs->com_port_will_do(tfilter->handler_data, cmd);
+    tfilter->rfc2217_set = true;
+    return err;
 }
 
 static void
@@ -366,6 +383,10 @@ telnet_setup(struct genio_filter *filter)
 		      telnet_init_seq,
 		      tfilter->allow_2217 ? sizeof(telnet_init_seq) : 0);
     if (!err) {
+	tfilter->rfc2217_set = !tfilter->allow_2217;
+	tfilter->o->get_monotonic_time(tfilter->o,
+				       &tfilter->rfc2217_end_wait);
+	tfilter->rfc2217_end_wait.tv_sec += 4; /* FIXME */
 	tfilter->setup_done = true;
 	if (buffer_cursize(&tfilter->tn_data.out_telnet_cmd))
 	    tfilter->write_state = TELNET_IN_TN_WRITE;
@@ -473,6 +494,9 @@ genio_telnet_filter_raw_alloc(struct genio_os_funcs *o,
 
     *rops = &telnet_filter_rops;
     tfilter->filter.ops = &telnet_filter_ops;
+    tfilter->telnet_cbs = cbs;
+    tfilter->handler_data = handler_data;
+
     return &tfilter->filter;
 
  out_nomem:

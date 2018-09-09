@@ -45,6 +45,7 @@ struct basen_data {
     const struct genio_ll_ops *ll_ops;
 
     struct genio_lock *lock;
+    struct genio_timer *timer;
 
     unsigned int refcount;
 
@@ -104,6 +105,8 @@ basen_finish_free(struct basen_data *ndata)
 {
     if (ndata->lock)
 	ndata->o->free_lock(ndata->lock);
+    if (ndata->timer)
+	ndata->o->free_timer(ndata->timer);
     if (ndata->deferred_op_runner)
 	ndata->o->free_runner(ndata->deferred_op_runner);
     if (ndata->filter)
@@ -111,6 +114,14 @@ basen_finish_free(struct basen_data *ndata)
     if (ndata->ll)
 	ndata->ll_ops->free(ndata->ll);
     ndata->o->free(ndata->o, ndata);
+}
+
+static void
+basen_timer_stopped(struct genio_timer *t, void *cb_data)
+{
+    struct basen_data *ndata = cb_data;
+
+    basen_finish_free(ndata);
 }
 
 static void
@@ -138,8 +149,17 @@ basen_deref_and_unlock(struct basen_data *ndata)
     assert(ndata->refcount > 0);
     count = --ndata->refcount;
     basen_unlock(ndata);
-    if (count == 0)
+    if (count == 0) {
+	if (ndata->timer) {
+	    int err = ndata->o->stop_timer_with_done(ndata->timer,
+						     basen_timer_stopped,
+						     ndata);
+
+	    if (!err)
+		return;
+	}
 	basen_finish_free(ndata);
+    }
 }
 
 static bool
@@ -176,18 +196,18 @@ filter_check_open_done(struct basen_data *ndata)
 }
 
 static int
-filter_try_connect(struct basen_data *ndata)
+filter_try_connect(struct basen_data *ndata, struct timeval *timeout)
 {
     if (ndata->filter)
-	return ndata->filter_ops->try_connect(ndata->filter);
+	return ndata->filter_ops->try_connect(ndata->filter, timeout);
     return 0;
 }
 
 static int
-filter_try_disconnect(struct basen_data *ndata)
+filter_try_disconnect(struct basen_data *ndata, struct timeval *timeout)
 {
     if (ndata->filter)
-	return ndata->filter_ops->try_disconnect(ndata->filter);
+	return ndata->filter_ops->try_disconnect(ndata->filter, timeout);
     return 0;
 }
 
@@ -507,13 +527,26 @@ static void
 basen_try_connect(struct basen_data *ndata)
 {
     int err;
+    struct timeval timeout = {0, 0};
+
+    assert(ndata->state == BASEN_IN_FILTER_OPEN);
+    if (ndata->state != BASEN_IN_FILTER_OPEN)
+	/*
+	 * We can race between the timer, input, and output, make sure
+	 * not to call this extraneously.
+	 */
+	return;
 
     ll_set_write_callback_enable(ndata, false);
     ll_set_read_callback_enable(ndata, false);
 
-    err = filter_try_connect(ndata);
+    err = filter_try_connect(ndata, &timeout);
     if (err == EINPROGRESS)
 	return;
+    if (err == EAGAIN) {
+	ndata->o->start_timer(ndata->timer, &timeout);
+	return;
+    }
 
     if (!err)
 	err = filter_check_open_done(ndata);
@@ -568,17 +601,17 @@ basen_open(struct genio *net, void (*open_done)(struct genio *net,
 	ndata->open_data = open_data;
 	err = ll_open(ndata, basen_ll_open_done, NULL);
 	if (err == 0) {
+	    ndata->state = BASEN_IN_FILTER_OPEN;
 	    ndata->deferred_open = true;
 	    basen_sched_deferred_op(ndata);
 	} else if (err == EINPROGRESS) {
+	    ndata->state = BASEN_IN_LL_OPEN;
 	    basen_ref(ndata);
 	    err = 0;
 	} else {
 	    filter_cleanup(ndata);
 	    goto out_err;
 	}	    
-
-	ndata->state = BASEN_IN_LL_OPEN;
     }
  out_err:
     basen_unlock(ndata);
@@ -590,13 +623,18 @@ static void
 basen_try_close(struct basen_data *ndata)
 {
     int err;
+    struct timeval timeout = {0, 0};
 
     ll_set_write_callback_enable(ndata, false);
     ll_set_read_callback_enable(ndata, false);
 
-    err = filter_try_disconnect(ndata);
+    err = filter_try_disconnect(ndata, &timeout);
     if (err == EINPROGRESS)
 	return;
+    if (err == EAGAIN) {
+	ndata->o->start_timer(ndata->timer, &timeout);
+	return;
+    }
 
     /* FIXME - error handling? */
     ndata->state = BASEN_IN_LL_CLOSE;
@@ -680,6 +718,33 @@ basen_do_ref(struct genio *net)
 
     basen_lock(ndata);
     ndata->freeref++;
+    basen_unlock(ndata);
+}
+
+static void
+basen_timeout(struct genio_timer *timer, void *cb_data)
+{
+    struct basen_data *ndata = cb_data;
+
+    basen_lock(ndata);
+    switch (ndata->state) {
+    case BASEN_IN_FILTER_OPEN:
+	basen_try_connect(ndata);
+	break;
+
+    case BASEN_IN_FILTER_CLOSE:
+	basen_try_close(ndata);
+	break;
+
+    case BASEN_OPEN:
+	if (ndata->filter_ops->timeout)
+	    ndata->filter_ops->timeout(ndata->filter);
+	break;
+
+    default:
+	break;
+    }
+    basen_set_ll_enables(ndata);
     basen_unlock(ndata);
 }
 
@@ -861,13 +926,23 @@ basen_output_ready(void *cb_data)
 {
     struct basen_data *ndata = cb_data;
 
+    ll_set_write_callback_enable(ndata, true);
+}
+
+static void
+basen_start_timer(void *cb_data, struct timeval *timeout)
+{
+    struct basen_data *ndata = cb_data;
+
     basen_lock(ndata);
-    basen_set_ll_enables(ndata);
+    if (ndata->state == BASEN_OPEN)
+	ndata->o->start_timer(ndata->timer, timeout);
     basen_unlock(ndata);
 }
 
 static const struct genio_filter_callbacks basen_filter_cbs = {
-    .output_ready = basen_output_ready
+    .output_ready = basen_output_ready,
+    .start_timer = basen_start_timer
 };
 
 static struct genio *
@@ -893,6 +968,10 @@ genio_alloc(struct genio_os_funcs *o,
 
     ndata->lock = o->alloc_lock(o);
     if (!ndata->lock)
+	goto out_nomem;
+
+    ndata->timer = o->alloc_timer(o, basen_timeout, ndata);
+    if (!ndata->timer)
 	goto out_nomem;
 
     ndata->deferred_op_runner = o->alloc_runner(o, basen_deferred_op, ndata);
