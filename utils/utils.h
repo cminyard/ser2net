@@ -184,4 +184,20 @@ void add_usec_to_timeval(struct timeval *tv, int usec);
 
 int sub_timeval_us(struct timeval *left, struct timeval *right);
 
+#if ENABLE_PRBUF
+#include <stdio.h>
+static void prbuf(const unsigned char *buf, unsigned int len)
+{
+    unsigned int i;
+
+    for (i = 0; i < len; i++) {
+       if (i % 16 == 0)
+           printf("\n");
+       printf(" %2.2x", buf[i]);
+    }
+    printf("\n");
+    fflush(stdout);
+}
+#endif
+
 #endif /* UTILS */
