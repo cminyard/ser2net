@@ -272,7 +272,6 @@ sslna_child_connect_done(struct genio *net, int err, void *cb_data)
 
     if (err) {
 	cdata->connect_done(cdata->io, err, cdata->cb_data);
-	genio_free(cdata->io);
 	goto out_free;
     }
 

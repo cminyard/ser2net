@@ -440,8 +440,10 @@ void genio_acc_set_accept_callback_enable(struct genio_acceptor *acceptor,
 void genio_acc_free(struct genio_acceptor *acceptor);
 
 /*
- * Create a new connection from the given genio acceptor.  For TCP
- * and UDP, the addr is an addrinfo returned by getaddrinfo.
+ * Create a new connection from the given genio acceptor.  For TCP and
+ * UDP, the addr is an addrinfo returned by getaddrinfo.  Note that
+ * with this call, if connect_done is called with an error, the genio
+ * is *not* automatically freed.  You must do that.
  */
 int genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
 		      void (*connect_done)(struct genio *io, int err,
