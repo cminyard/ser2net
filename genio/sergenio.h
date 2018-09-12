@@ -161,6 +161,20 @@ void sergenio_set_ser_cbs(struct sergenio *sio,
 			  struct sergenio_callbacks *scbs);
 
 /*
+ * Server callbacks
+ */
+struct sergenio_server_cbs {
+    void (*baud)(void *cb_data, int *baud);
+    void (*datasize)(void *cb_data, int *datasize);
+    void (*parity)(void *cb_data, int *parity);
+    void (*stopbits)(void *cb_data, int *stopbits);
+    void (*flowcontrol)(void *cb_data, int *flowcontrol);
+    void (*sbreak)(void *cb_data, int *breakv);
+    void (*dtr)(void *cb_data, int *dtr);
+    void (*rts)(void *cb_data, int *rts);
+};
+
+/*
  * Allocate a sergenio based on a string.
  */
 int str_to_sergenio(const char *str, struct genio_os_funcs *o,
@@ -169,7 +183,7 @@ int str_to_sergenio(const char *str, struct genio_os_funcs *o,
 		    const struct genio_callbacks *cbs, void *user_data,
 		    struct sergenio **snet);
 
-int sergenio_telnet_alloc(struct genio *genio, char *args[],
+int sergenio_telnet_alloc(struct genio *child, char *args[],
 			  struct genio_os_funcs *o,
 			  const struct sergenio_callbacks *scbs,
 			  const struct genio_callbacks *cbs, void *user_data,

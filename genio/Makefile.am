@@ -10,7 +10,7 @@ MY_SOURCES = genio.c genio_tcp.c genio_udp.c genio_stdio.c \
 	sergenio.c sergenio_telnet.c sergenio_termios.c \
 	genio_selector.c genio_ssl.c genio_base.c genio_filter_ssl.c \
 	genio_filter_telnet.c \
-	genio_ll_fd.c genio_ll_genio.c
+	genio_ll_fd.c genio_ll_genio.c genio_acc_genio.c
 
 noinst_lib_LTLIBRARIES = libser2net_genio.la
 noinst_libdir = $(shell readlink -f $(top_builddir)/dummy_install)

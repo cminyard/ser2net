@@ -114,6 +114,7 @@ struct genio_filter_ops {
     void (*free)(struct genio_filter *filter);
 };
 
+/* FIXME - make args const */
 int genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
 			   unsigned int max_read_size,
 			   struct genio_filter **rfilter);
@@ -264,5 +265,22 @@ struct genio *base_genio_server_alloc(struct genio_os_funcs *o,
 							int err,
 							void *open_data),
 				      void *open_data);
+
+struct genio_genio_acc_cbs {
+    int (*connect_start)(void *acc_data, struct genio *child,
+			 struct genio **new_net);
+    int (*new_child)(void *acc_data, struct genio_filter **filter);
+    void (*free)(void *acc_data);
+};
+
+int genio_genio_acceptor_alloc(const char *name,
+			       struct genio_os_funcs *o,
+			       struct genio_acceptor *child,
+			       enum genio_type type,
+			       const struct genio_acceptor_callbacks *cbs,
+			       void *user_data,
+			       const struct genio_genio_acc_cbs *acc_cbs,
+			       void *acc_data,
+			       struct genio_acceptor **acceptor);
 
 #endif /* GENIO_BASE_H */
