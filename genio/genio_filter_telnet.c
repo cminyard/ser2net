@@ -578,8 +578,7 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 					   cbs, handler_data,
 					   telnet_cmds,
 					   telnet_server_init_seq,
-					   init_seq_len,
-					   rops);
+					   init_seq_len, NULL);
 
     if (!filter)
 	return ENOMEM;

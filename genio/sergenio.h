@@ -51,7 +51,9 @@ bool is_sergenio(struct genio *io);
  * If you pass a zero to the value to this, the value is not set, it
  * is only fetched.  This can be used to get the current value.
  *
- * If the done() callback is NULL, no callback is done.
+ * If the done() callback is NULL, no callback is done.  Also, in server
+ * mode, this will send the server version and the done callback is
+ * ignored.
  */
 
 int sergenio_baud(struct sergenio *snet, int baud,
@@ -151,6 +153,19 @@ struct sergenio_callbacks {
 
     void (*linestate_change)(struct sergenio *snet, unsigned int changed_mask,
 			     unsigned int linestate);
+    /*
+     * Server callbacks.  These only come in in server mode, you must
+     * call the equivalent sergenio_xxx() function to return the response,
+     * though the done callback is ignored in that case.
+     */
+    void (*baud)(struct sergenio *snet, int baud);
+    void (*datasize)(struct sergenio *snet, int datasize);
+    void (*parity)(struct sergenio *snet, int parity);
+    void (*stopbits)(struct sergenio *snet, int stopbits);
+    void (*flowcontrol)(struct sergenio *snet, int flowcontrol);
+    void (*sbreak)(struct sergenio *snet, int breakv);
+    void (*dtr)(struct sergenio *snet, int dtr);
+    void (*rts)(struct sergenio *snet, int rts);
 };
 
 /*
@@ -159,20 +174,6 @@ struct sergenio_callbacks {
  */
 void sergenio_set_ser_cbs(struct sergenio *sio,
 			  struct sergenio_callbacks *scbs);
-
-/*
- * Server callbacks
- */
-struct sergenio_server_cbs {
-    void (*baud)(void *cb_data, int *baud);
-    void (*datasize)(void *cb_data, int *datasize);
-    void (*parity)(void *cb_data, int *parity);
-    void (*stopbits)(void *cb_data, int *stopbits);
-    void (*flowcontrol)(void *cb_data, int *flowcontrol);
-    void (*sbreak)(void *cb_data, int *breakv);
-    void (*dtr)(void *cb_data, int *dtr);
-    void (*rts)(void *cb_data, int *rts);
-};
 
 /*
  * Allocate a sergenio based on a string.

@@ -19,8 +19,8 @@
 
 /*
  * This include file defines a network I/O abstraction to allow code
- * to use TCP, UDP, stdio, etc. without having to know the underlying
- * details.
+ * to use TCP, UDP, stdio, telnet, ssl, etc. without having to know
+ * the underlying details.
  */
 
 #ifndef SER2NET_GENIO_H
