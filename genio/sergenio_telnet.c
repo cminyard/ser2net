@@ -232,6 +232,68 @@ stel_rts(struct sergenio *sio, int rts,
     return stel_queue_and_send(sio, 5, rts, 10, 12, done, cb_data);
 }
 
+static int stel_send(struct sergenio *sio, unsigned int opt, unsigned int val)
+{
+    struct stel_data *sdata = mysergenio_to_stel(sio);
+    unsigned char buf[3];
+
+    buf[0] = 44;
+    buf[1] = opt;
+    buf[2] = val;
+
+    if (!sergenio_is_client(sio))
+	buf[1] += 100;
+
+    sdata->rops->send_option(sdata->filter, buf, 3);
+
+    return 0;
+}
+
+static int stel_modemstate(struct sergenio *sio, unsigned int val)
+{
+    unsigned int opt;
+
+    if (!sergenio_is_client(sio))
+	opt = 11;
+    else
+	opt = 7;
+    return stel_send(sio, opt, val);
+}
+
+static int stel_linestate(struct sergenio *sio, unsigned int val)
+{
+    unsigned int opt;
+
+    if (!sergenio_is_client(sio))
+	opt = 10;
+    else
+	opt = 6;
+    return stel_send(sio, opt, val);
+}
+
+static int stel_flowcontrol_state(struct sergenio *sio, bool val)
+{
+    struct stel_data *sdata = mysergenio_to_stel(sio);
+    unsigned char buf[2];
+
+    buf[0] = 44;
+
+    if (val)
+	buf[1] = 8;
+    else
+	buf[1] = 9;
+
+    sdata->rops->send_option(sdata->filter, buf, 2);
+
+    return 0;
+}
+
+static int stel_flush(struct sergenio *sio, unsigned int val)
+{
+    return stel_send(sio, 12, val);
+}
+
+
 static const struct sergenio_functions stel_funcs = {
     .baud = stel_baud,
     .datasize = stel_datasize,
@@ -241,6 +303,10 @@ static const struct sergenio_functions stel_funcs = {
     .sbreak = stel_sbreak,
     .dtr = stel_dtr,
     .rts = stel_rts,
+    .modemstate = stel_modemstate,
+    .linestate = stel_linestate,
+    .flowcontrol_state = stel_flowcontrol_state,
+    .flush = stel_flush
 };
 
 static int
@@ -288,9 +354,41 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	}
 	break;
 
+    case 6:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->linestate)
+	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
+	break;
+
+    case 7:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->modemstate)
+	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
+	break;
+
+    case 8:
+	if (sdata->sio.scbs->flowcontrol)
+	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
+	break;
+
+    case 9:
+	if (sdata->sio.scbs->flowcontrol)
+	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
+	break;
+
+    case 12:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->flush)
+	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
+	break;
+
     default:
-	if (len == 3)
-	    val = option[2];
+	if (len < 3)
+	    return;
+	val = option[2];
 	break;
     }
 
@@ -583,6 +681,37 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    sdata->sio.scbs->rts(&sdata->sio, option[2] - 10);
 	    break;
 	}
+	break;
+
+    case 8:
+	if (sdata->sio.scbs->flowcontrol)
+	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
+	break;
+
+    case 9:
+	if (sdata->sio.scbs->flowcontrol)
+	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
+	break;
+
+    case 10:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->linestate)
+	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
+	break;
+
+    case 11:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->modemstate)
+	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
+	break;
+	
+    case 12:
+	if (len < 3)
+	    return;
+	if (sdata->sio.scbs->flush)
+	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
 	break;
 
     default:

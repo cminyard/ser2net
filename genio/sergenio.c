@@ -123,6 +123,46 @@ sergenio_rts(struct sergenio *sio, int rts,
     return sio->funcs->rts(sio, rts, done, cb_data);
 }
 
+int
+sergenio_modemstate(struct sergenio *sio, unsigned int val)
+{
+    if (!sio->funcs->modemstate)
+	return ENOTSUP;
+    return sio->funcs->modemstate(sio, val);
+}
+
+int
+sergenio_linestate(struct sergenio *sio, unsigned int val)
+{
+    if (!sio->funcs->linestate)
+	return ENOTSUP;
+    return sio->funcs->linestate(sio, val);
+}
+
+int
+sergenio_flowcontrol_state(struct sergenio *sio, bool val)
+{
+    if (!sio->funcs->flowcontrol_state)
+	return ENOTSUP;
+    return sio->funcs->flowcontrol_state(sio, val);
+}
+
+int
+sergenio_flush(struct sergenio *sio, unsigned int val)
+{
+    if (!sio->funcs->flush)
+	return ENOTSUP;
+    return sio->funcs->flush(sio, val);
+}
+
+bool
+sergenio_is_client(struct sergenio *sio)
+{
+    struct genio *io = sergenio_to_genio(sio);
+
+    return genio_is_client(io);
+}
+
 void *
 sergenio_get_user_data(struct sergenio *sio)
 {
@@ -143,23 +183,23 @@ struct sergenio_b_data {
 
 int
 sergenio_b_alloc(struct sergenio *sio, struct genio_os_funcs *o,
-		 struct sergenio_b **new_sbnet)
+		 struct sergenio_b **new_sbio)
 {
-    struct sergenio_b *sbnet = malloc(sizeof(*sbnet));
+    struct sergenio_b *sbio = malloc(sizeof(*sbio));
 
-    if (!sbnet)
+    if (!sbio)
 	return ENOMEM;
 
-    sbnet->sio = sio;
-    sbnet->o = o;
-    *new_sbnet = sbnet;
+    sbio->sio = sio;
+    sbio->o = o;
+    *new_sbio = sbio;
 
     return 0;
 }
 
-void sergenio_b_free(struct sergenio_b *sbnet)
+void sergenio_b_free(struct sergenio_b *sbio)
 {
-    free(sbnet);
+    free(sbio);
 }
 
 static void sergenio_done(struct sergenio *sio, int err,
@@ -173,21 +213,21 @@ static void sergenio_done(struct sergenio *sio, int err,
 }
 
 int
-sergenio_baud_b(struct sergenio_b *sbnet, int *baud)
+sergenio_baud_b(struct sergenio_b *sbio, int *baud)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_baud(sbnet->sio, *baud, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_baud(sbio->sio, *baud, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -197,21 +237,21 @@ sergenio_baud_b(struct sergenio_b *sbnet, int *baud)
 }
 
 int
-sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize)
+sergenio_datasize_b(struct sergenio_b *sbio, int *datasize)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_datasize(sbnet->sio, *datasize, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_datasize(sbio->sio, *datasize, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -221,21 +261,21 @@ sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize)
 }
 
 int
-sergenio_parity_b(struct sergenio_b *sbnet, int *parity)
+sergenio_parity_b(struct sergenio_b *sbio, int *parity)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_parity(sbnet->sio, *parity, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_parity(sbio->sio, *parity, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -245,21 +285,21 @@ sergenio_parity_b(struct sergenio_b *sbnet, int *parity)
 }
 
 int
-sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits)
+sergenio_stopbits_b(struct sergenio_b *sbio, int *stopbits)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_stopbits(sbnet->sio, *stopbits, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_stopbits(sbio->sio, *stopbits, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -269,21 +309,21 @@ sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits)
 }
 
 int
-sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol)
+sergenio_flowcontrol_b(struct sergenio_b *sbio, int *flowcontrol)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_flowcontrol(sbnet->sio, *flowcontrol, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_flowcontrol(sbio->sio, *flowcontrol, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -293,21 +333,21 @@ sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol)
 }
 
 int
-sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
+sergenio_sbreak_b(struct sergenio_b *sbio, int *breakv)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_sbreak(sbnet->sio, *breakv, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_sbreak(sbio->sio, *breakv, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -317,21 +357,21 @@ sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv)
 }
 
 int
-sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr)
+sergenio_dtr_b(struct sergenio_b *sbio, int *dtr)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_dtr(sbnet->sio, *dtr, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_dtr(sbio->sio, *dtr, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)
@@ -341,21 +381,21 @@ sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr)
 }
 
 int
-sergenio_rts_b(struct sergenio_b *sbnet, int *rts)
+sergenio_rts_b(struct sergenio_b *sbio, int *rts)
 {
     struct sergenio_b_data data;
     int err;
 
-    data.waiter = sbnet->o->alloc_waiter(sbnet->o);
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
     if (!data.waiter)
 	return ENOMEM;
 
     data.err = 0;
-    data.o = sbnet->o;
-    err = sergenio_rts(sbnet->sio, *rts, sergenio_done, &data);
+    data.o = sbio->o;
+    err = sergenio_rts(sbio->sio, *rts, sergenio_done, &data);
     if (!err)
-	sbnet->o->wait(data.waiter, NULL);
-    sbnet->o->free_waiter(data.waiter);
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
     if (!err)

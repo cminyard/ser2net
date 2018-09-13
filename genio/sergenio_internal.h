@@ -64,6 +64,11 @@ struct sergenio_functions {
 	       void (*done)(struct sergenio *snet, int err, int rts,
 			    void *cb_data),
 	       void *cb_data);
+
+    int (*modemstate)(struct sergenio *snet, unsigned int val);
+    int (*linestate)(struct sergenio *snet, unsigned int val);
+    int (*flowcontrol_state)(struct sergenio *snet, bool val);
+    int (*flush)(struct sergenio *snet, unsigned int val);
 };
 
 /*

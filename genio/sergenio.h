@@ -37,8 +37,8 @@ struct sergenio;
 /*
  * Cast between sergenio and genio types.  If
  */
-struct genio *sergenio_to_genio(struct sergenio *snet);
-struct sergenio *genio_to_sergenio(struct genio *net);
+struct genio *sergenio_to_genio(struct sergenio *sio);
+struct sergenio *genio_to_sergenio(struct genio *io);
 bool is_sergenio(struct genio *io);
 
 /*
@@ -56,13 +56,13 @@ bool is_sergenio(struct genio *io);
  * ignored.
  */
 
-int sergenio_baud(struct sergenio *snet, int baud,
-		  void (*done)(struct sergenio *snet, int err,
+int sergenio_baud(struct sergenio *sio, int baud,
+		  void (*done)(struct sergenio *sio, int err,
 			       int baud, void *cb_data),
 		  void *cb_data);
 
-int sergenio_datasize(struct sergenio *snet, int datasize,
-		      void (*done)(struct sergenio *snet, int err, int datasize,
+int sergenio_datasize(struct sergenio *sio, int datasize,
+		      void (*done)(struct sergenio *sio, int err, int datasize,
 				   void *cb_data),
 		      void *cb_data);
 
@@ -71,49 +71,87 @@ int sergenio_datasize(struct sergenio *snet, int datasize,
 #define SERGENIO_PARITY_EVEN	3
 #define SERGENIO_PARITY_MARK	4
 #define SERGENIO_PARITY_SPACE	5
-int sergenio_parity(struct sergenio *snet, int parity,
-		    void (*done)(struct sergenio *snet, int err, int parity,
+int sergenio_parity(struct sergenio *sio, int parity,
+		    void (*done)(struct sergenio *sio, int err, int parity,
 				 void *cb_data),
 		    void *cb_data);
 
-int sergenio_stopbits(struct sergenio *snet, int stopbits,
-		      void (*done)(struct sergenio *snet, int err, int stopbits,
+int sergenio_stopbits(struct sergenio *sio, int stopbits,
+		      void (*done)(struct sergenio *sio, int err, int stopbits,
 				   void *cb_data),
 		      void *cb_data);
 
 #define SERGENIO_FLOWCONTROL_NONE	1
 #define SERGENIO_FLOWCONTROL_XON_XOFF	2
 #define SERGENIO_FLOWCONTROL_RTS_CTS	3
-int sergenio_flowcontrol(struct sergenio *snet, int flowcontrol,
-			 void (*done)(struct sergenio *snet, int err,
+int sergenio_flowcontrol(struct sergenio *sio, int flowcontrol,
+			 void (*done)(struct sergenio *sio, int err,
 				      int flowcontrol, void *cb_data),
 			 void *cb_data);
 
 #define SERGENIO_BREAK_ON	1
 #define SERGENIO_BREAK_OFF	2
-int sergenio_sbreak(struct sergenio *snet, int breakv,
-		    void (*done)(struct sergenio *snet, int err, int breakv,
+int sergenio_sbreak(struct sergenio *sio, int breakv,
+		    void (*done)(struct sergenio *sio, int err, int breakv,
 				 void *cb_data),
 		    void *cb_data);
 
 #define SERGENIO_DTR_ON		1
 #define SERGENIO_DTR_OFF	2
-int sergenio_dtr(struct sergenio *snet, int dtr,
-		 void (*done)(struct sergenio *snet, int err, int dtr,
+int sergenio_dtr(struct sergenio *sio, int dtr,
+		 void (*done)(struct sergenio *sio, int err, int dtr,
 			      void *cb_data),
 		 void *cb_data);
 
 #define SERGENIO_RTS_ON		1
 #define SERGENIO_RTS_OFF	2
-int sergenio_rts(struct sergenio *snet, int rts,
-		 void (*done)(struct sergenio *snet, int err, int rts,
+int sergenio_rts(struct sergenio *sio, int rts,
+		 void (*done)(struct sergenio *sio, int err, int rts,
 			      void *cb_data),
 		 void *cb_data);
 
 /*
+ * For linestate and modemstate, on a client this sets the mask, on
+ * the server this is reporting the current state to the client.
+ */
+#define SERGENIO_LINESTATE_DATA_READY		(1 << 0)
+#define SERGENIO_LINESTATE_OVERRUN_ERR		(1 << 1)
+#define SERGENIO_LINESTATE_PARITY_ERR		(1 << 2)
+#define SERGENIO_LINESTATE_FRAMING_ERR		(1 << 3)
+#define SERGENIO_LINESTATE_BREAK		(1 << 4)
+#define SERGENIO_LINESTATE_XMIT_HOLD_EMPTY	(1 << 5)
+#define SERGENIO_LINESTATE_XMIT_SHIFT_EMPTY	(1 << 6)
+#define SERGENIO_LINESTATE_TIMEOUT_ERR		(1 << 7)
+int sergenio_linestate(struct sergenio *sio, unsigned int linestate);
+
+#define SERGENIO_MODEMSTATE_CTS_CHANGED		(1 << 0)
+#define SERGENIO_MODEMSTATE_DSR_CHANGED		(1 << 1)
+#define SERGENIO_MODEMSTATE_RI_CHANGED		(1 << 2)
+#define SERGENIO_MODEMSTATE_CD_CHANGED		(1 << 3)
+#define SERGENIO_MODEMSTATE_CTS			(1 << 4)
+#define SERGENIO_MODEMSTATE_DSR			(1 << 5)
+#define SERGENIO_MODEMSTATE_RI			(1 << 6)
+#define SERGENIO_MODEMSTATE_CD			(1 << 7)
+int sergenio_modemstate(struct sergenio *sio, unsigned int modemstate);
+
+/*
+ * Tell the remote end to enable or disable flow control.
+ */
+int sergenio_flowcontrol_state(struct sergenio *sio, bool val);
+
+/*
+ *
+ */
+#define SERGIO_FLUSH_RCV_BUFFER		1
+#define SERGIO_FLUSH_XMIT_BUFFER	2
+#define SERGIO_FLUSH_RCV_XMIT_BUFFERS	3
+int sergino_flush(struct sergenio *sio, unsigned int val);
+
+
+/*
  * Return the user data supplied in the alloc function.
  */
-void *sergenio_get_user_data(struct sergenio *net);
+void *sergenio_get_user_data(struct sergenio *io);
 
 /*
  * The following is blocking values for the serial port setting calls.
@@ -126,21 +164,21 @@ void *sergenio_get_user_data(struct sergenio *net);
  * value, no set it done, it only fetches the current value.
  *
  * The free function should only be called if the code is not currently
- * in a blocking call using the sbnet.
+ * in a blocking call using the sbio.
  */
 struct sergenio_b;
 
-int sergenio_b_alloc(struct sergenio *snet, struct genio_os_funcs *o,
-		     struct sergenio_b **new_sbnet);
-void sergenio_b_free(struct sergenio_b *sbnet);
-int sergenio_baud_b(struct sergenio_b *sbnet, int *baud);
-int sergenio_datasize_b(struct sergenio_b *sbnet, int *datasize);
-int sergenio_parity_b(struct sergenio_b *sbnet, int *parity);
-int sergenio_stopbits_b(struct sergenio_b *sbnet, int *stopbits);
-int sergenio_flowcontrol_b(struct sergenio_b *sbnet, int *flowcontrol);
-int sergenio_sbreak_b(struct sergenio_b *sbnet, int *breakv);
-int sergenio_dtr_b(struct sergenio_b *sbnet, int *dtr);
-int sergenio_rts_b(struct sergenio_b *sbnet, int *rts);
+int sergenio_b_alloc(struct sergenio *sio, struct genio_os_funcs *o,
+		     struct sergenio_b **new_sbio);
+void sergenio_b_free(struct sergenio_b *sbio);
+int sergenio_baud_b(struct sergenio_b *sbio, int *baud);
+int sergenio_datasize_b(struct sergenio_b *sbio, int *datasize);
+int sergenio_parity_b(struct sergenio_b *sbio, int *parity);
+int sergenio_stopbits_b(struct sergenio_b *sbio, int *stopbits);
+int sergenio_flowcontrol_b(struct sergenio_b *sbio, int *flowcontrol);
+int sergenio_sbreak_b(struct sergenio_b *sbio, int *breakv);
+int sergenio_dtr_b(struct sergenio_b *sbio, int *dtr);
+int sergenio_rts_b(struct sergenio_b *sbio, int *rts);
 
 /*
  * Callbacks for dynamic changes to the serial port.  The user may
@@ -148,25 +186,36 @@ int sergenio_rts_b(struct sergenio_b *sbnet, int *rts);
  */
 
 struct sergenio_callbacks {
-    void (*modemstate_change)(struct sergenio *snet, unsigned int changed_mask,
-			      unsigned int modemstate);
+    /*
+     * On the client side, these are for reporting changes to the
+     * client.  On the server side, this is for reporting that the
+     * client has requested the mask be changed.
+     */
+    void (*modemstate)(struct sergenio *sio, unsigned int modemstate);
+    void (*linestate)(struct sergenio *sio, unsigned int linestate);
 
-    void (*linestate_change)(struct sergenio *snet, unsigned int changed_mask,
-			     unsigned int linestate);
+    /*
+     * The remote end is asking the user to flow control or flush.
+     */
+    void (*flowcontrol_state)(struct sergenio *sio, bool val);
+    void (*flush)(struct sergenio *sio, unsigned int val);
+
     /*
      * Server callbacks.  These only come in in server mode, you must
      * call the equivalent sergenio_xxx() function to return the response,
      * though the done callback is ignored in that case.
      */
-    void (*baud)(struct sergenio *snet, int baud);
-    void (*datasize)(struct sergenio *snet, int datasize);
-    void (*parity)(struct sergenio *snet, int parity);
-    void (*stopbits)(struct sergenio *snet, int stopbits);
-    void (*flowcontrol)(struct sergenio *snet, int flowcontrol);
-    void (*sbreak)(struct sergenio *snet, int breakv);
-    void (*dtr)(struct sergenio *snet, int dtr);
-    void (*rts)(struct sergenio *snet, int rts);
+    void (*baud)(struct sergenio *sio, int baud);
+    void (*datasize)(struct sergenio *sio, int datasize);
+    void (*parity)(struct sergenio *sio, int parity);
+    void (*stopbits)(struct sergenio *sio, int stopbits);
+    void (*flowcontrol)(struct sergenio *sio, int flowcontrol);
+    void (*sbreak)(struct sergenio *sio, int breakv);
+    void (*dtr)(struct sergenio *sio, int dtr);
+    void (*rts)(struct sergenio *sio, int rts);
 };
+
+bool sergenio_is_client(struct sergenio *sio);
 
 /*
  * Set the sergenio callbacks.  This should only be done if the genio
@@ -182,18 +231,18 @@ int str_to_sergenio(const char *str, struct genio_os_funcs *o,
 		    unsigned int read_buffer_size,
 		    const struct sergenio_callbacks *scbs,
 		    const struct genio_callbacks *cbs, void *user_data,
-		    struct sergenio **snet);
+		    struct sergenio **sio);
 
 int sergenio_telnet_alloc(struct genio *child, char *args[],
 			  struct genio_os_funcs *o,
 			  const struct sergenio_callbacks *scbs,
 			  const struct genio_callbacks *cbs, void *user_data,
-			  struct sergenio **snet);
+			  struct sergenio **sio);
 
 int sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 			   unsigned int read_buffer_size,
 			   const struct sergenio_callbacks *scbs,
 			   const struct genio_callbacks *cbs, void *user_data,
-			   struct sergenio **snet);
+			   struct sergenio **sio);
 
 #endif /* SER2NET_SERGENIO_H */
