@@ -356,6 +356,12 @@ genio_set_write_callback_enable(struct genio *io, bool enabled)
     io->funcs->set_write_callback_enable(io, enabled);
 }
 
+bool
+genio_is_client(struct genio *io)
+{
+    return io->is_client;
+}
+
 void *
 genio_acc_get_user_data(struct genio_acceptor *acceptor)
 {

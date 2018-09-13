@@ -377,6 +377,11 @@ void genio_set_read_callback_enable(struct genio *io, bool enabled);
  */
 void genio_set_write_callback_enable(struct genio *io, bool enabled);
 
+/*
+ * Is the genio a client or server?
+ */
+bool genio_is_client(struct genio *io);
+
 struct genio_acceptor;
 
 struct genio_acceptor_callbacks {
