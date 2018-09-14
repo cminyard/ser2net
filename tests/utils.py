@@ -172,6 +172,12 @@ class HandleData:
         print(self.name + ": Urgent data")
         return
 
+    def modemstate(self, io, modemstate):
+        return
+
+    def linestate(self, io, linestate):
+        return
+
     def close_done(self, io):
         if (debug or self.debug):
             print(self.name + ": Closed")
