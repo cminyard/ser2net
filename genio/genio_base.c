@@ -63,6 +63,7 @@ struct basen_data {
     bool in_read;
 
     bool xmit_enabled;
+    bool tmp_xmit_enabled; /* Make sure the xmit code get called once. */
 
     int saved_xmit_err;
 
@@ -326,7 +327,8 @@ ll_set_write_callback_enable(struct basen_data *ndata, bool enable)
 static void
 basen_set_ll_enables(struct basen_data *ndata)
 {
-    if (filter_ll_write_pending(ndata) || ndata->xmit_enabled)
+    if (filter_ll_write_pending(ndata) || ndata->xmit_enabled ||
+		ndata->tmp_xmit_enabled)
 	ll_set_write_callback_enable(ndata, true);
     if (((((ndata->read_enabled && !filter_ul_read_pending(ndata)) ||
 		filter_ll_read_needed(ndata)) && ndata->state == BASEN_OPEN) ||
@@ -906,6 +908,8 @@ basen_ll_write_ready(void *cb_data)
 	basen_lock(ndata);
     }
 
+    ndata->tmp_xmit_enabled = false;
+
     basen_set_ll_enables(ndata);
     basen_unlock(ndata);
 }
@@ -1003,7 +1007,8 @@ genio_alloc(struct genio_os_funcs *o,
 	ndata->open_done = open_done;
 	ndata->open_data = open_data;
 	ndata->state = BASEN_IN_FILTER_OPEN;
-	basen_try_connect(ndata);
+	/* Call the first try open from the xmit handler. */
+	ndata->tmp_xmit_enabled = true;
 	basen_set_ll_enables(ndata);
     }
 
