@@ -717,7 +717,7 @@ struct waiter { };
 		   swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
 	struct genio_acc_data *data;
-	struct genio_acceptor *acc;
+	struct genio_acceptor *acc = NULL;
 	int rv;
 
 	data = malloc(sizeof(*data));
@@ -732,6 +732,7 @@ struct waiter { };
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
+	    err_handle("genio_acceptor constructor", rv);
 	} else {
 	    odata->refcount++;
 	}
