@@ -145,7 +145,8 @@ struct genio_os_funcs {
 
     /*
      * Like the above, but the done_handler is called when the timer is
-     * completely stopped and no handler is running.
+     * completely stopped and no handler is running.  If ETIMEDOUT is
+     * returned, the done_handler is not called.
      */
     int (*stop_timer_with_done)(struct genio_timer *timer,
 				void (*done_handler)(struct genio_timer *t,
