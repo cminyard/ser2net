@@ -327,6 +327,152 @@ static struct genio_callbacks gen_cbs = {
     .urgent_callback = genio_got_urgent
 };
 
+static void
+sgenio_call(struct sergenio *sio, long val, char *func)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    struct genio_data *data = genio_get_user_data(io);
+    swig_ref io_ref;
+    PyObject *args, *o;
+    OI_PY_STATE gstate;
+
+    gstate = OI_PY_STATE_GET();
+
+    if (!data->handler_val) {
+	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+		     "genio handler was not set");
+	wake_curr_waiter();
+	goto out_put;
+    }
+
+    io_ref = swig_make_ref(io, genio);
+    args = PyTuple_New(2);
+    Py_INCREF(io_ref.val);
+    PyTuple_SET_ITEM(args, 0, io_ref.val);
+    o = PyInt_FromLong(val);
+    PyTuple_SET_ITEM(args, 1, o);
+
+    swig_finish_call(data->handler_val, func, args);
+
+    swig_free_ref_check(io_ref, acceptor);
+ out_put:
+    OI_PY_STATE_PUT(gstate);
+}
+
+static void
+sgenio_modemstate(struct sergenio *sio, unsigned int modemstate)
+{
+    sgenio_call(sio, modemstate, "modemstate");
+}
+
+static void
+sgenio_linestate(struct sergenio *sio, unsigned int linestate)
+{
+    sgenio_call(sio, linestate, "linestate");
+}
+
+static void
+sgenio_flowcontrol_state(struct sergenio *sio, bool val)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    struct genio_data *data = genio_get_user_data(io);
+    swig_ref io_ref;
+    PyObject *args, *o;
+    OI_PY_STATE gstate;
+
+    gstate = OI_PY_STATE_GET();
+
+    if (!data->handler_val) {
+	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+		     "genio handler was not set");
+	wake_curr_waiter();
+	goto out_put;
+    }
+
+    io_ref = swig_make_ref(io, genio);
+    args = PyTuple_New(2);
+    Py_INCREF(io_ref.val);
+    PyTuple_SET_ITEM(args, 0, io_ref.val);
+    o = PyBool_FromLong(val);
+    PyTuple_SET_ITEM(args, 1, o);
+
+    swig_finish_call(data->handler_val, "flowcontrol_state", args);
+
+    swig_free_ref_check(io_ref, acceptor);
+ out_put:
+    OI_PY_STATE_PUT(gstate);
+}
+
+static void
+sgenio_flush(struct sergenio *sio, unsigned int val)
+{
+    sgenio_call(sio, val, "flush");
+}
+
+static void
+sgenio_baud(struct sergenio *sio, int baud)
+{
+    sgenio_call(sio, baud, "baud");
+}
+
+static void
+sgenio_datasize(struct sergenio *sio, int datasize)
+{
+    sgenio_call(sio, datasize, "datasize");
+}
+
+static void
+sgenio_parity(struct sergenio *sio, int parity)
+{
+    sgenio_call(sio, parity, "parity");
+}
+
+static void
+sgenio_stopbits(struct sergenio *sio, int stopbits)
+{
+    sgenio_call(sio, stopbits, "stopbits");
+}
+
+static void
+sgenio_flowcontrol(struct sergenio *sio, int flowcontrol)
+{
+    sgenio_call(sio, flowcontrol, "flowcontrol");
+}
+
+static void
+sgenio_sbreak(struct sergenio *sio, int breakv)
+{
+    sgenio_call(sio, breakv, "sbreak");
+}
+
+static void
+sgenio_dtr(struct sergenio *sio, int dtr)
+{
+    sgenio_call(sio, dtr, "dtr");
+}
+
+static void
+sgenio_rts(struct sergenio *sio, int rts)
+{
+    sgenio_call(sio, rts, "rts");
+}
+
+static struct sergenio_callbacks gen_scbs = {
+    .modemstate = sgenio_modemstate,
+    .linestate = sgenio_linestate,
+    .flowcontrol_state = sgenio_flowcontrol_state,
+    .flush = sgenio_flush,
+
+    .baud = sgenio_baud,
+    .datasize = sgenio_datasize,
+    .parity = sgenio_parity,
+    .stopbits = sgenio_stopbits,
+    .flowcontrol = sgenio_flowcontrol,
+    .sbreak = sgenio_sbreak,
+    .dtr = sgenio_dtr,
+    .rts = sgenio_rts
+};
+
 struct genio_acc_data {
     swig_cb_val *handler_val;
     struct genio_os_funcs *o;

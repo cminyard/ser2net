@@ -338,6 +338,8 @@ struct waiter { };
 	    ser_err_handle("genio alloc", rv);
 	} else {
 	    odata->refcount++;
+	    if (is_sergenio(io))
+		sergenio_set_ser_cbs(genio_to_sergenio(io), &gen_scbs);
 	}
 
 	return io;
@@ -500,6 +502,31 @@ struct waiter { };
 %constant int SERGENIO_RTS_ON = SERGENIO_RTS_ON;
 %constant int SERGENIO_RTS_OFF = SERGENIO_RTS_OFF;
 
+%constant int SERGENIO_LINESTATE_DATA_READY = SERGENIO_LINESTATE_DATA_READY;
+%constant int SERGENIO_LINESTATE_OVERRUN_ERR = SERGENIO_LINESTATE_OVERRUN_ERR;
+%constant int SERGENIO_LINESTATE_PARITY_ERR = SERGENIO_LINESTATE_PARITY_ERR;
+%constant int SERGENIO_LINESTATE_FRAMING_ERR = SERGENIO_LINESTATE_FRAMING_ERR;
+%constant int SERGENIO_LINESTATE_BREAK = SERGENIO_LINESTATE_BREAK;
+%constant int SERGENIO_LINESTATE_XMIT_HOLD_EMPTY =
+	SERGENIO_LINESTATE_XMIT_HOLD_EMPTY;
+%constant int SERGENIO_LINESTATE_XMIT_SHIFT_EMPTY =
+	SERGENIO_LINESTATE_XMIT_SHIFT_EMPTY;
+%constant int SERGENIO_LINESTATE_TIMEOUT_ERR = SERGENIO_LINESTATE_TIMEOUT_ERR;
+
+%constant int SERGENIO_MODEMSTATE_CTS_CHANGED = SERGENIO_MODEMSTATE_CTS_CHANGED;
+%constant int SERGENIO_MODEMSTATE_DSR_CHANGED = SERGENIO_MODEMSTATE_DSR_CHANGED;
+%constant int SERGENIO_MODEMSTATE_RI_CHANGED = SERGENIO_MODEMSTATE_RI_CHANGED;
+%constant int SERGENIO_MODEMSTATE_CD_CHANGED = SERGENIO_MODEMSTATE_CD_CHANGED;
+%constant int SERGENIO_MODEMSTATE_CTS = SERGENIO_MODEMSTATE_CTS;
+%constant int SERGENIO_MODEMSTATE_DSR = SERGENIO_MODEMSTATE_DSR;
+%constant int SERGENIO_MODEMSTATE_RI = SERGENIO_MODEMSTATE_RI;
+%constant int SERGENIO_MODEMSTATE_CD = SERGENIO_MODEMSTATE_CD;
+
+%constant int SERGIO_FLUSH_RCV_BUFFER = SERGIO_FLUSH_RCV_BUFFER;
+%constant int SERGIO_FLUSH_XMIT_BUFFER = SERGIO_FLUSH_XMIT_BUFFER;
+%constant int SERGIO_FLUSH_RCV_XMIT_BUFFERS = SERGIO_FLUSH_RCV_XMIT_BUFFERS;
+
+
 /*
  * For get/set modem control.  You cannot set DTR or RTS, they are
  * outputs from the other side.
@@ -564,6 +591,22 @@ struct waiter { };
 
     /* SERGENIO_RTS_ entries */
     sgenio_entry(rts);
+
+    int sg_modemstate(unsigned int modemstate) {
+	return sergenio_modemstate(self, modemstate);
+    }
+
+    int sg_linestate(unsigned int linestate) {
+	return sergenio_linestate(self, linestate);
+    }
+
+    int sg_flowcontrol_state(bool val) {
+	return sergenio_flowcontrol_state(self, val);
+    }
+
+    int sg_flush(unsigned int val) {
+	return sergenio_flush(self, val);
+    }
 
     /*
      * From here down get and set the serialsim driver special commands
