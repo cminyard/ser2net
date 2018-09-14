@@ -68,8 +68,14 @@ def ta_ssl_tcp():
     io1 = utils.alloc_io(o, "ssl(CA=%s/CA.pem),tcp,localhost,3024" % utils.srcdir, do_open = False)
     ta = TestAccept(o, io1, "ssl(key=%s/key.pem,cert=%s/cert.pem,CA=%s/CA.pem),3024" % (utils.srcdir, utils.srcdir, utils.srcdir), 1024, do_test)
 
+def ta_ssl_telnet():
+    print("Test accept telnet")
+    io1 = utils.alloc_io(o, "telnet,tcp,localhost,3025", do_open = False)
+    ta = TestAccept(o, io1, "telnet,3025", 1024, do_test)
+
 t1()
 t2()
 ta_tcp()
 ta_udp()
 ta_ssl_tcp()
+ta_ssl_telnet()
