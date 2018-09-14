@@ -182,6 +182,7 @@ class HandleData:
             raise HandlerException("%s: Expecting modemsate 0x%x, got 0x%x" %
                                    (self.name, self.expected_modemstate,
                                     modemstate))
+        self.expecting_modemstate = False
         self.waiter.wake()
         return
 
