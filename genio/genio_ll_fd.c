@@ -263,10 +263,12 @@ fd_finish_open(struct fd_ll *fdll, int err)
 static void fd_finish_close(struct fd_ll *fdll)
 {
     fdll->state = FD_CLOSED;
-    fdll->close_done = NULL;
     if (fdll->close_done) {
+	genio_ll_close_done close_done = fdll->close_done;
+
+	fdll->close_done = NULL;
 	fd_unlock(fdll);
-	fdll->close_done(fdll->cb_data, fdll->close_data);
+	close_done(fdll->cb_data, fdll->close_data);
 	fd_lock(fdll);
     }
 }
@@ -543,7 +545,7 @@ static int fd_close(struct genio_ll *ll, genio_ll_close_done done,
 	fdll->close_done = done;
 	fdll->close_data = close_data;
 	fd_start_close(fdll);
-	err = 0;
+	err = EINPROGRESS;
     }
     fd_unlock(fdll);
 
