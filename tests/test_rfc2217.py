@@ -244,7 +244,7 @@ def test_dtr():
     io1.handler.set_compare("12345")
     if (io1.handler.wait_timeout(1000)):
         raise Exception("%s: %s: Timed out waiting for banner" %
-                        (name, io1.handler.name))
+                        ("test dtr", io1.handler.name))
 
     io1.read_cb_enable(True);
     io2.read_cb_enable(True);
@@ -272,6 +272,7 @@ def test_dtr():
     if (not (val & genio.SERGENIO_TIOCM_DTR)):
         raise Exception("Expected remote DTR on");
 
+    sio2.set_remote_null_modem(True);
     utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
     print("  Success!")
     return
@@ -321,8 +322,105 @@ def test_rts():
     if (not (val & genio.SERGENIO_TIOCM_RTS)):
         raise Exception("Expected remote RTS on");
 
+    sio2.set_remote_null_modem(True);
     utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
     print("  Success!")
     return
 
 test_rts()
+
+def test_modemstate():
+    config = "3023:telnet:100:/dev/ttyPipeA0:remctl LOCAL\n"
+    io1str = "telnet,tcp,localhost,3023"
+    io2str = "termios,/dev/ttyPipeB0,9600N81"
+
+    print("termios modemstate rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
+          (config, io1str, io2str))
+
+    o = genio.alloc_genio_selector()
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
+                                              do_io1_open = False)
+    sio1 = io1.cast_to_sergenio()
+    sio2 = io2.cast_to_sergenio()
+
+    sio2.set_remote_null_modem(False);
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_CAR |
+                               genio.SERGENIO_TIOCM_CTS |
+                               genio.SERGENIO_TIOCM_DSR |
+                               genio.SERGENIO_TIOCM_RNG) << 16)
+
+    io1.handler.set_expected_modemstate(0)
+    io1.open_s()
+    io1.read_cb_enable(True);
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 1" %
+                        ("test dtr", io1.handler.name))
+
+    io2.read_cb_enable(True);
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_CD_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD)
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_CAR << 16) |
+                              genio.SERGENIO_TIOCM_CAR)
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 2" %
+                        ("test dtr", io1.handler.name))
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_DSR_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD |
+                                        genio.SERGENIO_MODEMSTATE_DSR)
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_DSR << 16) |
+                              genio.SERGENIO_TIOCM_DSR)
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 3" %
+                        ("test dtr", io1.handler.name))
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_CTS_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD |
+                                        genio.SERGENIO_MODEMSTATE_DSR |
+                                        genio.SERGENIO_MODEMSTATE_CTS)
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_CTS << 16) |
+                              genio.SERGENIO_TIOCM_CTS)
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 4" %
+                        ("test dtr", io1.handler.name))
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_RI_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD |
+                                        genio.SERGENIO_MODEMSTATE_DSR |
+                                        genio.SERGENIO_MODEMSTATE_CTS |
+                                        genio.SERGENIO_MODEMSTATE_RI)
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_RNG << 16) |
+                              genio.SERGENIO_TIOCM_RNG)
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 5" %
+                        ("test dtr", io1.handler.name))
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_RI_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_DSR_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CTS_CHANGED)
+    sio2.set_remote_modem_ctl((genio.SERGENIO_TIOCM_CAR |
+                               genio.SERGENIO_TIOCM_CTS |
+                               genio.SERGENIO_TIOCM_DSR |
+                               genio.SERGENIO_TIOCM_RNG) << 16)
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 6" %
+                        ("test dtr", io1.handler.name))
+
+    io1.handler.set_expected_modemstate(genio.SERGENIO_MODEMSTATE_CD_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_DSR_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CTS_CHANGED |
+                                        genio.SERGENIO_MODEMSTATE_CD |
+                                        genio.SERGENIO_MODEMSTATE_DSR |
+                                        genio.SERGENIO_MODEMSTATE_CTS)
+    sio2.set_remote_null_modem(True);
+    if (io1.handler.wait_timeout(2000)):
+        raise Exception("%s: %s: Timed out waiting for modemstate 7" %
+                        ("test dtr", io1.handler.name))
+
+    utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
+    print("  Success!")
+    return
+
+test_modemstate()

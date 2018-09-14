@@ -50,6 +50,7 @@ class HandleData:
         self.waiter = genio.waiter(o)
         self.to_write = None
         self.to_compare = None
+        self.expecting_modemstate = False
         self.ignore_input = False
         if (io):
             self.io = io
@@ -173,6 +174,20 @@ class HandleData:
         return
 
     def modemstate(self, io, modemstate):
+        if (not self.expecting_modemstate):
+            if (debug or self.debug):
+                print("Got unexpected modemstate %x" % modemstate)
+            return
+        if (modemstate != self.expected_modemstate):
+            raise HandlerException("%s: Expecting modemsate 0x%x, got 0x%x" %
+                                   (self.name, self.expected_modemstate,
+                                    modemstate))
+        self.waiter.wake()
+        return
+
+    def set_expected_modemstate(self, modemstate):
+        self.expecting_modemstate = True
+        self.expected_modemstate = modemstate
         return
 
     def linestate(self, io, linestate):
@@ -364,7 +379,7 @@ def io_close(io, timeout = 1000):
                         ("io_close", io.handler.name))
     return
 
-def setup_2_ser2net(o, config, io1str, io2str):
+def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True):
     """Setup a ser2net daemon and two genio connections
 
     Create a ser2net daemon instance with the given config and two
@@ -382,7 +397,7 @@ def setup_2_ser2net(o, config, io1str, io2str):
     ser2net = Ser2netDaemon(o, config)
     try:
         if (io1str):
-            io1 = alloc_io(o, io1str)
+            io1 = alloc_io(o, io1str, do_io1_open)
             io1.closeme = True
         else:
             io1 = ser2net.io
