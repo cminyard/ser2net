@@ -330,31 +330,30 @@ static struct genio_callbacks gen_cbs = {
 static void
 sgenio_call(struct sergenio *sio, long val, char *func)
 {
-    struct genio *io = sergenio_to_genio(sio);
-    struct genio_data *data = genio_get_user_data(io);
-    swig_ref io_ref;
+    struct genio_data *data = sergenio_get_user_data(sio);
+    swig_ref sio_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
 
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+	PyErr_Format(PyExc_RuntimeError, "sergenio callback: "
 		     "genio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    io_ref = swig_make_ref(io, genio);
+    sio_ref = swig_make_ref(sio, genio);
     args = PyTuple_New(2);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, io_ref.val);
+    Py_INCREF(sio_ref.val);
+    PyTuple_SET_ITEM(args, 0, sio_ref.val);
     o = PyInt_FromLong(val);
     PyTuple_SET_ITEM(args, 1, o);
 
     swig_finish_call(data->handler_val, func, args);
 
-    swig_free_ref_check(io_ref, acceptor);
+    swig_free_ref_check(sio_ref, acceptor);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
@@ -374,31 +373,30 @@ sgenio_linestate(struct sergenio *sio, unsigned int linestate)
 static void
 sgenio_flowcontrol_state(struct sergenio *sio, bool val)
 {
-    struct genio *io = sergenio_to_genio(sio);
-    struct genio_data *data = genio_get_user_data(io);
-    swig_ref io_ref;
+    struct genio_data *data = sergenio_get_user_data(sio);
+    swig_ref sio_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
 
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "genio callback: "
+	PyErr_Format(PyExc_RuntimeError, "sergenio callback: "
 		     "genio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    io_ref = swig_make_ref(io, genio);
+    sio_ref = swig_make_ref(sio, sergenio);
     args = PyTuple_New(2);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, io_ref.val);
+    Py_INCREF(sio_ref.val);
+    PyTuple_SET_ITEM(args, 0, sio_ref.val);
     o = PyBool_FromLong(val);
     PyTuple_SET_ITEM(args, 1, o);
 
     swig_finish_call(data->handler_val, "flowcontrol_state", args);
 
-    swig_free_ref_check(io_ref, acceptor);
+    swig_free_ref_check(sio_ref, acceptor);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
