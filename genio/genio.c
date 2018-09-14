@@ -453,6 +453,7 @@ genio_process_acc_filter(const char *str, enum genio_type type,
 	    str++;
     } else {
 	str += 1;
+	err = str_to_argv_lengths("", &argc, &args, NULL, ")");
     }
 
     if (!err)
@@ -461,6 +462,10 @@ genio_process_acc_filter(const char *str, enum genio_type type,
 	if (type == GENIO_TYPE_SSL) {
 	    err = ssl_genio_acceptor_alloc(name, args, o, acc2, max_read_size,
 					   cbs, user_data, &acc);
+	} else if (type == GENIO_TYPE_SER_TELNET) {
+	    err = sergenio_telnet_acceptor_alloc(name, args, o, acc2,
+						 max_read_size,
+						 cbs, user_data, &acc);
 	} else {
 	    err = EINVAL;
 	}
@@ -498,6 +503,10 @@ int str_to_genio_acceptor(const char *str,
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
 	err = genio_process_acc_filter(str + 3, GENIO_TYPE_SSL, o,
+				       max_read_size, cbs, user_data, acceptor);
+    } else if (strncmp(str, "telnet,", 7) == 0 ||
+	       strncmp(str, "telnet(", 7) == 0) {
+	err = genio_process_acc_filter(str + 6, GENIO_TYPE_SER_TELNET, o,
 				       max_read_size, cbs, user_data, acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);

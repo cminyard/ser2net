@@ -124,6 +124,7 @@ int sergenio_rts(struct sergenio *sio, int rts,
 #define SERGENIO_LINESTATE_TIMEOUT_ERR		(1 << 7)
 int sergenio_linestate(struct sergenio *sio, unsigned int linestate);
 
+/* Note that for modemstate you should use the low 4 bits. */
 #define SERGENIO_MODEMSTATE_CTS_CHANGED		(1 << 0)
 #define SERGENIO_MODEMSTATE_DSR_CHANGED		(1 << 1)
 #define SERGENIO_MODEMSTATE_RI_CHANGED		(1 << 2)
@@ -145,7 +146,7 @@ int sergenio_flowcontrol_state(struct sergenio *sio, bool val);
 #define SERGIO_FLUSH_RCV_BUFFER		1
 #define SERGIO_FLUSH_XMIT_BUFFER	2
 #define SERGIO_FLUSH_RCV_XMIT_BUFFERS	3
-int sergino_flush(struct sergenio *sio, unsigned int val);
+int sergenio_flush(struct sergenio *sio, unsigned int val);
 
 
 /*
@@ -244,5 +245,14 @@ int sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 			   const struct sergenio_callbacks *scbs,
 			   const struct genio_callbacks *cbs, void *user_data,
 			   struct sergenio **sio);
+
+int sergenio_telnet_acceptor_alloc(const char *name,
+				   char *args[],
+				   struct genio_os_funcs *o,
+				   struct genio_acceptor *child,
+				   unsigned int max_read_size,
+				   const struct genio_acceptor_callbacks *cbs,
+				   void *user_data,
+				   struct genio_acceptor **acceptor);
 
 #endif /* SER2NET_SERGENIO_H */

@@ -359,31 +359,31 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	if (sdata->sio.scbs->linestate)
 	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
-	break;
+	return;
 
     case 7:
 	if (len < 3)
 	    return;
 	if (sdata->sio.scbs->modemstate)
 	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
-	break;
+	return;
 
     case 8:
 	if (sdata->sio.scbs->flowcontrol)
 	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
-	break;
+	return;
 
     case 9:
 	if (sdata->sio.scbs->flowcontrol)
 	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
-	break;
+	return;
 
     case 12:
 	if (len < 3)
 	    return;
 	if (sdata->sio.scbs->flush)
 	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
-	break;
+	return;
 
     default:
 	if (len < 3)
