@@ -801,6 +801,7 @@ sergenio_telnet_acceptor_alloc(const char *name,
 		allow_2217 = false;
 	    else
 		return EINVAL;
+	    continue;
 	}
 	if (genio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
 	    continue;
