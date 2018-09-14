@@ -72,6 +72,8 @@ struct sterm_data {
     bool break_set;
     unsigned int last_modemstate;
     unsigned int modemstate_mask;
+    bool handling_modemstate;
+    bool sent_first_modemstate;
 };
 
 static void termios_process(struct sterm_data *sdata);
@@ -517,7 +519,16 @@ termios_timeout(struct genio_timer *t, void *cb_data)
 {
     struct sterm_data *sdata = cb_data;
     int val;
-    unsigned int modemstate = 0, modemstate_mask;
+    unsigned int modemstate = 0;
+    bool force_send;
+
+    sterm_lock(sdata);
+    if (sdata->handling_modemstate) {
+	sterm_unlock(sdata);
+	return;
+    }
+    sdata->handling_modemstate = true;
+    sterm_unlock(sdata);
 
     if (ioctl(sdata->fd, TIOCMGET, &val) != 0)
 	return;
@@ -533,12 +544,18 @@ termios_timeout(struct genio_timer *t, void *cb_data)
 
     sterm_lock(sdata);
     /* Bits for things that changed. */
-    modemstate = (modemstate ^ sdata->last_modemstate) >> 4;
-    sdata->last_modemstate = modemstate;
-    modemstate_mask = sdata->modemstate_mask;
+    modemstate |= (modemstate ^ sdata->last_modemstate) >> 4;
+    sdata->last_modemstate = modemstate & sdata->modemstate_mask;
+    modemstate &= sdata->last_modemstate;
+    force_send = !sdata->sent_first_modemstate;
+    sdata->sent_first_modemstate = true;
     sterm_unlock(sdata);
 
-    if (modemstate & modemstate_mask && sdata->sio.scbs->modemstate)
+    /*
+     * The bottom 4 buts of modemstate is the "changed" bits, only
+     * report this if someing changed that was in the mask.
+     */
+    if (force_send || (modemstate & 0xf && sdata->sio.scbs->modemstate))
 	sdata->sio.scbs->modemstate(&sdata->sio, modemstate);
 
     if (sdata->modemstate_mask) {
@@ -546,6 +563,10 @@ termios_timeout(struct genio_timer *t, void *cb_data)
 
 	sdata->o->start_timer(sdata->timer, &timeout);
     }
+
+    sterm_lock(sdata);
+    sdata->handling_modemstate = false;
+    sterm_unlock(sdata);
 }
 
 static int
@@ -557,7 +578,7 @@ sterm_modemstate(struct sergenio *sio, unsigned int val)
     sdata->modemstate_mask = val;
     sterm_unlock(sdata);
     if (sdata->modemstate_mask) {
-	struct timeval timeout = {1, 0};
+	struct timeval timeout = {0, 1};
 
 	sdata->o->start_timer(sdata->timer, &timeout);
     } else {
@@ -720,7 +741,10 @@ sterm_sub_open(void *handler_data,
 
     sterm_lock(sdata);
     sdata->open = true;
+    sdata->sent_first_modemstate = false;
     sterm_unlock(sdata);
+
+    sterm_modemstate(&sdata->sio, 255);
 
     *fd = sdata->fd;
 
