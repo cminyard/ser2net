@@ -629,7 +629,7 @@ static int devcfg_get_modem_state(struct devio *io, unsigned char *modemstate)
 	*modemstate |= 0x10;
 
     /* Bits for things that changed. */
-    *modemstate = (*modemstate ^ d->last_modemstate) >> 4;
+    *modemstate |= (*modemstate ^ d->last_modemstate) >> 4;
 
     d->last_modemstate = *modemstate;
     return 0;
