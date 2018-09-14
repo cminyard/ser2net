@@ -15,11 +15,11 @@
 #include <linux/ioctl.h>
 #include <asm/termbits.h>
 
-#define TIOCSERSNULLMODEM	0x54e4
+#define TIOCSERSREMNULLMODEM	0x54e4
 #define TIOCSERSREMMCTRL	0x54e5
 #define TIOCSERSREMERR		0x54e6
 #define TIOCSERGREMTERMIOS	_IOR('T', 0xe7, struct termios2)
-#define TIOCSERGNULLMODEM	_IOR('T', 0xe8, int)
+#define TIOCSERGREMNULLMODEM	_IOR('T', 0xe8, int)
 #define TIOCSERGREMMCTRL	_IOR('T', 0xe9, unsigned int)
 #define TIOCSERGREMERR		_IOR('T', 0xea, unsigned int)
 

@@ -312,8 +312,8 @@ out_unlock:
 }
 
 static void serialsim_set_modem_lines(struct serialsim_intf *intf,
-				       unsigned int mask,
-				       unsigned int new_mctrl)
+				      unsigned int mask,
+				      unsigned int new_mctrl)
 {
 	mask &= LOCAL_MCTRL;
 
@@ -334,7 +334,7 @@ static void mctrl_tasklet(unsigned long data)
 	struct serialsim_intf *intf = (void *) data;
 
 	serialsim_null_modem_lock_irq(intf);
-	if (intf->do_null_modem)
+	if (intf->ointf->do_null_modem)
 		serialsim_handle_null_modem_update(intf);
 	serialsim_null_modem_unlock_irq(intf);
 }
@@ -665,12 +665,12 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 	int val;
 
 	switch (cmd) {
-	case TIOCSERSNULLMODEM:
-		serialsim_set_null_modem(intf, !!arg);
+	case TIOCSERSREMNULLMODEM:
+		serialsim_set_null_modem(intf->ointf, !!arg);
 		break;
 
-	case TIOCSERGNULLMODEM:
-		val = intf->do_null_modem;
+	case TIOCSERGREMNULLMODEM:
+		val = intf->ointf->do_null_modem;
 		copy_to_user((int __user *) arg, &val, sizeof(int));
 		break;
 
