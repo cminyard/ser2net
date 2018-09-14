@@ -84,7 +84,7 @@ set_remote_sererr(unsigned int err, int fd)
 int
 set_remote_null_modem(bool val, int fd)
 {
-    if (ioctl(fd, TIOCSERSNULLMODEM, val))
+    if (ioctl(fd, TIOCSERSREMNULLMODEM, (int) val))
 	return errno;
     return 0;
 }
@@ -108,7 +108,7 @@ get_remote_sererr(unsigned int *err, int fd)
 int
 get_remote_null_modem(int *val, int fd)
 {
-    if (ioctl(fd, TIOCSERGNULLMODEM, val))
+    if (ioctl(fd, TIOCSERGREMNULLMODEM, val))
 	return errno;
     return 0;
 }
