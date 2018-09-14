@@ -825,6 +825,8 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
     if (!sdata)
 	return ENOMEM;
 
+    sdata->o = o;
+
     sdata->timer = o->alloc_timer(o, termios_timeout, sdata);
     if (!sdata->timer)
 	goto out_nomem;
@@ -871,7 +873,6 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 	goto out_nomem;
     }
 
-    sdata->o = o;
     sdata->sio.scbs = scbs;
     sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &sterm_funcs;
