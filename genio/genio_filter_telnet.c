@@ -289,8 +289,9 @@ telnet_ll_write(struct genio_filter *filter,
 	 * data handling here.
 	 */
 	telnet_unlock(tfilter);
-	tfilter->read_data_len =
-	    process_telnet_data(tfilter->read_data, tfilter->max_read_size,
+	tfilter->read_data_len +=
+	    process_telnet_data(tfilter->read_data + tfilter->read_data_len,
+				tfilter->max_read_size - tfilter->read_data_len,
 				&buf, &inlen, &tfilter->tn_data);
 	telnet_lock(tfilter);
 	*rcount = buflen - inlen;
@@ -578,7 +579,7 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 					   cbs, handler_data,
 					   telnet_cmds,
 					   telnet_server_init_seq,
-					   init_seq_len, NULL);
+					   init_seq_len, rops);
 
     if (!filter)
 	return ENOMEM;
