@@ -2981,13 +2981,19 @@ got_timeout(struct selector_s *sel,
 
     if (port->is_2217 &&
 		(port->io.f->get_modem_state(&port->io, &modemstate) != -1)) {
-	modemstate &= port->modemstate_mask;
-	if (modemstate != port->last_modemstate) {
+	/*
+	 * The 0xf below is non-standard, but the spec makes no sense in
+	 * this case.  From what I can tell, the modemstate top 4 bits is
+	 * the settings, and the bottom 4 bits is telling you what
+	 * changed.  So you don't want to report a value unless something
+	 * changed, and only if it was in the modemstate mask.
+	 */
+	if (modemstate & port->modemstate_mask & 0xf) {
 	    unsigned char data[3];
 	    data[0] = TN_OPT_COM_PORT;
 	    data[1] = 107; /* Notify modemstate */
-	    data[2] = modemstate;
-	    port->last_modemstate = modemstate;
+	    port->last_modemstate = modemstate & port->modemstate_mask;
+	    data[2] = port->last_modemstate;
 	    for_each_connection(port, netcon) {
 		if (!netcon->net)
 		    continue;
