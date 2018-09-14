@@ -53,6 +53,9 @@ struct sterm_data {
 
     struct genio_lock *lock;
 
+    struct genio_timer *timer;
+    bool timer_stopped;
+
     bool open;
     unsigned int close_timeouts_left;
 
@@ -67,6 +70,8 @@ struct sterm_data {
     struct genio_runner *deferred_op_runner;
     struct termio_op_q *termio_q;
     bool break_set;
+    unsigned int last_modemstate;
+    unsigned int modemstate_mask;
 };
 
 static void termios_process(struct sterm_data *sdata);
@@ -507,6 +512,98 @@ sterm_rts(struct sergenio *sio, int rts,
 			   termios_get_set_rts, done, cb_data);
 }
 
+static void
+termios_timeout(struct genio_timer *t, void *cb_data)
+{
+    struct sterm_data *sdata = cb_data;
+    int val;
+    unsigned int modemstate = 0, modemstate_mask;
+
+    if (ioctl(sdata->fd, TIOCMGET, &val) != 0)
+	return;
+
+    if (val & TIOCM_CD)
+	modemstate |= 0x80;
+    if (val & TIOCM_RI)
+	modemstate |= 0x40;
+    if (val & TIOCM_DSR)
+	modemstate |= 0x20;
+    if (val & TIOCM_CTS)
+	modemstate |= 0x10;
+
+    sterm_lock(sdata);
+    /* Bits for things that changed. */
+    modemstate = (modemstate ^ sdata->last_modemstate) >> 4;
+    sdata->last_modemstate = modemstate;
+    modemstate_mask = sdata->modemstate_mask;
+    sterm_unlock(sdata);
+
+    if (modemstate & modemstate_mask && sdata->sio.scbs->modemstate)
+	sdata->sio.scbs->modemstate(&sdata->sio, modemstate);
+
+    if (sdata->modemstate_mask) {
+	struct timeval timeout = {1, 0};
+
+	sdata->o->start_timer(sdata->timer, &timeout);
+    }
+}
+
+static int
+sterm_modemstate(struct sergenio *sio, unsigned int val)
+{
+    struct sterm_data *sdata = mysergenio_to_sterm(sio);
+
+    sterm_lock(sdata);
+    sdata->modemstate_mask = val;
+    sterm_unlock(sdata);
+    if (sdata->modemstate_mask) {
+	struct timeval timeout = {1, 0};
+
+	sdata->o->start_timer(sdata->timer, &timeout);
+    } else {
+	sdata->o->stop_timer(sdata->timer);
+    }
+    return 0;
+}
+
+static int
+sterm_flowcontrol_state(struct sergenio *sio, bool val)
+{
+    struct sterm_data *sdata = mysergenio_to_sterm(sio);
+    int err;
+    int tval;
+
+    if (val)
+	tval = TCOOFF;
+    else
+	tval = TCOON;
+
+    err = tcflow(sdata->fd, tval);
+    if (err)
+	return errno;
+    return 0;
+}
+
+static int
+sterm_flush(struct sergenio *sio, unsigned int val)
+{
+    struct sterm_data *sdata = mysergenio_to_sterm(sio);
+    int err;
+    int tval;
+
+    switch(val) {
+    case SERGIO_FLUSH_RCV_BUFFER:	tval = TCIFLUSH; break;
+    case SERGIO_FLUSH_XMIT_BUFFER:	tval = TCOFLUSH; break;
+    case SERGIO_FLUSH_RCV_XMIT_BUFFERS:	tval = TCIOFLUSH; break;
+    default: return EINVAL;
+    }
+
+    err = tcflush(sdata->fd, tval);
+    if (err)
+	return errno;
+    return 0;
+}
+
 static const struct sergenio_functions sterm_funcs = {
     .baud = sterm_baud,
     .datasize = sterm_datasize,
@@ -516,7 +613,18 @@ static const struct sergenio_functions sterm_funcs = {
     .sbreak = sterm_sbreak,
     .dtr = sterm_dtr,
     .rts = sterm_rts,
+    .modemstate = sterm_modemstate,
+    .flowcontrol_state = sterm_flowcontrol_state,
+    .flush = sterm_flush
 };
+
+static void
+sterm_timer_stopped(struct genio_timer *timer, void *cb_data)
+{
+    struct sterm_data *sdata = cb_data;
+
+    sdata->timer_stopped = true;
+}
 
 static int
 sterm_check_close_drain(void *handler_data, enum genio_ll_close_state state,
@@ -530,6 +638,10 @@ sterm_check_close_drain(void *handler_data, enum genio_ll_close_state state,
 	sdata->open = false;
 	/* FIXME - this should be calculated. */
 	sdata->close_timeouts_left = 200;
+	rv = sdata->o->stop_timer_with_done(sdata->timer,
+					    sterm_timer_stopped, sdata);
+	if (rv)
+	    sdata->timer_stopped = true;
     }
 
     if (state != GENIO_LL_CLOSE_STATE_DONE)
@@ -537,6 +649,9 @@ sterm_check_close_drain(void *handler_data, enum genio_ll_close_state state,
 
     sdata->open = false;
     if (sdata->termio_q)
+	goto out_eagain;
+
+    if (!sdata->timer_stopped)
 	goto out_eagain;
 
     rv = ioctl(sdata->fd, TIOCOUTQ, &count);
@@ -587,6 +702,8 @@ sterm_sub_open(void *handler_data,
 	err = errno;
 	goto out;
     }
+
+    sdata->timer_stopped = false;
 
     sdata->fd = open(sdata->devname, O_NONBLOCK | O_NOCTTY | O_RDWR);
     if (sdata->fd == -1) {
@@ -654,6 +771,8 @@ sterm_free(void *handler_data)
 
     if (sdata->lock)
 	sdata->o->free_lock(sdata->lock);
+    if (sdata->timer)
+	sdata->o->free_timer(sdata->timer);
     if (sdata->devname)
 	sdata->o->free(sdata->o, sdata->devname);
     if (sdata->deferred_op_runner)
@@ -705,6 +824,10 @@ sergenio_termios_alloc(const char *devname, struct genio_os_funcs *o,
 
     if (!sdata)
 	return ENOMEM;
+
+    sdata->timer = o->alloc_timer(o, termios_timeout, sdata);
+    if (!sdata->timer)
+	goto out_nomem;
 
     sdata->fd = -1;
 
