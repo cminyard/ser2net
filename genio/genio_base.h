@@ -269,7 +269,9 @@ struct genio *base_genio_server_alloc(struct genio_os_funcs *o,
 struct genio_genio_acc_cbs {
     int (*connect_start)(void *acc_data, struct genio *child,
 			 struct genio **new_net);
-    int (*new_child)(void *acc_data, struct genio_filter **filter);
+    int (*new_child)(void *acc_data, void **finish_data,
+		     struct genio_filter **filter);
+    void (*finish_child)(void *acc_data, void *finish_data, struct genio *io);
     void (*free)(void *acc_data);
 };
 

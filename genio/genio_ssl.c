@@ -120,7 +120,8 @@ sslna_connect_start(void *acc_data, struct genio *child, struct genio **rio)
 }
 
 static int
-sslna_new_child(void *acc_data, struct genio_filter **filter)
+sslna_new_child(void *acc_data, void **finish_data,
+		struct genio_filter **filter)
 {
     struct sslna_data *nadata = acc_data;
     int err;

@@ -124,15 +124,20 @@ stel_baud(struct sergenio *sio, int baud,
 	  void *cb_data)
 {
     struct stel_data *sdata = mysergenio_to_stel(sio);
+    bool is_client = genio_is_client(sergenio_to_genio(sio));
     unsigned char buf[6];
     int err;
 
-    err = stel_queue(sdata, 1, 0, 0, done, cb_data);
-    if (err)
-	return err;
+    if (is_client) {
+	err = stel_queue(sdata, 1, 0, 0, done, cb_data);
+	if (err)
+	    return err;
+	buf[1] = 1;
+    } else {
+	buf[1] = 101;
+    }
 
     buf[0] = 44;
-    buf[1] = 1;
     if (sdata->cisco_baud) {
 	buf[2] = baud_to_cisco_baud(baud);
 	sdata->rops->send_option(sdata->filter, buf, 3);
@@ -148,22 +153,31 @@ stel_baud(struct sergenio *sio, int baud,
 
 static int
 stel_queue_and_send(struct sergenio *sio, int option, int val,
-		    int minval, int maxval,
+		    int xmitbase, int minval, int maxval,
 		    void (*done)(struct sergenio *sio, int err, int val,
 				 void *cb_data),
 		    void *cb_data)
 {
     struct stel_data *sdata = mysergenio_to_stel(sio);
     unsigned char buf[3];
+    bool is_client = genio_is_client(sergenio_to_genio(sio));
     int err;
 
-    err = stel_queue(sdata, option, minval, maxval, done, cb_data);
-    if (err)
-	return err;
+    if (val < minval || val > maxval)
+	return EINVAL;
+
+    if (is_client) {
+	err = stel_queue(sdata, option, xmitbase, xmitbase + maxval,
+			 done, cb_data);
+	if (err)
+	    return err;
+    } else {
+	option += 100;
+    }
 
     buf[0] = 44;
     buf[1] = option;
-    buf[2] = val + minval;
+    buf[2] = val + xmitbase;
     sdata->rops->send_option(sdata->filter, buf, 3);
 
     return 0;
@@ -175,7 +189,7 @@ stel_datasize(struct sergenio *sio, int datasize,
 			   void *cb_data),
 	      void *cb_data)
 {
-    return stel_queue_and_send(sio, 2, datasize, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 2, datasize, 0, 0, 8, done, cb_data);
 }
 
 static int
@@ -184,7 +198,7 @@ stel_parity(struct sergenio *sio, int parity,
 			 void *cb_data),
 	    void *cb_data)
 {
-    return stel_queue_and_send(sio, 3, parity, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 3, parity, 0, 0, 5, done, cb_data);
 }
 
 static int
@@ -193,7 +207,7 @@ stel_stopbits(struct sergenio *sio, int stopbits,
 			   void *cb_data),
 	      void *cb_data)
 {
-    return stel_queue_and_send(sio, 4, stopbits, 0, 0, done, cb_data);
+    return stel_queue_and_send(sio, 4, stopbits, 0, 0, 3, done, cb_data);
 }
 
 static int
@@ -202,7 +216,7 @@ stel_flowcontrol(struct sergenio *sio, int flowcontrol,
 			      int flowcontrol, void *cb_data),
 		 void *cb_data)
 {
-    return stel_queue_and_send(sio, 5, flowcontrol, 0, 3, done, cb_data);
+    return stel_queue_and_send(sio, 5, flowcontrol, 0, 0, 3, done, cb_data);
 }
 
 static int
@@ -211,7 +225,7 @@ stel_sbreak(struct sergenio *sio, int breakv,
 			 void *cb_data),
 	    void *cb_data)
 {
-    return stel_queue_and_send(sio, 5, breakv, 4, 6, done, cb_data);
+    return stel_queue_and_send(sio, 5, breakv, 4, 0, 2, done, cb_data);
 }
 
 static int
@@ -220,7 +234,7 @@ stel_dtr(struct sergenio *sio, int dtr,
 		      void *cb_data),
 	 void *cb_data)
 {
-    return stel_queue_and_send(sio, 5, dtr, 7, 9, done, cb_data);
+    return stel_queue_and_send(sio, 5, dtr, 7, 0, 2, done, cb_data);
 }
 
 static int
@@ -229,7 +243,7 @@ stel_rts(struct sergenio *sio, int rts,
 		      void *cb_data),
 	 void *cb_data)
 {
-    return stel_queue_and_send(sio, 5, rts, 10, 12, done, cb_data);
+    return stel_queue_and_send(sio, 5, rts, 10, 0, 2, done, cb_data);
 }
 
 static int stel_send(struct sergenio *sio, unsigned int opt, unsigned int val)
@@ -324,7 +338,7 @@ stel_com_port_will_do(void *handler_data, unsigned char cmd)
     else
 	sdata->do_2217 = sdata->allow_2217;
 
-    return 1;
+    return sdata->do_2217;
 }
 
 static void
@@ -343,10 +357,12 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 
     switch (cmd) {
     case 1:
-	if (len == 3) {
+	if (len < 3)
+	    return;
+	if (len < 6) {
 	    sdata->cisco_baud = true;
 	    val = cisco_baud_to_baud(option[2]);
-	} else if (len >= 6) {
+	} else {
 	    val = option[2] << 24;
 	    val |= option[3] << 16;
 	    val |= option[4] << 8;
@@ -573,8 +589,6 @@ struct stela_data {
 
     struct genio_os_funcs *o;
 
-    const struct genio_telnet_filter_rops **rops;
-
     bool allow_2217;
 };
 
@@ -610,19 +624,18 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
     if (cmd != TN_WILL && cmd != TN_WONT)
 	/* We only handle these. */
 	return 0;
-
     if (cmd == TN_WONT)
 	/* The remote end turned off RFC2217 handling. */
 	sdata->do_2217 = false;
     else
 	sdata->do_2217 = sdata->allow_2217;
 
-    return 1;
+    return sdata->do_2217;
 }
 
 static void
 stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
-		  unsigned int len)
+		      unsigned int len)
 {
     struct stel_data *sdata = handler_data;
     int val = 0;
@@ -634,10 +647,12 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 
     switch (option[1]) {
     case 1:
-	if (len == 3) {
+	if (len < 3)
+	    return;
+	if (len < 6) {
 	    sdata->cisco_baud = true;
 	    val = cisco_baud_to_baud(option[2]);
-	} else if (len >= 6) {
+	} else {
 	    val = option[2] << 24;
 	    val |= option[3] << 16;
 	    val |= option[4] << 8;
@@ -741,7 +756,8 @@ struct genio_telnet_filter_callbacks sergenio_telnet_server_filter_cbs = {
 };
 
 static int
-stela_new_child(void *acc_data, struct genio_filter **filter)
+stela_new_child(void *acc_data, void **finish_data,
+		struct genio_filter **filter)
 {
     struct stela_data *stela = acc_data;
     struct genio_os_funcs *o = stela->o;
@@ -754,6 +770,13 @@ stela_new_child(void *acc_data, struct genio_filter **filter)
 
     sdata->o = o;
     sdata->allow_2217 = stela->allow_2217;
+    sdata->sio.funcs = &stel_funcs;
+
+    sdata->lock = o->alloc_lock(o);
+    if (!sdata->lock) {
+	o->free(o, sdata);
+	return ENOMEM;
+    }
 
     err = genio_telnet_server_filter_alloc(o,
 					   stela->allow_2217,
@@ -763,15 +786,30 @@ stela_new_child(void *acc_data, struct genio_filter **filter)
 					   sdata,
 					   &sdata->rops,
 					   filter);
-    if (err)
+    if (err) {
+	o->free_lock(sdata->lock);
 	o->free(o, sdata);
+    } else {
+	sdata->filter = *filter;
+	*finish_data = sdata;
+    }
 
     return err;
+}
+
+static void
+stela_finish_child(void *acc_data, void *finish_data, struct genio *io)
+{
+    struct stel_data *sdata = finish_data;
+
+    io->parent_object = &sdata->sio;
+    sdata->sio.io = io;
 }
 
 static const struct genio_genio_acc_cbs genio_acc_telnet_funcs = {
     .connect_start = stela_connect_start,
     .new_child = stela_new_child,
+    .finish_child = stela_finish_child,
     .free = stela_free,
 };
 
