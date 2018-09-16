@@ -344,7 +344,7 @@ sgenio_call(struct sergenio *sio, long val, char *func)
 	goto out_put;
     }
 
-    sio_ref = swig_make_ref(sio, genio);
+    sio_ref = swig_make_ref(sio, sergenio);
     args = PyTuple_New(2);
     Py_INCREF(sio_ref.val);
     PyTuple_SET_ITEM(args, 0, sio_ref.val);
@@ -404,55 +404,55 @@ sgenio_flowcontrol_state(struct sergenio *sio, bool val)
 static void
 sgenio_flush(struct sergenio *sio, unsigned int val)
 {
-    sgenio_call(sio, val, "flush");
+    sgenio_call(sio, val, "sflush");
 }
 
 static void
 sgenio_baud(struct sergenio *sio, int baud)
 {
-    sgenio_call(sio, baud, "baud");
+    sgenio_call(sio, baud, "sbaud");
 }
 
 static void
 sgenio_datasize(struct sergenio *sio, int datasize)
 {
-    sgenio_call(sio, datasize, "datasize");
+    sgenio_call(sio, datasize, "sdatasize");
 }
 
 static void
 sgenio_parity(struct sergenio *sio, int parity)
 {
-    sgenio_call(sio, parity, "parity");
+    sgenio_call(sio, parity, "sparity");
 }
 
 static void
 sgenio_stopbits(struct sergenio *sio, int stopbits)
 {
-    sgenio_call(sio, stopbits, "stopbits");
+    sgenio_call(sio, stopbits, "sstopbits");
 }
 
 static void
 sgenio_flowcontrol(struct sergenio *sio, int flowcontrol)
 {
-    sgenio_call(sio, flowcontrol, "flowcontrol");
+    sgenio_call(sio, flowcontrol, "sflowcontrol");
 }
 
 static void
 sgenio_sbreak(struct sergenio *sio, int breakv)
 {
-    sgenio_call(sio, breakv, "sbreak");
+    sgenio_call(sio, breakv, "ssbreak");
 }
 
 static void
 sgenio_dtr(struct sergenio *sio, int dtr)
 {
-    sgenio_call(sio, dtr, "dtr");
+    sgenio_call(sio, dtr, "sdtr");
 }
 
 static void
 sgenio_rts(struct sergenio *sio, int rts)
 {
-    sgenio_call(sio, rts, "rts");
+    sgenio_call(sio, rts, "srts");
 }
 
 static struct sergenio_callbacks gen_scbs = {
@@ -514,6 +514,8 @@ genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
     iodata->handler_val = NULL;
     iodata->o = data->o;
     genio_set_callbacks(io, &gen_cbs, iodata);
+    if (is_sergenio(io))
+	sergenio_set_ser_cbs(genio_to_sergenio(io), &gen_scbs);
 
     gstate = OI_PY_STATE_GET();
 
@@ -562,19 +564,28 @@ cleanup_sergenio_cbdata(struct sergenio_cbdata *cbd)
 }
 
 static void
-sergenio_cb(struct sergenio *snet, int err, int val, void *cb_data)
+sergenio_cb(struct sergenio *sio, int err, int val, void *cb_data)
 {
     struct sergenio_cbdata *cbd = cb_data;
+    swig_ref sio_ref;
     PyObject *o, *args;
     OI_PY_STATE gstate;
 
     gstate = OI_PY_STATE_GET();
 
-    args = PyTuple_New(2);
-    o = PyInt_FromLong(err);
-    PyTuple_SET_ITEM(args, 0, o);
-    o = PyInt_FromLong(val);
+    sio_ref = swig_make_ref(sio, genio);
+    args = PyTuple_New(3);
+    Py_INCREF(sio_ref.val);
+    PyTuple_SET_ITEM(args, 0, sio_ref.val);
+    if (err) {
+	o = OI_PI_FromString(strerror(err));
+    } else {
+	Py_INCREF(Py_None);
+	o = Py_None;
+    }
     PyTuple_SET_ITEM(args, 1, o);
+    o = PyInt_FromLong(val);
+    PyTuple_SET_ITEM(args, 2, o);
 
     swig_finish_call(cbd->h_val, cbd->cbname, args);
 
