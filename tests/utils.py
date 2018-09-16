@@ -51,6 +51,10 @@ class HandleData:
         self.to_write = None
         self.to_compare = None
         self.expecting_modemstate = False
+        self.expecting_linestate = False
+        self.expected_server_cb = None
+        self.expected_server_value = 0
+        self.expected_server_return = 0
         self.ignore_input = False
         if (io):
             self.io = io
@@ -192,6 +196,136 @@ class HandleData:
         return
 
     def linestate(self, io, linestate):
+        if (not self.expecting_linestate):
+            if (debug or self.debug):
+                print("Got unexpected linestate %x" % linestate)
+            return
+        if (linestate != self.expected_linestate):
+            raise HandlerException("%s: Expecting linesate 0x%x, got 0x%x" %
+                                   (self.name, self.expected_linestate,
+                                    linestate))
+        self.expecting_linestate = False
+        self.waiter.wake()
+        return
+
+    def set_expected_linestate(self, linestate):
+        self.expecting_linestate = True
+        self.expected_linestate = linestate
+        return
+
+    def set_expected_server_cb(self, name, value, retval):
+        self.expected_server_cb = name
+        self.expected_server_value = value
+        self.expected_server_return = retval
+        return
+
+    def set_expected_client_cb(self, name, value):
+        self.expected_server_cb = name
+        self.expected_server_value = value
+        return
+
+    def check_set_expected_telnet_cb(self, name, value):
+        if not self.expected_server_cb:
+            if (debug or self.debug):
+                print("Got unexpected server cb: %s %d" % (name, value))
+            return False
+        if self.expected_server_cb != name:
+            raise HandlerException(
+                "Got wrong server cb, expected %s, got %s (%d)" %
+                (self.expected_server_cb, name, value))
+        if self.expected_server_value != value:
+            raise HandlerException(
+                "Got wrong server cb value for %s, expected %d, got %d" %
+                (name, self.expected_server_value, value))
+        self.waiter.wake()
+        return True
+
+    def baud(self, sio, err, baud):
+        if not self.check_set_expected_telnet_cb("baud", baud):
+            return
+        return
+
+    def datasize(self, sio, err, datasize):
+        if not self.check_set_expected_telnet_cb("datasize", datasize):
+            return
+        return
+
+    def parity(self, sio, err, parity):
+        if not self.check_set_expected_telnet_cb("parity", parity):
+            return
+        return
+
+    def stopbits(self, sio, err, stopbits):
+        if not self.check_set_expected_telnet_cb("stopbits", stopbits):
+            return
+        return
+
+    def flowcontrol(self, sio, err, flowcontrol):
+        if not self.check_set_expected_telnet_cb("flowcontrol", flowcontrol):
+            return
+        return
+
+    def sbreak(self, sio, err, sbreak):
+        if not self.check_set_expected_telnet_cb("sbreak", sbreak):
+            return
+        return
+
+    def dtr(self, sio, err, dtr):
+        if not self.check_set_expected_telnet_cb("dtr", dtr):
+            return
+        return
+
+    def rts(self, sio, err, rts):
+        if not self.check_set_expected_telnet_cb("rts", rts):
+            return
+        return
+
+    def sbaud(self, sio, baud):
+        if not self.check_set_expected_telnet_cb("baud", baud):
+            return
+        sio.sg_baud(self.expected_server_return, None)
+        return
+
+    def sdatasize(self, sio, datasize):
+        if not self.check_set_expected_telnet_cb("datasize", datasize):
+            return
+        sio.sg_datasize(self.expected_server_return, None)
+        return
+
+    def sparity(self, sio, parity):
+        if not self.check_set_expected_telnet_cb("parity", parity):
+            return
+        sio.sg_parity(self.expected_server_return, None)
+        return
+
+    def sstopbits(self, sio, stopbits):
+        if not self.check_set_expected_telnet_cb("stopbits", stopbits):
+            return
+        sio.sg_stopbits(self.expected_server_return, None)
+        return
+
+    def sflowcontrol(self, sio, flowcontrol):
+        if not self.check_set_expected_telnet_cb("flowcontrol", flowcontrol):
+            return
+        sio.sg_flowcontrol(self.expected_server_return, None)
+        return
+
+    def ssbreak(self, sio, sbreak):
+        if not self.check_set_expected_telnet_cb("sbreak", sbreak):
+            return
+        sio.sg_sbreak(self.expected_server_return, None)
+        return
+
+    def sdtr(self, sio, dtr):
+        if not self.check_set_expected_telnet_cb("dtr", dtr):
+            return
+        sio.sg_dtr(self.expected_server_return, None)
+        return
+
+    def srts(self, sio, rts):
+        if not self.check_set_expected_telnet_cb("rts", rts):
+            return
+        sio.sg_rts(self.expected_server_return, None)
         return
 
     def close_done(self, io):

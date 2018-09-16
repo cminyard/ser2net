@@ -71,10 +71,83 @@ def ta_ssl_tcp():
     io1 = utils.alloc_io(o, "ssl(CA=%s/CA.pem),tcp,localhost,3024" % utils.srcdir, do_open = False)
     ta = TestAccept(o, io1, "ssl(key=%s/key.pem,cert=%s/cert.pem,CA=%s/CA.pem),3024" % (utils.srcdir, utils.srcdir, utils.srcdir), 1024, do_test)
 
+def do_telnet_test(io1, io2):
+    do_test(io1, io2)
+    sio1 = io1.cast_to_sergenio()
+    sio2 = io1.cast_to_sergenio()
+    io1.read_cb_enable(True);
+    io2.read_cb_enable(True);
+
+    io2.handler.set_expected_server_cb("baud", 1000, 2000)
+    io1.handler.set_expected_client_cb("baud", 2000)
+    sio1.sg_baud(1000, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server baud set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client baud response")
+
+    io2.handler.set_expected_server_cb("datasize", 5, 6)
+    io1.handler.set_expected_client_cb("datasize", 6)
+    sio1.sg_datasize(5, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server datasize set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client datasize response")
+
+    io2.handler.set_expected_server_cb("parity", 1, 5)
+    io1.handler.set_expected_client_cb("parity", 5)
+    sio1.sg_parity(1, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server parity set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client parity response")
+
+    io2.handler.set_expected_server_cb("stopbits", 2, 1)
+    io1.handler.set_expected_client_cb("stopbits", 1)
+    sio1.sg_stopbits(2, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server stopbits set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client stopbits response")
+
+    io2.handler.set_expected_server_cb("flowcontrol", False, True)
+    io1.handler.set_expected_client_cb("flowcontrol", True)
+    sio1.sg_flowcontrol(False, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server flowcontrol set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client flowcontrol response")
+
+    io2.handler.set_expected_server_cb("sbreak", 2, 1)
+    io1.handler.set_expected_client_cb("sbreak", 1)
+    sio1.sg_sbreak(2, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server sbreak set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client sbreak response")
+
+    io2.handler.set_expected_server_cb("dtr", 1, 2)
+    io1.handler.set_expected_client_cb("dtr", 2)
+    sio1.sg_dtr(1, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server dtr set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client dtr response")
+
+    io2.handler.set_expected_server_cb("rts", 2, 1)
+    io1.handler.set_expected_client_cb("rts", 1)
+    sio1.sg_rts(2, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server rts set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client rts response")
+
+    return
+
 def ta_ssl_telnet():
     print("Test accept telnet")
     io1 = utils.alloc_io(o, "telnet,tcp,localhost,3025", do_open = False)
-    ta = TestAccept(o, io1, "telnet,3025", 1024, do_test)
+    ta = TestAccept(o, io1, "telnet(rfc2217=true),3025", 1024, do_telnet_test)
 
 def test_modemstate():
     io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL"
@@ -169,10 +242,10 @@ def test_modemstate():
     print("  Success!")
     return
 
+ta_ssl_telnet()
 t1()
 t2()
 ta_tcp()
 ta_udp()
 ta_ssl_tcp()
-ta_ssl_telnet()
 test_modemstate()
