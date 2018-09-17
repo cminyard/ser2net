@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,7 @@ typedef struct swig_ref {
 #define invalidate_swig_cb(v) ((v) = NULL)
 
 #ifdef WITH_THREAD
-static void genio_swig_init_lang(void)
+static void gensio_swig_init_lang(void)
 {
     PyEval_InitThreads();
 }
@@ -36,10 +36,10 @@ static void genio_swig_init_lang(void)
 #define OI_PY_STATE_PUT(s) PyGILState_Release(s)
 
 /* We do need to work about blocking, though. */
-#define GENIO_SWIG_C_BLOCK_ENTRY Py_BEGIN_ALLOW_THREADS
-#define GENIO_SWIG_C_BLOCK_EXIT Py_END_ALLOW_THREADS
+#define GENSIO_SWIG_C_BLOCK_ENTRY Py_BEGIN_ALLOW_THREADS
+#define GENSIO_SWIG_C_BLOCK_EXIT Py_END_ALLOW_THREADS
 #else
-static void genio_swig_init_lang(void)
+static void gensio_swig_init_lang(void)
 {
 }
 #define OI_PY_STATE int
@@ -47,8 +47,8 @@ static void genio_swig_init_lang(void)
 #define OI_PY_STATE_PUT(s) do { } while(s)
 
 /* No threads */
-#define GENIO_SWIG_C_BLOCK_ENTRY
-#define GENIO_SWIG_C_BLOCK_EXIT
+#define GENSIO_SWIG_C_BLOCK_ENTRY
+#define GENSIO_SWIG_C_BLOCK_EXIT
 #endif
 
 static swig_cb_val *
@@ -121,7 +121,7 @@ swig_finish_call_rv(swig_cb_val *cb, const char *method_name, PyObject *args)
 	char *class = PyString_AsString(c);
 
 	PyErr_Format(PyExc_RuntimeError,
-		     "genio callback: Class '%s' has no method '%s'\n",
+		     "gensio callback: Class '%s' has no method '%s'\n",
 		     class, method_name);
 	wake_curr_waiter();
     }
@@ -148,14 +148,14 @@ swig_finish_call(swig_cb_val *cb, const char *method_name, PyObject *args)
 #define OI_PI_FromString PyString_FromString
 #endif
 
-struct genio_data {
+struct gensio_data {
     int refcount;
     swig_cb_val *handler_val;
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 };
 
 static void
-genio_open_done(struct genio *io, int err, void *cb_data) {
+gensio_open_done(struct gensio *io, int err, void *cb_data) {
     swig_cb_val *cb = cb_data;
     swig_ref io_ref;
     PyObject *args, *o;
@@ -163,7 +163,7 @@ genio_open_done(struct genio *io, int err, void *cb_data) {
 
     gstate = OI_PY_STATE_GET();
 
-    io_ref = swig_make_ref(io, genio);
+    io_ref = swig_make_ref(io, gensio);
     args = PyTuple_New(2);
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
@@ -178,7 +178,7 @@ genio_open_done(struct genio *io, int err, void *cb_data) {
 }
 
 static void
-genio_close_done(struct genio *io, void *cb_data) {
+gensio_close_done(struct gensio *io, void *cb_data) {
     swig_cb_val *cb = cb_data;
     swig_ref io_ref;
     PyObject *args;
@@ -186,7 +186,7 @@ genio_close_done(struct genio *io, void *cb_data) {
 
     gstate = OI_PY_STATE_GET();
 
-    io_ref = swig_make_ref(io, genio);
+    io_ref = swig_make_ref(io, gensio);
     args = PyTuple_New(1);
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
@@ -199,11 +199,11 @@ genio_close_done(struct genio *io, void *cb_data) {
 }
 
 static unsigned int
-genio_got_read(struct genio *io, int readerr,
-	       unsigned char *buf, unsigned int buflen,
-	       unsigned int flags)
+gensio_got_read(struct gensio *io, int readerr,
+		unsigned char *buf, unsigned int buflen,
+		unsigned int flags)
 {
-    struct genio_data *data = genio_get_user_data(io);
+    struct gensio_data *data = gensio_get_user_data(io);
     swig_ref io_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
@@ -212,8 +212,8 @@ genio_got_read(struct genio *io, int readerr,
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "genio callback: "
-		     "genio handler was not set");
+	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
+		     "gensio handler was not set");
 	wake_curr_waiter();
 	rv = 0;
 	goto out_put;
@@ -221,7 +221,7 @@ genio_got_read(struct genio *io, int readerr,
 
     args = PyTuple_New(4);
 
-    io_ref = swig_make_ref(io, genio);
+    io_ref = swig_make_ref(io, gensio);
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
 
@@ -248,7 +248,7 @@ genio_got_read(struct genio *io, int readerr,
 	    PyObject *c = PyObject_GetAttrString(t, "__name__");
 	    char *class = PyString_AsString(c);
 
-	    PyErr_Format(PyExc_RuntimeError, "genio callback: "
+	    PyErr_Format(PyExc_RuntimeError, "gensio callback: "
 			 "Class '%s' method 'read_callback' did not return "
 			 "an integer\n", class);
 	    wake_curr_waiter();
@@ -264,9 +264,9 @@ genio_got_read(struct genio *io, int readerr,
 }
 
 static void
-genio_write_read(struct genio *io)
+gensio_write_read(struct gensio *io)
 {
-    struct genio_data *data = genio_get_user_data(io);
+    struct gensio_data *data = gensio_get_user_data(io);
     swig_ref io_ref;
     PyObject *args;
     OI_PY_STATE gstate;
@@ -274,13 +274,13 @@ genio_write_read(struct genio *io)
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "genio callback: "
-		     "genio handler was not set");
+	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
+		     "gensio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    io_ref = swig_make_ref(io, genio);
+    io_ref = swig_make_ref(io, gensio);
     args = PyTuple_New(1);
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
@@ -293,9 +293,9 @@ genio_write_read(struct genio *io)
 }
 
 static void
-genio_got_urgent(struct genio *io)
+gensio_got_urgent(struct gensio *io)
 {
-    struct genio_data *data = genio_get_user_data(io);
+    struct gensio_data *data = gensio_get_user_data(io);
     swig_ref io_ref;
     PyObject *args;
     OI_PY_STATE gstate;
@@ -303,13 +303,13 @@ genio_got_urgent(struct genio *io)
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "genio callback: "
-		     "genio handler was not set");
+	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
+		     "gensio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    io_ref = swig_make_ref(io, genio);
+    io_ref = swig_make_ref(io, gensio);
     args = PyTuple_New(1);
     Py_INCREF(io_ref.val);
     PyTuple_SET_ITEM(args, 0, io_ref.val);
@@ -321,16 +321,16 @@ genio_got_urgent(struct genio *io)
     OI_PY_STATE_PUT(gstate);
 }
 
-static struct genio_callbacks gen_cbs = {
-    .read_callback = genio_got_read,
-    .write_callback = genio_write_read,
-    .urgent_callback = genio_got_urgent
+static struct gensio_callbacks gen_cbs = {
+    .read_callback = gensio_got_read,
+    .write_callback = gensio_write_read,
+    .urgent_callback = gensio_got_urgent
 };
 
 static void
-sgenio_call(struct sergenio *sio, long val, char *func)
+sgensio_call(struct sergensio *sio, long val, char *func)
 {
-    struct genio_data *data = sergenio_get_user_data(sio);
+    struct gensio_data *data = sergensio_get_user_data(sio);
     swig_ref sio_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
@@ -338,13 +338,13 @@ sgenio_call(struct sergenio *sio, long val, char *func)
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "sergenio callback: "
-		     "genio handler was not set");
+	PyErr_Format(PyExc_RuntimeError, "sergensio callback: "
+		     "gensio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    sio_ref = swig_make_ref(sio, sergenio);
+    sio_ref = swig_make_ref(sio, sergensio);
     args = PyTuple_New(2);
     Py_INCREF(sio_ref.val);
     PyTuple_SET_ITEM(args, 0, sio_ref.val);
@@ -359,21 +359,21 @@ sgenio_call(struct sergenio *sio, long val, char *func)
 }
 
 static void
-sgenio_modemstate(struct sergenio *sio, unsigned int modemstate)
+sgensio_modemstate(struct sergensio *sio, unsigned int modemstate)
 {
-    sgenio_call(sio, modemstate, "modemstate");
+    sgensio_call(sio, modemstate, "modemstate");
 }
 
 static void
-sgenio_linestate(struct sergenio *sio, unsigned int linestate)
+sgensio_linestate(struct sergensio *sio, unsigned int linestate)
 {
-    sgenio_call(sio, linestate, "linestate");
+    sgensio_call(sio, linestate, "linestate");
 }
 
 static void
-sgenio_flowcontrol_state(struct sergenio *sio, bool val)
+sgensio_flowcontrol_state(struct sergensio *sio, bool val)
 {
-    struct genio_data *data = sergenio_get_user_data(sio);
+    struct gensio_data *data = sergensio_get_user_data(sio);
     swig_ref sio_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
@@ -381,13 +381,13 @@ sgenio_flowcontrol_state(struct sergenio *sio, bool val)
     gstate = OI_PY_STATE_GET();
 
     if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "sergenio callback: "
-		     "genio handler was not set");
+	PyErr_Format(PyExc_RuntimeError, "sergensio callback: "
+		     "gensio handler was not set");
 	wake_curr_waiter();
 	goto out_put;
     }
 
-    sio_ref = swig_make_ref(sio, sergenio);
+    sio_ref = swig_make_ref(sio, sergensio);
     args = PyTuple_New(2);
     Py_INCREF(sio_ref.val);
     PyTuple_SET_ITEM(args, 0, sio_ref.val);
@@ -402,89 +402,89 @@ sgenio_flowcontrol_state(struct sergenio *sio, bool val)
 }
 
 static void
-sgenio_flush(struct sergenio *sio, unsigned int val)
+sgensio_flush(struct sergensio *sio, unsigned int val)
 {
-    sgenio_call(sio, val, "sflush");
+    sgensio_call(sio, val, "sflush");
 }
 
 static void
-sgenio_baud(struct sergenio *sio, int baud)
+sgensio_baud(struct sergensio *sio, int baud)
 {
-    sgenio_call(sio, baud, "sbaud");
+    sgensio_call(sio, baud, "sbaud");
 }
 
 static void
-sgenio_datasize(struct sergenio *sio, int datasize)
+sgensio_datasize(struct sergensio *sio, int datasize)
 {
-    sgenio_call(sio, datasize, "sdatasize");
+    sgensio_call(sio, datasize, "sdatasize");
 }
 
 static void
-sgenio_parity(struct sergenio *sio, int parity)
+sgensio_parity(struct sergensio *sio, int parity)
 {
-    sgenio_call(sio, parity, "sparity");
+    sgensio_call(sio, parity, "sparity");
 }
 
 static void
-sgenio_stopbits(struct sergenio *sio, int stopbits)
+sgensio_stopbits(struct sergensio *sio, int stopbits)
 {
-    sgenio_call(sio, stopbits, "sstopbits");
+    sgensio_call(sio, stopbits, "sstopbits");
 }
 
 static void
-sgenio_flowcontrol(struct sergenio *sio, int flowcontrol)
+sgensio_flowcontrol(struct sergensio *sio, int flowcontrol)
 {
-    sgenio_call(sio, flowcontrol, "sflowcontrol");
+    sgensio_call(sio, flowcontrol, "sflowcontrol");
 }
 
 static void
-sgenio_iflowcontrol(struct sergenio *sio, int iflowcontrol)
+sgensio_iflowcontrol(struct sergensio *sio, int iflowcontrol)
 {
-    sgenio_call(sio, iflowcontrol, "siflowcontrol");
+    sgensio_call(sio, iflowcontrol, "siflowcontrol");
 }
 
 static void
-sgenio_sbreak(struct sergenio *sio, int breakv)
+sgensio_sbreak(struct sergensio *sio, int breakv)
 {
-    sgenio_call(sio, breakv, "ssbreak");
+    sgensio_call(sio, breakv, "ssbreak");
 }
 
 static void
-sgenio_dtr(struct sergenio *sio, int dtr)
+sgensio_dtr(struct sergensio *sio, int dtr)
 {
-    sgenio_call(sio, dtr, "sdtr");
+    sgensio_call(sio, dtr, "sdtr");
 }
 
 static void
-sgenio_rts(struct sergenio *sio, int rts)
+sgensio_rts(struct sergensio *sio, int rts)
 {
-    sgenio_call(sio, rts, "srts");
+    sgensio_call(sio, rts, "srts");
 }
 
-static struct sergenio_callbacks gen_scbs = {
-    .modemstate = sgenio_modemstate,
-    .linestate = sgenio_linestate,
-    .flowcontrol_state = sgenio_flowcontrol_state,
-    .flush = sgenio_flush,
+static struct sergensio_callbacks gen_scbs = {
+    .modemstate = sgensio_modemstate,
+    .linestate = sgensio_linestate,
+    .flowcontrol_state = sgensio_flowcontrol_state,
+    .flush = sgensio_flush,
 
-    .baud = sgenio_baud,
-    .datasize = sgenio_datasize,
-    .parity = sgenio_parity,
-    .stopbits = sgenio_stopbits,
-    .flowcontrol = sgenio_flowcontrol,
-    .iflowcontrol = sgenio_iflowcontrol,
-    .sbreak = sgenio_sbreak,
-    .dtr = sgenio_dtr,
-    .rts = sgenio_rts
+    .baud = sgensio_baud,
+    .datasize = sgensio_datasize,
+    .parity = sgensio_parity,
+    .stopbits = sgensio_stopbits,
+    .flowcontrol = sgensio_flowcontrol,
+    .iflowcontrol = sgensio_iflowcontrol,
+    .sbreak = sgensio_sbreak,
+    .dtr = sgensio_dtr,
+    .rts = sgensio_rts
 };
 
-struct genio_acc_data {
+struct gensio_acc_data {
     swig_cb_val *handler_val;
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 };
 
 static void
-genio_acc_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
+gensio_acc_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
 {
     swig_cb_val *cb = cb_data;
     swig_ref acc_ref;
@@ -493,7 +493,7 @@ genio_acc_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 
     gstate = OI_PY_STATE_GET();
 
-    acc_ref = swig_make_ref(acceptor, genio_acceptor);
+    acc_ref = swig_make_ref(acceptor, gensio_acceptor);
     args = PyTuple_New(1);
     Py_INCREF(acc_ref.val);
     PyTuple_SET_ITEM(args, 0, acc_ref.val);
@@ -506,13 +506,13 @@ genio_acc_shutdown_done(struct genio_acceptor *acceptor, void *cb_data)
 }
 
 static void
-genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
+gensio_acc_got_new(struct gensio_acceptor *acceptor, struct gensio *io)
 {
-    struct genio_acc_data *data = genio_acc_get_user_data(acceptor);
+    struct gensio_acc_data *data = gensio_acc_get_user_data(acceptor);
     swig_ref acc_ref, io_ref;
     PyObject *args;
     OI_PY_STATE gstate;
-    struct genio_data *iodata;
+    struct gensio_data *iodata;
 
     iodata = malloc(sizeof(*data));
     if (!iodata)
@@ -520,14 +520,14 @@ genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
     iodata->refcount = 1;
     iodata->handler_val = NULL;
     iodata->o = data->o;
-    genio_set_callbacks(io, &gen_cbs, iodata);
-    if (is_sergenio(io))
-	sergenio_set_ser_cbs(genio_to_sergenio(io), &gen_scbs);
+    gensio_set_callbacks(io, &gen_cbs, iodata);
+    if (is_sergensio(io))
+	sergensio_set_ser_cbs(gensio_to_sergensio(io), &gen_scbs);
 
     gstate = OI_PY_STATE_GET();
 
-    acc_ref = swig_make_ref(acceptor, genio_acceptor);
-    io_ref = swig_make_ref(io, genio);
+    acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+    io_ref = swig_make_ref(io, gensio);
     args = PyTuple_New(2);
     Py_INCREF(acc_ref.val);
     Py_INCREF(io_ref.val);
@@ -541,11 +541,11 @@ genio_acc_got_new(struct genio_acceptor *acceptor, struct genio *io)
     OI_PY_STATE_PUT(gstate);
 }
 
-static struct genio_acceptor_callbacks gen_acc_cbs = {
-    .new_connection = genio_acc_got_new
+static struct gensio_acceptor_callbacks gen_acc_cbs = {
+    .new_connection = gensio_acc_got_new
 };
 
-struct sergenio_cbdata {
+struct sergensio_cbdata {
     const char *cbname;
     swig_cb_val *h_val;
 };
@@ -553,9 +553,9 @@ struct sergenio_cbdata {
 #define stringify_1(x...)     #x
 #define stringify(x...)       stringify_1(x)
 
-#define sergenio_cbdata(name, h) \
+#define sergensio_cbdata(name, h) \
 ({							\
-    struct sergenio_cbdata *cbd = malloc(sizeof(*cbd));	\
+    struct sergensio_cbdata *cbd = malloc(sizeof(*cbd));	\
     if (cbd) {						\
 	cbd->cbname = stringify(name);			\
 	cbd->h_val = ref_swig_cb(h, name);		\
@@ -564,23 +564,23 @@ struct sergenio_cbdata {
  })
 
 static void
-cleanup_sergenio_cbdata(struct sergenio_cbdata *cbd)
+cleanup_sergensio_cbdata(struct sergensio_cbdata *cbd)
 {
     deref_swig_cb_val(cbd->h_val);
     free(cbd);
 }
 
 static void
-sergenio_cb(struct sergenio *sio, int err, int val, void *cb_data)
+sergensio_cb(struct sergensio *sio, int err, int val, void *cb_data)
 {
-    struct sergenio_cbdata *cbd = cb_data;
+    struct sergensio_cbdata *cbd = cb_data;
     swig_ref sio_ref;
     PyObject *o, *args;
     OI_PY_STATE gstate;
 
     gstate = OI_PY_STATE_GET();
 
-    sio_ref = swig_make_ref(sio, genio);
+    sio_ref = swig_make_ref(sio, gensio);
     args = PyTuple_New(3);
     Py_INCREF(sio_ref.val);
     PyTuple_SET_ITEM(args, 0, sio_ref.val);
@@ -596,7 +596,7 @@ sergenio_cb(struct sergenio *sio, int err, int val, void *cb_data)
 
     swig_finish_call(cbd->h_val, cbd->cbname, args);
 
-    cleanup_sergenio_cbdata(cbd);
+    cleanup_sergensio_cbdata(cbd);
     OI_PY_STATE_PUT(gstate);
 }
 
@@ -631,14 +631,14 @@ static void err_handle(char *name, int rv)
 {
     if (!rv)
 	return;
-    PyErr_Format(PyExc_Exception, "genio:%s: %s", name, strerror(rv));
+    PyErr_Format(PyExc_Exception, "gensio:%s: %s", name, strerror(rv));
 }
 
 static void ser_err_handle(char *name, int rv)
 {
     if (!rv)
 	return;
-    PyErr_Format(PyExc_Exception, "sergenio:%s: %s", name, strerror(rv));
+    PyErr_Format(PyExc_Exception, "sergensio:%s: %s", name, strerror(rv));
 }
 
 static void cast_error(char *to, char *from)

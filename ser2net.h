@@ -20,14 +20,14 @@
 #ifndef SER2NET_H
 #define SER2NET_H
 
-#include "utils/selector.h"
-#include "genio/genio_selector.h"
+#include <utils/selector.h>
+#include <gensio/gensio_selector.h>
 
 /* The default rfc2217 signature if none is provided. */
 extern char *rfc2217_signature;
 
 extern struct selector_s *ser2net_sel;
-extern struct genio_os_funcs *ser2net_o;
+extern struct gensio_os_funcs *ser2net_o;
 
 extern int ser2net_debug;
 extern int ser2net_debug_level;

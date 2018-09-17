@@ -1,9 +1,9 @@
 
-import genio
+import gensio
 import utils
 
 def test_transfer(name, data, config, io1str, io2str, timeout=1000):
-    """Test a transfer between two genio objects
+    """Test a transfer between two gensio objects
 
     This function takes a name (for reporting), some data to transfer,
     a config file for ser2net, and transfers the data one direction,
@@ -12,7 +12,7 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000):
     print("Transfer %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    o = genio.alloc_genio_selector()
+    o = gensio.alloc_gensio_selector()
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         print("  io1 to io2")
@@ -43,7 +43,7 @@ def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
     print("Write drain %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    o = genio.alloc_genio_selector()
+    o = gensio.alloc_gensio_selector()
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         print("  io1 to io2")

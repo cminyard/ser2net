@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -23,8 +23,8 @@
  * the underlying details.
  */
 
-#ifndef SER2NET_GENIO_H
-#define SER2NET_GENIO_H
+#ifndef GENSIO_H
+#define GENSIO_H
 
 #include <stdbool.h>
 #include <sys/types.h>
@@ -35,15 +35,15 @@
  * Function pointers to provide OS functions.
  */
 
-struct genio_lock;
-struct genio_timer;
-struct genio_runner;
+struct gensio_lock;
+struct gensio_timer;
+struct gensio_runner;
 
-struct genio_once {
+struct gensio_once {
     bool called;
 };
 
-struct genio_os_funcs {
+struct gensio_os_funcs {
     /* For use by the code doing the os function translation. */
     void *user_data;
 
@@ -52,23 +52,23 @@ struct genio_os_funcs {
 
     /****** Memory Allocation ******/
     /* Return allocated and zeroed data.  Return NULL on error. */
-    void *(*zalloc)(struct genio_os_funcs *f, unsigned int size);
+    void *(*zalloc)(struct gensio_os_funcs *f, unsigned int size);
 
     /* Free data allocated by zalloc. */
-    void (*free)(struct genio_os_funcs *f, void *data);
+    void (*free)(struct gensio_os_funcs *f, void *data);
 
     /****** Mutexes ******/
     /* Allocate a lock.  Return NULL on error. */
-    struct genio_lock *(*alloc_lock)(struct genio_os_funcs *f);
+    struct gensio_lock *(*alloc_lock)(struct gensio_os_funcs *f);
 
     /* Free a lock allocated with alloc_lock. */
-    void (*free_lock)(struct genio_lock *lock);
+    void (*free_lock)(struct gensio_lock *lock);
 
     /* Lock the lock. */
-    void (*lock)(struct genio_lock *lock);
+    void (*lock)(struct gensio_lock *lock);
 
     /* Unlock the lock. */
-    void (*unlock)(struct genio_lock *lock);
+    void (*unlock)(struct gensio_lock *lock);
 
     /****** File Descriptor Handling ******/
     /*
@@ -82,7 +82,7 @@ struct genio_os_funcs {
      * Note that all handlers are disabled when this returns, you must
      * enable them for the callbacks to be called.
      */
-    int (*set_fd_handlers)(struct genio_os_funcs *f,
+    int (*set_fd_handlers)(struct gensio_os_funcs *f,
 			   int fd,
 			   void *cb_data,
 			   void (*read_handler)(int fd, void *cb_data),
@@ -97,59 +97,59 @@ struct genio_os_funcs {
      * cleared_handler is called when the operation completes, you
      * need to wait for that.
      */
-    void (*clear_fd_handlers)(struct genio_os_funcs *f, int fd);
+    void (*clear_fd_handlers)(struct gensio_os_funcs *f, int fd);
 
     /*
      * Like the above, but does not call the cleared_handler function
      * when done.
      */
-    void (*clear_fd_handlers_norpt)(struct genio_os_funcs *f, int fd);
+    void (*clear_fd_handlers_norpt)(struct gensio_os_funcs *f, int fd);
 
     /*
      * Enable/disable the various handlers.  Note that if you disable
      * a handler, it may still be running in a callback, this does not
      * wait.
      */
-    void (*set_read_handler)(struct genio_os_funcs *f, int fd, bool enable);
-    void (*set_write_handler)(struct genio_os_funcs *f, int fd, bool enable);
-    void (*set_except_handler)(struct genio_os_funcs *f, int fd, bool enable);
+    void (*set_read_handler)(struct gensio_os_funcs *f, int fd, bool enable);
+    void (*set_write_handler)(struct gensio_os_funcs *f, int fd, bool enable);
+    void (*set_except_handler)(struct gensio_os_funcs *f, int fd, bool enable);
 
     /****** Timers ******/
     /*
      * Allocate a timer that calls the given handler when it goes
      * off.  Return NULL on error.
      */
-    struct genio_timer *(*alloc_timer)(struct genio_os_funcs *f,
-				       void (*handler)(struct genio_timer *t,
-						       void *cb_data),
-				       void *cb_data);
+    struct gensio_timer *(*alloc_timer)(struct gensio_os_funcs *f,
+					void (*handler)(struct gensio_timer *t,
+							void *cb_data),
+					void *cb_data);
 
     /*
      * Free a timer allocated with alloc_timer.  The timer should not
      * be running.
      */
-    void (*free_timer)(struct genio_timer *timer);
+    void (*free_timer)(struct gensio_timer *timer);
 
     /*
      * Start the timer running.  Returns EBUSY if the timer is already
      * running.
      */
-    int (*start_timer)(struct genio_timer *timer, struct timeval *timeout);
+    int (*start_timer)(struct gensio_timer *timer, struct timeval *timeout);
 
     /*
      * Stop the timer.  Returns ETIMEDOUT if the timer is not running.
      * Note that the timer may still be running in a timeout handler
      * when this returns.
      */
-    int (*stop_timer)(struct genio_timer *timer);
+    int (*stop_timer)(struct gensio_timer *timer);
 
     /*
      * Like the above, but the done_handler is called when the timer is
      * completely stopped and no handler is running.  If ETIMEDOUT is
      * returned, the done_handler is not called.
      */
-    int (*stop_timer_with_done)(struct genio_timer *timer,
-				void (*done_handler)(struct genio_timer *t,
+    int (*stop_timer_with_done)(struct gensio_timer *timer,
+				void (*done_handler)(struct gensio_timer *t,
 						     void *cb_data),
 				void *cb_data);
 
@@ -160,19 +160,19 @@ struct genio_os_funcs {
      * where you need to run something outside of a lock or context,
      * you schedule the runner.
      */
-    struct genio_runner *(*alloc_runner)(struct genio_os_funcs *f,
-					 void (*handler)(struct genio_runner *r,
-							 void *cb_data),
-					 void *cb_data);
+    struct gensio_runner *(*alloc_runner)(struct gensio_os_funcs *f,
+				void (*handler)(struct gensio_runner *r,
+						void *cb_data),
+				void *cb_data);
 
     /* Free a runner allocated with alloc_runner. */
-    void (*free_runner)(struct genio_runner *runner);
+    void (*free_runner)(struct gensio_runner *runner);
 
     /*
      * Run a runner.  Return EBUSY if the runner is already scheduled
      * to run.
      */
-    int (*run)(struct genio_runner *runner);
+    int (*run)(struct gensio_runner *runner);
 
     /****** Waiters ******/
     /*
@@ -187,10 +187,10 @@ struct genio_os_funcs {
      * before wait() that's ok.  If you call wake() 3 times, there
      * are 3 wakes pending.
      */
-    struct genio_waiter *(*alloc_waiter)(struct genio_os_funcs *f);
+    struct gensio_waiter *(*alloc_waiter)(struct gensio_os_funcs *f);
 
     /* Free a waiter allocated by alloc_waiter. */
-    void (*free_waiter)(struct genio_waiter *waiter);
+    void (*free_waiter)(struct gensio_waiter *waiter);
 
     /*
      * Wait for a wakeup for up to the amount of time (relative) given
@@ -198,17 +198,17 @@ struct genio_os_funcs {
      * ETIMEDOUT on a timeout.  It can return other errors.
      * The timeout is updated to the remaining time.
      */
-    int (*wait)(struct genio_waiter *waiter, struct timeval *timeout);
+    int (*wait)(struct gensio_waiter *waiter, struct timeval *timeout);
 
     /*
      * Like wait, but return if a signal is received by the thread.
      * This is useful if you want to handle SIGINT or something like
      * that.
      */
-    int (*wait_intr)(struct genio_waiter *waiter, struct timeval *timeout);
+    int (*wait_intr)(struct gensio_waiter *waiter, struct timeval *timeout);
 
     /* Wake the given waiter. */
-    void (*wake)(struct genio_waiter *waiter);
+    void (*wake)(struct gensio_waiter *waiter);
 
     /****** Misc ******/
     /*
@@ -217,21 +217,21 @@ struct genio_os_funcs {
      * happens before the relative time given it will return.
      * The timeout is updated to the remaining time.
      */
-    int (*service)(struct genio_os_funcs *f, struct timeval *timeout);
+    int (*service)(struct gensio_os_funcs *f, struct timeval *timeout);
 
     /* Free this structure. */
-    void (*free_funcs)(struct genio_os_funcs *f);
+    void (*free_funcs)(struct gensio_os_funcs *f);
 
     /* Call this function once. */
-    void (*call_once)(struct genio_os_funcs *f, struct genio_once *once,
+    void (*call_once)(struct gensio_os_funcs *f, struct gensio_once *once,
 		      void (*func)(void *cb_data), void *cb_data);
 
-    void (*get_monotonic_time)(struct genio_os_funcs *f, struct timeval *time);
+    void (*get_monotonic_time)(struct gensio_os_funcs *f, struct timeval *time);
 };
 
-struct genio;
+struct gensio;
 
-struct genio_callbacks {
+struct gensio_callbacks {
     /*
      * Called when data is read from the I/O device.
      *
@@ -248,49 +248,49 @@ struct genio_callbacks {
      * Flags are per-type options, they generally don't matter except
      * for some specific situations.
      */
-    unsigned int (*read_callback)(struct genio *io, int readerr,
+    unsigned int (*read_callback)(struct gensio *io, int readerr,
 				  unsigned char *buf, unsigned int buflen,
 				  unsigned int flags);
 
     /* Flags for read callbacks. */
 
-/* For stdin client genio, data is from stderr instead of stdout. */
-#define GENIO_ERR_OUTPUT	1
+/* For stdin client gensio, data is from stderr instead of stdout. */
+#define GENSIO_ERR_OUTPUT	1
 
     /*
-     * Called when the user may write to the genio.
+     * Called when the user may write to the gensio.
      */
-    void (*write_callback)(struct genio *io);
+    void (*write_callback)(struct gensio *io);
 
     /*
      * Called when urgent data is available.  This should only be done
      * on TCP sockets.  Optional.
      */
-    void (*urgent_callback)(struct genio *io);
+    void (*urgent_callback)(struct gensio *io);
 };
 
 /*
  * Set the callback data for the net.  This must be done in the
  * new_connection callback for the acceptor before any other operation
- * is done on the genio.  The only exception is that genio_close() may
+ * is done on the gensio.  The only exception is that gensio_close() may
  * be called with callbacks not set.  This function may be called
- * again if the genio is not enabled.
+ * again if the gensio is not enabled.
  */
-void genio_set_callbacks(struct genio *io,
-			 const struct genio_callbacks *cbs, void *user_data);
+void gensio_set_callbacks(struct gensio *io,
+			  const struct gensio_callbacks *cbs, void *user_data);
 
 /*
- * Return the user data supplied in genio_set_callbacks().
+ * Return the user data supplied in gensio_set_callbacks().
  */
-void *genio_get_user_data(struct genio *io);
+void *gensio_get_user_data(struct gensio *io);
 
 /*
- * Set the user data.  May be called if the genio is not enabled.
+ * Set the user data.  May be called if the gensio is not enabled.
  */
-void genio_set_user_data(struct genio *io, void *user_data);
+void gensio_set_user_data(struct gensio *io, void *user_data);
 
 /*
- * Write data to the genio.  This should only be called from the
+ * Write data to the gensio.  This should only be called from the
  * write callback for most general usage.  Writes buflen bytes
  * from buf.
  *
@@ -303,8 +303,8 @@ void genio_set_user_data(struct genio *io, void *user_data);
  * Note that count may be set to zero.  This can happen on an
  * EAGAIN type situation.  count may be NULL if you don't care.
  */
-int genio_write(struct genio *io, unsigned int *count,
-		const void *buf, unsigned int buflen);
+int gensio_write(struct gensio *io, unsigned int *count,
+		 const void *buf, unsigned int buflen);
 
 /*
  * Convert the remote address for this network connection to a
@@ -319,97 +319,97 @@ int genio_write(struct genio *io, unsigned int *count,
  * NIL char after the last byte of the string, where you would
  * want to put any new data into the string.
  */
-int genio_raddr_to_str(struct genio *io, int *pos,
-		       char *buf, unsigned int buflen);
+int gensio_raddr_to_str(struct gensio *io, int *pos,
+			char *buf, unsigned int buflen);
 
 /*
  * Return the remote address for the connection.  addrlen must be
  * set to the size of addr and will be updated to the actual size.
  */
-int genio_get_raddr(struct genio *io,
-		    struct sockaddr *addr, socklen_t *addrlen);
+int gensio_get_raddr(struct gensio *io,
+		     struct sockaddr *addr, socklen_t *addrlen);
 
 /*
  * Returns an id for the remote end.  For stdio clients this is the
- * pid.  For sergenio_termios this is the fd.  It returns an error
+ * pid.  For sergensio_termios this is the fd.  It returns an error
  * for all others.
  */
-int genio_remote_id(struct genio *io, int *id);
+int gensio_remote_id(struct gensio *io, int *id);
 
 /*
- * Open the genio.  genios recevied from an acceptor are open upon
- * receipt, but client genios are started closed and need to be opened
- * before use.  If no error is returned, the genio will be open when
+ * Open the gensio.  gensios recevied from an acceptor are open upon
+ * receipt, but client gensios are started closed and need to be opened
+ * before use.  If no error is returned, the gensio will be open when
  * the open_done callback is called.
  */
-int genio_open(struct genio *io,
-	       void (*open_done)(struct genio *io, int err, void *open_data),
-	       void *open_data);
+int gensio_open(struct gensio *io,
+		void (*open_done)(struct gensio *io, int err, void *open_data),
+		void *open_data);
 
 /*
- * Like genio_open(), but waits for the open to complete.
+ * Like gensio_open(), but waits for the open to complete.
  */
-int genio_open_s(struct genio *io, struct genio_os_funcs *o);
+int gensio_open_s(struct gensio *io, struct gensio_os_funcs *o);
 
 /*
- * Close the genio.  Note that the close operation is not complete
+ * Close the gensio.  Note that the close operation is not complete
  * until close_done() is called.  This shuts down internal file
- * descriptors and such, but does not free the genio.
+ * descriptors and such, but does not free the gensio.
  */
-int genio_close(struct genio *io,
-		void (*close_done)(struct genio *io, void *close_data),
-		void *close_data);
+int gensio_close(struct gensio *io,
+		 void (*close_done)(struct gensio *io, void *close_data),
+		 void *close_data);
 
 /*
- * Frees data assoicated with the genio.  If it is open, the genio is
- * closed.  Note that you should not call genio_free() after genio_close()
+ * Frees data assoicated with the gensio.  If it is open, the gensio is
+ * closed.  Note that you should not call gensio_free() after gensio_close()
  * before the done callback is called.  The results are undefined.
  */
-void genio_free(struct genio *io);
+void gensio_free(struct gensio *io);
 
 /*
  * Enable or disable data to be read from the network connection.
  */
-void genio_set_read_callback_enable(struct genio *io, bool enabled);
+void gensio_set_read_callback_enable(struct gensio *io, bool enabled);
 
 /*
  * Enable the write_callback when data can be written on the
  * network connection.
  */
-void genio_set_write_callback_enable(struct genio *io, bool enabled);
+void gensio_set_write_callback_enable(struct gensio *io, bool enabled);
 
 /*
- * Is the genio a client or server?
+ * Is the gensio a client or server?
  */
-bool genio_is_client(struct genio *io);
+bool gensio_is_client(struct gensio *io);
 
-struct genio_acceptor;
+struct gensio_acceptor;
 
-struct genio_acceptor_callbacks {
+struct gensio_acceptor_callbacks {
     /*
      * A new connection for the acceptor is in io.
      */
-    void (*new_connection)(struct genio_acceptor *acceptor, struct genio *io);
+    void (*new_connection)(struct gensio_acceptor *acceptor, struct gensio *io);
 };
 
 /*
  * Return the user data supplied to the allocator.
  */
-void *genio_acc_get_user_data(struct genio_acceptor *acceptor);
+void *gensio_acc_get_user_data(struct gensio_acceptor *acceptor);
 
 /*
  * Set the user data.  May be called if the acceptor is not enabled.
  */
-void genio_acc_set_user_data(struct genio_acceptor *acceptor,
-			     void *user_data);
+void gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
+			      void *user_data);
 
 /*
  * Set the callbacks and user data.  May be called if the acceptor is
  * not enabled.
  */
-void genio_acc_set_callbacks(struct genio_acceptor *acceptor,
-			     struct genio_acceptor_callbacks *cbs,
-			     void *user_data);
+void gensio_acc_set_callbacks(struct gensio_acceptor *acceptor,
+			      struct gensio_acceptor_callbacks *cbs,
+			      void *user_data);
 
 /*
  * An acceptor is allocated without opening any sockets.  This
@@ -418,7 +418,7 @@ void genio_acc_set_callbacks(struct genio_acceptor *acceptor,
  *
  * Returns a standard errno on an error, zero otherwise.
  */
-int genio_acc_startup(struct genio_acceptor *acceptor);
+int gensio_acc_startup(struct gensio_acceptor *acceptor);
 
 /*
  * Closes all sockets and disables everything.  shutdown_complete()
@@ -428,131 +428,131 @@ int genio_acc_startup(struct genio_acceptor *acceptor);
  * Returns a EAGAIN if the acceptor is already shut down, zero
  * otherwise.
  */
-int genio_acc_shutdown(struct genio_acceptor *acceptor,
-		       void (*shutdown_done)(struct genio_acceptor *acceptor,
-					     void *shutdown_data),
-		       void *shutdown_data);
+int gensio_acc_shutdown(struct gensio_acceptor *acceptor,
+			void (*shutdown_done)(struct gensio_acceptor *acceptor,
+					      void *shutdown_data),
+			void *shutdown_data);
 
 /*
  * Enable the accept callback when connections come in.
  */
-void genio_acc_set_accept_callback_enable(struct genio_acceptor *acceptor,
-					  bool enabled);
+void gensio_acc_set_accept_callback_enable(struct gensio_acceptor *acceptor,
+					   bool enabled);
 
 /*
  * Free the network acceptor.  If the network acceptor is started
  * up, this shuts it down first and shutdown_complete() is NOT called.
  */
-void genio_acc_free(struct genio_acceptor *acceptor);
+void gensio_acc_free(struct gensio_acceptor *acceptor);
 
 /*
- * Create a new connection from the given genio acceptor.  For TCP and
+ * Create a new connection from the given gensio acceptor.  For TCP and
  * UDP, the addr is an addrinfo returned by getaddrinfo.  Note that
- * with this call, if connect_done is called with an error, the genio
+ * with this call, if connect_done is called with an error, the gensio
  * is *not* automatically freed.  You must do that.
  */
-int genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
-		      void (*connect_done)(struct genio *io, int err,
-					   void *cb_data),
-		      void *cb_data, struct genio **new_io);
+int gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
+		       void (*connect_done)(struct gensio *io, int err,
+					    void *cb_data),
+		       void *cb_data, struct gensio **new_io);
 /*
  * Returns if the acceptor requests exit on close.  A hack for stdio.
  */
-bool genio_acc_exit_on_close(struct genio_acceptor *acceptor);
+bool gensio_acc_exit_on_close(struct gensio_acceptor *acceptor);
 
 /*
  * Convert a string representation of a network address into a network
  * acceptor.  max_read_size is the internal read buffer size for the
  * connections.
  */
-int str_to_genio_acceptor(const char *str, struct genio_os_funcs *o,
-			  unsigned int max_read_size,
-			  const struct genio_acceptor_callbacks *cbs,
-			  void *user_data,
-			  struct genio_acceptor **acceptor);
+int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
+			   unsigned int max_read_size,
+			   const struct gensio_acceptor_callbacks *cbs,
+			   void *user_data,
+			   struct gensio_acceptor **acceptor);
 
 /*
  * Convert a string representation of a network address into a
- * client genio.
+ * client gensio.
  */
-int str_to_genio(const char *str,
-		 struct genio_os_funcs *o,
-		 unsigned int max_read_size,
-		 const struct genio_callbacks *cbs,
-		 void *user_data,
-		 struct genio **genio);
+int str_to_gensio(const char *str,
+		  struct gensio_os_funcs *o,
+		  unsigned int max_read_size,
+		  const struct gensio_callbacks *cbs,
+		  void *user_data,
+		  struct gensio **gensio);
 
 /*
  * Allocators for different I/O types.
  */
-int tcp_genio_acceptor_alloc(const char *name,
-			     struct genio_os_funcs *o,
-			     struct addrinfo *ai,
-			     unsigned int max_read_size,
-			     const struct genio_acceptor_callbacks *cbs,
-			     void *user_data,
-			     struct genio_acceptor **acceptor);
-int udp_genio_acceptor_alloc(const char *name,
-			     struct genio_os_funcs *o,
-			     struct addrinfo *ai,
-			     unsigned int max_read_size,
-			     const struct genio_acceptor_callbacks *cbs,
-			     void *user_data,
-			     struct genio_acceptor **acceptor);
-int stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
-			       unsigned int max_read_size,
-			       const struct genio_acceptor_callbacks *cbs,
-			       void *user_data,
-			       struct genio_acceptor **acceptor);
-int ssl_genio_acceptor_alloc(const char *name,
-			     char *args[],
-			     struct genio_os_funcs *o,
-			     struct genio_acceptor *child,
-			     unsigned int max_read_size,
-			     const struct genio_acceptor_callbacks *cbs,
-			     void *user_data,
-			     struct genio_acceptor **acceptor);
+int tcp_gensio_acceptor_alloc(const char *name,
+			      struct gensio_os_funcs *o,
+			      struct addrinfo *ai,
+			      unsigned int max_read_size,
+			      const struct gensio_acceptor_callbacks *cbs,
+			      void *user_data,
+			      struct gensio_acceptor **acceptor);
+int udp_gensio_acceptor_alloc(const char *name,
+			      struct gensio_os_funcs *o,
+			      struct addrinfo *ai,
+			      unsigned int max_read_size,
+			      const struct gensio_acceptor_callbacks *cbs,
+			      void *user_data,
+			      struct gensio_acceptor **acceptor);
+int stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
+				unsigned int max_read_size,
+				const struct gensio_acceptor_callbacks *cbs,
+				void *user_data,
+				struct gensio_acceptor **acceptor);
+int ssl_gensio_acceptor_alloc(const char *name,
+			      char *args[],
+			      struct gensio_os_funcs *o,
+			      struct gensio_acceptor *child,
+			      unsigned int max_read_size,
+			      const struct gensio_acceptor_callbacks *cbs,
+			      void *user_data,
+			      struct gensio_acceptor **acceptor);
 
 /* Client allocators. */
 
 /*
- * Create a TCP genio for the given ai.
+ * Create a TCP gensio for the given ai.
  */
-int tcp_genio_alloc(struct addrinfo *ai,
-		    struct genio_os_funcs *o,
-		    unsigned int max_read_size,
-		    const struct genio_callbacks *cbs,
-		    void *user_data,
-		    struct genio **new_genio);
+int tcp_gensio_alloc(struct addrinfo *ai,
+		     struct gensio_os_funcs *o,
+		     unsigned int max_read_size,
+		     const struct gensio_callbacks *cbs,
+		     void *user_data,
+		     struct gensio **new_gensio);
 
 /*
- * Create a UDP genio for the given ai.  It uses the first entry in
+ * Create a UDP gensio for the given ai.  It uses the first entry in
  * ai.
  */
-int udp_genio_alloc(struct addrinfo *ai,
-		    struct genio_os_funcs *o,
-		    unsigned int max_read_size,
-		    const struct genio_callbacks *cbs,
-		    void *user_data,
-		    struct genio **new_genio);
+int udp_gensio_alloc(struct addrinfo *ai,
+		     struct gensio_os_funcs *o,
+		     unsigned int max_read_size,
+		     const struct gensio_callbacks *cbs,
+		     void *user_data,
+		     struct gensio **new_gensio);
 
 /* Run a program (in argv[0]) and attach to it's stdio. */
-int stdio_genio_alloc(char *const argv[],
-		      struct genio_os_funcs *o,
-		      unsigned int max_read_size,
-		      const struct genio_callbacks *cbs,
-		      void *user_data,
-		      struct genio **new_genio);
+int stdio_gensio_alloc(char *const argv[],
+		       struct gensio_os_funcs *o,
+		       unsigned int max_read_size,
+		       const struct gensio_callbacks *cbs,
+		       void *user_data,
+		       struct gensio **new_gensio);
 
 /*
- * Make an SSL connection over another genio.
+ * Make an SSL connection over another gensio.
  */
-int ssl_genio_alloc(struct genio *child,
-		    char *args[],
-		    struct genio_os_funcs *o,
-		    unsigned int max_read_size,
-		    const struct genio_callbacks *cbs, void *user_data,
-		    struct genio **io);
+int ssl_gensio_alloc(struct gensio *child,
+		     char *args[],
+		     struct gensio_os_funcs *o,
+		     unsigned int max_read_size,
+		     const struct gensio_callbacks *cbs, void *user_data,
+		     struct gensio **io);
 
 
 /*
@@ -584,9 +584,9 @@ int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 		      bool *is_port_set);
 
 /*
- * Helper function for dealing with buffers writing to genio.
+ * Helper function for dealing with buffers writing to gensio.
  */
-int genio_buffer_do_write(void *cb_data,
-			  void  *buf, size_t buflen, size_t *written);
+int gensio_buffer_do_write(void *cb_data,
+			   void  *buf, size_t buflen, size_t *written);
 
-#endif /* SER2NET_GENIO_H */
+#endif /* GENSIO_H */

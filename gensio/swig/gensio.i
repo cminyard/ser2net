@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,16 +17,18 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-%module genio
+%module gensio
 
 %{
 #include <string.h>
 #include <termios.h>
 #include <sgtty.h>
-#include "genio/genio.h"
-#include "genio/sergenio.h"
-#include "genio/genio_selector.h"
-#include "utils/waiter.h"
+
+#include <utils/waiter.h>
+
+#include <gensio/gensio.h>
+#include <gensio/sergensio.h>
+#include <gensio/gensio_selector.h>
 
 #if PYTHON_HAS_POSIX_THREADS
 #include <pthread.h>
@@ -34,8 +36,8 @@
 #endif
 
 struct waiter {
-    struct genio_os_funcs *o;
-    struct genio_waiter *waiter;
+    struct gensio_os_funcs *o;
+    struct gensio_waiter *waiter;
 };
 
 /*
@@ -44,14 +46,14 @@ struct waiter {
  */
 #ifdef USE_POSIX_THREADS
 static void oom_err(void);
-struct genio_wait_block {
+struct gensio_wait_block {
     struct waiter *curr_waiter;
 };
 
-static pthread_key_t genio_thread_key;
+static pthread_key_t gensio_thread_key;
 
 static void
-genio_key_del(void *data)
+gensio_key_del(void *data)
 {
     free(data);
 }
@@ -59,7 +61,7 @@ genio_key_del(void *data)
 static struct waiter *
 save_waiter(struct waiter *waiter)
 {
-    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+    struct gensio_wait_block *data = pthread_getspecific(gensio_thread_key);
     struct waiter *prev_waiter;
 
     if (!data) {
@@ -69,7 +71,7 @@ save_waiter(struct waiter *waiter)
 	    return NULL;
 	}
 	memset(data, 0, sizeof(*data));
-	pthread_setspecific(genio_thread_key, data);
+	pthread_setspecific(gensio_thread_key, data);
     }
 
     prev_waiter = data->curr_waiter;
@@ -81,7 +83,7 @@ save_waiter(struct waiter *waiter)
 static void
 restore_waiter(struct waiter *prev_waiter)
 {
-    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+    struct gensio_wait_block *data = pthread_getspecific(gensio_thread_key);
 
     data->curr_waiter = prev_waiter;
 }
@@ -89,7 +91,7 @@ restore_waiter(struct waiter *prev_waiter)
 static void
 wake_curr_waiter(void)
 {
-    struct genio_wait_block *data = pthread_getspecific(genio_thread_key);
+    struct gensio_wait_block *data = pthread_getspecific(gensio_thread_key);
 
     if (!data)
 	return;
@@ -123,18 +125,18 @@ wake_curr_waiter(void)
 }
 #endif
 
-#include "genio_python.h"
+#include "gensio_python.h"
 
 static int
-genio_do_wait(struct waiter *waiter, struct timeval *timeout)
+gensio_do_wait(struct waiter *waiter, struct timeval *timeout)
 {
     int err;
     struct waiter *prev_waiter = save_waiter(waiter);
 
     do {
-	GENIO_SWIG_C_BLOCK_ENTRY
+	GENSIO_SWIG_C_BLOCK_ENTRY
 	err = waiter->o->wait_intr(waiter->waiter, timeout);
-	GENIO_SWIG_C_BLOCK_EXIT
+	GENSIO_SWIG_C_BLOCK_EXIT
 	if (check_for_err()) {
 	    if (prev_waiter)
 		prev_waiter->o->wake(prev_waiter->waiter);
@@ -183,7 +185,7 @@ struct sel_lock_s {
 };
 
 static sel_lock_t *
-genio_alloc_lock(void *cb_data)
+gensio_alloc_lock(void *cb_data)
 {
     struct sel_lock_s *lock;
 
@@ -195,25 +197,25 @@ genio_alloc_lock(void *cb_data)
 }
 
 static void
-genio_free_lock(sel_lock_t *lock)
+gensio_free_lock(sel_lock_t *lock)
 {
     free(lock);
 }
 
 static void
-genio_lock(sel_lock_t *lock)
+gensio_lock(sel_lock_t *lock)
 {
     pthread_mutex_lock(&lock->lock);
 }
 
 static void
-genio_unlock(sel_lock_t *lock)
+gensio_unlock(sel_lock_t *lock)
 {
     pthread_mutex_unlock(&lock->lock);
 }
 
 static void
-genio_thread_sighandler(int sig)
+gensio_thread_sighandler(int sig)
 {
     /* Nothing to do, signal just wakes things up. */
 }
@@ -224,7 +226,7 @@ struct os_funcs_data {
     struct selector_s *sel;
 };
 
-static void check_os_funcs_free(struct genio_os_funcs *o)
+static void check_os_funcs_free(struct gensio_os_funcs *o)
 {
     struct os_funcs_data *odata = o->other_data;
 
@@ -234,10 +236,10 @@ static void check_os_funcs_free(struct genio_os_funcs *o)
     }
 }
 
-struct genio_os_funcs *alloc_genio_selector(void)
+struct gensio_os_funcs *alloc_gensio_selector(void)
 {
     struct selector_s *sel;
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
     struct os_funcs_data *odata;
     int err;
     int wake_sig;
@@ -245,7 +247,7 @@ struct genio_os_funcs *alloc_genio_selector(void)
     struct sigaction act;
 
     wake_sig = SIGUSR1;
-    act.sa_handler = genio_thread_sighandler;
+    act.sa_handler = gensio_thread_sighandler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     err = sigaction(SIGUSR1, &act, NULL);
@@ -256,8 +258,8 @@ struct genio_os_funcs *alloc_genio_selector(void)
     }
 
     err = sel_alloc_selector_thread(&sel, SIGUSR1,
-				    genio_alloc_lock, genio_free_lock,
-				    genio_lock, genio_unlock, NULL);
+				    gensio_alloc_lock, gensio_free_lock,
+				    gensio_lock, gensio_unlock, NULL);
 #else
     err = sel_alloc_selector_nothread(&sel);
 #endif
@@ -270,9 +272,9 @@ struct genio_os_funcs *alloc_genio_selector(void)
     odata = malloc(sizeof(*odata));
     odata->refcount = 1;
 
-    o = genio_selector_alloc(sel, wake_sig);
+    o = gensio_selector_alloc(sel, wake_sig);
     if (!o) {
-	fprintf(stderr, "Unable to allocate genio os funcs, giving up\n");
+	fprintf(stderr, "Unable to allocate gensio os funcs, giving up\n");
 	exit(1);
     }
     o->other_data = odata;
@@ -286,43 +288,43 @@ struct genio_os_funcs *alloc_genio_selector(void)
     {
 	int err;
 
-	err = pthread_key_create(&genio_thread_key, genio_key_del);
+	err = pthread_key_create(&gensio_thread_key, gensio_key_del);
 	if (err) {
-	    fprintf(stderr, "Error creating genio thread key: %s, giving up\n",
+	    fprintf(stderr, "Error creating gensio thread key: %s, giving up\n",
 		    strerror(err));
 	    exit(1);
 	}
     }
 #endif
-    genio_swig_init_lang();
+    gensio_swig_init_lang();
 %}
 
 %include <typemaps.i>
 %include <exception.i>
 
-%include "genio_python.i"
+%include "gensio_python.i"
 
-%nodefaultctor sergenio;
-%nodefaultctor genio_os_funcs;
-struct genio { };
-struct sergenio { };
-struct genio_acceptor { };
-struct genio_os_funcs { };
+%nodefaultctor sergensio;
+%nodefaultctor gensio_os_funcs;
+struct gensio { };
+struct sergensio { };
+struct gensio_acceptor { };
+struct gensio_os_funcs { };
 struct waiter { };
 
-%extend genio_os_funcs {
-    ~genio_os_funcs() {
+%extend gensio_os_funcs {
+    ~gensio_os_funcs() {
 	check_os_funcs_free(self);
     }
 }
 
-%extend genio {
-    genio(struct genio_os_funcs *o, char *str, int max_read_size,
+%extend gensio {
+    gensio(struct gensio_os_funcs *o, char *str, int max_read_size,
 	  swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
 	int rv;
-	struct genio_data *data;
-	struct genio *io = NULL;
+	struct gensio_data *data;
+	struct gensio *io = NULL;
 
 	data = malloc(sizeof(*data));
 	if (!data)
@@ -331,27 +333,27 @@ struct waiter { };
 	data->handler_val = ref_swig_cb(handler, read_callback);
 	data->o = o;
 
-	rv = str_to_genio(str, o, max_read_size, &gen_cbs, data, &io);
+	rv = str_to_gensio(str, o, max_read_size, &gen_cbs, data, &io);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
-	    ser_err_handle("genio alloc", rv);
+	    ser_err_handle("gensio alloc", rv);
 	} else {
 	    odata->refcount++;
-	    if (is_sergenio(io))
-		sergenio_set_ser_cbs(genio_to_sergenio(io), &gen_scbs);
+	    if (is_sergensio(io))
+		sergensio_set_ser_cbs(gensio_to_sergensio(io), &gen_scbs);
 	}
 
 	return io;
     }
 
-    ~genio()
+    ~gensio()
     {
-	struct genio_data *data = genio_get_user_data(self);
+	struct gensio_data *data = gensio_get_user_data(self);
 
 	data->refcount--;
 	if (data->refcount <= 0) {
-	    genio_free(self);
+	    gensio_free(self);
 	    deref_swig_cb_val(data->handler_val);
 	    check_os_funcs_free(data->o);
 	    free(data);
@@ -359,7 +361,7 @@ struct waiter { };
     }
 
     void set_cbs(swig_cb *handler) {
-	struct genio_data *data = genio_get_user_data(self);
+	struct gensio_data *data = gensio_get_user_data(self);
 
 	if (data->handler_val)
 	    deref_swig_cb_val(data->handler_val);
@@ -370,20 +372,20 @@ struct waiter { };
     int remote_idt() {
 	int remid;
 
-	err_handle("remote_id", genio_remote_id(self, &remid));
+	err_handle("remote_id", gensio_remote_id(self, &remid));
 	return remid;
     }
     %rename(open) opent;
     void opent(swig_cb *done) {
 	swig_cb_val *done_val = NULL;
-	void (*open_done)(struct genio *io, int err, void *cb_data) = NULL;
+	void (*open_done)(struct gensio *io, int err, void *cb_data) = NULL;
 	int rv;
 
 	if (!nil_swig_cb(done)) {
-	    open_done = genio_open_done;
+	    open_done = gensio_open_done;
 	    done_val = ref_swig_cb(done, open_done);
 	}
-	rv = genio_open(self, open_done, done_val);
+	rv = gensio_open(self, open_done, done_val);
 	if (rv && done_val)
 	    deref_swig_cb_val(done_val);
 
@@ -392,22 +394,22 @@ struct waiter { };
 
     %rename(open_s) open_st;
     void open_st() {
-	struct genio_data *data = genio_get_user_data(self);
+	struct gensio_data *data = gensio_get_user_data(self);
 
-	err_handle("open_s", genio_open_s(self, data->o));
+	err_handle("open_s", gensio_open_s(self, data->o));
     }
 
     %rename(close) closet;
     void closet(swig_cb *done) {
 	swig_cb_val *done_val = NULL;
-	void (*close_done)(struct genio *io, void *cb_data) = NULL;
+	void (*close_done)(struct gensio *io, void *cb_data) = NULL;
 	int rv;
 
 	if (!nil_swig_cb(done)) {
-	    close_done = genio_close_done;
+	    close_done = gensio_close_done;
 	    done_val = ref_swig_cb(done, close_done);
 	}
-	rv = genio_close(self, close_done, done_val);
+	rv = gensio_close(self, close_done, done_val);
 	if (rv && done_val)
 	    deref_swig_cb_val(done_val);
 
@@ -420,110 +422,110 @@ struct waiter { };
 	unsigned int wr = 0;
 	int rv;
 
-	rv = genio_write(self, &wr, str, len);
+	rv = gensio_write(self, &wr, str, len);
 	err_handle("write", rv);
 	return wr;
     }
 
     void read_cb_enable(bool enable) {
-	genio_set_read_callback_enable(self, enable);
+	gensio_set_read_callback_enable(self, enable);
     }
 
     void write_cb_enable(bool enable) {
-	genio_set_write_callback_enable(self, enable);
+	gensio_set_write_callback_enable(self, enable);
     }
 
-    %newobject cast_to_sergenio;
-    struct sergenio *cast_to_sergenio() {
-	struct genio_data *data = genio_get_user_data(self);
-	struct sergenio *sio = genio_to_sergenio(self);
+    %newobject cast_to_sergensio;
+    struct sergensio *cast_to_sergensio() {
+	struct gensio_data *data = gensio_get_user_data(self);
+	struct sergensio *sio = gensio_to_sergensio(self);
 
 	if (!sio)
-	    cast_error("sergenio", "genio");
+	    cast_error("sergensio", "gensio");
 	data->refcount++;
 	return sio;
     }
 }
 
-%define sgenio_entry(name)
+%define sgensio_entry(name)
     void sg_##name(int name, swig_cb *h) {
-	struct sergenio_cbdata *cbdata = NULL;
+	struct sergensio_cbdata *cbdata = NULL;
 	int rv;
 
 	if (!nil_swig_cb(h)) {
-	    cbdata = sergenio_cbdata(name, h);
+	    cbdata = sergensio_cbdata(name, h);
 	    if (!cbdata) {
 		oom_err();
 		return;
 	    }
-	    rv = sergenio_##name(self, name, sergenio_cb, cbdata);
+	    rv = sergensio_##name(self, name, sergensio_cb, cbdata);
 	} else {
-	    rv = sergenio_##name(self, name, NULL, NULL);
+	    rv = sergensio_##name(self, name, NULL, NULL);
 	}
 
 	if (rv && cbdata)
-	    cleanup_sergenio_cbdata(cbdata);
+	    cleanup_sergensio_cbdata(cbdata);
 	ser_err_handle("sg_"stringify(name), rv);
     }
 
     int sg_##name##_s(int name) {
-	struct genio *io = sergenio_to_genio(self);
-	struct genio_data *data = genio_get_user_data(io);
-	struct sergenio_b *b = NULL;
+	struct gensio *io = sergensio_to_gensio(self);
+	struct gensio_data *data = gensio_get_user_data(io);
+	struct sergensio_b *b = NULL;
 	int rv;
 
-	rv = sergenio_b_alloc(self, data->o, &b);
+	rv = sergensio_b_alloc(self, data->o, &b);
 	if (!rv)
-	    rv = sergenio_##name##_b(b, &name);
+	    rv = sergensio_##name##_b(b, &name);
 	if (rv)
 	    ser_err_handle("sg_"stringify(name)"_s", rv);
 	if (b)
-	    sergenio_b_free(b);
+	    sergensio_b_free(b);
 	return name;
     }
 %enddef
 
-%constant int SERGENIO_PARITY_NONE = SERGENIO_PARITY_NONE;
-%constant int SERGENIO_PARITY_ODD = SERGENIO_PARITY_ODD;
-%constant int SERGENIO_PARITY_EVEN = SERGENIO_PARITY_EVEN;
-%constant int SERGENIO_PARITY_MARK = SERGENIO_PARITY_MARK;
-%constant int SERGENIO_PARITY_SPACE = SERGENIO_PARITY_SPACE;
+%constant int SERGENSIO_PARITY_NONE = SERGENSIO_PARITY_NONE;
+%constant int SERGENSIO_PARITY_ODD = SERGENSIO_PARITY_ODD;
+%constant int SERGENSIO_PARITY_EVEN = SERGENSIO_PARITY_EVEN;
+%constant int SERGENSIO_PARITY_MARK = SERGENSIO_PARITY_MARK;
+%constant int SERGENSIO_PARITY_SPACE = SERGENSIO_PARITY_SPACE;
 
-%constant int SERGENIO_FLOWCONTROL_NONE = SERGENIO_FLOWCONTROL_NONE;
-%constant int SERGENIO_FLOWCONTROL_XON_XOFF = SERGENIO_FLOWCONTROL_XON_XOFF;
-%constant int SERGENIO_FLOWCONTROL_RTS_CTS = SERGENIO_FLOWCONTROL_RTS_CTS;
-%constant int SERGENIO_FLOWCONTROL_DCD = SERGENIO_FLOWCONTROL_DCD;
-%constant int SERGENIO_FLOWCONTROL_DTR = SERGENIO_FLOWCONTROL_DTR;
-%constant int SERGENIO_FLOWCONTROL_DSR = SERGENIO_FLOWCONTROL_DSR;
+%constant int SERGENSIO_FLOWCONTROL_NONE = SERGENSIO_FLOWCONTROL_NONE;
+%constant int SERGENSIO_FLOWCONTROL_XON_XOFF = SERGENSIO_FLOWCONTROL_XON_XOFF;
+%constant int SERGENSIO_FLOWCONTROL_RTS_CTS = SERGENSIO_FLOWCONTROL_RTS_CTS;
+%constant int SERGENSIO_FLOWCONTROL_DCD = SERGENSIO_FLOWCONTROL_DCD;
+%constant int SERGENSIO_FLOWCONTROL_DTR = SERGENSIO_FLOWCONTROL_DTR;
+%constant int SERGENSIO_FLOWCONTROL_DSR = SERGENSIO_FLOWCONTROL_DSR;
 
-%constant int SERGENIO_BREAK_ON = SERGENIO_BREAK_ON;
-%constant int SERGENIO_BREAK_OFF = SERGENIO_BREAK_OFF;
+%constant int SERGENSIO_BREAK_ON = SERGENSIO_BREAK_ON;
+%constant int SERGENSIO_BREAK_OFF = SERGENSIO_BREAK_OFF;
 
-%constant int SERGENIO_DTR_ON = SERGENIO_DTR_ON;
-%constant int SERGENIO_DTR_OFF = SERGENIO_DTR_OFF;
+%constant int SERGENSIO_DTR_ON = SERGENSIO_DTR_ON;
+%constant int SERGENSIO_DTR_OFF = SERGENSIO_DTR_OFF;
 
-%constant int SERGENIO_RTS_ON = SERGENIO_RTS_ON;
-%constant int SERGENIO_RTS_OFF = SERGENIO_RTS_OFF;
+%constant int SERGENSIO_RTS_ON = SERGENSIO_RTS_ON;
+%constant int SERGENSIO_RTS_OFF = SERGENSIO_RTS_OFF;
 
-%constant int SERGENIO_LINESTATE_DATA_READY = SERGENIO_LINESTATE_DATA_READY;
-%constant int SERGENIO_LINESTATE_OVERRUN_ERR = SERGENIO_LINESTATE_OVERRUN_ERR;
-%constant int SERGENIO_LINESTATE_PARITY_ERR = SERGENIO_LINESTATE_PARITY_ERR;
-%constant int SERGENIO_LINESTATE_FRAMING_ERR = SERGENIO_LINESTATE_FRAMING_ERR;
-%constant int SERGENIO_LINESTATE_BREAK = SERGENIO_LINESTATE_BREAK;
-%constant int SERGENIO_LINESTATE_XMIT_HOLD_EMPTY =
-	SERGENIO_LINESTATE_XMIT_HOLD_EMPTY;
-%constant int SERGENIO_LINESTATE_XMIT_SHIFT_EMPTY =
-	SERGENIO_LINESTATE_XMIT_SHIFT_EMPTY;
-%constant int SERGENIO_LINESTATE_TIMEOUT_ERR = SERGENIO_LINESTATE_TIMEOUT_ERR;
+%constant int SERGENSIO_LINESTATE_DATA_READY = SERGENSIO_LINESTATE_DATA_READY;
+%constant int SERGENSIO_LINESTATE_OVERRUN_ERR = SERGENSIO_LINESTATE_OVERRUN_ERR;
+%constant int SERGENSIO_LINESTATE_PARITY_ERR = SERGENSIO_LINESTATE_PARITY_ERR;
+%constant int SERGENSIO_LINESTATE_FRAMING_ERR = SERGENSIO_LINESTATE_FRAMING_ERR;
+%constant int SERGENSIO_LINESTATE_BREAK = SERGENSIO_LINESTATE_BREAK;
+%constant int SERGENSIO_LINESTATE_XMIT_HOLD_EMPTY =
+	SERGENSIO_LINESTATE_XMIT_HOLD_EMPTY;
+%constant int SERGENSIO_LINESTATE_XMIT_SHIFT_EMPTY =
+	SERGENSIO_LINESTATE_XMIT_SHIFT_EMPTY;
+%constant int SERGENSIO_LINESTATE_TIMEOUT_ERR = SERGENSIO_LINESTATE_TIMEOUT_ERR;
 
-%constant int SERGENIO_MODEMSTATE_CTS_CHANGED = SERGENIO_MODEMSTATE_CTS_CHANGED;
-%constant int SERGENIO_MODEMSTATE_DSR_CHANGED = SERGENIO_MODEMSTATE_DSR_CHANGED;
-%constant int SERGENIO_MODEMSTATE_RI_CHANGED = SERGENIO_MODEMSTATE_RI_CHANGED;
-%constant int SERGENIO_MODEMSTATE_CD_CHANGED = SERGENIO_MODEMSTATE_CD_CHANGED;
-%constant int SERGENIO_MODEMSTATE_CTS = SERGENIO_MODEMSTATE_CTS;
-%constant int SERGENIO_MODEMSTATE_DSR = SERGENIO_MODEMSTATE_DSR;
-%constant int SERGENIO_MODEMSTATE_RI = SERGENIO_MODEMSTATE_RI;
-%constant int SERGENIO_MODEMSTATE_CD = SERGENIO_MODEMSTATE_CD;
+%constant int SERGENSIO_MODEMSTATE_CTS_CHANGED = SERGENSIO_MODEMSTATE_CTS_CHANGED;
+%constant int SERGENSIO_MODEMSTATE_DSR_CHANGED = SERGENSIO_MODEMSTATE_DSR_CHANGED;
+%constant int SERGENSIO_MODEMSTATE_RI_CHANGED = SERGENSIO_MODEMSTATE_RI_CHANGED;
+%constant int SERGENSIO_MODEMSTATE_CD_CHANGED = SERGENSIO_MODEMSTATE_CD_CHANGED;
+%constant int SERGENSIO_MODEMSTATE_CTS = SERGENSIO_MODEMSTATE_CTS;
+%constant int SERGENSIO_MODEMSTATE_DSR = SERGENSIO_MODEMSTATE_DSR;
+%constant int SERGENSIO_MODEMSTATE_RI = SERGENSIO_MODEMSTATE_RI;
+%constant int SERGENSIO_MODEMSTATE_CD = SERGENSIO_MODEMSTATE_CD;
 
 %constant int SERGIO_FLUSH_RCV_BUFFER = SERGIO_FLUSH_RCV_BUFFER;
 %constant int SERGIO_FLUSH_XMIT_BUFFER = SERGIO_FLUSH_XMIT_BUFFER;
@@ -534,84 +536,84 @@ struct waiter { };
  * For get/set modem control.  You cannot set DTR or RTS, they are
  * outputs from the other side.
  */
-%constant int SERGENIO_TIOCM_CAR = TIOCM_CAR;
-%constant int SERGENIO_TIOCM_CTS = TIOCM_CTS;
-%constant int SERGENIO_TIOCM_DSR = TIOCM_DSR;
-%constant int SERGENIO_TIOCM_RNG = TIOCM_RNG;
-%constant int SERGENIO_TIOCM_DTR = TIOCM_DTR;
-%constant int SERGENIO_TIOCM_RTS = TIOCM_RTS;
+%constant int SERGENSIO_TIOCM_CAR = TIOCM_CAR;
+%constant int SERGENSIO_TIOCM_CTS = TIOCM_CTS;
+%constant int SERGENSIO_TIOCM_DSR = TIOCM_DSR;
+%constant int SERGENSIO_TIOCM_RNG = TIOCM_RNG;
+%constant int SERGENSIO_TIOCM_DTR = TIOCM_DTR;
+%constant int SERGENSIO_TIOCM_RTS = TIOCM_RTS;
 
 /* For remote errors.  These are the kernel numbers. */
-%constant int SERGENIO_TTY_BREAK = 1 << 1;
-%constant int SERGENIO_TTY_FRAME = 1 << 2;
-%constant int SERGENIO_TTY_PARITY = 1 << 3;
-%constant int SERGENIO_TTY_OVERRUN = 1 << 4;
+%constant int SERGENSIO_TTY_BREAK = 1 << 1;
+%constant int SERGENSIO_TTY_FRAME = 1 << 2;
+%constant int SERGENSIO_TTY_PARITY = 1 << 3;
+%constant int SERGENSIO_TTY_OVERRUN = 1 << 4;
 
-%nodefaultctor sergenio;
-%extend sergenio {
-    ~sergenio()
+%nodefaultctor sergensio;
+%extend sergensio {
+    ~sergensio()
     {
-	struct genio *io = sergenio_to_genio(self);
-	struct genio_data *data = genio_get_user_data(io);
+	struct gensio *io = sergensio_to_gensio(self);
+	struct gensio_data *data = gensio_get_user_data(io);
 
 	data->refcount--;
 	if (data->refcount <= 0) {
-	    genio_free(io);
+	    gensio_free(io);
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
 	}
     }
 
-    %newobject cast_to_genio;
-    struct genio *cast_to_genio() {
-	struct genio *io = sergenio_to_genio(self);
-	struct genio_data *data = genio_get_user_data(io);
+    %newobject cast_to_gensio;
+    struct gensio *cast_to_gensio() {
+	struct gensio *io = sergensio_to_gensio(self);
+	struct gensio_data *data = gensio_get_user_data(io);
 
 	data->refcount++;
 	return io;
     }
 
     /* Standard baud rates. */
-    sgenio_entry(baud);
+    sgensio_entry(baud);
 
     /* 5, 6, 7, or 8 bits. */
-    sgenio_entry(datasize);
+    sgensio_entry(datasize);
 
-    /* SERGENIO_PARITY_ entries */
-    sgenio_entry(parity);
+    /* SERGENSIO_PARITY_ entries */
+    sgensio_entry(parity);
 
     /* 1 or 2 */
-    sgenio_entry(stopbits);
+    sgensio_entry(stopbits);
 
-    /* SERGENIO_FLOWCONTROL_ entries */
-    sgenio_entry(flowcontrol);
+    /* SERGENSIO_FLOWCONTROL_ entries */
+    sgensio_entry(flowcontrol);
 
-    /* SERGENIO_FLOWCONTROL_ entries for iflowcontrol */
-    sgenio_entry(iflowcontrol);
+    /* SERGENSIO_FLOWCONTROL_ entries for iflowcontrol */
+    sgensio_entry(iflowcontrol);
 
-    /* SERGENIO_BREAK_ entries */
-    sgenio_entry(sbreak);
+    /* SERGENSIO_BREAK_ entries */
+    sgensio_entry(sbreak);
 
-    /* SERGENIO_DTR_ entries */
-    sgenio_entry(dtr);
+    /* SERGENSIO_DTR_ entries */
+    sgensio_entry(dtr);
 
-    /* SERGENIO_RTS_ entries */
-    sgenio_entry(rts);
+    /* SERGENSIO_RTS_ entries */
+    sgensio_entry(rts);
 
     int sg_modemstate(unsigned int modemstate) {
-	return sergenio_modemstate(self, modemstate);
+	return sergensio_modemstate(self, modemstate);
     }
 
     int sg_linestate(unsigned int linestate) {
-	return sergenio_linestate(self, linestate);
+	return sergensio_linestate(self, linestate);
     }
 
     int sg_flowcontrol_state(bool val) {
-	return sergenio_flowcontrol_state(self, val);
+	return sergensio_flowcontrol_state(self, val);
     }
 
     int sg_flush(unsigned int val) {
-	return sergenio_flush(self, val);
+	return sergensio_flush(self, val);
     }
 
     /*
@@ -625,10 +627,10 @@ struct waiter { };
      * module does.
      */
     void get_remote_termios(void *termios) {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = remote_termios(termios, fd);
 
@@ -637,10 +639,10 @@ struct waiter { };
     }
 
     void set_remote_modem_ctl(unsigned int val) {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = set_remote_mctl(val, fd);
 
@@ -649,11 +651,11 @@ struct waiter { };
     }
 
     unsigned int get_remote_modem_ctl() {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 	unsigned int val;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = get_remote_mctl(&val, fd);
 
@@ -664,10 +666,10 @@ struct waiter { };
     }
 
     void set_remote_serial_err(unsigned int val) {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = set_remote_sererr(val, fd);
 
@@ -677,11 +679,11 @@ struct waiter { };
 
 
     unsigned int get_remote_serial_err() {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 	unsigned int val;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = get_remote_sererr(&val, fd);
 
@@ -692,10 +694,10 @@ struct waiter { };
     }
 
     void set_remote_null_modem(bool val) {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = set_remote_null_modem(val, fd);
 
@@ -704,10 +706,10 @@ struct waiter { };
     }
 
     bool get_remote_null_modem() {
-	struct genio *io = sergenio_to_genio(self);
+	struct gensio *io = sergensio_to_gensio(self);
 	int fd, rv, val;
 
-	rv = genio_remote_id(io, &fd);
+	rv = gensio_remote_id(io, &fd);
 	if (!rv)
 	    rv = get_remote_null_modem(&val, fd);
 
@@ -718,12 +720,12 @@ struct waiter { };
     }
 }
 
-%extend genio_acceptor {
-    genio_acceptor(struct genio_os_funcs *o, char *str, int max_read_size,
-		   swig_cb *handler) {
+%extend gensio_acceptor {
+    gensio_acceptor(struct gensio_os_funcs *o, char *str, int max_read_size,
+		    swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
-	struct genio_acc_data *data;
-	struct genio_acceptor *acc = NULL;
+	struct gensio_acc_data *data;
+	struct gensio_acceptor *acc = NULL;
 	int rv;
 
 	data = malloc(sizeof(*data));
@@ -733,12 +735,12 @@ struct waiter { };
 	data->o = o;
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_genio_acceptor(str, o, max_read_size, &gen_acc_cbs,
+	rv = str_to_gensio_acceptor(str, o, max_read_size, &gen_acc_cbs,
 				   data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
-	    err_handle("genio_acceptor constructor", rv);
+	    err_handle("gensio_acceptor constructor", rv);
 	} else {
 	    odata->refcount++;
 	}
@@ -746,18 +748,18 @@ struct waiter { };
 	return acc;
     }
 
-    ~genio_acceptor()
+    ~gensio_acceptor()
     {
-	struct genio_acc_data *data = genio_acc_get_user_data(self);
+	struct gensio_acc_data *data = gensio_acc_get_user_data(self);
 
-	genio_acc_free(self);
+	gensio_acc_free(self);
 	deref_swig_cb_val(data->handler_val);
 	check_os_funcs_free(data->o);
 	free(data);
     }
 
     void startup() {
-	int rv = genio_acc_startup(self);
+	int rv = gensio_acc_startup(self);
 
 	err_handle("startup", rv);
     }
@@ -768,7 +770,7 @@ struct waiter { };
 
 	if (!nil_swig_cb(done))
 	    done_val = ref_swig_cb(done, shutdown);
-	rv = genio_acc_shutdown(self, genio_acc_shutdown_done, done_val);
+	rv = gensio_acc_shutdown(self, gensio_acc_shutdown_done, done_val);
 	if (rv && done_val)
 	    deref_swig_cb_val(done_val);
 
@@ -777,7 +779,7 @@ struct waiter { };
 }
 
 %extend waiter {
-    waiter(struct genio_os_funcs *o) {
+    waiter(struct gensio_os_funcs *o) {
 	struct os_funcs_data *odata = o->other_data;
 	struct waiter *w = malloc(sizeof(*w));
 
@@ -807,11 +809,11 @@ struct waiter { };
     int wait_timeout(int timeout) {
 	struct timeval tv = { timeout / 1000, timeout % 1000 };
 
-	return genio_do_wait(self, &tv);
+	return gensio_do_wait(self, &tv);
     }
 
     void wait() {
-	genio_do_wait(self, NULL);
+	gensio_do_wait(self, NULL);
     }
 
     void wake() {
@@ -823,5 +825,5 @@ struct waiter { };
 void get_random_bytes(char **rbuffer, size_t *rbuffer_len,
 		      int size_to_allocate);
 
-%newobject alloc_genio_selector;
-struct genio_os_funcs *alloc_genio_selector();
+%newobject alloc_gensio_selector;
+struct gensio_os_funcs *alloc_gensio_selector();

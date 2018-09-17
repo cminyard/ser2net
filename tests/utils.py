@@ -1,12 +1,12 @@
 #
-# genio test utilities
+# gensio test utilities
 #
 # This file contains some classes and functions useful for testing
-# genio handling
+# gensio handling
 #
 
 import os
-import genio
+import gensio
 import tempfile
 import signal
 import time
@@ -26,9 +26,9 @@ class HandlerException(Exception):
         return str(self.value)
 
 class HandleData:
-    """Data handler for testing genio.
+    """Data handler for testing gensio.
 
-    This is designed to handle input and output from genio.  To write
+    This is designed to handle input and output from gensio.  To write
     data, call set_write_data() to set some data and write it.  To wait
     for data to be read, call set_compare() to wait for the given data
     to be read.
@@ -42,12 +42,12 @@ class HandleData:
 
     def __init__(self, o, iostr, bufsize, name = None, chunksize=10240,
                  io = None):
-        """Start a genio object with this handler"""
+        """Start a gensio object with this handler"""
         if (name):
             self.name = name
         else:
             self.name = iostr
-        self.waiter = genio.waiter(o)
+        self.waiter = gensio.waiter(o)
         self.to_write = None
         self.to_compare = None
         self.expecting_modemstate = False
@@ -60,7 +60,7 @@ class HandleData:
             self.io = io
             io.set_cbs(self)
         else:
-            self.io = genio.genio(o, iostr, bufsize, self)
+            self.io = gensio.gensio(o, iostr, bufsize, self)
         self.io.handler = self
         self.chunksize = chunksize
         self.debug = 0
@@ -515,7 +515,7 @@ def test_write_drain(io1, io2, data, timeout = 1000):
     return
 
 def io_close(io, timeout = 1000):
-    """close the given genio
+    """close the given gensio
 
     If it does not succeed in timeout milliseconds, raise and exception.
     """
@@ -526,10 +526,10 @@ def io_close(io, timeout = 1000):
     return
 
 def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True):
-    """Setup a ser2net daemon and two genio connections
+    """Setup a ser2net daemon and two gensio connections
 
     Create a ser2net daemon instance with the given config and two
-    genio connections with the given strings.
+    gensio connections with the given strings.
 
     If io1str is None, use the stdio of the ser2net connection as
     io1 (generally for testing stdio to ser2net).
@@ -577,7 +577,7 @@ def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
     else:
         io2.handler.ignore_input = True
     if handle_except and sys.exc_info()[0]:
-        g = genio.waiter(ser2net.o)
+        g = gensio.waiter(ser2net.o)
         print("Exception occurred, waiting a bit for things to clear.")
         g.wait_timeout(2000)
     ser2net.terminate()

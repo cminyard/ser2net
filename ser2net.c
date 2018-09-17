@@ -34,11 +34,13 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include "utils/utils.h"
-#include "utils/selector.h"
-#include "utils/locking.h"
-#include "utils/uucplock.h"
-#include "genio/genio_selector.h"
+#include <utils/utils.h>
+#include <utils/selector.h>
+#include <utils/locking.h>
+#include <utils/uucplock.h>
+
+#include <gensio/gensio_selector.h>
+
 #include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
@@ -63,7 +65,7 @@ struct thread_info *threads;
 
 
 struct selector_s *ser2net_sel;
-struct genio_os_funcs *ser2net_o;
+struct gensio_os_funcs *ser2net_o;
 char *rfc2217_signature = "ser2net";
 
 static char *help_string =
@@ -660,9 +662,9 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
-    ser2net_o = genio_selector_alloc(ser2net_sel, ser2net_wake_sig);
+    ser2net_o = gensio_selector_alloc(ser2net_sel, ser2net_wake_sig);
     if (!ser2net_o) {
-	fprintf(stderr, "Could not alloc ser2net genio selector\n");
+	fprintf(stderr, "Could not alloc ser2net gensio selector\n");
 	exit(1);
     }
 

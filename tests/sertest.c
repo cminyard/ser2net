@@ -29,9 +29,9 @@
 #include <stdarg.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include "genio/genio_selector.h"
+#include "gensio/gensio_selector.h"
 #include "utils/utils.h"
-#include "genio/sergenio.h"
+#include "gensio/sergensio.h"
 
 static bool tokeq(const char *t, const char *m)
 {
@@ -40,13 +40,13 @@ static bool tokeq(const char *t, const char *m)
 
 struct sertest_context;
 
-struct genio_list {
+struct gensio_list {
     char *name;
-    struct genio *io;
+    struct gensio *io;
     struct sertest_context *c;
-    struct genio_list *next;
+    struct gensio_list *next;
 
-    struct genio_waiter *waiter;
+    struct gensio_waiter *waiter;
     int read_err;
     int write_err;
 
@@ -62,23 +62,23 @@ struct genio_list {
 };
 
 struct sertest_context {
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
     bool *done;
-    struct genio_list *genios;
+    struct gensio_list *gensios;
     struct absout *out;
     int debug;
 };
 
-struct genio_os_funcs *my_o;
+struct gensio_os_funcs *my_o;
 
 #define dbgout(c, level, fmt, ...)				    \
     do { if (c->debug >= level) abspr(c->out, "%s: " fmt, le->name, \
 				      ##__VA_ARGS__); } while(0)
 
-static struct genio_list *
-find_genio(struct sertest_context *c, char *name)
+static struct gensio_list *
+find_gensio(struct sertest_context *c, char *name)
 {
-    struct genio_list *le = c->genios;
+    struct gensio_list *le = c->gensios;
 
     while (le) {
 	if (tokeq(le->name, name))
@@ -90,7 +90,7 @@ find_genio(struct sertest_context *c, char *name)
 }
 
 static void
-finish_free_genio(struct genio_list *le)
+finish_free_gensio(struct gensio_list *le)
 {
     my_o->free_waiter(le->waiter);
     free(le->name);
@@ -98,9 +98,9 @@ finish_free_genio(struct genio_list *le)
 }
 
 static void
-free_close_done(struct genio *io, void *close_data)
+free_close_done(struct gensio *io, void *close_data)
 {
-    struct genio_list *le = genio_get_user_data(io);
+    struct gensio_list *le = gensio_get_user_data(io);
 
     my_o->wake(le->waiter);
 }
@@ -108,18 +108,18 @@ free_close_done(struct genio *io, void *close_data)
 void
 sertest_cleanup(struct sertest_context *c)
 {
-    while (c->genios) {
-	struct genio_list *le = c->genios;
+    while (c->gensios) {
+	struct gensio_list *le = c->gensios;
 
-	c->genios = le->next;
-	if (genio_close(le->io, free_close_done, NULL)) {
+	c->gensios = le->next;
+	if (gensio_close(le->io, free_close_done, NULL)) {
 	    /* Already closed, just free it. */
-	    genio_free(le->io);
+	    gensio_free(le->io);
 	} else {
 	    my_o->wait(le->waiter, NULL);
-	    genio_free(le->io);
+	    gensio_free(le->io);
 	}
-	finish_free_genio(le);
+	finish_free_gensio(le);
     }
     free(c);
 }
@@ -133,11 +133,11 @@ start_exit(struct sertest_context *c,
 }
 
 static unsigned int
-data_read(struct genio *net, int readerr,
+data_read(struct gensio *net, int readerr,
 	  unsigned char *buf, unsigned int buflen,
 	  unsigned int flags)
 {
-    struct genio_list *le = genio_get_user_data(net);
+    struct gensio_list *le = gensio_get_user_data(net);
     struct sertest_context *c = le->c;
     unsigned int to_cmp;
     unsigned int i;
@@ -145,7 +145,7 @@ data_read(struct genio *net, int readerr,
     if (le->flush_read) {
 	if (readerr) {
 	    printf("Error from read: %s\n", strerror(readerr));
-	    genio_set_read_callback_enable(le->io, false);
+	    gensio_set_read_callback_enable(le->io, false);
 	    return 0;
 	}
 	dbgout(c, 1, "flush %u bytes\n", buflen);
@@ -154,13 +154,13 @@ data_read(struct genio *net, int readerr,
 
     if (!le->cmp_read) {
 	dbgout(c, 1, "***No read data on read handler call\n");
-	genio_set_read_callback_enable(le->io, false);
+	gensio_set_read_callback_enable(le->io, false);
 	return 0;
     }
 
     if (readerr) {
 	printf("Error from read: %s\n", strerror(readerr));
-	genio_set_read_callback_enable(le->io, false);
+	gensio_set_read_callback_enable(le->io, false);
 	my_o->wake(le->waiter);
 	return 0;
     }
@@ -192,7 +192,7 @@ data_read(struct genio *net, int readerr,
 	dbgout(c, 1, "Read completed %u bytes\n", le->curr_read_byte);
     finish_op:
 	le->cmp_read = NULL;
-	genio_set_read_callback_enable(le->io, false);
+	gensio_set_read_callback_enable(le->io, false);
 	my_o->wake(le->waiter);
     }
 
@@ -200,24 +200,24 @@ data_read(struct genio *net, int readerr,
 }
 
 static void
-write_ready(struct genio *net)
+write_ready(struct gensio *net)
 {
-    struct genio_list *le = genio_get_user_data(net);
+    struct gensio_list *le = gensio_get_user_data(net);
     struct sertest_context *c = le->c;
     unsigned int written = 0;
 
     if (!le->to_write) {
 	dbgout(c, 1, "Write ready with no write data\n");
-	genio_set_write_callback_enable(le->io, false);
+	gensio_set_write_callback_enable(le->io, false);
 	return;
     }
 
-    le->write_err = genio_write(le->io, &written, le->to_write,
+    le->write_err = gensio_write(le->io, &written, le->to_write,
 				le->to_write_len);
     if (le->write_err || written >= le->to_write_len) {
 	dbgout(c, 2, "Write finished, err=%d, count=%d\n",
 	       le->write_err, written);
-	genio_set_write_callback_enable(le->io, false);
+	gensio_set_write_callback_enable(le->io, false);
 	le->to_write = NULL;
 	le->to_write_len = 0;
 	my_o->wake(le->waiter);
@@ -229,21 +229,21 @@ write_ready(struct genio *net)
 }
 
 static void
-urgent_data_read(struct genio *net)
+urgent_data_read(struct gensio *net)
 {
 }
 
-struct genio_callbacks gcbs = {
+struct gensio_callbacks gcbs = {
     .read_callback = data_read,
     .write_callback = write_ready,
     .urgent_callback = urgent_data_read,
 };
 
 static int
-alloc_genio(struct sertest_context *c,
+alloc_gensio(struct sertest_context *c,
 	    int argc, char **argv, unsigned int *lengths)
 {
-    struct genio_list *le;
+    struct gensio_list *le;
     int err;
 
     if (argc < 3) {
@@ -251,7 +251,7 @@ alloc_genio(struct sertest_context *c,
 	return -1;
     }
 
-    le = find_genio(c, argv[1]);
+    le = find_gensio(c, argv[1]);
     if (le) {
 	abspr(c->out, "Name '%s' is already in use\n", argv[1]);
 	return -1;
@@ -276,17 +276,17 @@ alloc_genio(struct sertest_context *c,
 	return ENOMEM;
     }
 
-    err = str_to_genio(argv[2], c->o, 1024, &gcbs, le, &le->io);
+    err = str_to_gensio(argv[2], c->o, 1024, &gcbs, le, &le->io);
     if (err) {
-	abspr(c->out, "Error creating genio\n");
+	abspr(c->out, "Error creating gensio\n");
 	my_o->free_waiter(le->waiter);
 	free(le->name);
 	free(le);
     } else {
-	struct genio_list *prev = c->genios;
+	struct gensio_list *prev = c->gensios;
 
 	if (!prev) {
-	    c->genios = le;
+	    c->gensios = le;
 	} else {
 	    while (prev->next)
 		prev = prev->next;
@@ -298,36 +298,36 @@ alloc_genio(struct sertest_context *c,
 }
 
 static int
-open_genio(struct sertest_context *c,
-	   int argc, char **argv, unsigned int *lengths, struct genio_list *le)
+open_gensio(struct sertest_context *c,
+	   int argc, char **argv, unsigned int *lengths, struct gensio_list *le)
 {
     int err;
 
-    err = genio_open_s(le->io, c->o);
+    err = gensio_open_s(le->io, c->o);
     if (err)
-	abspr(c->out, "Error opening genio\n");
+	abspr(c->out, "Error opening gensio\n");
 
     return err;
 }
 
 static void
-close_genio_done(struct genio *net, void *close_data)
+close_gensio_done(struct gensio *net, void *close_data)
 {
-    struct genio_list *le = genio_get_user_data(net);
+    struct gensio_list *le = gensio_get_user_data(net);
 
     my_o->wake(le->waiter);
 }
 
 static int
-close_genio(struct sertest_context *c,
-	    int argc, char **argv, unsigned int *lengths, struct genio_list *le)
+close_gensio(struct sertest_context *c,
+	    int argc, char **argv, unsigned int *lengths, struct gensio_list *le)
 {
     int err;
     struct timeval timeout = {2, 0};
 
-    err = genio_close(le->io, close_genio_done, NULL);
+    err = gensio_close(le->io, close_gensio_done, NULL);
     if (err) {
-	abspr(c->out, "Error closing genio\n");
+	abspr(c->out, "Error closing gensio\n");
     } else {
 	err = my_o->wait(le->waiter, &timeout);
 	if (err) {
@@ -340,28 +340,28 @@ close_genio(struct sertest_context *c,
 }
 
 static int
-free_genio(struct sertest_context *c,
-	   int argc, char **argv, unsigned int *lengths, struct genio_list *le)
+free_gensio(struct sertest_context *c,
+	   int argc, char **argv, unsigned int *lengths, struct gensio_list *le)
 {
-    struct genio_list *prev = c->genios;
+    struct gensio_list *prev = c->gensios;
 
     if (prev == le) {
-	c->genios = le->next;
+	c->gensios = le->next;
     } else {
 	while (prev->next != le)
 	    prev = prev->next;
 	prev->next = le->next;
     }
 
-    genio_free(le->io);
-    finish_free_genio(le);
+    gensio_free(le->io);
+    finish_free_gensio(le);
 
     return 0;
 }
 
 static int
-write_genio(struct sertest_context *c,
-	    int argc, char **argv, unsigned int *lengths, struct genio_list *le)
+write_gensio(struct sertest_context *c,
+	    int argc, char **argv, unsigned int *lengths, struct gensio_list *le)
 {
     struct timeval timeout = {5, 0};
     int err;
@@ -369,41 +369,41 @@ write_genio(struct sertest_context *c,
     le->write_err = 0;
     le->to_write = (unsigned char *) argv[2];
     le->to_write_len = lengths[2];
-    genio_set_write_callback_enable(le->io, true);
+    gensio_set_write_callback_enable(le->io, true);
     err = my_o->wait(le->waiter, &timeout);
     if (err) {
-	abspr(c->out, "Timed out writing genio\n");
-	genio_set_write_callback_enable(le->io, true);
+	abspr(c->out, "Timed out writing gensio\n");
+	gensio_set_write_callback_enable(le->io, true);
 	le->to_write = NULL;
     }
     if (le->write_err)
-	abspr(c->out, "Error writing genio\n");
+	abspr(c->out, "Error writing gensio\n");
 
     return le->write_err;
 }
 
 static int
-read_enable_genio(struct sertest_context *c,
+read_enable_gensio(struct sertest_context *c,
 		  int argc, char **argv, unsigned int *lengths,
-		  struct genio_list *le)
+		  struct gensio_list *le)
 {
-    genio_set_read_callback_enable(le->io, true);
+    gensio_set_read_callback_enable(le->io, true);
     return 0;
 }
 
 static int
-read_disable_genio(struct sertest_context *c,
+read_disable_gensio(struct sertest_context *c,
 		   int argc, char **argv, unsigned int *lengths,
-		   struct genio_list *le)
+		   struct gensio_list *le)
 {
-    genio_set_read_callback_enable(le->io, false);
+    gensio_set_read_callback_enable(le->io, false);
     return 0;
 }
 
 static int
-check_read_genio(struct sertest_context *c,
+check_read_gensio(struct sertest_context *c,
 		 int argc, char **argv, unsigned int *lengths,
-		 struct genio_list *le)
+		 struct gensio_list *le)
 {
     int err;
     struct timeval timeout = { 5, 0 };
@@ -412,10 +412,10 @@ check_read_genio(struct sertest_context *c,
     le->cmp_read = (unsigned char *) argv[2];
     le->cmp_read_len = lengths[2];
     le->curr_read_byte = 0;
-    genio_set_read_callback_enable(le->io, true);
+    gensio_set_read_callback_enable(le->io, true);
     err = my_o->wait(le->waiter, &timeout);
     if (err) {
-	genio_set_read_callback_enable(le->io, false);
+	gensio_set_read_callback_enable(le->io, false);
 	abspr(c->out, "Timeout waiting for read data\n");
 	err = -1;
     } else if (le->read_err) {
@@ -429,44 +429,44 @@ check_read_genio(struct sertest_context *c,
 }
 
 static int
-flush_read_genio(struct sertest_context *c,
+flush_read_gensio(struct sertest_context *c,
 		 int argc, char **argv, unsigned int *lengths,
-		 struct genio_list *le)
+		 struct gensio_list *le)
 {
     struct timeval timeout = { 1, 0 };
 
     le->flush_read = true;
-    genio_set_read_callback_enable(le->io, true);
+    gensio_set_read_callback_enable(le->io, true);
     my_o->wait(le->waiter, &timeout);
-    genio_set_read_callback_enable(le->io, false);
+    gensio_set_read_callback_enable(le->io, false);
     le->flush_read = false;
 
     return 0;
 }
 
 static int
-xfer_data_genio(struct sertest_context *c,
+xfer_data_gensio(struct sertest_context *c,
 		int argc, char **argv, unsigned int *lengths,
-		struct genio_list *le)
+		struct gensio_list *le)
 {
     int err = 0;
     unsigned int size, i;
     char *end;
     unsigned char *data;
     struct timeval timeout = { 1, 0 };
-    struct genio_list *le2;
+    struct gensio_list *le2;
     struct timeval test_time, now;
     unsigned int last_read;
-    struct genio_waiter *waiter;
+    struct gensio_waiter *waiter;
 
     if (argc < 4) {
 	abspr(c->out, "Not enough arguments to function\n");
 	return -1;
     }
 
-    le2 = find_genio(c, argv[2]);
+    le2 = find_gensio(c, argv[2]);
     if (!le2) {
-	abspr(c->out, "No genio named %s\n", argv[2]);
+	abspr(c->out, "No gensio named %s\n", argv[2]);
 	return -1;
     }
 
@@ -499,8 +499,8 @@ xfer_data_genio(struct sertest_context *c,
     le2->curr_read_byte = 0;
     le->to_write = data;
     le->to_write_len = size;
-    genio_set_read_callback_enable(le2->io, true);
-    genio_set_write_callback_enable(le->io, true);
+    gensio_set_read_callback_enable(le2->io, true);
+    gensio_set_write_callback_enable(le->io, true);
 
     last_read = le2->cmp_read_len;
     while (!le2->read_err && !le->write_err && le2->cmp_read_len > 0) {
@@ -510,8 +510,8 @@ xfer_data_genio(struct sertest_context *c,
 	    if (last_read == le2->cmp_read_len) {
 		/* No progress in 5 seconds. */
 		abspr(c->out, "Timeout in operation\n");
-		genio_set_read_callback_enable(le2->io, false);
-		genio_set_write_callback_enable(le->io, false);
+		gensio_set_read_callback_enable(le2->io, false);
+		gensio_set_write_callback_enable(le->io, false);
 		err = -1;
 		break;
 	    }
@@ -552,21 +552,21 @@ struct cmd_list {
 		int argc, char **argv, unsigned int *lengths);
     int (*gfunc)(struct sertest_context *c,
 		 int argc, char **argv, unsigned int *lengths,
-		 struct genio_list *le);
+		 struct gensio_list *le);
 };
 
 struct cmd_list cmds[] = {
     { "exit",       .func = start_exit },
-    { "connect",    .func = alloc_genio },
-    { "open",       .gfunc = open_genio },
-    { "close",      .gfunc = close_genio },
-    { "free",       .gfunc = free_genio },
-    { "write",      .gfunc = write_genio },
-    { "read_on",    .gfunc = read_enable_genio },
-    { "read_off",   .gfunc = read_disable_genio },
-    { "check_read", .gfunc = check_read_genio },
-    { "flush_read", .gfunc = flush_read_genio },
-    { "xfer",       .gfunc = xfer_data_genio },
+    { "connect",    .func = alloc_gensio },
+    { "open",       .gfunc = open_gensio },
+    { "close",      .gfunc = close_gensio },
+    { "free",       .gfunc = free_gensio },
+    { "write",      .gfunc = write_gensio },
+    { "read_on",    .gfunc = read_enable_gensio },
+    { "read_off",   .gfunc = read_disable_gensio },
+    { "check_read", .gfunc = check_read_gensio },
+    { "flush_read", .gfunc = flush_read_gensio },
+    { "xfer",       .gfunc = xfer_data_gensio },
     { NULL }
 };
 
@@ -598,9 +598,9 @@ sertest_cmd(struct sertest_context *c, char *cmdline)
 		if (argc < 2) {
 		    abspr(c->out, "Not enough arguments to function\n");
 		} else {
-		    struct genio_list *le = find_genio(c, argv[1]);
+		    struct gensio_list *le = find_gensio(c, argv[1]);
 		    if (!le)
-			abspr(c->out, "No genio named %s\n", argv[1]);
+			abspr(c->out, "No gensio named %s\n", argv[1]);
 		    else
 			err = cmds[i].gfunc(c, argc, argv, lengths, le);
 		}
@@ -620,7 +620,7 @@ sertest_cmd(struct sertest_context *c, char *cmdline)
 }
 
 struct sertest_context *
-sertest_alloc_context(struct genio_os_funcs *o, bool *done, struct absout *out,
+sertest_alloc_context(struct gensio_os_funcs *o, bool *done, struct absout *out,
 		      int debug)
 {
     struct sertest_context *c;
@@ -678,18 +678,18 @@ stdio_read_ready(int fd, void *cbdata)
     rl_callback_read_char();
 }
 
-struct genio_waiter *waiter;
+struct gensio_waiter *waiter;
 
 static void
 stdin_cleared(int fd, void *cb_data)
 {
-    struct genio_waiter *waiter = cb_data;
+    struct gensio_waiter *waiter = cb_data;
 
     my_o->wake(waiter);
 }
 
 static void
-cleanup_term(struct genio_os_funcs *o)
+cleanup_term(struct gensio_os_funcs *o)
 {
     rl_callback_handler_remove();
     printf("\b\b  \b\b");
@@ -700,7 +700,7 @@ cleanup_term(struct genio_os_funcs *o)
 }
 
 static int
-setup_term(struct genio_os_funcs *o)
+setup_term(struct gensio_os_funcs *o)
 {
     int rv;
 
@@ -878,9 +878,9 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
-    my_o = genio_selector_alloc(my_sel, 0);
+    my_o = gensio_selector_alloc(my_sel, 0);
     if (!my_o) {
-	fprintf(stderr, "Could not alloc genio selector\n");
+	fprintf(stderr, "Could not alloc gensio selector\n");
 	exit(1);
     }
 

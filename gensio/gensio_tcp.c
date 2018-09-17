@@ -1,5 +1,5 @@
 /*
- *  genio - A library for abstracting stream I/O
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -30,13 +30,14 @@
 #include <syslog.h>
 #include <assert.h>
 
-#include <genio/genio.h>
-#include <genio/genio_internal.h>
-#include <genio/genio_base.h>
 #include <utils/locking.h>
 
+#include <gensio/gensio.h>
+#include <gensio/gensio_internal.h>
+#include <gensio/gensio_base.h>
+
 struct tcp_data {
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 
     struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
@@ -199,11 +200,11 @@ tcp_free(void *handler_data)
     struct tcp_data *tdata = handler_data;
 
     if (tdata->ai)
-	genio_free_addrinfo(tdata->o, tdata->ai);
+	gensio_free_addrinfo(tdata->o, tdata->ai);
     tdata->o->free(tdata->o, tdata);
 }
 
-static const struct genio_fd_ll_ops tcp_fd_ll_ops = {
+static const struct gensio_fd_ll_ops tcp_fd_ll_ops = {
     .sub_open = tcp_sub_open,
     .raddr_to_str = tcp_raddr_to_str,
     .get_raddr = tcp_get_raddr,
@@ -211,17 +212,17 @@ static const struct genio_fd_ll_ops tcp_fd_ll_ops = {
 };
 
 int
-tcp_genio_alloc(struct addrinfo *iai,
-		struct genio_os_funcs *o,
-		unsigned int max_read_size,
-		const struct genio_callbacks *cbs,
-		void *user_data,
-		struct genio **new_genio)
+tcp_gensio_alloc(struct addrinfo *iai,
+		 struct gensio_os_funcs *o,
+		 unsigned int max_read_size,
+		 const struct gensio_callbacks *cbs,
+		 void *user_data,
+		 struct gensio **new_gensio)
 {
     struct tcp_data *tdata = NULL;
     struct addrinfo *ai;
-    struct genio_ll *ll;
-    struct genio *io;
+    struct gensio_ll *ll;
+    struct gensio *io;
 
     for (ai = iai; ai; ai = ai->ai_next) {
 	if (ai->ai_addrlen > sizeof(struct sockaddr_storage))
@@ -232,7 +233,7 @@ tcp_genio_alloc(struct addrinfo *iai,
     if (!tdata)
 	return ENOMEM;
 
-    ai = genio_dup_addrinfo(o, iai);
+    ai = gensio_dup_addrinfo(o, iai);
     if (!ai) {
 	o->free(o, tdata);
 	return ENOMEM;
@@ -242,35 +243,35 @@ tcp_genio_alloc(struct addrinfo *iai,
     tdata->ai = ai;
     tdata->raddr = (struct sockaddr *) &tdata->remote;
 
-    ll = fd_genio_ll_alloc(o, -1, &tcp_fd_ll_ops, tdata, max_read_size);
+    ll = fd_gensio_ll_alloc(o, -1, &tcp_fd_ll_ops, tdata, max_read_size);
     if (!ll) {
-	genio_free_addrinfo(o, ai);
+	gensio_free_addrinfo(o, ai);
 	o->free(o, tdata);
 	return ENOMEM;
     }
 
-    io = base_genio_alloc(o, ll, NULL, GENIO_TYPE_TCP, cbs, user_data);
+    io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_TCP, cbs, user_data);
     if (!io) {
 	ll->ops->free(ll);
-	genio_free_addrinfo(o, ai);
+	gensio_free_addrinfo(o, ai);
 	o->free(o, tdata);
 	return ENOMEM;
     }
 
-    *new_genio = io;
+    *new_gensio = io;
     return 0;
 }
 
 struct tcpna_data {
-    struct genio_acceptor acceptor;
+    struct gensio_acceptor acceptor;
 
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 
     char *name;
 
     unsigned int max_read_size;
 
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
     bool setup;			/* Network sockets are allocated. */
     bool enabled;		/* Accepts are being handled. */
@@ -278,7 +279,7 @@ struct tcpna_data {
 
     unsigned int refcount;
 
-    void (*shutdown_done)(struct genio_acceptor *acceptor,
+    void (*shutdown_done)(struct gensio_acceptor *acceptor,
 			  void *shutdown_data);
     void *shutdown_data;
 
@@ -311,7 +312,7 @@ tcpna_finish_free(struct tcpna_data *nadata)
     if (nadata->name)
 	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
-	genio_free_addrinfo(nadata->o, nadata->ai);
+	gensio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->acceptfds)
 	nadata->o->free(nadata->o, nadata->acceptfds);
     nadata->o->free(nadata->o, nadata);
@@ -347,7 +348,7 @@ tcpna_deref_and_unlock(struct tcpna_data *nadata)
 	tcpna_finish_free(nadata);
 }
 
-static const struct genio_fd_ll_ops tcp_server_fd_ll_ops = {
+static const struct gensio_fd_ll_ops tcp_server_fd_ll_ops = {
     .raddr_to_str = tcp_raddr_to_str,
     .get_raddr = tcp_get_raddr,
     .free = tcp_free
@@ -361,8 +362,8 @@ tcpna_readhandler(int fd, void *cbdata)
     struct sockaddr_storage addr;
     socklen_t addrlen = sizeof(addr);
     struct tcp_data *tdata = NULL;
-    struct genio_ll *ll;
-    struct genio *io;
+    struct gensio_ll *ll;
+    struct gensio *io;
     const char *errstr;
     int err;
 
@@ -373,7 +374,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    errstr = genio_check_tcpd_ok(new_fd);
+    errstr = gensio_check_tcpd_ok(new_fd);
     if (errstr) {
 	write_nofail(new_fd, errstr, strlen(errstr));
 	close(new_fd);
@@ -402,8 +403,8 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    ll = fd_genio_ll_alloc(nadata->o, new_fd, &tcp_server_fd_ll_ops, tdata,
-			   nadata->max_read_size);
+    ll = fd_gensio_ll_alloc(nadata->o, new_fd, &tcp_server_fd_ll_ops, tdata,
+			    nadata->max_read_size);
     if (!ll) {
 	syslog(LOG_ERR, "No memory allocating tcp ll %s", nadata->name);
 	close(new_fd);
@@ -411,8 +412,8 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    io = base_genio_server_alloc(nadata->o, ll, NULL, GENIO_TYPE_TCP,
-				 NULL, NULL);
+    io = base_gensio_server_alloc(nadata->o, ll, NULL, GENSIO_TYPE_TCP,
+				  NULL, NULL);
     if (!io) {
 	syslog(LOG_ERR, "No memory allocating tcp base %s", nadata->name);
 	ll->ops->free(ll);
@@ -428,7 +429,7 @@ static void
 tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
-    struct genio_acceptor *acceptor = &nadata->acceptor;
+    struct gensio_acceptor *acceptor = &nadata->acceptor;
     unsigned int num_left;
 
     close(fd);
@@ -456,7 +457,7 @@ tcpna_set_fd_enables(struct tcpna_data *nadata, bool enable)
 }
 
 static int
-tcpna_startup(struct genio_acceptor *acceptor)
+tcpna_startup(struct gensio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -487,7 +488,7 @@ tcpna_startup(struct genio_acceptor *acceptor)
 
 static void
 _tcpna_shutdown(struct tcpna_data *nadata,
-		void (*shutdown_done)(struct genio_acceptor *acceptor,
+		void (*shutdown_done)(struct gensio_acceptor *acceptor,
 				      void *shutdown_data),
 		void *shutdown_data)
 {
@@ -504,8 +505,8 @@ _tcpna_shutdown(struct tcpna_data *nadata,
 }
 
 static int
-tcpna_shutdown(struct genio_acceptor *acceptor,
-	       void (*shutdown_done)(struct genio_acceptor *acceptor,
+tcpna_shutdown(struct gensio_acceptor *acceptor,
+	       void (*shutdown_done)(struct gensio_acceptor *acceptor,
 				     void *shutdown_data),
 	       void *shutdown_data)
 {
@@ -523,7 +524,7 @@ tcpna_shutdown(struct genio_acceptor *acceptor,
 }
 
 static void
-tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
+tcpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -536,7 +537,7 @@ tcpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 }
 
 static void
-tcpna_free(struct genio_acceptor *acceptor)
+tcpna_free(struct gensio_acceptor *acceptor)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -547,26 +548,26 @@ tcpna_free(struct genio_acceptor *acceptor)
 }
 
 int
-tcpna_connect(struct genio_acceptor *acceptor, void *addr,
-	      void (*connect_done)(struct genio *net, int err,
+tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
+	      void (*connect_done)(struct gensio *net, int err,
 				   void *cb_data),
-	      void *cb_data, struct genio **new_net)
+	      void *cb_data, struct gensio **new_net)
 {
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
-    struct genio *net;
+    struct gensio *net;
     int err;
 
-    err = tcp_genio_alloc(addr, nadata->o, nadata->max_read_size,
+    err = tcp_gensio_alloc(addr, nadata->o, nadata->max_read_size,
 			  NULL, NULL, &net);
     if (err)
 	return err;
-    err = genio_open(net, connect_done, cb_data);
+    err = gensio_open(net, connect_done, cb_data);
     if (!err)
 	*new_net = net;
     return err;
 }
 
-static const struct genio_acceptor_functions genio_acc_tcp_funcs = {
+static const struct gensio_acceptor_functions gensio_acc_tcp_funcs = {
     .startup = tcpna_startup,
     .shutdown = tcpna_shutdown,
     .set_accept_callback_enable = tcpna_set_accept_callback_enable,
@@ -575,17 +576,17 @@ static const struct genio_acceptor_functions genio_acc_tcp_funcs = {
 };
 
 int
-tcp_genio_acceptor_alloc(const char *name,
-			 struct genio_os_funcs *o,
-			 struct addrinfo *iai,
-			 unsigned int max_read_size,
-			 const struct genio_acceptor_callbacks *cbs,
-			 void *user_data,
-			 struct genio_acceptor **acceptor)
+tcp_gensio_acceptor_alloc(const char *name,
+			  struct gensio_os_funcs *o,
+			  struct addrinfo *iai,
+			  unsigned int max_read_size,
+			  const struct gensio_acceptor_callbacks *cbs,
+			  void *user_data,
+			  struct gensio_acceptor **acceptor)
 {
-    struct genio_acceptor *acc;
+    struct gensio_acceptor *acc;
     struct tcpna_data *nadata;
-    struct addrinfo *ai = genio_dup_addrinfo(o, iai);
+    struct addrinfo *ai = gensio_dup_addrinfo(o, iai);
 
     if (!ai)
 	return ENOMEM;
@@ -601,7 +602,7 @@ tcp_genio_acceptor_alloc(const char *name,
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->name = genio_strdup(o, name);
+    nadata->name = gensio_strdup(o, name);
     if (!nadata->name)
 	goto out_nomem;
 
@@ -609,8 +610,8 @@ tcp_genio_acceptor_alloc(const char *name,
 
     acc->cbs = cbs;
     acc->user_data = user_data;
-    acc->funcs = &genio_acc_tcp_funcs;
-    acc->type = GENIO_TYPE_TCP;
+    acc->funcs = &gensio_acc_tcp_funcs;
+    acc->type = GENSIO_TYPE_TCP;
 
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
@@ -620,7 +621,7 @@ tcp_genio_acceptor_alloc(const char *name,
 
  out_nomem:
     if (ai)
-	genio_free_addrinfo(o, ai);
+	gensio_free_addrinfo(o, ai);
     if (nadata->lock)
 	o->free_lock(nadata->lock);
     if (nadata) {

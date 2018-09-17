@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -23,14 +23,16 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include "utils/utils.h"
-#include "genio.h"
-#include "genio_internal.h"
-#include "sergenio.h"
+
+#include <utils/utils.h>
+
+#include <gensio/gensio.h>
+#include <gensio/gensio_internal.h>
+#include <gensio/sergensio.h>
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
-open_socket(struct genio_os_funcs *o,
+open_socket(struct gensio_os_funcs *o,
 	    struct addrinfo *ai, void (*readhndlr)(int, void *),
 	    void (*writehndlr)(int, void *), void *data,
 	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
@@ -222,13 +224,14 @@ sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
 }
 
 int
-genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
+gensio_buffer_do_write(void *cb_data, void  *buf, size_t buflen,
+		       size_t *written)
 {
-    struct genio *io = cb_data;
+    struct gensio *io = cb_data;
     int err = 0;
     unsigned int count;
 
-    err = genio_write(io, &count, buf, buflen);
+    err = gensio_write(io, &count, buf, buflen);
     if (!err)
 	*written = count;
 
@@ -236,42 +239,42 @@ genio_buffer_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
 }
 
 void
-genio_set_callbacks(struct genio *io,
-		    const struct genio_callbacks *cbs, void *user_data)
+gensio_set_callbacks(struct gensio *io,
+		     const struct gensio_callbacks *cbs, void *user_data)
 {
     io->cbs = cbs;
     io->user_data = user_data;
 }
 
 void *
-genio_get_user_data(struct genio *io)
+gensio_get_user_data(struct gensio *io)
 {
     return io->user_data;
 }
 
 void
-genio_set_user_data(struct genio *io, void *user_data)
+gensio_set_user_data(struct gensio *io, void *user_data)
 {
     io->user_data = user_data;
 }
 
 int
-genio_write(struct genio *io, unsigned int *count,
-	    const void *buf, unsigned int buflen)
+gensio_write(struct gensio *io, unsigned int *count,
+	     const void *buf, unsigned int buflen)
 {
     return io->funcs->write(io, count, buf, buflen);
 }
 
 int
-genio_raddr_to_str(struct genio *io, int *pos,
-		   char *buf, unsigned int buflen)
+gensio_raddr_to_str(struct gensio *io, int *pos,
+		    char *buf, unsigned int buflen)
 {
     return io->funcs->raddr_to_str(io, pos, buf, buflen);
 }
 
 int
-genio_get_raddr(struct genio *io,
-		struct sockaddr *addr, socklen_t *addrlen)
+gensio_get_raddr(struct gensio *io,
+		 struct sockaddr *addr, socklen_t *addrlen)
 {
     if (!io->funcs->get_raddr)
 	return ENOTSUP;
@@ -279,7 +282,7 @@ genio_get_raddr(struct genio *io,
 }
 
 int
-genio_remote_id(struct genio *io, int *id)
+gensio_remote_id(struct gensio *io, int *id)
 {
     if (!io->funcs->remote_id)
 	return ENOTSUP;
@@ -287,33 +290,33 @@ genio_remote_id(struct genio *io, int *id)
 }
 
 int
-genio_open(struct genio *io, void (*open_done)(struct genio *io,
-					       int err,
-					       void *open_data),
+gensio_open(struct gensio *io, void (*open_done)(struct gensio *io,
+						 int err,
+						 void *open_data),
 	   void *open_data)
 {
     return io->funcs->open(io, open_done, open_data);
 }
 
-struct genio_open_s_data {
-    struct genio_os_funcs *o;
+struct gensio_open_s_data {
+    struct gensio_os_funcs *o;
     int err;
-    struct genio_waiter *waiter;
+    struct gensio_waiter *waiter;
 };
 
 static void
-genio_open_s_done(struct genio *io, int err, void *cb_data)
+gensio_open_s_done(struct gensio *io, int err, void *cb_data)
 {
-    struct genio_open_s_data *data = cb_data;
+    struct gensio_open_s_data *data = cb_data;
 
     data->err = err;
     data->o->wake(data->waiter);
 }
 
 int
-genio_open_s(struct genio *io, struct genio_os_funcs *o)
+gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
 {
-    struct genio_open_s_data data;
+    struct gensio_open_s_data data;
     int err;
 
     data.o = o;
@@ -321,7 +324,7 @@ genio_open_s(struct genio *io, struct genio_os_funcs *o)
     data.waiter = o->alloc_waiter(o);
     if (!data.waiter)
 	return ENOMEM;
-    err = genio_open(io, genio_open_s_done, &data);
+    err = gensio_open(io, gensio_open_s_done, &data);
     if (!err) {
 	o->wait(data.waiter, NULL);
 	err = data.err;
@@ -331,92 +334,92 @@ genio_open_s(struct genio *io, struct genio_os_funcs *o)
 }
 
 int
-genio_close(struct genio *io, void (*close_done)(struct genio *io,
-						 void *close_data),
+gensio_close(struct gensio *io, void (*close_done)(struct gensio *io,
+						   void *close_data),
 	    void *close_data)
 {
     return io->funcs->close(io, close_done, close_data);
 }
 
 void
-genio_free(struct genio *io)
+gensio_free(struct gensio *io)
 {
     return io->funcs->free(io);
 }
 
 void
-genio_set_read_callback_enable(struct genio *io, bool enabled)
+gensio_set_read_callback_enable(struct gensio *io, bool enabled)
 {
     io->funcs->set_read_callback_enable(io, enabled);
 }
 
 void
-genio_set_write_callback_enable(struct genio *io, bool enabled)
+gensio_set_write_callback_enable(struct gensio *io, bool enabled)
 {
     io->funcs->set_write_callback_enable(io, enabled);
 }
 
 bool
-genio_is_client(struct genio *io)
+gensio_is_client(struct gensio *io)
 {
     return io->is_client;
 }
 
 void *
-genio_acc_get_user_data(struct genio_acceptor *acceptor)
+gensio_acc_get_user_data(struct gensio_acceptor *acceptor)
 {
     return acceptor->user_data;
 }
 
 void
-genio_acc_set_user_data(struct genio_acceptor *acceptor,
-			void *user_data)
+gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
+			 void *user_data)
 {
     acceptor->user_data = user_data;
 }
 
 void
-genio_acc_set_callbacks(struct genio_acceptor *acceptor,
-			struct genio_acceptor_callbacks *cbs,
-			void *user_data)
+gensio_acc_set_callbacks(struct gensio_acceptor *acceptor,
+			 struct gensio_acceptor_callbacks *cbs,
+			 void *user_data)
 {
     acceptor->cbs = cbs;
     acceptor->user_data = user_data;
 }
 
 int
-genio_acc_startup(struct genio_acceptor *acceptor)
+gensio_acc_startup(struct gensio_acceptor *acceptor)
 {
     return acceptor->funcs->startup(acceptor);
 }
 
 int
-genio_acc_shutdown(struct genio_acceptor *acceptor,
-		   void (*shutdown_done)(struct genio_acceptor *acceptor,
-					 void *shutdown_data),
-		   void *shutdown_data)
+gensio_acc_shutdown(struct gensio_acceptor *acceptor,
+		    void (*shutdown_done)(struct gensio_acceptor *acceptor,
+					  void *shutdown_data),
+		    void *shutdown_data)
 {
     return acceptor->funcs->shutdown(acceptor, shutdown_done, shutdown_data);
 }
 
 void
-genio_acc_set_accept_callback_enable(struct genio_acceptor *acceptor,
-				     bool enabled)
+gensio_acc_set_accept_callback_enable(struct gensio_acceptor *acceptor,
+				      bool enabled)
 {
     acceptor->funcs->set_accept_callback_enable(acceptor, enabled);
 }
 
 void
-genio_acc_free(struct genio_acceptor *acceptor)
+gensio_acc_free(struct gensio_acceptor *acceptor)
 {
     acceptor->funcs->free(acceptor);
 }
 
 int
-genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
-		  void (*connect_done)(struct genio *io, int err,
-				       void *cb_data),
-		  void *cb_data, struct genio **new_io)
+gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
+		   void (*connect_done)(struct gensio *io, int err,
+					void *cb_data),
+		   void *cb_data, struct gensio **new_io)
 {
     if (!acceptor->funcs->connect)
 	return ENOTSUP;
@@ -425,21 +428,21 @@ genio_acc_connect(struct genio_acceptor *acceptor, void *addr,
 }
 
 bool
-genio_acc_exit_on_close(struct genio_acceptor *acceptor)
+gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
 {
-    return acceptor->type == GENIO_TYPE_STDIO;
+    return acceptor->type == GENSIO_TYPE_STDIO;
 }
 
 static int
-genio_process_acc_filter(const char *str, enum genio_type type,
-			 struct genio_os_funcs *o,
-			 unsigned int max_read_size,
-			 const struct genio_acceptor_callbacks *cbs,
-			 void *user_data,
-			 struct genio_acceptor **acceptor)
+gensio_process_acc_filter(const char *str, enum gensio_type type,
+			  struct gensio_os_funcs *o,
+			  unsigned int max_read_size,
+			  const struct gensio_acceptor_callbacks *cbs,
+			  void *user_data,
+			  struct gensio_acceptor **acceptor)
 {
     int err = 0;
-    struct genio_acceptor *acc = NULL, *acc2 = NULL;
+    struct gensio_acceptor *acc = NULL, *acc2 = NULL;
     int argc;
     char **args = NULL;
     const char *name = str;
@@ -457,15 +460,15 @@ genio_process_acc_filter(const char *str, enum genio_type type,
     }
 
     if (!err)
-	err = str_to_genio_acceptor(str, o, max_read_size, NULL, NULL, &acc2);
+	err = str_to_gensio_acceptor(str, o, max_read_size, NULL, NULL, &acc2);
     if (!err) {
-	if (type == GENIO_TYPE_SSL) {
-	    err = ssl_genio_acceptor_alloc(name, args, o, acc2, max_read_size,
+	if (type == GENSIO_TYPE_SSL) {
+	    err = ssl_gensio_acceptor_alloc(name, args, o, acc2, max_read_size,
 					   cbs, user_data, &acc);
-	} else if (type == GENIO_TYPE_SER_TELNET) {
-	    err = sergenio_telnet_acceptor_alloc(name, args, o, acc2,
-						 max_read_size,
-						 cbs, user_data, &acc);
+	} else if (type == GENSIO_TYPE_SER_TELNET) {
+	    err = sergensio_telnet_acceptor_alloc(name, args, o, acc2,
+						  max_read_size,
+						  cbs, user_data, &acc);
 	} else {
 	    err = EINVAL;
 	}
@@ -476,9 +479,9 @@ genio_process_acc_filter(const char *str, enum genio_type type,
 
     if (err) {
 	if (acc)
-	    genio_acc_free(acc);
+	    gensio_acc_free(acc);
 	else if (acc2)
-	    genio_acc_free(acc2);
+	    gensio_acc_free(acc2);
     } else {
 	*acceptor = acc;
     }
@@ -486,39 +489,41 @@ genio_process_acc_filter(const char *str, enum genio_type type,
     return err;
 }
 
-int str_to_genio_acceptor(const char *str,
-			  struct genio_os_funcs *o,
-			  unsigned int max_read_size,
-			  const struct genio_acceptor_callbacks *cbs,
-			  void *user_data,
-			  struct genio_acceptor **acceptor)
+int str_to_gensio_acceptor(const char *str,
+			   struct gensio_os_funcs *o,
+			   unsigned int max_read_size,
+			   const struct gensio_acceptor_callbacks *cbs,
+			   void *user_data,
+			   struct gensio_acceptor **acceptor)
 {
     int err;
     struct addrinfo *ai = NULL;
     bool is_dgram, is_port_set;
 
     if (strisallzero(str)) {
-	err = stdio_genio_acceptor_alloc(o, max_read_size, cbs, user_data,
-					 acceptor);
+	err = stdio_gensio_acceptor_alloc(o, max_read_size, cbs, user_data,
+					  acceptor);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
-	err = genio_process_acc_filter(str + 3, GENIO_TYPE_SSL, o,
-				       max_read_size, cbs, user_data, acceptor);
+	err = gensio_process_acc_filter(str + 3, GENSIO_TYPE_SSL, o,
+					max_read_size, cbs, user_data,
+					acceptor);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
-	err = genio_process_acc_filter(str + 6, GENIO_TYPE_SER_TELNET, o,
-				       max_read_size, cbs, user_data, acceptor);
+	err = gensio_process_acc_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
+					max_read_size, cbs, user_data,
+					acceptor);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_genio_acceptor_alloc(str, o, ai, max_read_size, cbs,
-					       user_data, acceptor);
+		err = udp_gensio_acceptor_alloc(str, o, ai, max_read_size, cbs,
+						user_data, acceptor);
 	    } else {
-		err = tcp_genio_acceptor_alloc(str, o, ai, max_read_size, cbs,
-					       user_data, acceptor);
+		err = tcp_gensio_acceptor_alloc(str, o, ai, max_read_size, cbs,
+						user_data, acceptor);
 	    }
 
 	    freeaddrinfo(ai);
@@ -529,17 +534,17 @@ int str_to_genio_acceptor(const char *str,
 }
 
 static int
-genio_process_filter(const char *str,
-		     enum genio_type type,
-		     struct genio_os_funcs *o,
-		     unsigned int max_read_size,
-		     const struct genio_callbacks *cbs,
-		     void *user_data,
-		     struct genio **genio)
+gensio_process_filter(const char *str,
+		      enum gensio_type type,
+		      struct gensio_os_funcs *o,
+		      unsigned int max_read_size,
+		      const struct gensio_callbacks *cbs,
+		      void *user_data,
+		      struct gensio **gensio)
 {
     int err = 0;
-    struct genio *io = NULL, *io2 = NULL;
-    struct sergenio *sio = NULL;
+    struct gensio *io = NULL, *io2 = NULL;
+    struct sergensio *sio = NULL;
     int argc;
     char **args;
 
@@ -556,16 +561,16 @@ genio_process_filter(const char *str,
     }
 
     if (!err)
-	err = str_to_genio(str, o, max_read_size, NULL, NULL, &io2);
+	err = str_to_gensio(str, o, max_read_size, NULL, NULL, &io2);
     if (!err) {
-	if (type == GENIO_TYPE_SER_TELNET) {
-	    err = sergenio_telnet_alloc(io2, args, o, NULL, cbs, user_data,
-					&sio);
+	if (type == GENSIO_TYPE_SER_TELNET) {
+	    err = sergensio_telnet_alloc(io2, args, o, NULL, cbs, user_data,
+					 &sio);
 	    if (!err)
-		io = sergenio_to_genio(sio);
-	} else if (type == GENIO_TYPE_SSL) {
-	    err = ssl_genio_alloc(io2, args, o, max_read_size, cbs, user_data,
-				  &io);
+		io = sergensio_to_gensio(sio);
+	} else if (type == GENSIO_TYPE_SSL) {
+	    err = ssl_gensio_alloc(io2, args, o, max_read_size, cbs, user_data,
+				   &io);
 	} else {
 	    err = EINVAL;
 	}
@@ -576,23 +581,23 @@ genio_process_filter(const char *str,
 
     if (err) {
 	if (io)
-	    genio_free(io);
+	    gensio_free(io);
 	else if (io2)
-	    genio_free(io2);
+	    gensio_free(io2);
     } else {
-	*genio = io;
+	*gensio = io;
     }
 
     return err;
 }
 
 int
-str_to_genio(const char *str,
-	     struct genio_os_funcs *o,
-	     unsigned int max_read_size,
-	     const struct genio_callbacks *cbs,
-	     void *user_data,
-	     struct genio **genio)
+str_to_gensio(const char *str,
+	      struct gensio_os_funcs *o,
+	      unsigned int max_read_size,
+	      const struct gensio_callbacks *cbs,
+	      void *user_data,
+	      struct gensio **gensio)
 {
     int err = 0;
     struct addrinfo *ai = NULL;
@@ -605,36 +610,36 @@ str_to_genio(const char *str,
 	err = str_to_argv(str + 6, &argc, &argv, NULL);
 	if (err)
 	    return err;
-	err = stdio_genio_alloc(argv, o, max_read_size, cbs, user_data,
-				genio);
+	err = stdio_gensio_alloc(argv, o, max_read_size, cbs, user_data,
+				 gensio);
 	str_to_argv_free(argc, argv);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
-	err = genio_process_filter(str + 6, GENIO_TYPE_SER_TELNET, o,
-				   max_read_size, cbs, user_data, genio);
+	err = gensio_process_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
+				    max_read_size, cbs, user_data, gensio);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
-	err = genio_process_filter(str + 3, GENIO_TYPE_SSL, o,
-				   max_read_size, cbs, user_data, genio);
+	err = gensio_process_filter(str + 3, GENSIO_TYPE_SSL, o,
+				    max_read_size, cbs, user_data, gensio);
     } else if (strncmp(str, "termios,", 8) == 0) {
-	struct sergenio *sio;
+	struct sergensio *sio;
 
 	str += 8;
-	err = sergenio_termios_alloc(str, o, max_read_size, NULL,
-				     cbs, user_data, &sio);
+	err = sergensio_termios_alloc(str, o, max_read_size, NULL,
+				      cbs, user_data, &sio);
 	if (!err)
-	    *genio = sergenio_to_genio(sio);
+	    *gensio = sergensio_to_gensio(sio);
     } else {
 	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_genio_alloc(ai, o, max_read_size, cbs,
-				      user_data, genio);
+		err = udp_gensio_alloc(ai, o, max_read_size, cbs,
+				       user_data, gensio);
 	    } else {
-		err = tcp_genio_alloc(ai, o, max_read_size, cbs,
-				      user_data, genio);
+		err = tcp_gensio_alloc(ai, o, max_read_size, cbs,
+				       user_data, gensio);
 	    }
 
 	    freeaddrinfo(ai);
@@ -645,7 +650,7 @@ str_to_genio(const char *str,
 }
 
 bool
-genio_match_type(struct genio *io, enum genio_type *types)
+gensio_match_type(struct gensio *io, enum gensio_type *types)
 {
     while (*types) {
 	if (io->type == *types)
@@ -656,7 +661,7 @@ genio_match_type(struct genio *io, enum genio_type *types)
 }
 
 const char *
-genio_check_tcpd_ok(int new_fd)
+gensio_check_tcpd_ok(int new_fd)
 {
 #ifdef HAVE_TCPD_H
     struct request_info req;
@@ -672,7 +677,7 @@ genio_check_tcpd_ok(int new_fd)
 }
 
 struct addrinfo *
-genio_dup_addrinfo(struct genio_os_funcs *o, struct addrinfo *iai)
+gensio_dup_addrinfo(struct gensio_os_funcs *o, struct addrinfo *iai)
 {
     struct addrinfo *ai = NULL, *aic, *aip = NULL;
 
@@ -689,7 +694,7 @@ genio_dup_addrinfo(struct genio_os_funcs *o, struct addrinfo *iai)
 	}
 	memcpy(aic->ai_addr, iai->ai_addr, iai->ai_addrlen);
 	if (iai->ai_canonname) {
-	    aic->ai_canonname = genio_strdup(o, iai->ai_canonname);
+	    aic->ai_canonname = gensio_strdup(o, iai->ai_canonname);
 	    if (!aic->ai_canonname) {
 		o->free(o, aic->ai_addr);
 		o->free(o, aic);
@@ -709,12 +714,12 @@ genio_dup_addrinfo(struct genio_os_funcs *o, struct addrinfo *iai)
     return ai;
 
  out_nomem:
-    genio_free_addrinfo(o, ai);
+    gensio_free_addrinfo(o, ai);
     return NULL;
 }
 
 void
-genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai)
+gensio_free_addrinfo(struct gensio_os_funcs *o, struct addrinfo *ai)
 {
     while (ai) {
 	struct addrinfo *aic = ai;
@@ -728,7 +733,7 @@ genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai)
 }
 
 char *
-genio_strdup(struct genio_os_funcs *o, const char *str)
+gensio_strdup(struct gensio_os_funcs *o, const char *str)
 {
     char *s;
 
@@ -743,7 +748,7 @@ genio_strdup(struct genio_os_funcs *o, const char *str)
 }
 
 int
-genio_check_keyvalue(const char *str, const char *key, const char **value)
+gensio_check_keyvalue(const char *str, const char *key, const char **value)
 {
     unsigned int keylen = strlen(key);
 
@@ -756,11 +761,11 @@ genio_check_keyvalue(const char *str, const char *key, const char **value)
 }
 
 int
-genio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
+gensio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
 {
     const char *sval;
     char *end;
-    int rv = genio_check_keyvalue(str, key, &sval);
+    int rv = gensio_check_keyvalue(str, key, &sval);
     unsigned int value;
 
     if (!rv)

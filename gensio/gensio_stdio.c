@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -28,21 +28,22 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include "genio.h"
-#include "genio_internal.h"
-#include "utils/locking.h"
+#include <utils/locking.h>
+
+#include <gensio/gensio.h>
+#include <gensio/gensio_internal.h>
 
 struct stdiona_data {
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 
     unsigned int refcount;
 
     int argc;
     char **argv;
 
-    struct genio_runner *connect_runner;
+    struct gensio_runner *connect_runner;
 
     bool enabled;
     int old_flags_ostdin;
@@ -51,7 +52,7 @@ struct stdiona_data {
     /* For the acceptor only. */
     bool in_free;
     bool in_shutdown;
-    void (*shutdown_done)(struct genio_acceptor *acceptor,
+    void (*shutdown_done)(struct gensio_acceptor *acceptor,
 			  void *shutdown_data);
     void *shutdown_data;
 
@@ -61,13 +62,13 @@ struct stdiona_data {
     bool deferred_read;
 
     bool in_open;
-    void (*open_done)(struct genio *io, int err, void *open_data);
+    void (*open_done)(struct gensio *io, int err, void *open_data);
     void *open_data;
 
     /* For the client only. */
     bool in_close; /* A close is pending the running running. */
     bool closed;
-    void (*close_done)(struct genio *net, void *close_data);
+    void (*close_done)(struct gensio *net, void *close_data);
     void *close_data;
 
     /*
@@ -94,10 +95,10 @@ struct stdiona_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    struct genio_runner *deferred_op_runner;
+    struct gensio_runner *deferred_op_runner;
 
-    struct genio net;
-    struct genio_acceptor acceptor;
+    struct gensio net;
+    struct gensio_acceptor acceptor;
 };
 
 #define net_to_nadata(net) container_of(net, struct stdiona_data, net);
@@ -116,7 +117,7 @@ stdiona_unlock(struct stdiona_data *nadata)
 }
 
 static int
-stdion_write(struct genio *net, unsigned int *count,
+stdion_write(struct gensio *net, unsigned int *count,
 	     const void *buf, unsigned int buflen)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
@@ -142,7 +143,7 @@ stdion_write(struct genio *net, unsigned int *count,
 }
 
 static int
-stdion_raddr_to_str(struct genio *net, int *epos,
+stdion_raddr_to_str(struct gensio *net, int *epos,
 		    char *buf, unsigned int buflen)
 {
     int pos = 0;
@@ -162,7 +163,7 @@ stdion_raddr_to_str(struct genio *net, int *epos,
 }
 
 static int
-stdion_remote_id(struct genio *net, int *id)
+stdion_remote_id(struct gensio *net, int *id)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
@@ -176,7 +177,7 @@ stdion_remote_id(struct genio *net, int *id)
 static void
 stdion_finish_read(struct stdiona_data *nadata, int err)
 {
-    struct genio *net = &nadata->net;
+    struct gensio *net = &nadata->net;
     unsigned int count;
 
     if (err) {
@@ -214,10 +215,10 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 }
 
 static void
-stdion_deferred_op(struct genio_runner *runner, void *cbdata)
+stdion_deferred_op(struct gensio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct genio *net = &nadata->net;
+    struct gensio *net = &nadata->net;
 
     stdiona_lock(nadata);
  restart:
@@ -317,7 +318,7 @@ stdio_client_fd_cleared(int fd, void *cbdata)
 }
 
 static void
-stdion_set_read_callback_enable(struct genio *net, bool enabled)
+stdion_set_read_callback_enable(struct gensio *net, bool enabled)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
@@ -342,7 +343,7 @@ stdion_set_read_callback_enable(struct genio *net, bool enabled)
 }
 
 static void
-stdion_set_write_callback_enable(struct genio *net, bool enabled)
+stdion_set_write_callback_enable(struct gensio *net, bool enabled)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
@@ -372,7 +373,7 @@ stdion_read_ready(int fd, void *cbdata)
     if (nadata->ostderr != -1)
 	nadata->o->set_read_handler(nadata->o, nadata->ostderr, false);
     if (fd == nadata->ostderr)
-	nadata->read_flags = GENIO_ERR_OUTPUT;
+	nadata->read_flags = GENSIO_ERR_OUTPUT;
     else
 	nadata->read_flags = 0;
     nadata->in_read = true;
@@ -401,15 +402,15 @@ static void
 stdion_write_ready(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct genio *net = &nadata->net;
+    struct gensio *net = &nadata->net;
 
     net->cbs->write_callback(net);
 }
 
 static int
-stdion_open(struct genio *net, void (*open_done)(struct genio *net,
-						 int err,
-						 void *open_data),
+stdion_open(struct gensio *net, void (*open_done)(struct gensio *net,
+						  int err,
+						  void *open_data),
 	    void *open_data)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
@@ -548,7 +549,7 @@ stdion_open(struct genio *net, void (*open_done)(struct genio *net,
 
 static void
 __stdion_close(struct stdiona_data *nadata,
-	       void (*close_done)(struct genio *net, void *close_data),
+	       void (*close_done)(struct gensio *net, void *close_data),
 	       void *close_data)
 {
     nadata->closed = true;
@@ -566,8 +567,8 @@ __stdion_close(struct stdiona_data *nadata,
 }
 
 static int
-stdion_close(struct genio *net, void (*close_done)(struct genio *net,
-						   void *close_data),
+stdion_close(struct gensio *net, void (*close_done)(struct gensio *net,
+						    void *close_data),
 	     void *close_data)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
@@ -584,7 +585,7 @@ stdion_close(struct genio *net, void (*close_done)(struct genio *net,
 }
 
 static void
-stdion_free(struct genio *net)
+stdion_free(struct gensio *net)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
@@ -609,7 +610,7 @@ stdion_free(struct genio *net)
 }
 
 static void
-stdion_ref(struct genio *net)
+stdion_ref(struct gensio *net)
 {
     struct stdiona_data *nadata = net_to_nadata(net);
 
@@ -619,7 +620,7 @@ stdion_ref(struct genio *net)
 }
 
 static void
-stdiona_do_connect(struct genio_runner *runner, void *cbdata)
+stdiona_do_connect(struct gensio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
@@ -630,7 +631,7 @@ static void
 stdiona_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct genio_acceptor *acceptor = &nadata->acceptor;
+    struct gensio_acceptor *acceptor = &nadata->acceptor;
 
     stdiona_lock(nadata);
     nadata->oio_count--;
@@ -651,7 +652,7 @@ stdiona_fd_cleared(int fd, void *cbdata)
 }
 
 static int
-stdiona_startup(struct genio_acceptor *acceptor)
+stdiona_startup(struct gensio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -722,8 +723,8 @@ stdiona_startup(struct genio_acceptor *acceptor)
 }
 
 static int
-stdiona_shutdown(struct genio_acceptor *acceptor,
-		 void (*shutdown_done)(struct genio_acceptor *acceptor,
+stdiona_shutdown(struct gensio_acceptor *acceptor,
+		 void (*shutdown_done)(struct gensio_acceptor *acceptor,
 				       void *shutdown_data),
 		 void *shutdown_data)
 {
@@ -747,13 +748,13 @@ stdiona_shutdown(struct genio_acceptor *acceptor,
 }
 
 static void
-stdiona_set_accept_callback_enable(struct genio_acceptor *acceptor,
+stdiona_set_accept_callback_enable(struct gensio_acceptor *acceptor,
 				   bool enabled)
 {
 }
 
 static void
-stdiona_free(struct genio_acceptor *acceptor)
+stdiona_free(struct gensio_acceptor *acceptor)
 {
     struct stdiona_data *nadata = acc_to_nadata(acceptor);
 
@@ -771,7 +772,7 @@ stdiona_free(struct genio_acceptor *acceptor)
     stdiona_unlock(nadata);
 }
 
-static const struct genio_functions genio_stdio_funcs = {
+static const struct gensio_functions gensio_stdio_funcs = {
     .write = stdion_write,
     .raddr_to_str = stdion_raddr_to_str,
     .remote_id = stdion_remote_id,
@@ -783,7 +784,7 @@ static const struct genio_functions genio_stdio_funcs = {
     .set_write_callback_enable = stdion_set_write_callback_enable
 };
 
-static const struct genio_acceptor_functions genio_acc_stdio_funcs = {
+static const struct gensio_acceptor_functions gensio_acc_stdio_funcs = {
     .startup = stdiona_startup,
     .shutdown = stdiona_shutdown,
     .set_accept_callback_enable = stdiona_set_accept_callback_enable,
@@ -791,7 +792,7 @@ static const struct genio_acceptor_functions genio_acc_stdio_funcs = {
 };
 
 static int
-stdio_nadata_setup(struct genio_os_funcs *o, unsigned int max_read_size,
+stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 		   struct stdiona_data **new_nadata)
 {
     int err = 0;
@@ -820,8 +821,8 @@ stdio_nadata_setup(struct genio_os_funcs *o, unsigned int max_read_size,
     if (!nadata->lock)
 	goto out_err;
 
-    nadata->net.funcs = &genio_stdio_funcs;
-    nadata->net.type = GENIO_TYPE_STDIO;
+    nadata->net.funcs = &gensio_stdio_funcs;
+    nadata->net.type = GENSIO_TYPE_STDIO;
 
     *new_nadata = nadata;
 
@@ -838,14 +839,14 @@ stdio_nadata_setup(struct genio_os_funcs *o, unsigned int max_read_size,
 }
 
 int
-stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
-			   unsigned int max_read_size,
-			   const struct genio_acceptor_callbacks *cbs,
-			   void *user_data,
-			   struct genio_acceptor **acceptor)
+stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
+			    unsigned int max_read_size,
+			    const struct gensio_acceptor_callbacks *cbs,
+			    void *user_data,
+			    struct gensio_acceptor **acceptor)
 {
     int err;
-    struct genio_acceptor *acc;
+    struct gensio_acceptor *acc;
     struct stdiona_data *nadata = NULL;
 
     err = stdio_nadata_setup(o, max_read_size, &nadata);
@@ -857,23 +858,23 @@ stdio_genio_acceptor_alloc(struct genio_os_funcs *o,
     nadata->ostderr = -1;
 
     acc = &nadata->acceptor;
-    acc->type = GENIO_TYPE_STDIO;
+    acc->type = GENSIO_TYPE_STDIO;
 
     acc->cbs = cbs;
     acc->user_data = user_data;
-    acc->funcs = &genio_acc_stdio_funcs;
+    acc->funcs = &gensio_acc_stdio_funcs;
 
     *acceptor = acc;
     return 0;
 }
 
 int
-stdio_genio_alloc(char *const argv[],
-		  struct genio_os_funcs *o,
-		  unsigned int max_read_size,
-		  const struct genio_callbacks *cbs,
-		  void *user_data,
-		  struct genio **new_genio)
+stdio_gensio_alloc(char *const argv[],
+		   struct gensio_os_funcs *o,
+		   unsigned int max_read_size,
+		   const struct gensio_callbacks *cbs,
+		   void *user_data,
+		   struct gensio **new_gensio)
 {
     int err;
     struct stdiona_data *nadata = NULL;
@@ -889,18 +890,18 @@ stdio_genio_alloc(char *const argv[],
     if (!nadata->argv)
 	goto out_nomem;
     for (i = 0; i < argc; i++) {
-	nadata->argv[i] = genio_strdup(o, argv[i]);
+	nadata->argv[i] = gensio_strdup(o, argv[i]);
 	if (!nadata->argv[i])
 	    goto out_nomem;
     }
     nadata->closed = true;
     nadata->net.cbs = cbs;
     nadata->net.user_data = user_data;
-    nadata->net.funcs = &genio_stdio_funcs;
-    nadata->net.type = GENIO_TYPE_STDIO;
+    nadata->net.funcs = &gensio_stdio_funcs;
+    nadata->net.type = GENSIO_TYPE_STDIO;
     nadata->net.is_client = true;
 
-    *new_genio = &nadata->net;
+    *new_gensio = &nadata->net;
 
     return 0;
 

@@ -1,0 +1,283 @@
+/*
+ *  gensio - A library for abstracting stream I/O
+ *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+/*
+ * This include file defines an I/O abstraction to allow code to use a
+ * serial port without having to know the underlying details.
+ */
+
+#ifndef SERGENSIO_H
+#define SERGENSIO_H
+
+#include <stdbool.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+
+#include <gensio/gensio.h>
+
+struct sergensio;
+
+/*
+ * Cast between sergensio and gensio types.  If
+ */
+struct gensio *sergensio_to_gensio(struct sergensio *sio);
+struct sergensio *gensio_to_sergensio(struct gensio *io);
+bool is_sergensio(struct gensio *io);
+
+/*
+ * The following functions set various serial parameters.  The done()
+ * callback is called if the function does not return an error,
+ * otherwise it is not called.  The done callback may have an error,
+ * if so the data is not valid.  Otherwise the data given is the actual
+ * set value.
+ *
+ * If you pass a zero to the value to this, the value is not set, it
+ * is only fetched.  This can be used to get the current value.
+ *
+ * If the done() callback is NULL, no callback is done.  Also, in server
+ * mode, this will send the server version and the done callback is
+ * ignored.
+ */
+
+int sergensio_baud(struct sergensio *sio, int baud,
+		   void (*done)(struct sergensio *sio, int err,
+				int baud, void *cb_data),
+		   void *cb_data);
+
+int sergensio_datasize(struct sergensio *sio, int datasize,
+		       void (*done)(struct sergensio *sio, int err,
+				    int datasize, void *cb_data),
+		       void *cb_data);
+
+#define SERGENSIO_PARITY_NONE	1
+#define SERGENSIO_PARITY_ODD	2
+#define SERGENSIO_PARITY_EVEN	3
+#define SERGENSIO_PARITY_MARK	4
+#define SERGENSIO_PARITY_SPACE	5
+int sergensio_parity(struct sergensio *sio, int parity,
+		     void (*done)(struct sergensio *sio, int err,
+				  int parity, void *cb_data),
+		     void *cb_data);
+
+int sergensio_stopbits(struct sergensio *sio, int stopbits,
+		       void (*done)(struct sergensio *sio, int err,
+				    int stopbits, void *cb_data),
+		       void *cb_data);
+
+#define SERGENSIO_FLOWCONTROL_NONE	1
+#define SERGENSIO_FLOWCONTROL_XON_XOFF	2
+#define SERGENSIO_FLOWCONTROL_RTS_CTS	3
+int sergensio_flowcontrol(struct sergensio *sio, int flowcontrol,
+			  void (*done)(struct sergensio *sio, int err,
+				       int flowcontrol, void *cb_data),
+			  void *cb_data);
+
+#define SERGENSIO_FLOWCONTROL_DCD	4
+#define SERGENSIO_FLOWCONTROL_DTR	5
+#define SERGENSIO_FLOWCONTROL_DSR	6
+int sergensio_iflowcontrol(struct sergensio *sio, int iflowcontrol,
+			   void (*done)(struct sergensio *sio, int err,
+					int iflowcontrol, void *cb_data),
+			   void *cb_data);
+
+#define SERGENSIO_BREAK_ON	1
+#define SERGENSIO_BREAK_OFF	2
+int sergensio_sbreak(struct sergensio *sio, int breakv,
+		     void (*done)(struct sergensio *sio, int err, int breakv,
+				  void *cb_data),
+		     void *cb_data);
+
+#define SERGENSIO_DTR_ON		1
+#define SERGENSIO_DTR_OFF	2
+int sergensio_dtr(struct sergensio *sio, int dtr,
+		  void (*done)(struct sergensio *sio, int err, int dtr,
+			       void *cb_data),
+		  void *cb_data);
+
+#define SERGENSIO_RTS_ON		1
+#define SERGENSIO_RTS_OFF	2
+int sergensio_rts(struct sergensio *sio, int rts,
+		  void (*done)(struct sergensio *sio, int err, int rts,
+			       void *cb_data),
+		  void *cb_data);
+
+int sergensio_signature(struct sergensio *sio, char *sig, unsigned int len,
+			void (*done)(struct sergensio *sio, int err, char *sig,
+				     unsigned int sig_len, void *cb_data),
+			void *cb_data);
+
+/*
+ * For linestate and modemstate, on a client this sets the mask, on
+ * the server this is reporting the current state to the client.
+ */
+#define SERGENSIO_LINESTATE_DATA_READY		(1 << 0)
+#define SERGENSIO_LINESTATE_OVERRUN_ERR		(1 << 1)
+#define SERGENSIO_LINESTATE_PARITY_ERR		(1 << 2)
+#define SERGENSIO_LINESTATE_FRAMING_ERR		(1 << 3)
+#define SERGENSIO_LINESTATE_BREAK		(1 << 4)
+#define SERGENSIO_LINESTATE_XMIT_HOLD_EMPTY	(1 << 5)
+#define SERGENSIO_LINESTATE_XMIT_SHIFT_EMPTY	(1 << 6)
+#define SERGENSIO_LINESTATE_TIMEOUT_ERR		(1 << 7)
+int sergensio_linestate(struct sergensio *sio, unsigned int linestate);
+
+/* Note that for modemstate you should use the low 4 bits. */
+#define SERGENSIO_MODEMSTATE_CTS_CHANGED		(1 << 0)
+#define SERGENSIO_MODEMSTATE_DSR_CHANGED		(1 << 1)
+#define SERGENSIO_MODEMSTATE_RI_CHANGED		(1 << 2)
+#define SERGENSIO_MODEMSTATE_CD_CHANGED		(1 << 3)
+#define SERGENSIO_MODEMSTATE_CTS			(1 << 4)
+#define SERGENSIO_MODEMSTATE_DSR			(1 << 5)
+#define SERGENSIO_MODEMSTATE_RI			(1 << 6)
+#define SERGENSIO_MODEMSTATE_CD			(1 << 7)
+int sergensio_modemstate(struct sergensio *sio, unsigned int modemstate);
+
+/*
+ * Tell the remote end to enable or disable flow control.
+ */
+int sergensio_flowcontrol_state(struct sergensio *sio, bool val);
+
+/*
+ *
+ */
+#define SERGIO_FLUSH_RCV_BUFFER		1
+#define SERGIO_FLUSH_XMIT_BUFFER	2
+#define SERGIO_FLUSH_RCV_XMIT_BUFFERS	3
+int sergensio_flush(struct sergensio *sio, unsigned int val);
+
+
+/*
+ * Return the user data supplied in the alloc function.
+ */
+void *sergensio_get_user_data(struct sergensio *io);
+
+/*
+ * The following is blocking values for the serial port setting calls.
+ * You allocate one of these, then you can use it to request values
+ * without having to do your own callback.  It blocks using the
+ * selector framework, so selector calls will still happen while
+ * blocked.  See the selector code for details on wake_sig.
+ *
+ * The value is passed in using a pointer.  If it points to a zero
+ * value, no set it done, it only fetches the current value.
+ *
+ * The free function should only be called if the code is not currently
+ * in a blocking call using the sbio.
+ */
+struct sergensio_b;
+
+int sergensio_b_alloc(struct sergensio *sio, struct gensio_os_funcs *o,
+		      struct sergensio_b **new_sbio);
+void sergensio_b_free(struct sergensio_b *sbio);
+int sergensio_baud_b(struct sergensio_b *sbio, int *baud);
+int sergensio_datasize_b(struct sergensio_b *sbio, int *datasize);
+int sergensio_parity_b(struct sergensio_b *sbio, int *parity);
+int sergensio_stopbits_b(struct sergensio_b *sbio, int *stopbits);
+int sergensio_flowcontrol_b(struct sergensio_b *sbio, int *flowcontrol);
+int sergensio_iflowcontrol_b(struct sergensio_b *sbio, int *iflowcontrol);
+int sergensio_sbreak_b(struct sergensio_b *sbio, int *breakv);
+int sergensio_dtr_b(struct sergensio_b *sbio, int *dtr);
+int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
+
+/*
+ * Callbacks for dynamic changes to the serial port.  The user may
+ * supply a NULL one of these if they don't care.
+ */
+
+struct sergensio_callbacks {
+    /*
+     * On the client side, these are for reporting changes to the
+     * client.  On the server side, this is for reporting that the
+     * client has requested the mask be changed.
+     */
+    void (*modemstate)(struct sergensio *sio, unsigned int modemstate);
+    void (*linestate)(struct sergensio *sio, unsigned int linestate);
+
+    /*
+     * On the server side, these are for reporting that the client is
+     * requesting the signature (sig and sig_len are not used).  On
+     * the client side, this is the signature response.
+     */
+    void (*signature)(struct sergensio *sio, char *sig, unsigned int sig_len);
+
+    /*
+     * The remote end is asking the user to flow control or flush.
+     */
+    void (*flowcontrol_state)(struct sergensio *sio, bool val);
+    void (*flush)(struct sergensio *sio, unsigned int val);
+
+    /* Got a sync from the other end. */
+    void (*sync)(struct sergensio *sio);
+
+    /*
+     * Server callbacks.  These only come in in server mode, you must
+     * call the equivalent sergensio_xxx() function to return the response,
+     * though the done callback is ignored in that case.
+     */
+    void (*baud)(struct sergensio *sio, int baud);
+    void (*datasize)(struct sergensio *sio, int datasize);
+    void (*parity)(struct sergensio *sio, int parity);
+    void (*stopbits)(struct sergensio *sio, int stopbits);
+    void (*flowcontrol)(struct sergensio *sio, int flowcontrol);
+    void (*iflowcontrol)(struct sergensio *sio, int iflowcontrol);
+    void (*sbreak)(struct sergensio *sio, int breakv);
+    void (*dtr)(struct sergensio *sio, int dtr);
+    void (*rts)(struct sergensio *sio, int rts);
+};
+
+bool sergensio_is_client(struct sergensio *sio);
+
+/*
+ * Set the sergensio callbacks.  This should only be done if the gensio
+ * is closed or completely disabled for read and not in a write.
+ */
+void sergensio_set_ser_cbs(struct sergensio *sio,
+			   struct sergensio_callbacks *scbs);
+
+/*
+ * Allocate a sergensio based on a string.
+ */
+int str_to_sergensio(const char *str, struct gensio_os_funcs *o,
+		     unsigned int read_buffer_size,
+		     const struct sergensio_callbacks *scbs,
+		     const struct gensio_callbacks *cbs, void *user_data,
+		     struct sergensio **sio);
+
+int sergensio_telnet_alloc(struct gensio *child, char *args[],
+			   struct gensio_os_funcs *o,
+			   const struct sergensio_callbacks *scbs,
+			   const struct gensio_callbacks *cbs, void *user_data,
+			   struct sergensio **sio);
+
+int sergensio_termios_alloc(const char *devname, struct gensio_os_funcs *o,
+			    unsigned int read_buffer_size,
+			    const struct sergensio_callbacks *scbs,
+			    const struct gensio_callbacks *cbs, void *user_data,
+			    struct sergensio **sio);
+
+int sergensio_telnet_acceptor_alloc(const char *name,
+				    char *args[],
+				    struct gensio_os_funcs *o,
+				    struct gensio_acceptor *child,
+				    unsigned int max_read_size,
+				    const struct gensio_acceptor_callbacks *cbs,
+				    void *user_data,
+				    struct gensio_acceptor **acceptor);
+
+#endif /* SERGENSIO_H */

@@ -1,5 +1,5 @@
 /*
- *  genio - A library for abstracting stream I/O
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -19,10 +19,12 @@
 
 #include <errno.h>
 #include <string.h>
-#include <genio/genio_internal.h>
-#include <genio/genio_base.h>
+
 #include <utils/telnet.h>
 #include <utils/utils.h>
+
+#include <gensio/gensio_internal.h>
+#include <gensio/gensio_base.h>
 
 enum telnet_write_state {
     TELNET_NOT_WRITING,
@@ -31,12 +33,12 @@ enum telnet_write_state {
 };
 
 struct telnet_filter {
-    struct genio_filter filter;
+    struct gensio_filter filter;
 
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
     bool is_client;
 
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
     bool setup_done;
     int in_urgent;
@@ -49,10 +51,10 @@ struct telnet_filter {
     bool rfc2217_set;
     struct timeval rfc2217_end_wait;
 
-    const struct genio_telnet_filter_callbacks *telnet_cbs;
+    const struct gensio_telnet_filter_callbacks *telnet_cbs;
     void *handler_data;
 
-    const struct genio_filter_callbacks *filter_cbs;
+    const struct gensio_filter_callbacks *filter_cbs;
     void *cb_data;
 
     /*
@@ -92,8 +94,8 @@ telnet_unlock(struct telnet_filter *tfilter)
 }
 
 static void
-telnet_set_callbacks(struct genio_filter *filter,
-		     const struct genio_filter_callbacks *cbs,
+telnet_set_callbacks(struct gensio_filter *filter,
+		     const struct gensio_filter_callbacks *cbs,
 		     void *cb_data)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
@@ -103,7 +105,7 @@ telnet_set_callbacks(struct genio_filter *filter,
 }
 
 static bool
-telnet_ul_read_pending(struct genio_filter *filter)
+telnet_ul_read_pending(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     bool rv;
@@ -115,7 +117,7 @@ telnet_ul_read_pending(struct genio_filter *filter)
 }
 
 static bool
-telnet_ll_write_pending(struct genio_filter *filter)
+telnet_ll_write_pending(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     bool rv;
@@ -128,19 +130,19 @@ telnet_ll_write_pending(struct genio_filter *filter)
 }
 
 static bool
-telnet_ll_read_needed(struct genio_filter *filter)
+telnet_ll_read_needed(struct gensio_filter *filter)
 {
     return false;
 }
 
 static int
-telnet_check_open_done(struct genio_filter *filter)
+telnet_check_open_done(struct gensio_filter *filter)
 {
     return 0;
 }
 
 static int
-telnet_try_connect(struct genio_filter *filter, struct timeval *timeout)
+telnet_try_connect(struct gensio_filter *filter, struct timeval *timeout)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     struct timeval now;
@@ -160,13 +162,13 @@ telnet_try_connect(struct genio_filter *filter, struct timeval *timeout)
 }
 
 static int
-telnet_try_disconnect(struct genio_filter *filter, struct timeval *timeout)
+telnet_try_disconnect(struct gensio_filter *filter, struct timeval *timeout)
 {
     return 0;
 }
 
 struct telnet_buffer_data {
-    genio_ul_filter_data_handler handler;
+    gensio_ul_filter_data_handler handler;
     void *cb_data;
 };
 
@@ -185,10 +187,10 @@ telnet_buffer_do_write(void *cb_data, void *buf, size_t buflen,
 }
 
 static int
-telnet_ul_write(struct genio_filter *filter,
-	     genio_ul_filter_data_handler handler, void *cb_data,
-	     unsigned int *rcount,
-	     const unsigned char *buf, unsigned int buflen)
+telnet_ul_write(struct gensio_filter *filter,
+		gensio_ul_filter_data_handler handler, void *cb_data,
+		unsigned int *rcount,
+		const unsigned char *buf, unsigned int buflen)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     int err = 0;
@@ -245,10 +247,10 @@ telnet_ul_write(struct genio_filter *filter,
 }
 
 static int
-telnet_ll_write(struct genio_filter *filter,
-	     genio_ll_filter_data_handler handler, void *cb_data,
-	     unsigned int *rcount,
-	     unsigned char *buf, unsigned int buflen)
+telnet_ll_write(struct gensio_filter *filter,
+		gensio_ll_filter_data_handler handler, void *cb_data,
+		unsigned int *rcount,
+		unsigned char *buf, unsigned int buflen)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     int err = 0;
@@ -321,7 +323,7 @@ telnet_ll_write(struct genio_filter *filter,
 }
 
 static void
-telnet_ll_urgent(struct genio_filter *filter)
+telnet_ll_urgent(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
@@ -369,7 +371,7 @@ telnet_cmd_handler(void *cb_data, unsigned char cmd)
 }
 
 static int
-telnet_setup(struct genio_filter *filter)
+telnet_setup(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
     int err;
@@ -395,7 +397,7 @@ telnet_setup(struct genio_filter *filter)
 }
 
 static void
-telnet_filter_cleanup(struct genio_filter *filter)
+telnet_filter_cleanup(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
@@ -409,7 +411,7 @@ telnet_filter_cleanup(struct genio_filter *filter)
 }
 
 static void
-telnet_filter_timeout(struct genio_filter *filter)
+telnet_filter_timeout(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
@@ -418,7 +420,7 @@ telnet_filter_timeout(struct genio_filter *filter)
 }
 
 static void
-telnet_free(struct genio_filter *filter)
+telnet_free(struct gensio_filter *filter)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
@@ -434,7 +436,7 @@ telnet_free(struct genio_filter *filter)
     tfilter->o->free(tfilter->o, tfilter);
 }
 
-const static struct genio_filter_ops telnet_filter_ops = {
+const static struct gensio_filter_ops telnet_filter_ops = {
     .set_callbacks = telnet_set_callbacks,
     .ul_read_pending = telnet_ul_read_pending,
     .ll_write_pending = telnet_ll_write_pending,
@@ -451,7 +453,7 @@ const static struct genio_filter_ops telnet_filter_ops = {
     .free = telnet_free
 };
 
-static void telnet_filter_send_option(struct genio_filter *filter,
+static void telnet_filter_send_option(struct gensio_filter *filter,
 				      const unsigned char *buf,
 				      unsigned int len)
 {
@@ -462,7 +464,7 @@ static void telnet_filter_send_option(struct genio_filter *filter,
     telnet_unlock(tfilter);
 }
 
-static void telnet_filter_start_timer(struct genio_filter *filter,
+static void telnet_filter_start_timer(struct gensio_filter *filter,
 				      struct timeval *timeout)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
@@ -470,23 +472,23 @@ static void telnet_filter_start_timer(struct genio_filter *filter,
     tfilter->filter_cbs->start_timer(tfilter->cb_data, timeout);
 }
 
-const struct genio_telnet_filter_rops telnet_filter_rops = {
+const struct gensio_telnet_filter_rops telnet_filter_rops = {
     .send_option = telnet_filter_send_option,
     .start_timer = telnet_filter_start_timer
 };
 
-static struct genio_filter *
-genio_telnet_filter_raw_alloc(struct genio_os_funcs *o,
-			      bool is_client,
-			      bool allow_2217,
-			      unsigned int max_read_size,
-			      unsigned int max_write_size,
-			      const struct genio_telnet_filter_callbacks *cbs,
-			      void *handler_data,
-			      const struct telnet_cmd *telnet_cmds,
-			      const unsigned char *telnet_init_seq,
-			      unsigned int telnet_init_seq_len,
-			      const struct genio_telnet_filter_rops **rops)
+static struct gensio_filter *
+gensio_telnet_filter_raw_alloc(struct gensio_os_funcs *o,
+			       bool is_client,
+			       bool allow_2217,
+			       unsigned int max_read_size,
+			       unsigned int max_write_size,
+			       const struct gensio_telnet_filter_callbacks *cbs,
+			       void *handler_data,
+			       const struct telnet_cmd *telnet_cmds,
+			       const unsigned char *telnet_init_seq,
+			       unsigned int telnet_init_seq_len,
+			       const struct gensio_telnet_filter_rops **rops)
 {
     struct telnet_filter *tfilter;
 
@@ -567,16 +569,16 @@ static unsigned char telnet_server_init_seq[] = {
 };
 
 int
-genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
+gensio_telnet_server_filter_alloc(struct gensio_os_funcs *o,
 		 bool allow_rfc2217,
 		 unsigned int max_read_size,
 		 unsigned int max_write_size,
-		 const struct genio_telnet_filter_callbacks *cbs,
+		 const struct gensio_telnet_filter_callbacks *cbs,
 		 void *handler_data,
-		 const struct genio_telnet_filter_rops **rops,
-		 struct genio_filter **rfilter)
+		 const struct gensio_telnet_filter_rops **rops,
+		 struct gensio_filter **rfilter)
 {
-    struct genio_filter *filter;
+    struct gensio_filter *filter;
     const struct telnet_cmd *telnet_cmds;
     unsigned char *init_seq;
     unsigned int init_seq_len;
@@ -591,11 +593,11 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 	init_seq = telnet_server_init_seq;
     }
 
-    filter = genio_telnet_filter_raw_alloc(o, false, allow_rfc2217,
-					   max_read_size, max_write_size,
-					   cbs, handler_data,
-					   telnet_cmds,
-					   init_seq, init_seq_len, rops);
+    filter = gensio_telnet_filter_raw_alloc(o, false, allow_rfc2217,
+					    max_read_size, max_write_size,
+					    cbs, handler_data,
+					    telnet_cmds,
+					    init_seq, init_seq_len, rops);
 
     if (!filter)
 	return ENOMEM;
@@ -619,13 +621,13 @@ static const unsigned char telnet_client_init_seq[] = {
 };
 
 int
-genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
-			  const struct genio_telnet_filter_callbacks *cbs,
-			  void *handler_data,
-			  const struct genio_telnet_filter_rops **rops,
-			  struct genio_filter **rfilter)
+gensio_telnet_filter_alloc(struct gensio_os_funcs *o, char *args[],
+			   const struct gensio_telnet_filter_callbacks *cbs,
+			   void *handler_data,
+			   const struct gensio_telnet_filter_rops **rops,
+			   struct gensio_filter **rfilter)
 {
-    struct genio_filter *filter;
+    struct gensio_filter *filter;
     unsigned int i;
     unsigned int max_read_size = 4096; /* FIXME - magic number. */
     unsigned int max_write_size = 4096; /* FIXME - magic number. */
@@ -644,22 +646,22 @@ genio_telnet_filter_alloc(struct genio_os_funcs *o, char *args[],
 		return EINVAL;
 	    continue;
 	}
-	if (genio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
 	    continue;
-	if (genio_check_keyuint(args[i], "maxread", &max_read_size) > 0)
+	if (gensio_check_keyuint(args[i], "maxread", &max_read_size) > 0)
 	    continue;
 	return EINVAL;
     }
 
     init_seq_len = (allow_2217 ? sizeof(telnet_client_init_seq) : 0);
 
-    filter = genio_telnet_filter_raw_alloc(o, true, allow_2217,
-					   max_read_size, max_write_size,
-					   cbs, handler_data,
-					   telnet_client_cmds,
-					   telnet_client_init_seq,
-					   init_seq_len,
-					   rops);
+    filter = gensio_telnet_filter_raw_alloc(o, true, allow_2217,
+					    max_read_size, max_write_size,
+					    cbs, handler_data,
+					    telnet_client_cmds,
+					    telnet_client_init_seq,
+					    init_seq_len,
+					    rops);
 
     if (!filter)
 	return ENOMEM;

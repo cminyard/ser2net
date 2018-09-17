@@ -1,9 +1,9 @@
 #!/usr/bin/python
 
-import genio
+import gensio
 from dataxfer import test_transfer
 
-rb = genio.get_random_bytes(512)
+rb = gensio.get_random_bytes(512)
 
 test_transfer("telnet small random", rb,
               "3023:telnet:100:/dev/ttyPipeA0:9600N81\n",

@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,109 +17,109 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef SER2NET_GENIO_INTERNAL_H
-#define SER2NET_GENIO_INTERNAL_H
+#ifndef GENSIO_INTERNAL_H
+#define GENSIO_INTERNAL_H
 
 #include <stddef.h>
-#include "genio.h"
+#include <gensio/gensio.h>
 
-enum genio_type {
-    GENIO_TYPE_INVALID = 0,
-    GENIO_TYPE_TCP,
-    GENIO_TYPE_UDP,
-    GENIO_TYPE_STDIO,
-    GENIO_TYPE_SER_TELNET,
-    GENIO_TYPE_SER_TERMIOS,
-    GENIO_TYPE_SSL
+enum gensio_type {
+    GENSIO_TYPE_INVALID = 0,
+    GENSIO_TYPE_TCP,
+    GENSIO_TYPE_UDP,
+    GENSIO_TYPE_STDIO,
+    GENSIO_TYPE_SER_TELNET,
+    GENSIO_TYPE_SER_TERMIOS,
+    GENSIO_TYPE_SSL
 };
 
-struct genio_functions {
-    int (*write)(struct genio *io, unsigned int *count,
+struct gensio_functions {
+    int (*write)(struct gensio *io, unsigned int *count,
 		 const void *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct genio *io, int *pos,
+    int (*raddr_to_str)(struct gensio *io, int *pos,
 			char *buf, unsigned int buflen);
 
-    int (*get_raddr)(struct genio *io,
+    int (*get_raddr)(struct gensio *io,
 		     struct sockaddr *addr, socklen_t *addrlen);
 
-    int (*remote_id)(struct genio *io, int *id);
+    int (*remote_id)(struct gensio *io, int *id);
 
-    int (*open)(struct genio *io,
-		void (*open_done)(struct genio *io, int open,
+    int (*open)(struct gensio *io,
+		void (*open_done)(struct gensio *io, int open,
 				  void *open_data),
 		void *open_data);
 
-    int (*close)(struct genio *io,
-		 void (*close_done)(struct genio *io, void *close_data),
+    int (*close)(struct gensio *io,
+		 void (*close_done)(struct gensio *io, void *close_data),
 		 void *close_data);
 
-    void (*free)(struct genio *io);
+    void (*free)(struct gensio *io);
 
     /*
-     * Increment the genio's refcount.  There are situations where one
-     * piece of code passes a genio into another piece of code, and
+     * Increment the gensio's refcount.  There are situations where one
+     * piece of code passes a gensio into another piece of code, and
      * that other piece of code that might free it on an error, but
      * the upper layer gets the error and wants to free it, too.  This
      * keeps it around for that situation.
      */
-    void (*ref)(struct genio *io);
+    void (*ref)(struct gensio *io);
 
-    void (*set_read_callback_enable)(struct genio *io, bool enabled);
+    void (*set_read_callback_enable)(struct gensio *io, bool enabled);
 
-    void (*set_write_callback_enable)(struct genio *io, bool enabled);
+    void (*set_write_callback_enable)(struct gensio *io, bool enabled);
 };
 
 /*
  * This structure represents a network connection, return from the
- * acceptor callback in genio_acceptor.
+ * acceptor callback in gensio_acceptor.
  */
-struct genio {
+struct gensio {
     void *user_data;
     void *parent_object;
-    const struct genio_callbacks *cbs;
+    const struct gensio_callbacks *cbs;
 
-    const struct genio_functions *funcs;
+    const struct gensio_functions *funcs;
 
-    enum genio_type type;
+    enum gensio_type type;
     bool is_client;
 };
 
 /*
  * If io->type is in the types array, return true.  Return false otherwise.
  */
-bool genio_match_type(struct genio *io, enum genio_type *types);
+bool gensio_match_type(struct gensio *io, enum gensio_type *types);
 
-struct genio_acceptor_functions {
-    int (*startup)(struct genio_acceptor *acceptor);
+struct gensio_acceptor_functions {
+    int (*startup)(struct gensio_acceptor *acceptor);
 
-    int (*shutdown)(struct genio_acceptor *acceptor,
-		    void (*shutdown_done)(struct genio_acceptor *acceptor,
+    int (*shutdown)(struct gensio_acceptor *acceptor,
+		    void (*shutdown_done)(struct gensio_acceptor *acceptor,
 					  void *shutdown_data),
 		    void *shutdown_data);
 
-    void (*set_accept_callback_enable)(struct genio_acceptor *acceptor,
+    void (*set_accept_callback_enable)(struct gensio_acceptor *acceptor,
 				       bool enabled);
 
-    void (*free)(struct genio_acceptor *acceptor);
+    void (*free)(struct gensio_acceptor *acceptor);
 
-    int (*connect)(struct genio_acceptor *acceptor, void *addr,
-		   void (*connect_done)(struct genio *io, int err,
+    int (*connect)(struct gensio_acceptor *acceptor, void *addr,
+		   void (*connect_done)(struct gensio *io, int err,
 					void *cb_data),
-		   void *cb_data, struct genio **new_io);
+		   void *cb_data, struct gensio **new_io);
 };
 
 /*
  * This function handles accepts on network I/O code and calls back the
  * user for the new connection.
  */
-struct genio_acceptor {
+struct gensio_acceptor {
     void *user_data;
-    const struct genio_acceptor_callbacks *cbs;
+    const struct gensio_acceptor_callbacks *cbs;
 
-    const struct genio_acceptor_functions *funcs;
+    const struct gensio_acceptor_functions *funcs;
 
-    enum genio_type type;
+    enum gensio_type type;
 };
 
 #define container_of(ptr, type, member) \
@@ -141,7 +141,7 @@ struct opensocks
  * Also, open IPV6 addresses first.  This way, addresses in shared
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
-struct opensocks *open_socket(struct genio_os_funcs *o,
+struct opensocks *open_socket(struct gensio_os_funcs *o,
 			      struct addrinfo *ai,
 			      void (*readhndlr)(int, void *),
 			      void (*writehndlr)(int, void *), void *data,
@@ -151,18 +151,19 @@ struct opensocks *open_socket(struct genio_os_funcs *o,
 void check_ipv6_only(int family, struct sockaddr *addr, int fd);
 
 /* Returns a NULL if the fd is ok, a non-NULL error string if not */
-const char *genio_check_tcpd_ok(int new_fd);
+const char *gensio_check_tcpd_ok(int new_fd);
 
 /*
  * There are no provided routines to duplicate addrinfo structures,
  * so we really need to do it ourselves.
  */
-struct addrinfo *genio_dup_addrinfo(struct genio_os_funcs *o,
-				    struct addrinfo *ai);
-void genio_free_addrinfo(struct genio_os_funcs *o, struct addrinfo *ai);
+struct addrinfo *gensio_dup_addrinfo(struct gensio_os_funcs *o,
+				     struct addrinfo *ai);
+void gensio_free_addrinfo(struct gensio_os_funcs *o, struct addrinfo *ai);
 
-char *genio_strdup(struct genio_os_funcs *o, const char *str);
+char *gensio_strdup(struct gensio_os_funcs *o, const char *str);
 
-int genio_check_keyvalue(const char *str, const char *key, const char **value);
-int genio_check_keyuint(const char *str, const char *key, unsigned int *value);
-#endif /* SER2NET_GENIO_INTERNAL_H */
+int gensio_check_keyvalue(const char *str, const char *key, const char **value);
+int gensio_check_keyuint(const char *str, const char *key, unsigned int *value);
+
+#endif /* GENSIO_INTERNAL_H */

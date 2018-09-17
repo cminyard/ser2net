@@ -1,5 +1,5 @@
 /*
- *  genio - A library for abstracting stream I/O
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -18,8 +18,9 @@
  */
 
 #include <errno.h>
-#include "genio_internal.h"
-#include "genio_base.h"
+
+#include <gensio/gensio_internal.h>
+#include <gensio/gensio_base.h>
 
 #ifdef HAVE_OPENSSL
 
@@ -30,26 +31,26 @@
 #include <openssl/err.h>
 
 static void
-genio_do_ssl_init(void *cb_data)
+gensio_do_ssl_init(void *cb_data)
 {
     SSL_library_init();
 }
 
-static struct genio_once genio_ssl_init_once;
+static struct gensio_once gensio_ssl_init_once;
 
 static void
-genio_ssl_initialize(struct genio_os_funcs *o)
+gensio_ssl_initialize(struct gensio_os_funcs *o)
 {
-    o->call_once(o, &genio_ssl_init_once, genio_do_ssl_init, NULL);
+    o->call_once(o, &gensio_ssl_init_once, gensio_do_ssl_init, NULL);
 }
 
 struct ssl_filter {
-    struct genio_filter filter;
-    struct genio_os_funcs *o;
+    struct gensio_filter filter;
+    struct gensio_os_funcs *o;
     bool is_client;
     bool connected;
     bool finish_close_on_write;
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
     SSL_CTX *ctx;
     SSL *ssl;
@@ -92,15 +93,15 @@ ssl_unlock(struct ssl_filter *sfilter)
 }
 
 static void
-ssl_set_callbacks(struct genio_filter *filter,
-		  const struct genio_filter_callbacks *cbs,
+ssl_set_callbacks(struct gensio_filter *filter,
+		  const struct gensio_filter_callbacks *cbs,
 		  void *cb_data)
 {
     /* We don't currently use callbacks. */
 }
 
 static bool
-ssl_ul_read_pending(struct genio_filter *filter)
+ssl_ul_read_pending(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     char buf[1];
@@ -113,7 +114,7 @@ ssl_ul_read_pending(struct genio_filter *filter)
 }
 
 static bool
-ssl_ll_write_pending(struct genio_filter *filter)
+ssl_ll_write_pending(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     bool rv;
@@ -126,7 +127,7 @@ ssl_ll_write_pending(struct genio_filter *filter)
 }
 
 static bool
-ssl_ll_read_needed(struct genio_filter *filter)
+ssl_ll_read_needed(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     bool rv;
@@ -138,7 +139,7 @@ ssl_ll_read_needed(struct genio_filter *filter)
 }
 
 static int
-ssl_check_open_done(struct genio_filter *filter)
+ssl_check_open_done(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     long verify_err;
@@ -154,7 +155,7 @@ ssl_check_open_done(struct genio_filter *filter)
 }
 
 static int
-ssl_try_connect(struct genio_filter *filter, struct timeval *timeout)
+ssl_try_connect(struct gensio_filter *filter, struct timeval *timeout)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     int rv, success;
@@ -188,7 +189,7 @@ ssl_try_connect(struct genio_filter *filter, struct timeval *timeout)
 }
 
 static int
-ssl_try_disconnect(struct genio_filter *filter, struct timeval *timeout)
+ssl_try_disconnect(struct gensio_filter *filter, struct timeval *timeout)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     int success;
@@ -214,8 +215,8 @@ ssl_try_disconnect(struct genio_filter *filter, struct timeval *timeout)
 }
 
 static int
-ssl_ul_write(struct genio_filter *filter,
-	     genio_ul_filter_data_handler handler, void *cb_data,
+ssl_ul_write(struct gensio_filter *filter,
+	     gensio_ul_filter_data_handler handler, void *cb_data,
 	     unsigned int *rcount,
 	     const unsigned char *buf, unsigned int buflen)
 {
@@ -289,8 +290,8 @@ ssl_ul_write(struct genio_filter *filter,
 }
 
 static int
-ssl_ll_write(struct genio_filter *filter,
-	     genio_ll_filter_data_handler handler, void *cb_data,
+ssl_ll_write(struct gensio_filter *filter,
+	     gensio_ll_filter_data_handler handler, void *cb_data,
 	     unsigned int *rcount,
 	     unsigned char *buf, unsigned int buflen)
 {
@@ -343,12 +344,12 @@ ssl_ll_write(struct genio_filter *filter,
 }
 
 static void
-ssl_ll_urgent(struct genio_filter *filter)
+ssl_ll_urgent(struct gensio_filter *filter)
 {
 }
 
 static int
-ssl_setup(struct genio_filter *filter)
+ssl_setup(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
     int success;
@@ -380,7 +381,7 @@ ssl_setup(struct genio_filter *filter)
 }
 
 static void
-ssl_cleanup(struct genio_filter *filter)
+ssl_cleanup(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
 
@@ -397,7 +398,7 @@ ssl_cleanup(struct genio_filter *filter)
 }
 
 static void
-ssl_free(struct genio_filter *filter)
+ssl_free(struct gensio_filter *filter)
 {
     struct ssl_filter *sfilter = filter_to_ssl(filter);
 
@@ -416,7 +417,7 @@ ssl_free(struct genio_filter *filter)
     sfilter->o->free(sfilter->o, sfilter);
 }
 
-const static struct genio_filter_ops ssl_filter_ops = {
+const static struct gensio_filter_ops ssl_filter_ops = {
     .set_callbacks = ssl_set_callbacks,
     .ul_read_pending = ssl_ul_read_pending,
     .ll_write_pending = ssl_ll_write_pending,
@@ -432,12 +433,12 @@ const static struct genio_filter_ops ssl_filter_ops = {
     .free = ssl_free
 };
 
-struct genio_filter *
-genio_ssl_filter_raw_alloc(struct genio_os_funcs *o,
-			   bool is_client,
-			   SSL_CTX *ctx,
-			   unsigned int max_read_size,
-			   unsigned int max_write_size)
+struct gensio_filter *
+gensio_ssl_filter_raw_alloc(struct gensio_os_funcs *o,
+			    bool is_client,
+			    SSL_CTX *ctx,
+			    unsigned int max_read_size,
+			    unsigned int max_write_size)
 {
     struct ssl_filter *sfilter;
 
@@ -472,18 +473,18 @@ genio_ssl_filter_raw_alloc(struct genio_os_funcs *o,
 }
 
 int
-genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
-			      char *keyfile,
-			      char *certfile,
-			      char *CAfilepath,
-			      unsigned int max_read_size,
-			      unsigned int max_write_size,
-			      struct genio_filter **rfilter)
+gensio_ssl_server_filter_alloc(struct gensio_os_funcs *o,
+			       char *keyfile,
+			       char *certfile,
+			       char *CAfilepath,
+			       unsigned int max_read_size,
+			       unsigned int max_write_size,
+			       struct gensio_filter **rfilter)
 {
     SSL_CTX *ctx = NULL;
-    struct genio_filter *filter;
+    struct gensio_filter *filter;
 
-    genio_ssl_initialize(o);
+    gensio_ssl_initialize(o);
 
     ctx = SSL_CTX_new(SSLv23_server_method());
     if (!ctx)
@@ -507,7 +508,7 @@ genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
     if (!SSL_CTX_check_private_key(ctx))
         goto err;
 
-    filter = genio_ssl_filter_raw_alloc(o, false, ctx,
+    filter = gensio_ssl_filter_raw_alloc(o, false, ctx,
 					max_read_size, max_write_size);
 
     if (!filter) {
@@ -524,11 +525,11 @@ genio_ssl_server_filter_alloc(struct genio_os_funcs *o,
 }
 
 int
-genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
-		       unsigned int max_read_size,
-		       struct genio_filter **rfilter)
+gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
+			unsigned int max_read_size,
+			struct gensio_filter **rfilter)
 {
-    struct genio_filter *filter;
+    struct gensio_filter *filter;
     const char *CAfilepath = NULL;
     const char *CAfile = NULL, *CApath = NULL;
     SSL_CTX *ctx;
@@ -536,12 +537,12 @@ genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
     unsigned int i;
     unsigned int max_write_size = 4096; /* FIXME - magic number. */
 
-    genio_ssl_initialize(o);
+    gensio_ssl_initialize(o);
 
     for (i = 0; args[i]; i++) {
-	if (genio_check_keyvalue(args[i], "CA", &CAfilepath))
+	if (gensio_check_keyvalue(args[i], "CA", &CAfilepath))
 	    continue;
-	if (genio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
 	    continue;
 	return EINVAL;
     }
@@ -564,8 +565,8 @@ genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
 	return ENOMEM;
     }
 
-    filter = genio_ssl_filter_raw_alloc(o, true, ctx,
-					max_read_size, max_write_size);
+    filter = gensio_ssl_filter_raw_alloc(o, true, ctx,
+					 max_read_size, max_write_size);
 
     if (!filter) {
 	SSL_CTX_free(ctx);
@@ -579,9 +580,9 @@ genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
 #else /* HAVE_OPENSSL */
 
 int
-genio_ssl_filter_alloc(struct genio_os_funcs *o, char *args[],
-		       unsigned int max_read_size,
-		       struct genio_filter **rfilter)
+gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
+			unsigned int max_read_size,
+			struct gensio_filter **rfilter)
 {
     return ENOSUP;
 }

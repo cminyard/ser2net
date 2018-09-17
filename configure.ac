@@ -242,6 +242,6 @@ AC_SUBST(PYTHON_SWIG_FLAGS)
 AC_OUTPUT([Makefile ser2net.spec
 	utils/Makefile
 	tests/Makefile
-	genio/Makefile
-	genio/swig/Makefile
-	genio/swig/python/Makefile])
+	gensio/Makefile
+	gensio/swig/Makefile
+	gensio/swig/python/Makefile])

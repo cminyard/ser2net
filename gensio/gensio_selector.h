@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,13 +17,14 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef GENIO_SELECTOR_H
-#define GENIO_SELECTOR_H
+#ifndef GENSIO_SELECTOR_H
+#define GENSIO_SELECTOR_H
 
-#include "genio/genio.h"
-#include "utils/selector.h"
+#include <utils/selector.h>
 
-struct genio_os_funcs *genio_selector_alloc(struct selector_s *sel,
-					    int wake_sig);
+#include <gensio/gensio.h>
 
-#endif /* GENIO_SELECTOR_H */
+struct gensio_os_funcs *gensio_selector_alloc(struct selector_s *sel,
+					      int wake_sig);
+
+#endif /* GENSIO_SELECTOR_H */

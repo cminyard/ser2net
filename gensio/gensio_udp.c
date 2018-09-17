@@ -1,5 +1,5 @@
 /*
- *  ser2net - A program for allowing telnet connection to serial ports
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -30,16 +30,16 @@
 #include <syslog.h>
 #include <assert.h>
 
-#include "genio.h"
-#include "genio_internal.h"
+#include <gensio/gensio.h>
+#include <gensio/gensio_internal.h>
 
 struct udpna_data;
 
 struct udpn_data {
-    struct genio net;
+    struct gensio net;
     struct udpna_data *nadata;
 
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 
     unsigned int refcount;
 
@@ -51,17 +51,17 @@ struct udpn_data {
     bool in_write;	/* Currently in a write callback. */
 
     bool in_open;
-    void (*open_done)(struct genio *io, int err, void *open_data);
+    void (*open_done)(struct gensio *io, int err, void *open_data);
     void *open_data;
 
     bool in_close;	/* In the closing process, close_done is not called. */
-    void (*close_done)(struct genio *net, void *close_data);
+    void (*close_done)(struct gensio *net, void *close_data);
     void *close_data;
     bool closed;	/* Has this net been closed? */
     bool in_free;	/* Free the data when closed? */
 
     bool deferred_op_pending;
-    struct genio_runner *deferred_op_runner;	/* NULL if not a client. */
+    struct gensio_runner *deferred_op_runner;	/* NULL if not a client. */
 
     struct sockaddr_storage remote;	/* The socket address of who
 					   is connected to this port. */
@@ -74,13 +74,13 @@ struct udpn_data {
 #define net_to_ndata(net) container_of(net, struct udpn_data, net);
 
 struct udpna_data {
-    struct genio_acceptor acceptor;
+    struct gensio_acceptor acceptor;
     struct udpn_data *udpns;
     unsigned int udpn_count;
 
-    struct genio_os_funcs *o;
+    struct gensio_os_funcs *o;
 
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
     char *name;
 
@@ -100,7 +100,7 @@ struct udpna_data {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    struct genio_runner *deferred_op_runner;
+    struct gensio_runner *deferred_op_runner;
 
     bool in_new_connection;
 
@@ -108,7 +108,7 @@ struct udpna_data {
     bool enabled;
     bool closed;
     bool in_shutdown;
-    void (*shutdown_done)(struct genio_acceptor *acceptor,
+    void (*shutdown_done)(struct gensio_acceptor *acceptor,
 			  void *shutdown_data);
     void *shutdown_data;
 
@@ -137,7 +137,7 @@ udpna_unlock(struct udpna_data *nadata)
     nadata->o->unlock(nadata->lock);
 }
 
-static void udpna_deferred_op(struct genio_runner *runner, void *cbdata);
+static void udpna_deferred_op(struct gensio_runner *runner, void *cbdata);
 
 static void udpna_start_deferred_op(struct udpna_data *nadata)
 {
@@ -283,7 +283,7 @@ static void udpna_do_free(struct udpna_data *nadata)
     if (nadata->name)
 	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
-	genio_free_addrinfo(nadata->o, nadata->ai);
+	gensio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->fds)
 	nadata->o->free(nadata->o, nadata->fds);
     if (nadata->read_data)
@@ -333,7 +333,7 @@ static void udpn_finish_free(struct udpn_data *ndata)
 }
 
 static int
-udpn_write(struct genio *net, unsigned int *count,
+udpn_write(struct gensio *net, unsigned int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -359,7 +359,7 @@ udpn_write(struct genio *net, unsigned int *count,
 }
 
 static int
-udpn_raddr_to_str(struct genio *net, int *epos,
+udpn_raddr_to_str(struct gensio *net, int *epos,
 		  char *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -393,7 +393,7 @@ udpn_raddr_to_str(struct genio *net, int *epos,
 }
 
 static int
-udpn_get_raddr(struct genio *net,
+udpn_get_raddr(struct gensio *net,
 	       struct sockaddr *addr, socklen_t *addrlen)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -410,7 +410,7 @@ udpn_finish_close(struct udpna_data *nadata, struct udpn_data *ndata)
 {
     udpn_add_to_list(&nadata->closed_udpns, ndata);
     if (ndata->close_done) {
-	void (*close_done)(struct genio *net, void *close_data) =
+	void (*close_done)(struct gensio *net, void *close_data) =
 	    ndata->close_done;
 	void *close_data = ndata->close_data;
 
@@ -453,7 +453,7 @@ static void
 udpn_finish_read(struct udpn_data *ndata)
 {
     struct udpna_data *nadata = ndata->nadata;
-    struct genio *net = &ndata->net;
+    struct gensio *net = &ndata->net;
     unsigned int count;
 
  retry:
@@ -480,7 +480,7 @@ udpn_finish_read(struct udpn_data *ndata)
 }
 
 static void
-udpna_deferred_op(struct genio_runner *runner, void *cbdata)
+udpna_deferred_op(struct gensio_runner *runner, void *cbdata)
 {
     struct udpna_data *nadata = cbdata;
     struct udpn_data *ndata = NULL;
@@ -498,7 +498,7 @@ udpna_deferred_op(struct genio_runner *runner, void *cbdata)
     }
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
-	struct genio_acceptor *acceptor = &nadata->acceptor;
+	struct gensio_acceptor *acceptor = &nadata->acceptor;
 
 	if (nadata->shutdown_done) {
 	    udpna_unlock(nadata);
@@ -519,7 +519,7 @@ udpna_deferred_op(struct genio_runner *runner, void *cbdata)
 }
 
 static void
-udpn_deferred_op(struct genio_runner *runner, void *cbdata)
+udpn_deferred_op(struct gensio_runner *runner, void *cbdata)
 {
     struct udpn_data *ndata = cbdata;
     struct udpna_data *nadata = ndata->nadata;
@@ -553,9 +553,9 @@ static void udpn_start_deferred_op(struct udpn_data *ndata)
 }
 
 static int
-udpn_open(struct genio *net, void (*open_done)(struct genio *net,
-					       int err,
-					       void *open_data),
+udpn_open(struct gensio *net, void (*open_done)(struct gensio *net,
+						int err,
+						void *open_data),
 	  void *open_data)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -583,7 +583,7 @@ udpn_open(struct genio *net, void (*open_done)(struct genio *net,
 
 static void
 udpn_start_close(struct udpn_data *ndata,
-		 void (*close_done)(struct genio *net, void *close_data),
+		 void (*close_done)(struct gensio *net, void *close_data),
 		 void *close_data)
 {
     struct udpna_data *nadata = ndata->nadata;
@@ -601,8 +601,8 @@ udpn_start_close(struct udpn_data *ndata,
 }
 
 static int
-udpn_close(struct genio *net, void (*close_done)(struct genio *net,
-						 void *close_data),
+udpn_close(struct gensio *net, void (*close_done)(struct gensio *net,
+						  void *close_data),
 	   void *close_data)
 {
     struct udpn_data *ndata = net_to_ndata(net);
@@ -620,7 +620,7 @@ udpn_close(struct genio *net, void (*close_done)(struct genio *net,
 }
 
 static void
-udpn_free(struct genio *net)
+udpn_free(struct gensio *net)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -644,7 +644,7 @@ udpn_free(struct genio *net)
 }
 
 static void
-udpn_ref(struct genio *net)
+udpn_ref(struct gensio *net)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -655,7 +655,7 @@ udpn_ref(struct genio *net)
 }
 
 static void
-udpn_set_read_callback_enable(struct genio *net, bool enabled)
+udpn_set_read_callback_enable(struct gensio *net, bool enabled)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -691,7 +691,7 @@ udpn_set_read_callback_enable(struct genio *net, bool enabled)
 }
 
 static void
-udpn_set_write_callback_enable(struct genio *net, bool enabled)
+udpn_set_write_callback_enable(struct gensio *net, bool enabled)
 {
     struct udpn_data *ndata = net_to_ndata(net);
     struct udpna_data *nadata = ndata->nadata;
@@ -725,7 +725,7 @@ udpn_handle_read_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 static void
 udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 {
-    struct genio *net = &ndata->net;
+    struct gensio *net = &ndata->net;
 
     ndata->in_write = true;
     udpna_unlock(nadata);
@@ -766,7 +766,7 @@ udpna_writehandler(int fd, void *cbdata)
     udpna_unlock(nadata);
 }
 
-static const struct genio_functions genio_udp_funcs = {
+static const struct gensio_functions gensio_udp_funcs = {
     .write = udpn_write,
     .raddr_to_str = udpn_raddr_to_str,
     .get_raddr = udpn_get_raddr,
@@ -817,7 +817,7 @@ udpna_readhandler(int fd, void *cbdata)
 	/*
 	 * Data belongs to an existing connection.
 	 *
-	 * The closed flag can be set here while the genio is still
+	 * The closed flag can be set here while the gensio is still
 	 * in udpns, in that case it hasn't been shut down, but we
 	 * will restart it.
 	 */
@@ -839,7 +839,7 @@ udpna_readhandler(int fd, void *cbdata)
 			  (struct sockaddr *) &addr, addrlen, true);
 	if (ndata) {
 	    if (ndata->close_done) {
-		void (*close_done)(struct genio *net, void *close_data) =
+		void (*close_done)(struct gensio *net, void *close_data) =
 		    ndata->close_done;
 		void *close_data = ndata->close_data;
 
@@ -878,8 +878,8 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->nadata = nadata;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
-    ndata->net.funcs = &genio_udp_funcs;
-    ndata->net.type = GENIO_TYPE_UDP;
+    ndata->net.funcs = &gensio_udp_funcs;
+    ndata->net.type = GENSIO_TYPE_UDP;
 
     /* Stick it on the end of the list. */
     udpn_add_to_list(&nadata->udpns, ndata);
@@ -909,7 +909,7 @@ udpna_readhandler(int fd, void *cbdata)
 	udpn_handle_read_incoming(nadata, ndata);
 
     if (nadata->in_shutdown) {
-	struct genio_acceptor *acceptor = &nadata->acceptor;
+	struct gensio_acceptor *acceptor = &nadata->acceptor;
 
 	if (nadata->shutdown_done)
 	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
@@ -929,7 +929,7 @@ udpna_readhandler(int fd, void *cbdata)
 }
 
 static int
-udpna_startup(struct genio_acceptor *acceptor)
+udpna_startup(struct gensio_acceptor *acceptor)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     int rv = 0;
@@ -956,8 +956,8 @@ udpna_startup(struct genio_acceptor *acceptor)
 }
 
 static int
-udpna_shutdown(struct genio_acceptor *acceptor,
-	       void (*shutdown_done)(struct genio_acceptor *acceptor,
+udpna_shutdown(struct gensio_acceptor *acceptor,
+	       void (*shutdown_done)(struct gensio_acceptor *acceptor,
 				     void *shutdown_data),
 	       void *shutdown_data)
 {
@@ -982,7 +982,7 @@ udpna_shutdown(struct genio_acceptor *acceptor,
 }
 
 static void
-udpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
+udpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -992,7 +992,7 @@ udpna_set_accept_callback_enable(struct genio_acceptor *acceptor, bool enabled)
 }
 
 static void
-udpna_free(struct genio_acceptor *acceptor)
+udpna_free(struct gensio_acceptor *acceptor)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
 
@@ -1007,14 +1007,14 @@ udpna_free(struct genio_acceptor *acceptor)
 }
 
 int
-udpna_connect(struct genio_acceptor *acceptor, void *addr,
-	      void (*connect_done)(struct genio *net, int err,
+udpna_connect(struct gensio_acceptor *acceptor, void *addr,
+	      void (*connect_done)(struct gensio *net, int err,
 				   void *cb_data),
-	      void *cb_data, struct genio **new_net)
+	      void *cb_data, struct gensio **new_net)
 {
     struct udpna_data *nadata = acc_to_nadata(acceptor);
     struct udpn_data *ndata;
-    struct addrinfo *ai = genio_dup_addrinfo(nadata->o, addr);
+    struct addrinfo *ai = gensio_dup_addrinfo(nadata->o, addr);
     unsigned int fdi;
 
     if (!ai)
@@ -1027,18 +1027,18 @@ udpna_connect(struct genio_acceptor *acceptor, void *addr,
 	}
 	ai = ai->ai_next;
     }
-    genio_free_addrinfo(nadata->o, ai);
+    gensio_free_addrinfo(nadata->o, ai);
     return EINVAL;
 
  found:
     if (ai->ai_addrlen > sizeof(struct sockaddr_storage)) {
-	genio_free_addrinfo(nadata->o, ai);
+	gensio_free_addrinfo(nadata->o, ai);
 	return EINVAL;
     }
 
     ndata = nadata->o->zalloc(nadata->o, sizeof(*ndata));
     if (!ndata) {
-	genio_free_addrinfo(nadata->o, ai);
+	gensio_free_addrinfo(nadata->o, ai);
 	return ENOMEM;
     }
     ndata->o = nadata->o;
@@ -1048,7 +1048,7 @@ udpna_connect(struct genio_acceptor *acceptor, void *addr,
     ndata->deferred_op_runner = ndata->o->alloc_runner(ndata->o,
 						       udpn_deferred_op, ndata);
     if (!ndata->deferred_op_runner) {
-	genio_free_addrinfo(nadata->o, ai);
+	gensio_free_addrinfo(nadata->o, ai);
 	return ENOMEM;
     }
 
@@ -1056,8 +1056,8 @@ udpna_connect(struct genio_acceptor *acceptor, void *addr,
     memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
     ndata->raddrlen = ai->ai_addrlen;
 
-    ndata->net.funcs = &genio_udp_funcs;
-    ndata->net.type = GENIO_TYPE_UDP;
+    ndata->net.funcs = &gensio_udp_funcs;
+    ndata->net.type = GENSIO_TYPE_UDP;
     ndata->myfd = nadata->fds[fdi].fd;
 
     ndata->in_open = true;
@@ -1076,7 +1076,7 @@ udpna_connect(struct genio_acceptor *acceptor, void *addr,
     return 0;
 }
 
-static const struct genio_acceptor_functions genio_acc_udp_funcs = {
+static const struct gensio_acceptor_functions gensio_acc_udp_funcs = {
     .startup = udpna_startup,
     .shutdown = udpna_shutdown,
     .set_accept_callback_enable = udpna_set_accept_callback_enable,
@@ -1085,18 +1085,18 @@ static const struct genio_acceptor_functions genio_acc_udp_funcs = {
 };
 
 int
-udp_genio_acceptor_alloc(const char *name,
-			 struct genio_os_funcs *o,
-			 struct addrinfo *iai,
-			 unsigned int max_read_size,
-			 const struct genio_acceptor_callbacks *cbs,
-			 void *user_data,
-			 struct genio_acceptor **acceptor)
+udp_gensio_acceptor_alloc(const char *name,
+			  struct gensio_os_funcs *o,
+			  struct addrinfo *iai,
+			  unsigned int max_read_size,
+			  const struct gensio_acceptor_callbacks *cbs,
+			  void *user_data,
+			  struct gensio_acceptor **acceptor)
 {
     int err = ENOMEM;
-    struct genio_acceptor *acc;
+    struct gensio_acceptor *acc;
     struct udpna_data *nadata;
-    struct addrinfo *ai = genio_dup_addrinfo(o, iai);
+    struct addrinfo *ai = gensio_dup_addrinfo(o, iai);
 
     if (!ai && iai) /* Allow a null ai if it was passed in. */
 	return ENOMEM;
@@ -1106,7 +1106,7 @@ udp_genio_acceptor_alloc(const char *name,
 	goto out_err;
     nadata->o = o;
 
-    nadata->name = genio_strdup(o, name);
+    nadata->name = gensio_strdup(o, name);
     if (!nadata->name)
 	goto out_err;
 
@@ -1125,8 +1125,8 @@ udp_genio_acceptor_alloc(const char *name,
     acc = &nadata->acceptor;
     acc->cbs = cbs;
     acc->user_data = user_data;
-    acc->funcs = &genio_acc_udp_funcs;
-    acc->type = GENIO_TYPE_UDP;
+    acc->funcs = &gensio_acc_udp_funcs;
+    acc->type = GENSIO_TYPE_UDP;
 
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
@@ -1136,7 +1136,7 @@ udp_genio_acceptor_alloc(const char *name,
 
  out_err:
     if (ai)
-	genio_free_addrinfo(nadata->o, ai);
+	gensio_free_addrinfo(nadata->o, ai);
     if (nadata) {
 	if (nadata->name)
 	    o->free(o, nadata->name);
@@ -1153,15 +1153,15 @@ udp_genio_acceptor_alloc(const char *name,
 }
 
 int
-udp_genio_alloc(struct addrinfo *ai,
-		struct genio_os_funcs *o,
+udp_gensio_alloc(struct addrinfo *ai,
+		struct gensio_os_funcs *o,
 		unsigned int max_read_size,
-		const struct genio_callbacks *cbs,
+		const struct gensio_callbacks *cbs,
 		void *user_data,
-		struct genio **new_genio)
+		struct gensio **new_gensio)
 {
     struct udpn_data *ndata = NULL;
-    struct genio_acceptor *acceptor;
+    struct gensio_acceptor *acceptor;
     struct udpna_data *nadata = NULL;
     int err;
     int new_fd;
@@ -1187,7 +1187,7 @@ udp_genio_alloc(struct addrinfo *ai,
     ndata->refcount = 1;
 
     /* Allocate a dummy network acceptor. */
-    err = udp_genio_acceptor_alloc("dummy", o, NULL, max_read_size,
+    err = udp_gensio_acceptor_alloc("dummy", o, NULL, max_read_size,
 				   NULL, NULL, &acceptor);
     if (err) {
 	close(new_fd);
@@ -1219,8 +1219,8 @@ udp_genio_alloc(struct addrinfo *ai,
     memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
     ndata->raddrlen = ai->ai_addrlen;
 
-    ndata->net.funcs = &genio_udp_funcs;
-    ndata->net.type = GENIO_TYPE_UDP;
+    ndata->net.funcs = &gensio_udp_funcs;
+    ndata->net.type = GENSIO_TYPE_UDP;
     ndata->net.is_client = true;
     ndata->net.cbs = cbs;
     ndata->net.user_data = user_data;
@@ -1241,7 +1241,7 @@ udp_genio_alloc(struct addrinfo *ai,
 	udpna_do_free(nadata);
     } else {
 	nadata->nr_accept_close_waiting = 1;
-	*new_genio = &ndata->net;
+	*new_gensio = &ndata->net;
     }
 
     return err;

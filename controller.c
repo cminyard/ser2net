@@ -24,13 +24,14 @@
 #include <errno.h>
 #include <syslog.h>
 
-#include "utils/selector.h"
-#include "utils/utils.h"
-#include "utils/locking.h"
-#include "utils/telnet.h"
-#include "utils/waiter.h"
+#include <utils/selector.h>
+#include <utils/utils.h>
+#include <utils/locking.h>
+#include <utils/telnet.h>
+#include <utils/waiter.h>
 
-#include "genio/genio.h"
+#include <gensio/gensio.h>
+
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
@@ -46,7 +47,7 @@ static char *progname = "ser2net-control";
 /* This file holds the code that runs the control port. */
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
-static struct genio_acceptor *controller_acceptor;
+static struct gensio_acceptor *controller_acceptor;
 static waiter_t *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -63,7 +64,7 @@ typedef struct controller_info {
     DEFINE_LOCK(, lock)
     int in_shutdown;
 
-    struct genio *net;
+    struct gensio *net;
 
     unsigned char inbuf[INBUF_SIZE + 1];/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
@@ -116,16 +117,16 @@ static struct telnet_cmd telnet_cmds[] =
 };
 
 static void
-controller_close_done(struct genio *net, void *cb_data)
+controller_close_done(struct gensio *net, void *cb_data)
 {
-    controller_info_t *cntlr = genio_get_user_data(net);
+    controller_info_t *cntlr = gensio_get_user_data(net);
 
     controller_info_t *prev;
     controller_info_t *curr;
     void (*shutdown_complete)(void *);
     void *shutdown_complete_cb_data;
 
-    genio_free(net);
+    gensio_free(net);
 
     FREE_LOCK(cntlr->lock);
 
@@ -183,7 +184,7 @@ shutdown_controller(controller_info_t *cntlr)
     cntlr->in_shutdown = 1;
     UNLOCK(cntlr->lock);
 
-    genio_close(cntlr->net, controller_close_done, NULL);
+    gensio_close(cntlr->net, controller_close_done, NULL);
 }
 
 /* Send some output to the control connection.  This allocates and
@@ -251,8 +252,8 @@ controller_output(struct controller_info *cntlr,
 	cntlr->outbuf = newbuf;
 	cntlr->outbuf_pos = 0;
 	cntlr->outbuf_count = count;
-	genio_set_read_callback_enable(cntlr->net, false);
-	genio_set_write_callback_enable(cntlr->net, true);
+	gensio_set_read_callback_enable(cntlr->net, false);
+	gensio_set_write_callback_enable(cntlr->net, true);
     }
 }
 
@@ -290,7 +291,7 @@ void
 controller_write(struct controller_info *cntlr, const char *data,
 		 unsigned int count)
 {
-    genio_write(cntlr->net, NULL, data, count);
+    gensio_write(cntlr->net, NULL, data, count);
 }
 
 static void
@@ -298,8 +299,8 @@ telnet_output_ready(void *cb_data)
 {
     struct controller_info *cntlr = cb_data;
 
-    genio_set_read_callback_enable(cntlr->net, false);
-    genio_set_write_callback_enable(cntlr->net, true);
+    gensio_set_read_callback_enable(cntlr->net, false);
+    gensio_set_write_callback_enable(cntlr->net, true);
 }
 
 /* Called when a telnet command is received. */
@@ -523,10 +524,10 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 
 /* Data is ready to read on the TCP port. */
 static unsigned int
-controller_read(struct genio *net, int readerr, unsigned char *buf,
+controller_read(struct gensio *net, int readerr, unsigned char *buf,
 		unsigned int buflen, unsigned int flags)
 {
-    controller_info_t *cntlr = genio_get_user_data(net);
+    controller_info_t *cntlr = gensio_get_user_data(net);
     int read_count;
     int read_start;
     unsigned int bytesleft;
@@ -616,9 +617,9 @@ controller_read(struct genio *net, int readerr, unsigned char *buf,
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-controller_write_ready(struct genio *net)
+controller_write_ready(struct gensio *net)
 {
-    controller_info_t *cntlr = genio_get_user_data(net);
+    controller_info_t *cntlr = gensio_get_user_data(net);
     telnet_data_t *td;
     int err;
     unsigned int write_count;
@@ -631,7 +632,7 @@ controller_write_ready(struct genio *net)
     if (buffer_cursize(&td->out_telnet_cmd) > 0) {
 	int buferr, reterr;
 
-	reterr = buffer_write(genio_buffer_do_write, net,
+	reterr = buffer_write(gensio_buffer_do_write, net,
 			      &td->out_telnet_cmd, &buferr);
 	if (reterr == -1) {
 	    if (buferr == EPIPE) {
@@ -647,9 +648,9 @@ controller_write_ready(struct genio *net)
 	    goto out;
     }
 
-    err = genio_write(net, &write_count,
-		      &(cntlr->outbuf[cntlr->outbuf_pos]),
-		      cntlr->outbuf_count);
+    err = gensio_write(net, &write_count,
+		       &(cntlr->outbuf[cntlr->outbuf_pos]),
+		       cntlr->outbuf_count);
     if (err == EAGAIN) {
 	/* This again was due to O_NONBLOCK, just ignore it. */
     } else if (err == EPIPE) {
@@ -668,8 +669,8 @@ controller_write_ready(struct genio *net)
 	/* We are done writing, turn the reader back on. */
 	free(cntlr->outbuf);
 	cntlr->outbuf = NULL;
-	genio_set_read_callback_enable(net, true);
-	genio_set_write_callback_enable(net, false);
+	gensio_set_read_callback_enable(net, true);
+	gensio_set_write_callback_enable(net, false);
     }
  out:
     UNLOCK(cntlr->lock);
@@ -679,14 +680,14 @@ controller_write_ready(struct genio *net)
     shutdown_controller(cntlr); /* Releases the lock */
 }
 
-struct genio_callbacks controller_genio_callbacks = {
+struct gensio_callbacks controller_gensio_callbacks = {
     .read_callback = controller_read,
     .write_callback = controller_write_ready,
 };
 
 /* A connection request has come in for the control port. */
 static void
-controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
+controller_new_connection(struct gensio_acceptor *acceptor, struct gensio *net)
 {
     controller_info_t *cntlr;
     char              *err = NULL;
@@ -711,7 +712,7 @@ controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
 
     cntlr->net = net;
 
-    genio_set_callbacks(net, &controller_genio_callbacks, cntlr);
+    gensio_set_callbacks(net, &controller_gensio_callbacks, cntlr);
 
     cntlr->inbuf_count = 0;
     cntlr->outbuf = NULL;
@@ -741,17 +742,17 @@ controller_new_connection(struct genio_acceptor *acceptor, struct genio *net)
 errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
-    genio_write(net, NULL, err, strlen(err));
-    genio_free(net);
+    gensio_write(net, NULL, err, strlen(err));
+    gensio_free(net);
 }
 
 static void
-controller_shutdown_done(struct genio_acceptor *net, void *cb_data)
+controller_shutdown_done(struct gensio_acceptor *net, void *cb_data)
 {
     wake_waiter(accept_waiter);
 }
 
-struct genio_acceptor_callbacks controller_genio_acceptor_callbacks = {
+struct gensio_acceptor_callbacks controller_gensio_acceptor_callbacks = {
     .new_connection = controller_new_connection,
 };
 
@@ -776,9 +777,9 @@ controller_init(char *controller_port)
 	}
     }
 
-    rv = str_to_genio_acceptor(controller_port, ser2net_o, 64,
-			       &controller_genio_acceptor_callbacks, NULL,
-			       &controller_acceptor);
+    rv = str_to_gensio_acceptor(controller_port, ser2net_o, 64,
+				&controller_gensio_acceptor_callbacks, NULL,
+				&controller_acceptor);
     if (rv) {
 	if (rv == EINVAL)
 	    return CONTROLLER_INVALID_TCP_SPEC;
@@ -788,7 +789,7 @@ controller_init(char *controller_port)
 	    return -1;
     }
 
-    rv = genio_acc_startup(controller_acceptor);
+    rv = gensio_acc_startup(controller_acceptor);
     if (rv)
 	return CONTROLLER_CANT_OPEN_PORT;
 
@@ -799,10 +800,10 @@ void
 controller_shutdown(void)
 {
     if (controller_acceptor) {
-	genio_acc_shutdown(controller_acceptor, controller_shutdown_done,
-			   NULL);
+	gensio_acc_shutdown(controller_acceptor, controller_shutdown_done,
+			    NULL);
 	wait_for_waiter(accept_waiter, 1);
-	genio_acc_free(controller_acceptor);
+	gensio_acc_free(controller_acceptor);
 	controller_acceptor = NULL;
     }
 }

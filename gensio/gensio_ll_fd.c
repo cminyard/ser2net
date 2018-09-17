@@ -1,5 +1,5 @@
 /*
- *  genio - A library for abstracting stream I/O
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -18,8 +18,8 @@
  */
 
 #include <errno.h>
-#include "genio_internal.h"
-#include "genio_base.h"
+#include <gensio/gensio_internal.h>
+#include <gensio/gensio_base.h>
 
 #include <assert.h>
 #include <unistd.h>
@@ -32,14 +32,14 @@ enum fd_state {
 };
 
 struct fd_ll {
-    struct genio_ll ll;
-    struct genio_os_funcs *o;
+    struct gensio_ll ll;
+    struct gensio_os_funcs *o;
 
-    struct genio_lock *lock;
+    struct gensio_lock *lock;
 
     unsigned int refcount;
 
-    const struct genio_ll_callbacks *cbs;
+    const struct gensio_ll_callbacks *cbs;
     void *cb_data;
 
     int fd;
@@ -49,17 +49,17 @@ struct fd_ll {
     bool read_enabled;
     bool write_enabled;
 
-    const struct genio_fd_ll_ops *ops;
+    const struct gensio_fd_ll_ops *ops;
     void *handler_data;
     int (*check_open)(void *handler_data, int fd);
     int (*retry_open)(void *handler_data, int *fd);
 
-    genio_ll_open_done open_done;
+    gensio_ll_open_done open_done;
     void *open_data;
     int open_err;
 
-    struct genio_timer *close_timer;
-    genio_ll_close_done close_done;
+    struct gensio_timer *close_timer;
+    gensio_ll_close_done close_done;
     void *close_data;
 
     unsigned char *read_data;
@@ -74,7 +74,7 @@ struct fd_ll {
      * it directly from user calls.
      */
     bool deferred_op_pending;
-    struct genio_runner *deferred_op_runner;
+    struct gensio_runner *deferred_op_runner;
 
     bool deferred_read;
     bool deferred_close;
@@ -135,7 +135,7 @@ fd_deref_and_unlock(struct fd_ll *fdll)
 }
 
 static void
-fd_set_callbacks(struct genio_ll *ll, const struct genio_ll_callbacks *cbs,
+fd_set_callbacks(struct gensio_ll *ll, const struct gensio_ll_callbacks *cbs,
 		 void *cb_data)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
@@ -145,7 +145,7 @@ fd_set_callbacks(struct genio_ll *ll, const struct genio_ll_callbacks *cbs,
 }
 
 static int
-fd_write(struct genio_ll *ll, unsigned int *rcount,
+fd_write(struct gensio_ll *ll, unsigned int *rcount,
 	 const unsigned char *buf, unsigned int buflen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
@@ -172,7 +172,7 @@ fd_write(struct genio_ll *ll, unsigned int *rcount,
 }
 
 static int
-fd_raddr_to_str(struct genio_ll *ll, int *pos,
+fd_raddr_to_str(struct gensio_ll *ll, int *pos,
 		char *buf, unsigned int buflen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
@@ -181,7 +181,7 @@ fd_raddr_to_str(struct genio_ll *ll, int *pos,
 }
 
 static int
-fd_get_raddr(struct genio_ll *ll, struct sockaddr *addr, socklen_t *addrlen)
+fd_get_raddr(struct gensio_ll *ll, struct sockaddr *addr, socklen_t *addrlen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
@@ -191,7 +191,7 @@ fd_get_raddr(struct genio_ll *ll, struct sockaddr *addr, socklen_t *addrlen)
 }
 
 static int
-fd_remote_id(struct genio_ll *ll, int *id)
+fd_remote_id(struct gensio_ll *ll, int *id)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
@@ -226,7 +226,7 @@ fd_start_close(struct fd_ll *fdll)
 {
     if (fdll->ops->check_close)
 	fdll->ops->check_close(fdll->handler_data,
-			       GENIO_LL_CLOSE_STATE_START, NULL);
+			       GENSIO_LL_CLOSE_STATE_START, NULL);
     fdll->state = FD_IN_CLOSE;
     fdll->o->clear_fd_handlers(fdll->o, fdll->fd);
 }
@@ -242,7 +242,7 @@ fd_finish_open(struct fd_ll *fdll, int err)
 
     fdll->state = FD_OPEN;
     if (fdll->open_done) {
-	genio_ll_open_done open_done = fdll->open_done;
+	gensio_ll_open_done open_done = fdll->open_done;
 
 	fdll->open_done = NULL;
 	fd_unlock(fdll);
@@ -264,7 +264,7 @@ static void fd_finish_close(struct fd_ll *fdll)
 {
     fdll->state = FD_CLOSED;
     if (fdll->close_done) {
-	genio_ll_close_done close_done = fdll->close_done;
+	gensio_ll_close_done close_done = fdll->close_done;
 
 	fdll->close_done = NULL;
 	fd_unlock(fdll);
@@ -274,7 +274,7 @@ static void fd_finish_close(struct fd_ll *fdll)
 }
 
 static void
-fd_deferred_op(struct genio_runner *runner, void *cbdata)
+fd_deferred_op(struct gensio_runner *runner, void *cbdata)
 {
     struct fd_ll *fdll = cbdata;
 
@@ -441,7 +441,7 @@ fd_finish_cleared(struct fd_ll *fdll)
     fdll->fd = -1;
     if (fdll->open_done) {
 	/* If an open fails, it comes to here. */
-	genio_ll_open_done open_done = fdll->open_done;
+	gensio_ll_open_done open_done = fdll->open_done;
 
 	fdll->open_done = NULL;
 	fd_unlock(fdll);
@@ -459,7 +459,7 @@ fd_finish_cleared(struct fd_ll *fdll)
 }
 
 static void
-fd_close_timeout(struct genio_timer *t, void *cb_data)
+fd_close_timeout(struct gensio_timer *t, void *cb_data)
 {
     struct fd_ll *fdll = cb_data;
     struct timeval timeout;
@@ -467,7 +467,7 @@ fd_close_timeout(struct genio_timer *t, void *cb_data)
 
     if (fdll->ops->check_close)
 	err = fdll->ops->check_close(fdll->handler_data,
-				     GENIO_LL_CLOSE_STATE_DONE, &timeout);
+				     GENSIO_LL_CLOSE_STATE_DONE, &timeout);
 
     if (err == EAGAIN) {
 	fdll->o->start_timer(fdll->close_timer, &timeout);
@@ -489,7 +489,7 @@ fd_cleared(int fd, void *cb_data)
 }
 
 static int
-fd_open(struct genio_ll *ll, genio_ll_open_done done, void *open_data)
+fd_open(struct gensio_ll *ll, gensio_ll_open_done done, void *open_data)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
     int err;
@@ -534,7 +534,7 @@ fd_setup_handlers(struct fd_ll *fdll)
     return 0;
 }
 
-static int fd_close(struct genio_ll *ll, genio_ll_close_done done,
+static int fd_close(struct gensio_ll *ll, gensio_ll_close_done done,
 		    void *close_data)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
@@ -553,7 +553,7 @@ static int fd_close(struct genio_ll *ll, genio_ll_close_done done,
 }
 
 static void
-fd_set_read_callback_enable(struct genio_ll *ll, bool enabled)
+fd_set_read_callback_enable(struct gensio_ll *ll, bool enabled)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
@@ -575,7 +575,7 @@ fd_set_read_callback_enable(struct genio_ll *ll, bool enabled)
 }
 
 static void
-fd_set_write_callback_enable(struct genio_ll *ll, bool enabled)
+fd_set_write_callback_enable(struct gensio_ll *ll, bool enabled)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
@@ -586,7 +586,7 @@ fd_set_write_callback_enable(struct genio_ll *ll, bool enabled)
     fd_unlock(fdll);
 }
 
-static void fd_free(struct genio_ll *ll)
+static void fd_free(struct gensio_ll *ll)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
@@ -594,7 +594,7 @@ static void fd_free(struct genio_ll *ll)
     fd_deref_and_unlock(fdll);
 }
 
-const static struct genio_ll_ops fd_ll_ops = {
+const static struct gensio_ll_ops fd_ll_ops = {
     .set_callbacks = fd_set_callbacks,
     .write = fd_write,
     .raddr_to_str = fd_raddr_to_str,
@@ -607,12 +607,12 @@ const static struct genio_ll_ops fd_ll_ops = {
     .free = fd_free
 };
 
-struct genio_ll *
-fd_genio_ll_alloc(struct genio_os_funcs *o,
-		  int fd,
-		  const struct genio_fd_ll_ops *ops,
-		  void *handler_data,
-		  unsigned int max_read_size)
+struct gensio_ll *
+fd_gensio_ll_alloc(struct gensio_os_funcs *o,
+		   int fd,
+		   const struct gensio_fd_ll_ops *ops,
+		   void *handler_data,
+		   unsigned int max_read_size)
 {
     struct fd_ll *fdll;
 
