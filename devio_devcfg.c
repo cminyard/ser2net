@@ -659,7 +659,7 @@ static int devcfg_baud_rate(struct devio *io, int *val)
     return 0;
 }
 
-static int devcfg_data_size(struct devio *io, unsigned char *val, int *bpc)
+static int devcfg_data_size(struct devio *io, int *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -693,7 +693,7 @@ static int devcfg_data_size(struct devio *io, unsigned char *val, int *bpc)
     return 0;
 }
 
-static int devcfg_parity(struct devio *io, unsigned char *val, int *bpc)
+static int devcfg_parity(struct devio *io, int *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -729,7 +729,7 @@ static int devcfg_parity(struct devio *io, unsigned char *val, int *bpc)
     return 0;
 }
 
-static int devcfg_stop_size(struct devio *io, unsigned char *val, int *bpc)
+static int devcfg_stop_size(struct devio *io, int *val, int *bpc)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
@@ -760,7 +760,7 @@ static int devcfg_stop_size(struct devio *io, unsigned char *val, int *bpc)
     return 0;
 }
 
-static int devcfg_flow_control(struct devio *io, unsigned char val)
+static int devcfg_flowcontrol_state(struct devio *io, int val)
 {
     struct devcfg_data *d = io->my_data;
 
@@ -768,87 +768,94 @@ static int devcfg_flow_control(struct devio *io, unsigned char val)
     return 0;
 }
 
-static int devcfg_control(struct devio *io, unsigned char *val)
+static int
+devcfg_flowcontrol(struct devio *io, int *val)
 {
     struct devcfg_data *d = io->my_data;
     struct termios termio;
-    int ival;
 
-    if (tcgetattr(d->devfd, &termio) == -1) {
-	*val = 0;
-	return -1;
+    if (tcgetattr(d->devfd, &termio) != -1) {
+	if (*val != 0) {
+	    termio.c_iflag &= ~(IXON | IXOFF);
+	    termio.c_cflag &= ~CRTSCTS;
+	    switch (*val) {
+	    case 1: break; /* NONE */
+	    case 2: termio.c_iflag |= IXON | IXOFF; break;
+	    case 3: termio.c_cflag |= CRTSCTS; break;
+	    }
+	    tcsetattr(d->devfd, TCSANOW, &termio);
+	}
+	if (termio.c_cflag & CRTSCTS)
+	    *val = 3;
+	else if (termio.c_iflag & IXON)
+	    *val = 2;
+	else
+	    *val = 1;
     }
 
+    return 0;
+}
+
+static int
+devcfg_iflowcontrol(struct devio *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+    struct termios termio;
+
+    /* Inbound flow-control */
+    if (tcgetattr(d->devfd, &termio) != -1) {
+	if (*val == 2) {
+	    /* We can only set XON/XOFF independently */
+	    termio.c_iflag |= IXOFF;
+	    tcsetattr(d->devfd, TCSANOW, &termio);
+	}
+	if (termio.c_cflag & CRTSCTS)
+	    *val = 2;
+	else if (termio.c_iflag & IXOFF)
+	    *val = 1;
+	else
+	    *val = 0;
+    }
+
+    return 0;
+}
+
+static int
+devcfg_sbreak(struct devio *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+
     switch (*val) {
-    case 0:
-    case 1:
     case 2:
-    case 3:
-	/* Outbound/both flow control */
-	if (tcgetattr(d->devfd, &termio) != -1) {
-	    if (*val != 0) {
-		termio.c_iflag &= ~(IXON | IXOFF);
-		termio.c_cflag &= ~CRTSCTS;
-		switch (*val) {
-		case 1: break; /* NONE */
-		case 2: termio.c_iflag |= IXON | IXOFF; break;
-		case 3: termio.c_cflag |= CRTSCTS; break;
-		}
-		tcsetattr(d->devfd, TCSANOW, &termio);
-	    }
-	    if (termio.c_cflag & CRTSCTS)
-		*val = 3;
-	    else if (termio.c_iflag & IXON)
-		*val = 2;
-	    else
-		*val = 1;
-	}
-	break;
-
-    case 13:
-    case 14:
-    case 15:
-    case 16:
-    case 17:
-    case 18:
-    case 19:
-	/* Inbound flow-control */
-	if (tcgetattr(d->devfd, &termio) != -1) {
-	    if (*val == 15) {
-		/* We can only set XON/XOFF independently */
-		termio.c_iflag |= IXOFF;
-		tcsetattr(d->devfd, TCSANOW, &termio);
-	    }
-	    if (termio.c_cflag & CRTSCTS)
-		*val = 16;
-	    else if (termio.c_iflag & IXOFF)
-		*val = 15;
-	    else
-		*val = 14;
-	}
-	break;
-
-	/* Handle BREAK stuff. */
-    case 6:
 	if (ioctl(d->devfd, TIOCCBRK) != -1)
 	    d->break_set = 0;
 	goto read_break_val;
 
-    case 5:
+    case 1:
 	if (ioctl(d->devfd, TIOCSBRK) != -1)
 	    d->break_set = 1;
 	goto read_break_val;
 
-    case 4:
+    case 0:
     read_break_val:
 	if (d->break_set)
-	    *val = 5;
+	    *val = 0;
 	else
-	    *val = 6;
+	    *val = 1;
 	break;
+    }
 
-    /* DTR handling */
-    case 8:
+    return 0;
+}
+
+static int
+devcfg_dtr(struct devio *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+    int ival;
+
+    switch (*val) {
+    case 1:
 #ifndef __CYGWIN__
 	ival = TIOCM_DTR;
 	ioctl(d->devfd, TIOCMBIS, &ival);
@@ -859,7 +866,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 #endif
 	goto read_dtr_val;
 
-    case 9:
+    case 2:
 #ifndef __CYGWIN__
 	ival = TIOCM_DTR;
 	ioctl(d->devfd, TIOCMBIC, &ival);
@@ -870,18 +877,28 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 #endif
 	goto read_dtr_val;
 
-    case 7:
+    case 0:
     read_dtr_val:
 	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)
-	    *val = 7;
+	    *val = 0;
 	else if (ival & TIOCM_DTR)
-	    *val = 8;
+	    *val = 1;
 	else
-	    *val = 9;
+	    *val = 2;
 	break;
+    }
 
-    /* RTS handling */
-    case 11:
+    return 0;
+}
+
+static int
+devcfg_rts(struct devio *io, int *val)
+{
+    struct devcfg_data *d = io->my_data;
+    int ival;
+
+    switch (*val) {
+    case 1:
 #ifndef __CYGWIN__
 	ival = TIOCM_RTS;
 	ioctl(d->devfd, TIOCMBIS, &ival);
@@ -892,7 +909,7 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 #endif
 	goto read_rts_val;
 
-    case 12:
+    case 2:
 #ifndef __CYGWIN__
 	ival = TIOCM_RTS;
 	ioctl(d->devfd, TIOCMBIC, &ival);
@@ -903,19 +920,15 @@ static int devcfg_control(struct devio *io, unsigned char *val)
 #endif
 	goto read_rts_val;
 
-    case 10:
+    case 0:
     read_rts_val:
 	if (ioctl(d->devfd, TIOCMGET, &ival) == -1)
-	    *val = 10;
+	    *val = 0;
 	else if (ival & TIOCM_RTS)
-	    *val = 11;
+	    *val = 1;
 	else
-	    *val = 12;
+	    *val = 2;
 	break;
-
-    default:
-	*val = 0;
-	return -1;
     }
 
     return 0;
@@ -979,8 +992,12 @@ static struct devio_f devcfg_io_f = {
     .data_size = devcfg_data_size,
     .parity = devcfg_parity,
     .stop_size = devcfg_stop_size,
-    .control = devcfg_control,
-    .flow_control = devcfg_flow_control,
+    .flowcontrol = devcfg_flowcontrol,
+    .iflowcontrol = devcfg_iflowcontrol,
+    .sbreak = devcfg_sbreak,
+    .dtr = devcfg_dtr,
+    .rts = devcfg_rts,
+    .flowcontrol_state = devcfg_flowcontrol_state,
     .flush = devcfg_flush,
     .free = devcfg_free,
     .serparm_to_str = devcfg_serparm_to_str

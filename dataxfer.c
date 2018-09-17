@@ -33,12 +33,12 @@
 
 #include "utils/utils.h"
 #include "genio/genio.h"
+#include "genio/sergenio.h"
 #include "utils/locking.h"
 #include "ser2net.h"
 #include "devio.h"
 #include "dataxfer.h"
 #include "readconfig.h"
-#include "utils/telnet.h"
 #include "utils/buffer.h"
 #include "utils/waiter.h"
 #include "led.h"
@@ -109,11 +109,6 @@ struct net_info {
 					   output buffer where we need
 					   to start writing next. */
 
-    /* Data for the telnet processing */
-    telnet_data_t tn_data;
-    bool sending_tn_data; /* Are we sending tn data at the moment? */
-    int in_urgent;       /* Looking for TN_DATA_MARK, and position. */
-
     int            timeout_left;	/* The amount of time left (in
 					   seconds) before the timeout
 					   goes off. */
@@ -124,6 +119,10 @@ struct net_info {
 					   are running inside a
 					   handler context that needs
 					   to be waited for exit. */
+
+    unsigned char linestate_mask;
+    unsigned char modemstate_mask;
+    bool modemstate_sent;	/* Has a modemstate been sent? */
 
     /*
      * If a user gets kicked, store the information for the new user
@@ -249,11 +248,6 @@ struct port_info
     struct sbuf    dev_to_net;			/* Buffer struct for
 						   device to network
 						   transfers. */
-    unsigned char  *telnet_dev_to_net;		/* Used to read data
-						   to do telnet
-						   processing on
-						   before going into
-						   dev_to_net. */
     struct controller_info *dev_monitor; /* If non-null, send any input
 					    received from the device
 					    to this controller port. */
@@ -271,12 +265,7 @@ struct port_info
 				     loaded when the current session
 				     is done. */
 
-    /* Is RFC 2217 mode enabled? */
-    bool is_2217;
-
-    /* Masks for RFC 2217 */
-    unsigned char linestate_mask;
-    unsigned char modemstate_mask;
+    /* For RFC 2217 */
     unsigned char last_modemstate;
 
     /* Allow RFC 2217 mode */
@@ -455,43 +444,6 @@ port_info_t *ports = NULL; /* Linked list of ports. */
 
 static void shutdown_one_netcon(net_info_t *netcon, char *reason);
 static void shutdown_port(port_info_t *port, char *reason);
-
-/* The init sequence we use. */
-static unsigned char telnet_init_seq[] = {
-    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
-    TN_IAC, TN_WILL, TN_OPT_ECHO,
-    TN_IAC, TN_DONT, TN_OPT_ECHO,
-    TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
-    TN_IAC, TN_WILL, TN_OPT_BINARY_TRANSMISSION,
-    TN_IAC, TN_DO,   TN_OPT_COM_PORT,
-};
-
-/* Our telnet command table. */
-static void com_port_handler(void *cb_data, unsigned char *option, int len);
-static int com_port_will_do(void *cb_data, unsigned char cmd);
-
-static struct telnet_cmd telnet_cmds_2217[] =
-{
-    /*                        I will,  I do,  sent will, sent do */
-    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
-    { TN_OPT_ECHO,		   0,     1,          1,       1, },
-    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          1,       1, },
-    { TN_OPT_COM_PORT,		   1,     0,          0,       1,
-      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
-    { TELNET_CMD_END_OPTION }
-};
-
-static struct telnet_cmd telnet_cmds[] =
-{
-    /*                        I will,  I do,  sent will, sent do */
-    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
-    { TN_OPT_ECHO,		   0,     1,          1,       1, },
-    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          1,       1, },
-    { TN_OPT_COM_PORT,		   0,     0,          0,       0,
-      .option_handler = com_port_handler, .will_do_handler = com_port_will_do },
-    { TELNET_CMD_END_OPTION }
-};
-
 
 /*
  * Generic output function for using a controller output for
@@ -900,24 +852,9 @@ handle_dev_fd_read(struct devio *io)
     curend = port->dev_to_net.cursize;
     oreadcount = port->dev_to_net.maxsize - curend;
     readcount = oreadcount;
-    if (port->enabled == PORT_TELNET) {
-	readbuf = port->telnet_dev_to_net;
-	readcount /= 2; /* Leave room for IACs. */
-
-	if (readcount == 0) {
-	    /* We don't want a zero read, so just ignore this, as we have
-	       data to send. */
-	    send_now = true;
-	    count = 0;
-	    goto do_send;
-	}
-	count = port->io.f->read(&port->io, port->telnet_dev_to_net,
-				 readcount);
-    } else {
-	count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-				 readcount);
-	readbuf = port->dev_to_net.buf + curend;
-    }
+    count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
+			     readcount);
+    readbuf = port->dev_to_net.buf + curend;
 
     if (count <= 0) {
 	if (curend != 0) {
@@ -978,15 +915,6 @@ handle_dev_fd_read(struct devio *io)
 	goto out_unlock;
 
     port->dev_bytes_received += count;
-
-    if (port->enabled == PORT_TELNET) {
-	unsigned int curcount = count;
-
-	count = process_telnet_xmit(port->dev_to_net.buf + curend, oreadcount,
-				    &readbuf, &curcount);
-	assert(curcount == 0);
-    }
-
     port->dev_to_net.cursize += count;
 
     if (send_now || port->dev_to_net.cursize == port->dev_to_net.maxsize ||
@@ -1145,52 +1073,12 @@ handle_net_fd_read(struct genio *net, int readerr,
 	/* Do both tracing, ignore errors. */
 	do_trace(port, port->tb, buf, buflen, NET);
 
-    if (netcon->in_urgent) {
-	/* We are in urgent data, just read until we get a mark. */
-	for (; bufpos < buflen; bufpos++) {
-	    if (netcon->in_urgent == 2) {
-		if (buf[bufpos] == TN_DATA_MARK) {
-		    /* Found it. */
-		    if (port->telnet_brk_on_sync)
-			port->io.f->send_break(&port->io);
-		    netcon->in_urgent = 0;
-		    break;
-		}
-		netcon->in_urgent = 1;
-	    } else if (buf[bufpos] == TN_IAC) {
-		netcon->in_urgent = 2;
-	    }
-	}
-    }
-
     if (buflen <= bufpos)
 	goto out_data_handled;
 
-    if (port->enabled == PORT_TELNET) {
-	unsigned int bytesleft = buflen - bufpos;
-	unsigned char *cbuf = buf + bufpos;
-
-	port->net_to_dev.cursize = process_telnet_data(port->net_to_dev.buf,
-						       port->net_to_dev.maxsize,
-						       &cbuf, &bytesleft,
-						       &netcon->tn_data);
-
-	if (netcon->tn_data.error) {
-	    shutdown_one_netcon(netcon, "telnet output error");
-	    goto out_unlock;
-	}
-	if (port->net_to_dev.cursize == 0)
-	    /* We are out of characters; they were all processed.  We
-	       don't want to continue with 0, because that will mess
-	       up the other processing and it's not necessary. */
-	    goto out_data_handled;
-
-	assert(bytesleft == 0);
-    } else {
-	assert(buflen - bufpos <= port->net_to_dev.maxsize);
-	memcpy(port->net_to_dev.buf, buf + bufpos, buflen - bufpos);
-	port->net_to_dev.cursize = buflen - bufpos;
-    }
+    assert(buflen - bufpos <= port->net_to_dev.maxsize);
+    memcpy(port->net_to_dev.buf, buf + bufpos, buflen - bufpos);
+    port->net_to_dev.cursize = buflen - bufpos;
 
     port->net_to_dev.pos = 0;
 
@@ -1263,44 +1151,6 @@ void io_enable_read_handler(port_info_t *port)
 }
 
 /*
- * Returns -1 on something causing the netcon to shut down, 0 if the
- * write was incomplete, and 1 if the write was completed.
- */
-static int
-send_telnet_data(port_info_t *port, net_info_t *netcon)
-{
-    telnet_data_t *td = &netcon->tn_data;
-    int reterr, buferr;
-
-    if (!netcon->sending_tn_data)
-	return 1;
-
-    reterr = buffer_write(genio_buffer_do_write, netcon->net,
-			  &td->out_telnet_cmd, &buferr);
-    /* Returns 0 on EAGAIN */
-    if (reterr == -1) {
-	if (buferr == EPIPE) {
-	    shutdown_one_netcon(netcon, "EPIPE");
-	    return -1;
-	} else {
-	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The network write for port %s had error: %s",
-		   port->portname, strerror(buferr));
-	    shutdown_one_netcon(netcon, "network write error");
-	    return -1;
-	}
-    }
-
-    if (buffer_cursize(&td->out_telnet_cmd) > 0)
-	/* If we have more telnet command data to send, don't
-	   send any real data. */
-	return 0;
-
-    netcon->sending_tn_data = false;
-    return 1;
-}
-
-/*
  * Write some network data from a buffer.  Returns -1 on something
  * causing the netcon to shut down, 0 if the write was incomplete, and
  * 1 if the write was completed.
@@ -1364,11 +1214,6 @@ handle_net_fd_write(struct genio *net)
     int rv;
 
     LOCK(port->lock);
- send_tn_data:
-    rv = send_telnet_data(port, netcon);
-    if (rv <= 0)
-	goto out_unlock;
-
     if (netcon->banner) {
 	rv = net_fd_write(port, netcon, netcon->banner, &netcon->banner->pos);
 	if (rv <= 0)
@@ -1385,12 +1230,6 @@ handle_net_fd_write(struct genio *net)
 
 	if (rv <= 0)
 	    goto out_unlock;
-
-	/* Start telnet data write when the data write is done. */
-	if (buffer_cursize(&netcon->tn_data.out_telnet_cmd) > 0) {
-	    netcon->sending_tn_data = true;
-	    goto send_tn_data;
-	}
 
 	if (finish_dev_to_net_write(port)) {
 	    if (port->close_on_output_done) {
@@ -1414,66 +1253,9 @@ handle_net_fd_write(struct genio *net)
 static void
 handle_net_fd_urgent(struct genio *net)
 {
-    net_info_t *netcon = genio_get_user_data(net);
-    port_info_t *port = netcon->port;
-    int val;
-    int cmd_pos;
-
-    /* We should have urgent data, a DATA MARK in the stream.  The calling
-       code should have already read the data mark. */
-
-    LOCK(port->lock);
-
-    if (port->enabled != PORT_TELNET)
-	goto out;
-
-    /* Flush the data in the local and device queue. */
-    port->net_to_dev.cursize = 0;
-    val = 0;
-    port->io.f->flush(&port->io, &val);
-
-    /* Store it if we last got an IAC, and abort any current
-       telnet processing. */
-    cmd_pos = netcon->tn_data.telnet_cmd_pos;
-    netcon->tn_data.telnet_cmd_pos = 0;
-    netcon->tn_data.suboption_iac = 0;
-
-    if (cmd_pos != 1)
-	netcon->in_urgent = 1;
-    else
-	netcon->in_urgent = 2;
-
- out:
-    UNLOCK(port->lock);
 }
 
 static void handle_net_fd_closed(struct genio *net, void *cb_data);
-
-static void
-telnet_cmd_handler(void *cb_data, unsigned char cmd)
-{
-    net_info_t *netcon = cb_data;
-    port_info_t *port = netcon->port;
-
-    if ((cmd == TN_BREAK) || (port->telnet_brk_on_sync && cmd == TN_DATA_MARK))
-	port->io.f->send_break(&port->io);
-}
-
-/* Called when the telnet code has output ready. */
-static void
-telnet_output_ready(void *cb_data)
-{
-    net_info_t *netcon = cb_data;
-    port_info_t *port = netcon->port;
-
-    /* If we are currently sending some data, wait until it is done.
-       It might have IACs in it, and we don't want to split those. */
-    if (buffer_cursize(&port->dev_to_net) != 0)
-	return;
-
-    netcon->sending_tn_data = true;
-    genio_set_write_callback_enable(netcon->net, true);
-}
 
 /* Checks to see if some other port has the same device in use.  Must
    be called with ports_lock held. */
@@ -1997,7 +1779,6 @@ port_dev_enable(port_info_t *port, net_info_t *netcon,
 	    return -1;
 
     recalc_port_chardelay(port);
-    port->is_2217 = false;
 
     if (!is_reconfig) {
 	if (port->devstr) {
@@ -2045,23 +1826,6 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
     }
 
-    if (port->enabled == PORT_TELNET) {
-	err = telnet_init(&netcon->tn_data, netcon, telnet_output_ready,
-			  telnet_cmd_handler,
-			  port->allow_2217 ? telnet_cmds_2217 : telnet_cmds,
-			  telnet_init_seq,
-			  port->allow_2217 ? sizeof(telnet_init_seq)
-			      : sizeof(telnet_init_seq) - 3);
-	if (err) {
-	    char *errstr = "Out of memory\r\n";
-
-	    genio_write(netcon->net, NULL, errstr, strlen(errstr));
-	    genio_free(netcon->net);
-	    netcon->net = NULL;
-	    return -1;
-	}
-    }
-
     if (num_connected_net(port) == 1 && !port->has_connect_back) {
 	/* We are first, set things up on the device. */
 	const char *errstr = NULL;
@@ -2081,14 +1845,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     genio_set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
 
-    if (port->enabled == PORT_TELNET) {
-	genio_set_write_callback_enable(netcon->net, true);
-    } else {
-	buffer_init(&netcon->tn_data.out_telnet_cmd,
-		    netcon->tn_data.out_telnet_cmdbuf, 0);
-	if (netcon->banner)
-	    genio_set_write_callback_enable(netcon->net, true);
-    }
+    genio_set_write_callback_enable(netcon->net, true);
 
     header_trace(port, netcon);
 
@@ -2142,9 +1899,197 @@ find_rotator_port(char *portname, struct genio *net, unsigned int *netconnum)
 }
 
 static void
+s2n_modemstate(struct sergenio *sio, unsigned int modemstate)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    netcon->modemstate_mask = modemstate;
+    port->io.f->get_modem_state(&port->io, &port->last_modemstate);
+    sergenio_modemstate(sio, port->last_modemstate);
+}
+
+static void
+s2n_linestate(struct sergenio *sio, unsigned int linestate)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+
+    netcon->linestate_mask = linestate;
+}
+
+static void
+s2n_flowcontrol_state(struct sergenio *sio, bool val)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->flowcontrol_state(&port->io, val);
+}
+
+static void
+s2n_flush(struct sergenio *sio, unsigned int val)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+    int ival = val;
+
+    /* FIXME - don't need a pointer here. */
+    port->io.f->flush(&port->io, &ival);
+}
+
+static void
+s2n_baud(struct sergenio *sio, int baud)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->baud_rate(&port->io, &baud);
+    sergenio_baud(sio, baud, NULL, NULL);
+}
+
+static void
+s2n_datasize(struct sergenio *sio, int datasize)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->data_size(&port->io, &datasize, &port->bps);
+    sergenio_datasize(sio, datasize, NULL, NULL);
+}
+
+static void
+s2n_parity(struct sergenio *sio, int parity)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->parity(&port->io, &parity, &port->bps);
+    sergenio_parity(sio, parity, NULL, NULL);
+}
+
+static void
+s2n_stopbits(struct sergenio *sio, int stopbits)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->stop_size(&port->io, &stopbits, &port->bps);
+    sergenio_stopbits(sio, stopbits, NULL, NULL);
+}
+
+static void
+s2n_flowcontrol(struct sergenio *sio, int flowcontrol)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    if (port->io.f->flowcontrol)
+	port->io.f->flowcontrol(&port->io, &flowcontrol);
+    else
+	flowcontrol = SERGENIO_FLOWCONTROL_NONE;
+    sergenio_flowcontrol(sio, flowcontrol, NULL, NULL);
+}
+
+static void
+s2n_sbreak(struct sergenio *sio, int breakv)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    if (port->io.f->sbreak)
+	port->io.f->sbreak(&port->io, &breakv);
+    else
+	breakv = SERGENIO_BREAK_OFF;
+    sergenio_sbreak(sio, breakv, NULL, NULL);
+}
+
+static void
+s2n_dtr(struct sergenio *sio, int dtr)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    if (port->io.f->dtr)
+	port->io.f->dtr(&port->io, &dtr);
+    else
+	dtr = SERGENIO_DTR_OFF;
+    sergenio_dtr(sio, dtr, NULL, NULL);
+}
+
+static void
+s2n_rts(struct sergenio *sio, int rts)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    if (port->io.f->dtr)
+	port->io.f->rts(&port->io, &rts);
+    else
+	rts = SERGENIO_RTS_OFF;
+    sergenio_rts(sio, rts, NULL, NULL);
+}
+
+static void
+s2n_signature(struct sergenio *sio, char *sig, unsigned int sig_len)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    sig = port->signaturestr;
+    if (!sig)
+	sig = rfc2217_signature;
+    sig_len = strlen(sig);
+
+    sergenio_signature(sio, sig, sig_len, NULL, NULL);
+}
+
+static void
+s2n_sync(struct sergenio *sio)
+{
+    struct genio *io = sergenio_to_genio(sio);
+    net_info_t *netcon = genio_get_user_data(io);
+    port_info_t *port = netcon->port;
+
+    port->io.f->send_break(&port->io);
+}
+
+struct sergenio_callbacks s2n_ser_cbs = {
+    .modemstate = s2n_modemstate,
+    .linestate = s2n_linestate,
+    .flowcontrol_state = s2n_flowcontrol_state,
+    .flush = s2n_flush,
+    .sync = s2n_sync,
+    .baud = s2n_baud,
+    .datasize = s2n_datasize,
+    .parity = s2n_parity,
+    .stopbits = s2n_stopbits,
+    .flowcontrol = s2n_flowcontrol,
+    .sbreak = s2n_sbreak,
+    .dtr = s2n_dtr,
+    .rts = s2n_rts,
+    .signature = s2n_signature
+};
+
+static void
 handle_new_net(port_info_t *port, struct genio *net, net_info_t *netcon)
 {
     netcon->net = net;
+
+    if (is_sergenio(net))
+	sergenio_set_ser_cbs(genio_to_sergenio(net), &s2n_ser_cbs);
 
     /* XXX log netcon->remote */
     setup_port(port, netcon, false);
@@ -2548,8 +2493,6 @@ free_port(port_info_t *port)
 	genio_acc_free(port->acceptor);
     if (port->dev_to_net.buf)
 	free(port->dev_to_net.buf);
-    if (port->telnet_dev_to_net)
-	free(port->telnet_dev_to_net);
     if (port->net_to_dev.buf)
 	free(port->net_to_dev.buf);
     if (port->timer)
@@ -2853,14 +2796,12 @@ netcon_finish_shutdown(net_info_t *netcon)
     netcon->closing = false;
     netcon->bytes_received = 0;
     netcon->bytes_sent = 0;
-    netcon->sending_tn_data = false;
     netcon->write_pos = 0;
     if (netcon->banner) {
 	free(netcon->banner->buf);
 	free(netcon->banner);
 	netcon->banner = NULL;
     }
-    telnet_cleanup(&netcon->tn_data);
 
     if (num_connected_net(port) == 0) {
 	if (!port->has_connect_back) {
@@ -2942,7 +2883,6 @@ got_timeout(struct selector_s *sel,
 {
     port_info_t *port = (port_info_t *) data;
     struct timeval then;
-    unsigned char modemstate;
     net_info_t *netcon;
 
     LOCK(port->lock);
@@ -2979,8 +2919,7 @@ got_timeout(struct selector_s *sel,
 	}
     }
 
-    if (port->is_2217 &&
-		(port->io.f->get_modem_state(&port->io, &modemstate) != -1)) {
+    if (port->io.f->get_modem_state(&port->io, &port->last_modemstate) != -1) {
 	/*
 	 * The 0xf below is non-standard, but the spec makes no sense in
 	 * this case.  From what I can tell, the modemstate top 4 bits is
@@ -2988,16 +2927,13 @@ got_timeout(struct selector_s *sel,
 	 * changed.  So you don't want to report a value unless something
 	 * changed, and only if it was in the modemstate mask.
 	 */
-	if (modemstate & port->modemstate_mask & 0xf) {
-	    unsigned char data[3];
-	    data[0] = TN_OPT_COM_PORT;
-	    data[1] = 107; /* Notify modemstate */
-	    port->last_modemstate = modemstate & port->modemstate_mask;
-	    data[2] = port->last_modemstate;
-	    for_each_connection(port, netcon) {
-		if (!netcon->net)
-		    continue;
-		telnet_send_option(&netcon->tn_data, data, 3);
+	for_each_connection(port, netcon) {
+	    struct sergenio *sio;
+	    if (!netcon->net)
+		continue;
+	    if (port->last_modemstate & netcon->modemstate_mask & 0xf) {
+		sio = genio_to_sergenio(netcon->net);
+		sergenio_modemstate(sio, port->last_modemstate);
 	    }
 	}
     }
@@ -3316,15 +3252,25 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
+    if (new_port->enabled == PORT_TELNET) {
+	char *args[] = { NULL, NULL };
+	struct genio_acceptor *parent;
+
+	if (new_port->allow_2217)
+	    args[0] = "rfc2217=true";
+	err = sergenio_telnet_acceptor_alloc(new_port->portname, args,
+					     ser2net_o, new_port->acceptor,
+					     new_port->net_to_dev.maxsize,
+					     &port_acceptor_cbs, new_port,
+					     &parent);
+	if (err)
+	    goto errout;
+	new_port->acceptor = parent;
+    }
+
     if (buffer_init(&new_port->dev_to_net, NULL, new_port->dev_to_net.maxsize))
     {
 	eout->out(eout, "Could not allocate dev to net buffer");
-	goto errout;
-    }
-
-    new_port->telnet_dev_to_net = malloc(new_port->dev_to_net.maxsize / 2);
-    if (!new_port->telnet_dev_to_net) {
-	eout->out(eout, "Could not allocate telnet dev_to_net buf");
 	goto errout;
     }
 
@@ -3920,221 +3866,6 @@ disconnect_port(struct controller_info *cntlr,
     UNLOCK(port->lock);
  out:
     return;
-}
-
-static int
-com_port_will_do(void *cb_data, unsigned char cmd)
-{
-    net_info_t *netcon = cb_data;
-    port_info_t *port = netcon->port;
-    unsigned char data[3];
-
-    if (!port->allow_2217)
-	return 0;
-
-    if (cmd != TN_WILL && cmd != TN_WONT)
-	/* We only handle these. */
-	return 0;
-
-    if (cmd == TN_WONT) {
-	/* The remote end turned off RFC2217 handling. */
-	port->is_2217 = false;
-	return 0;
-    }
-
-    port->is_2217 = true;
-
-    /* Set up modem state mask. */
-    port->linestate_mask = 0;
-    port->modemstate_mask = 255;
-    port->last_modemstate = 0;
-
-    /* send a modemstate notify */
-    data[0] = TN_OPT_COM_PORT;
-    data[1] = 107; /* Notify modemstate */
-    data[2] = 0;
-    if (port->io.f->get_modem_state(&port->io, data + 2) != -1) {
-	port->last_modemstate = data[2];
-    }
-    telnet_send_option(&netcon->tn_data, data, 3);
-    return 1;
-}
-
-static void
-com_port_handler(void *cb_data, unsigned char *option, int len)
-{
-    net_info_t *netcon = cb_data;
-    port_info_t *port = netcon->port;
-    unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
-    int val;
-    unsigned char ucval;
-    int cisco_ios_baud_rates = 0;
-
-    if (!port->is_2217)
-	return;
-
-    if (len < 2)
-	return;
-
-    switch (option[1]) {
-    case 0: /* SIGNATURE? */
-    {
-	/* truncate signature, if it exceeds buffer size */
-	char *sig = port->signaturestr;
-	int sign_len;
-
-	if (!sig)
-	    /* If not set, use a default. */
-	    sig = rfc2217_signature;
-
-	sign_len = strlen(sig);
-	if (sign_len > (MAX_TELNET_CMD_XMIT_BUF - 2))
-	    sign_len = MAX_TELNET_CMD_XMIT_BUF - 2;
-
-	outopt[0] = 44;
-	outopt[1] = 100;
-	strncpy((char *) outopt + 2, sig, sign_len);
-	telnet_send_option(&netcon->tn_data, outopt, 2 + sign_len);
-	break;
-    }
-
-    case 1: /* SET-BAUDRATE */
-	if (len == 3) {
-	    cisco_ios_baud_rates = 1;
-	    val = cisco_baud_to_baud(option[2]);
-	} else {
-	    if (len < 6)
-		return;
-	    /* Basically the same as:
-	     *  val = ntohl(*((uint32_t *) (option + 2)));
-	     * but handled unaligned cases */
-	    val = option[2] << 24;
-	    val |= option[3] << 16;
-	    val |= option[4] << 8;
-	    val |= option[5];
-	}
-
-	port->io.f->baud_rate(&port->io, &val);
-	port->bps = val;
-	recalc_port_chardelay(port);
-	outopt[0] = 44;
-	outopt[1] = 101;
-	if (cisco_ios_baud_rates) {
-	    outopt[2] = baud_to_cisco_baud(val);
-	    telnet_send_option(&netcon->tn_data, outopt, 3);
-	} else {
-	    /* Basically the same as:
-	     * *((uint32_t *) (outopt + 2)) = htonl(val);
-	     * but handles unaligned cases */
-	    outopt[2] = val >> 24;
-	    outopt[3] = val >> 16;
-	    outopt[4] = val >> 8;
-	    outopt[5] = val;
-	    telnet_send_option(&netcon->tn_data, outopt, 6);
-	}
-	break;
-
-    case 2: /* SET-DATASIZE */
-	if (len < 3)
-	    return;
-
-	ucval = option[2];
-	port->io.f->data_size(&port->io, &ucval, &port->bpc);
-	recalc_port_chardelay(port);
-	outopt[0] = 44;
-	outopt[1] = 102;
-	outopt[2] = ucval;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 3: /* SET-PARITY */
-	if (len < 3)
-	    return;
-
-	ucval = option[2];
-	port->io.f->parity(&port->io, &ucval, &port->bpc);
-	recalc_port_chardelay(port);
-	outopt[0] = 44;
-	outopt[1] = 103;
-	outopt[2] = ucval;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 4: /* SET-STOPSIZE */
-	if (len < 3)
-	    return;
-
-	ucval = option[2];
-	port->io.f->stop_size(&port->io, &ucval, &port->bpc);
-	recalc_port_chardelay(port);
-	outopt[0] = 44;
-	outopt[1] = 104;
-	outopt[2] = ucval;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 5: /* SET-CONTROL */
-	if (len < 3)
-	    return;
-
-	ucval = option[2];
-	port->io.f->control(&port->io, &ucval);
-	outopt[0] = 44;
-	outopt[1] = 105;
-	outopt[2] = ucval;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 8: /* FLOWCONTROL-SUSPEND */
-	port->io.f->flow_control(&port->io, 1);
-	outopt[0] = 44;
-	outopt[1] = 108;
-	telnet_send_option(&netcon->tn_data, outopt, 2);
-	break;
-
-    case 9: /* FLOWCONTROL-RESUME */
-	port->io.f->flow_control(&port->io, 0);
-	outopt[0] = 44;
-	outopt[1] = 109;
-	telnet_send_option(&netcon->tn_data, outopt, 2);
-	break;
-
-    case 10: /* SET-LINESTATE-MASK */
-	if (len < 3)
-	    return;
-	port->linestate_mask = option[2];
-	outopt[0] = 44;
-	outopt[1] = 110;
-	outopt[2] = port->linestate_mask;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 11: /* SET-MODEMSTATE-MASK */
-	if (len < 3)
-	    return;
-	port->modemstate_mask = option[2];
-	outopt[0] = 44;
-	outopt[1] = 111;
-	outopt[2] = port->modemstate_mask;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 12: /* PURGE_DATA */
-	if (len < 3)
-	    return;
-	val = option[2];
-	port->io.f->flush(&port->io, &val);
-	outopt[0] = 44;
-	outopt[1] = 112;
-	outopt[2] = val;
-	telnet_send_option(&netcon->tn_data, outopt, 3);
-	break;
-
-    case 6: /* NOTIFY-LINESTATE */
-    case 7: /* NOTIFY-MODEMSTATE */
-    default:
-	break;
-    }
 }
 
 void

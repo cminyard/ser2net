@@ -382,33 +382,28 @@ static int solcfg_baud_rate(struct devio *io, int *val)
     return 0;
 }
 
-static int solcfg_data_size(struct devio *io, unsigned char *val, int *bpc)
+static int solcfg_data_size(struct devio *io, int *val, int *bpc)
 {
     *val = 8;
     *bpc = 10;
     return 0;
 }
 
-static int solcfg_parity(struct devio *io, unsigned char *val, int *bpc)
+static int solcfg_parity(struct devio *io, int *val, int *bpc)
 {
     *val = 1; /* NONE */
     *bpc = 10;
     return 0;
 }
 
-static int solcfg_stop_size(struct devio *io, unsigned char *val, int *bpc)
+static int solcfg_stop_size(struct devio *io, int *val, int *bpc)
 {
     *val = 1; /* 1 stop bit. */
     *bpc = 10;
     return 0;
 }
 
-static int solcfg_flow_control(struct devio *io, unsigned char val)
-{
-    return -1;
-}
-
-static int solcfg_control(struct devio *io, unsigned char *val)
+static int solcfg_flowcontrol_state(struct devio *io, int val)
 {
     return -1;
 }
@@ -851,8 +846,7 @@ static struct devio_f solcfg_io_f = {
     .data_size = solcfg_data_size,
     .parity = solcfg_parity,
     .stop_size = solcfg_stop_size,
-    .control = solcfg_control,
-    .flow_control = solcfg_flow_control,
+    .flowcontrol_state = solcfg_flowcontrol_state,
     .flush = solcfg_flush,
     .free = solcfg_free,
     .serparm_to_str = solcfg_serparm_to_str

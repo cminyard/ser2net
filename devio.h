@@ -58,11 +58,15 @@ struct devio_f {
     void (*show_devcontrol)(struct devio *io, struct absout *out);
     void (*show_devcfg)(struct devio *io, struct absout *out);
     int (*baud_rate)(struct devio *io, int *val);
-    int (*data_size)(struct devio *io, unsigned char *val, int *bpc);
-    int (*parity)(struct devio *io, unsigned char *val, int *bpc);
-    int (*stop_size)(struct devio *io, unsigned char *val, int *bpc);
-    int (*control)(struct devio *io, unsigned char *val);
-    int (*flow_control)(struct devio *io, unsigned char val);
+    int (*data_size)(struct devio *io, int *val, int *bpc);
+    int (*parity)(struct devio *io, int *val, int *bpc);
+    int (*stop_size)(struct devio *io, int *val, int *bpc);
+    int (*flowcontrol)(struct devio *io, int *val);
+    int (*iflowcontrol)(struct devio *io, int *val);
+    int (*sbreak)(struct devio *io, int *val);
+    int (*dtr)(struct devio *io, int *val);
+    int (*rts)(struct devio *io, int *val);
+    int (*flowcontrol_state)(struct devio *io, int val);
 
 #define DEVIO_FLUSH_INPUT  (1 << 0)
 #define DEVIO_FLUSH_OUTPUT (1 << 1)
