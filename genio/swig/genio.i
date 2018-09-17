@@ -492,6 +492,9 @@ struct waiter { };
 %constant int SERGENIO_FLOWCONTROL_NONE = SERGENIO_FLOWCONTROL_NONE;
 %constant int SERGENIO_FLOWCONTROL_XON_XOFF = SERGENIO_FLOWCONTROL_XON_XOFF;
 %constant int SERGENIO_FLOWCONTROL_RTS_CTS = SERGENIO_FLOWCONTROL_RTS_CTS;
+%constant int SERGENIO_FLOWCONTROL_DCD = SERGENIO_FLOWCONTROL_DCD;
+%constant int SERGENIO_FLOWCONTROL_DTR = SERGENIO_FLOWCONTROL_DTR;
+%constant int SERGENIO_FLOWCONTROL_DSR = SERGENIO_FLOWCONTROL_DSR;
 
 %constant int SERGENIO_BREAK_ON = SERGENIO_BREAK_ON;
 %constant int SERGENIO_BREAK_OFF = SERGENIO_BREAK_OFF;
@@ -582,6 +585,9 @@ struct waiter { };
 
     /* SERGENIO_FLOWCONTROL_ entries */
     sgenio_entry(flowcontrol);
+
+    /* SERGENIO_FLOWCONTROL_ entries for iflowcontrol */
+    sgenio_entry(iflowcontrol);
 
     /* SERGENIO_BREAK_ entries */
     sgenio_entry(sbreak);

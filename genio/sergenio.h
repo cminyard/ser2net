@@ -89,6 +89,14 @@ int sergenio_flowcontrol(struct sergenio *sio, int flowcontrol,
 				      int flowcontrol, void *cb_data),
 			 void *cb_data);
 
+#define SERGENIO_FLOWCONTROL_DCD	4
+#define SERGENIO_FLOWCONTROL_DTR	5
+#define SERGENIO_FLOWCONTROL_DSR	6
+int sergenio_iflowcontrol(struct sergenio *sio, int iflowcontrol,
+			  void (*done)(struct sergenio *sio, int err,
+				       int iflowcontrol, void *cb_data),
+			  void *cb_data);
+
 #define SERGENIO_BREAK_ON	1
 #define SERGENIO_BREAK_OFF	2
 int sergenio_sbreak(struct sergenio *sio, int breakv,
@@ -109,6 +117,11 @@ int sergenio_rts(struct sergenio *sio, int rts,
 		 void (*done)(struct sergenio *sio, int err, int rts,
 			      void *cb_data),
 		 void *cb_data);
+
+int sergenio_signature(struct sergenio *sio, char *sig, unsigned int len,
+		       void (*done)(struct sergenio *sio, int err, char *sig,
+				    unsigned int sig_len, void *cb_data),
+		       void *cb_data);
 
 /*
  * For linestate and modemstate, on a client this sets the mask, on
@@ -177,6 +190,7 @@ int sergenio_datasize_b(struct sergenio_b *sbio, int *datasize);
 int sergenio_parity_b(struct sergenio_b *sbio, int *parity);
 int sergenio_stopbits_b(struct sergenio_b *sbio, int *stopbits);
 int sergenio_flowcontrol_b(struct sergenio_b *sbio, int *flowcontrol);
+int sergenio_iflowcontrol_b(struct sergenio_b *sbio, int *iflowcontrol);
 int sergenio_sbreak_b(struct sergenio_b *sbio, int *breakv);
 int sergenio_dtr_b(struct sergenio_b *sbio, int *dtr);
 int sergenio_rts_b(struct sergenio_b *sbio, int *rts);
@@ -196,10 +210,20 @@ struct sergenio_callbacks {
     void (*linestate)(struct sergenio *sio, unsigned int linestate);
 
     /*
+     * On the server side, these are for reporting that the client is
+     * requesting the signature (sig and sig_len are not used).  On
+     * the client side, this is the signature response.
+     */
+    void (*signature)(struct sergenio *sio, char *sig, unsigned int sig_len);
+
+    /*
      * The remote end is asking the user to flow control or flush.
      */
     void (*flowcontrol_state)(struct sergenio *sio, bool val);
     void (*flush)(struct sergenio *sio, unsigned int val);
+
+    /* Got a sync from the other end. */
+    void (*sync)(struct sergenio *sio);
 
     /*
      * Server callbacks.  These only come in in server mode, you must
@@ -211,6 +235,7 @@ struct sergenio_callbacks {
     void (*parity)(struct sergenio *sio, int parity);
     void (*stopbits)(struct sergenio *sio, int stopbits);
     void (*flowcontrol)(struct sergenio *sio, int flowcontrol);
+    void (*iflowcontrol)(struct sergenio *sio, int iflowcontrol);
     void (*sbreak)(struct sergenio *sio, int breakv);
     void (*dtr)(struct sergenio *sio, int dtr);
     void (*rts)(struct sergenio *sio, int rts);

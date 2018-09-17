@@ -97,6 +97,15 @@ sergenio_flowcontrol(struct sergenio *sio, int flowcontrol,
 }
 
 int
+sergenio_iflowcontrol(struct sergenio *sio, int iflowcontrol,
+		      void (*done)(struct sergenio *sio, int err,
+				   int iflowcontrol, void *cb_data),
+		      void *cb_data)
+{
+    return sio->funcs->iflowcontrol(sio, iflowcontrol, done, cb_data);
+}
+
+int
 sergenio_sbreak(struct sergenio *sio, int breakv,
 		void (*done)(struct sergenio *sio, int err, int breakv,
 			     void *cb_data),
@@ -121,6 +130,17 @@ sergenio_rts(struct sergenio *sio, int rts,
 	     void *cb_data)
 {
     return sio->funcs->rts(sio, rts, done, cb_data);
+}
+
+int
+sergenio_signature(struct sergenio *sio, char *sig, unsigned int len,
+		   void (*done)(struct sergenio *sio, int err, char *sig,
+				unsigned int sig_len, void *cb_data),
+		   void *cb_data)
+{
+    if (!sio->funcs->signature)
+	return ENOTSUP;
+    return sio->funcs->signature(sio, sig, len, done, cb_data);
 }
 
 int
@@ -328,6 +348,30 @@ sergenio_flowcontrol_b(struct sergenio_b *sbio, int *flowcontrol)
 	err = data.err;
     if (!err)
 	*flowcontrol = data.val;
+
+    return err;
+}
+
+int
+sergenio_iflowcontrol_b(struct sergenio_b *sbio, int *iflowcontrol)
+{
+    struct sergenio_b_data data;
+    int err;
+
+    data.waiter = sbio->o->alloc_waiter(sbio->o);
+    if (!data.waiter)
+	return ENOMEM;
+
+    data.err = 0;
+    data.o = sbio->o;
+    err = sergenio_iflowcontrol(sbio->sio, *iflowcontrol, sergenio_done, &data);
+    if (!err)
+	sbio->o->wait(data.waiter, NULL);
+    sbio->o->free_waiter(data.waiter);
+    if (!err)
+	err = data.err;
+    if (!err)
+	*iflowcontrol = data.val;
 
     return err;
 }

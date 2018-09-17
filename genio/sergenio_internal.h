@@ -25,50 +25,60 @@
 #include "sergenio.h"
 
 struct sergenio_functions {
-    int (*baud)(struct sergenio *snet, int baud,
-		void (*done)(struct sergenio *snet, int err,
+    int (*baud)(struct sergenio *sio, int baud,
+		void (*done)(struct sergenio *sio, int err,
 			     int baud, void *cb_data),
 		void *cb_data);
 
-    int (*datasize)(struct sergenio *snet, int datasize,
-		    void (*done)(struct sergenio *snet, int err, int datasize,
+    int (*datasize)(struct sergenio *sio, int datasize,
+		    void (*done)(struct sergenio *sio, int err, int datasize,
 				 void *cb_data),
 		    void *cb_data);
 
-    int (*parity)(struct sergenio *snet, int parity,
-		  void (*done)(struct sergenio *snet, int err, int parity,
+    int (*parity)(struct sergenio *sio, int parity,
+		  void (*done)(struct sergenio *sio, int err, int parity,
 			       void *cb_data),
 		  void *cb_data);
 
-    int (*stopbits)(struct sergenio *snet, int stopbits,
-		    void (*done)(struct sergenio *snet, int err, int stopbits,
+    int (*stopbits)(struct sergenio *sio, int stopbits,
+		    void (*done)(struct sergenio *sio, int err, int stopbits,
 				 void *cb_data),
 		    void *cb_data);
 
-    int (*flowcontrol)(struct sergenio *snet, int flowcontrol,
-		       void (*done)(struct sergenio *snet, int err,
+    int (*flowcontrol)(struct sergenio *sio, int flowcontrol,
+		       void (*done)(struct sergenio *sio, int err,
 				    int flowcontrol, void *cb_data),
 		       void *cb_data);
 
-    int (*sbreak)(struct sergenio *snet, int breakv,
-		  void (*done)(struct sergenio *snet, int err, int breakv,
+    int (*iflowcontrol)(struct sergenio *sio, int iflowcontrol,
+			void (*done)(struct sergenio *sio, int err,
+				     int iflowcontrol, void *cb_data),
+			void *cb_data);
+
+    int (*sbreak)(struct sergenio *sio, int breakv,
+		  void (*done)(struct sergenio *sio, int err, int breakv,
 			       void *cb_data),
 		  void *cb_data);
 
-    int (*dtr)(struct sergenio *snet, int dtr,
-	       void (*done)(struct sergenio *snet, int err, int dtr,
+    int (*dtr)(struct sergenio *sio, int dtr,
+	       void (*done)(struct sergenio *sio, int err, int dtr,
 			    void *cb_data),
 	       void *cb_data);
 
-    int (*rts)(struct sergenio *snet, int rts,
-	       void (*done)(struct sergenio *snet, int err, int rts,
+    int (*rts)(struct sergenio *sio, int rts,
+	       void (*done)(struct sergenio *sio, int err, int rts,
 			    void *cb_data),
 	       void *cb_data);
 
-    int (*modemstate)(struct sergenio *snet, unsigned int val);
-    int (*linestate)(struct sergenio *snet, unsigned int val);
-    int (*flowcontrol_state)(struct sergenio *snet, bool val);
-    int (*flush)(struct sergenio *snet, unsigned int val);
+    int (*modemstate)(struct sergenio *sio, unsigned int val);
+    int (*linestate)(struct sergenio *sio, unsigned int val);
+    int (*flowcontrol_state)(struct sergenio *sio, bool val);
+    int (*flush)(struct sergenio *sio, unsigned int val);
+
+    int (*signature)(struct sergenio *sio, char *sig, unsigned int len,
+		     void (*done)(struct sergenio *sio, int err, char *sig,
+				  unsigned int sig_len, void *cb_data),
+		     void *cb_data);
 };
 
 /*

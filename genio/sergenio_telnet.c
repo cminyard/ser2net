@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "utils/utils.h"
 #include "utils/telnet.h"
@@ -30,13 +31,13 @@
 
 #define SERCTL_WAIT_TIME 5
 
-/* FIXME - missing linestate and modemstate. */
-
 struct stel_req {
     int option;
     int minval;
     int maxval;
     void (*done)(struct sergenio *sio, int err, int val, void *cb_data);
+    void (*donesig)(struct sergenio *sio, int err, char *sig,
+		    unsigned int sig_len, void *cb_data);
     void *cb_data;
     int time_left;
     struct stel_req *next;
@@ -77,6 +78,8 @@ stel_queue(struct stel_data *sdata, int option,
 	   int minval, int maxval,
 	   void (*done)(struct sergenio *sio, int err,
 			int baud, void *cb_data),
+	   void (*donesig)(struct sergenio *sio, int err, char *sig,
+			   unsigned int sig_len, void *cb_data),
 	   void *cb_data)
 {
     struct stel_req *curr, *req;
@@ -91,6 +94,7 @@ stel_queue(struct stel_data *sdata, int option,
 
     req->option = option;
     req->done = done;
+    req->donesig = donesig;
     req->cb_data = cb_data;
     req->minval = minval;
     if (!maxval)
@@ -129,7 +133,7 @@ stel_baud(struct sergenio *sio, int baud,
     int err;
 
     if (is_client) {
-	err = stel_queue(sdata, 1, 0, 0, done, cb_data);
+	err = stel_queue(sdata, 1, 0, 0, done, NULL, cb_data);
 	if (err)
 	    return err;
 	buf[1] = 1;
@@ -168,7 +172,7 @@ stel_queue_and_send(struct sergenio *sio, int option, int val,
 
     if (is_client) {
 	err = stel_queue(sdata, option, xmitbase, xmitbase + maxval,
-			 done, cb_data);
+			 done, NULL, cb_data);
 	if (err)
 	    return err;
     } else {
@@ -220,6 +224,15 @@ stel_flowcontrol(struct sergenio *sio, int flowcontrol,
 }
 
 static int
+stel_iflowcontrol(struct sergenio *sio, int iflowcontrol,
+		  void (*done)(struct sergenio *sio, int err,
+			       int iflowcontrol, void *cb_data),
+		  void *cb_data)
+{
+    return stel_queue_and_send(sio, 5, iflowcontrol, 13, 0, 6, done, cb_data);
+}
+
+static int
 stel_sbreak(struct sergenio *sio, int breakv,
 	    void (*done)(struct sergenio *sio, int err, int breakv,
 			 void *cb_data),
@@ -246,6 +259,38 @@ stel_rts(struct sergenio *sio, int rts,
     return stel_queue_and_send(sio, 5, rts, 10, 0, 2, done, cb_data);
 }
 
+static int
+stel_signature(struct sergenio *sio, char *sig, unsigned int sig_len,
+	       void (*done)(struct sergenio *sio, int err, char *sig,
+			    unsigned int sig_len, void *cb_data),
+	       void *cb_data)
+{
+    struct stel_data *sdata = mysergenio_to_stel(sio);
+    unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
+    bool is_client = genio_is_client(sergenio_to_genio(sio));
+
+    if (sig_len > (MAX_TELNET_CMD_XMIT_BUF - 2))
+	sig_len = MAX_TELNET_CMD_XMIT_BUF - 2;
+
+    if (is_client) {
+	int err = stel_queue(sdata, 0, 0, 0, NULL, done, cb_data);
+	if (err)
+	    return err;
+
+	outopt[0] = 44;
+	outopt[1] = 0;
+	sdata->rops->send_option(sdata->filter, outopt, 2);
+    } else {
+	outopt[0] = 44;
+	outopt[1] = 100;
+	strncpy((char *) outopt + 2, sig, sig_len);
+
+	sdata->rops->send_option(sdata->filter, outopt, sig_len + 2);
+    }
+
+    return 0;
+}
+
 static int stel_send(struct sergenio *sio, unsigned int opt, unsigned int val)
 {
     struct stel_data *sdata = mysergenio_to_stel(sio);
@@ -267,7 +312,7 @@ static int stel_modemstate(struct sergenio *sio, unsigned int val)
 {
     unsigned int opt;
 
-    if (!sergenio_is_client(sio))
+    if (sergenio_is_client(sio))
 	opt = 11;
     else
 	opt = 7;
@@ -278,7 +323,7 @@ static int stel_linestate(struct sergenio *sio, unsigned int val)
 {
     unsigned int opt;
 
-    if (!sergenio_is_client(sio))
+    if (sergenio_is_client(sio))
 	opt = 10;
     else
 	opt = 6;
@@ -296,6 +341,8 @@ static int stel_flowcontrol_state(struct sergenio *sio, bool val)
 	buf[1] = 8;
     else
 	buf[1] = 9;
+    if (!sergenio_is_client(sio))
+	buf[1] += 100;
 
     sdata->rops->send_option(sdata->filter, buf, 2);
 
@@ -314,13 +361,15 @@ static const struct sergenio_functions stel_funcs = {
     .parity = stel_parity,
     .stopbits = stel_stopbits,
     .flowcontrol = stel_flowcontrol,
+    .iflowcontrol = stel_iflowcontrol,
     .sbreak = stel_sbreak,
     .dtr = stel_dtr,
     .rts = stel_rts,
     .modemstate = stel_modemstate,
     .linestate = stel_linestate,
     .flowcontrol_state = stel_flowcontrol_state,
-    .flush = stel_flush
+    .flush = stel_flush,
+    .signature = stel_signature
 };
 
 static int
@@ -348,6 +397,8 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     struct stel_data *sdata = handler_data;
     int val = 0, cmd;
     struct stel_req *curr, *prev = NULL;
+    char *sig = NULL;
+    unsigned int sig_len;
 
     if (len < 2)
 	return;
@@ -356,6 +407,11 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     cmd = option[1] - 100;
 
     switch (cmd) {
+    case 0:
+	sig = (char *) (option + 2);
+	sig_len = len - 2;
+	break;
+
     case 1:
 	if (len < 3)
 	    return;
@@ -373,31 +429,31 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     case 6:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->linestate)
+	if (sdata->sio.scbs && sdata->sio.scbs->linestate)
 	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
 	return;
 
     case 7:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->modemstate)
+	if (sdata->sio.scbs && sdata->sio.scbs->modemstate)
 	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
 	return;
 
     case 8:
-	if (sdata->sio.scbs->flowcontrol)
+	if (sdata->sio.scbs && sdata->sio.scbs->flowcontrol)
 	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
 	return;
 
     case 9:
-	if (sdata->sio.scbs->flowcontrol)
+	if (sdata->sio.scbs && sdata->sio.scbs->flowcontrol)
 	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
 	return;
 
     case 12:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->flush)
+	if (sdata->sio.scbs && sdata->sio.scbs->flush)
 	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
 	return;
 
@@ -424,8 +480,13 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     stel_unlock(sdata);
 
     if (curr) {
-	if (curr->done)
-	    curr->done(&sdata->sio, 0, val - curr->minval, curr->cb_data);
+	if (sig) {
+	    if (curr->donesig)
+		curr->donesig(&sdata->sio, 0, sig, sig_len, curr->cb_data);
+	} else {
+	    if (curr->done)
+		curr->done(&sdata->sio, 0, val - curr->minval, curr->cb_data);
+	}
 	sdata->o->free(sdata->o, curr);
     }
 }
@@ -630,6 +691,9 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
     else
 	sdata->do_2217 = sdata->allow_2217;
 
+    if (sdata->do_2217 && sdata->sio.scbs && sdata->sio.scbs->modemstate)
+	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+
     return sdata->do_2217;
 }
 
@@ -643,6 +707,8 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
     if (len < 2)
 	return;
     if (option[1] >= 100)
+	return;
+    if (!sdata->sio.scbs)
 	return;
 
     switch (option[1]) {
@@ -695,6 +761,8 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	case 10: case 11: case 12:
 	    sdata->sio.scbs->rts(&sdata->sio, option[2] - 10);
 	    break;
+	case 13: case 14: case 15: case 16: case 17: case 18: case 19:
+	    sdata->sio.scbs->iflowcontrol(&sdata->sio, option[2] - 13);
 	}
 	break;
 
@@ -737,7 +805,10 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 static void
 stela_cb_got_sync(void *handler_data)
 {
-    /* FIXME - send a break here. */
+    struct stel_data *sdata = handler_data;
+
+    if (sdata->sio.scbs && sdata->sio.scbs->sync)
+	sdata->sio.scbs->sync(&sdata->sio);
 }
 
 static void

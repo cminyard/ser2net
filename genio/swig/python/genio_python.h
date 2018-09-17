@@ -438,6 +438,12 @@ sgenio_flowcontrol(struct sergenio *sio, int flowcontrol)
 }
 
 static void
+sgenio_iflowcontrol(struct sergenio *sio, int iflowcontrol)
+{
+    sgenio_call(sio, iflowcontrol, "siflowcontrol");
+}
+
+static void
 sgenio_sbreak(struct sergenio *sio, int breakv)
 {
     sgenio_call(sio, breakv, "ssbreak");
@@ -466,6 +472,7 @@ static struct sergenio_callbacks gen_scbs = {
     .parity = sgenio_parity,
     .stopbits = sgenio_stopbits,
     .flowcontrol = sgenio_flowcontrol,
+    .iflowcontrol = sgenio_iflowcontrol,
     .sbreak = sgenio_sbreak,
     .dtr = sgenio_dtr,
     .rts = sgenio_rts

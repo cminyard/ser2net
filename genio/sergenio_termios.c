@@ -434,6 +434,31 @@ termios_get_set_flowcontrol(struct termios *termio, int *mctl, int *ival)
 }
 
 static int
+termios_get_set_iflowcontrol(struct termios *termio, int *mctl, int *ival)
+{
+    if (*ival) {
+	int val;
+
+	/* We can only independently set XON/XOFF. */
+	switch (*ival) {
+	case SERGENIO_FLOWCONTROL_NONE: val = 0; break;
+	case SERGENIO_FLOWCONTROL_XON_XOFF: val = IXOFF; break;
+	default:
+	    return EINVAL;
+	}
+	termio->c_cflag &= ~IXOFF;
+	termio->c_cflag |= val;
+    } else {
+	if (termio->c_cflag & IXOFF)
+	    *ival = SERGENIO_FLOWCONTROL_XON_XOFF;
+	else
+	    *ival = SERGENIO_FLOWCONTROL_NONE;
+    }
+
+    return 0;
+}
+
+static int
 sterm_flowcontrol(struct sergenio *sio, int flowcontrol,
 		  void (*done)(struct sergenio *sio, int err,
 			       int flowcontrol, void *cb_data),
@@ -442,6 +467,17 @@ sterm_flowcontrol(struct sergenio *sio, int flowcontrol,
     return termios_set_get(mysergenio_to_sterm(sio), flowcontrol,
 			   TERMIO_OP_TERMIO,
 			   termios_get_set_flowcontrol, done, cb_data);
+}
+
+static int
+sterm_iflowcontrol(struct sergenio *sio, int iflowcontrol,
+		   void (*done)(struct sergenio *sio, int err,
+				int iflowcontrol, void *cb_data),
+		   void *cb_data)
+{
+    return termios_set_get(mysergenio_to_sterm(sio), iflowcontrol,
+			   TERMIO_OP_TERMIO,
+			   termios_get_set_iflowcontrol, done, cb_data);
 }
 
 static int
@@ -555,7 +591,8 @@ termios_timeout(struct genio_timer *t, void *cb_data)
      * The bottom 4 buts of modemstate is the "changed" bits, only
      * report this if someing changed that was in the mask.
      */
-    if (force_send || (modemstate & 0xf && sdata->sio.scbs->modemstate))
+    if ((force_send || modemstate & 0xf) &&
+		sdata->sio.scbs && sdata->sio.scbs->modemstate)
 	sdata->sio.scbs->modemstate(&sdata->sio, modemstate);
 
     if (sdata->modemstate_mask) {
@@ -631,6 +668,7 @@ static const struct sergenio_functions sterm_funcs = {
     .parity = sterm_parity,
     .stopbits = sterm_stopbits,
     .flowcontrol = sterm_flowcontrol,
+    .iflowcontrol = sterm_iflowcontrol,
     .sbreak = sterm_sbreak,
     .dtr = sterm_dtr,
     .rts = sterm_rts,
