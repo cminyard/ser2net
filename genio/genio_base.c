@@ -156,7 +156,7 @@ basen_deref_and_unlock(struct basen_data *ndata)
 						     basen_timer_stopped,
 						     ndata);
 
-	    if (!err)
+	    if (err != ETIMEDOUT)
 		return;
 	}
 	basen_finish_free(ndata);
