@@ -319,8 +319,7 @@ struct waiter { };
 }
 
 %extend gensio {
-    gensio(struct gensio_os_funcs *o, char *str, int max_read_size,
-	  swig_cb *handler) {
+    gensio(struct gensio_os_funcs *o, char *str, swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
 	int rv;
 	struct gensio_data *data;
@@ -333,7 +332,7 @@ struct waiter { };
 	data->handler_val = ref_swig_cb(handler, read_callback);
 	data->o = o;
 
-	rv = str_to_gensio(str, o, max_read_size, &gen_cbs, data, &io);
+	rv = str_to_gensio(str, o, &gen_cbs, data, &io);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
@@ -721,8 +720,7 @@ struct waiter { };
 }
 
 %extend gensio_acceptor {
-    gensio_acceptor(struct gensio_os_funcs *o, char *str, int max_read_size,
-		    swig_cb *handler) {
+    gensio_acceptor(struct gensio_os_funcs *o, char *str, swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
 	struct gensio_acc_data *data;
 	struct gensio_acceptor *acc = NULL;
@@ -735,8 +733,7 @@ struct waiter { };
 	data->o = o;
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_gensio_acceptor(str, o, max_read_size, &gen_acc_cbs,
-				   data, &acc);
+	rv = str_to_gensio_acceptor(str, o, &gen_acc_cbs, data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);

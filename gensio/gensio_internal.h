@@ -23,6 +23,19 @@
 #include <stddef.h>
 #include <gensio/gensio.h>
 
+/*
+ * This is the default for most gensio layers.  Some have specific buffer
+ * sizes, especially packet protocols like UDP (below) and SSL (defined
+ * by SSL).
+ */
+#define GENSIO_DEFAULT_BUF_SIZE		1024
+
+/*
+ * Maximum UDP packet size, this avoids partial packet reads.  Probably
+ * not a good idea to override this.
+ */
+#define GENSIO_DEFAULT_UDP_BUF_SIZE	65536
+
 enum gensio_type {
     GENSIO_TYPE_INVALID = 0,
     GENSIO_TYPE_TCP,
@@ -165,5 +178,7 @@ char *gensio_strdup(struct gensio_os_funcs *o, const char *str);
 
 int gensio_check_keyvalue(const char *str, const char *key, const char **value);
 int gensio_check_keyuint(const char *str, const char *key, unsigned int *value);
+
+int gensio_scan_args(const char **rstr, int *argc, char ***args);
 
 #endif /* GENSIO_INTERNAL_H */

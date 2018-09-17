@@ -121,8 +121,48 @@ check_ipv6_only(int family, struct sockaddr *addr, int fd)
 }
 
 int
-scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
-		  bool *is_port_set)
+gensio_scan_args(const char **rstr, int *argc, char ***args)
+{
+    const char *str = *rstr;
+    int err = 0;
+
+    if (*str == '(') {
+	err = str_to_argv_lengths_endchar(str + 1, argc, args, NULL,
+					  " \f\n\r\t\v,", ")", &str);
+	if (!err && (!str || *str != ','))
+	    err = EINVAL; /* No terminating ')' or ',' after */
+	else
+	    str++;
+    } else {
+	str += 1;
+	err = str_to_argv_lengths("", argc, args, NULL, ")");
+    }
+
+    if (!err)
+	*rstr = str;
+
+    return err;
+}
+
+/*
+ * Scan for a network port in the form:
+ *
+ *   [ipv4|ipv6,][tcp|udp,][<hostname>,]<port>
+ *
+ * If neither ipv4 nor ipv6 is specified, addresses for both are
+ * returned.  If neither tcp nor udp is specified, tcp is assumed.
+ * The hostname can be a resolvable hostname, an IPv4 octet, or an
+ * IPv6 address.  If it is not supplied, inaddr_any is used.  In the
+ * absence of a hostname specification, a wildcard address is used.
+ * The mandatory second part is the port number or a service name.
+ *
+ * If the port is all zero, then is_port_set is set to true, false
+ * otherwise.  If the address is UDP, is_dgram is set to true, false
+ * otherwise.
+ */
+static int
+scan_network_port_args(const char *str, struct addrinfo **rai, bool *is_dgram,
+		       bool *is_port_set, int *argc, char ***args)
 {
     char *strtok_data, *strtok_buffer;
     char *ip;
@@ -130,6 +170,7 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
     struct addrinfo hints, *ai;
     int family = AF_UNSPEC;
     int socktype = SOCK_STREAM;
+    int err = 0;
 
     if (strncmp(str, "ipv4,", 5) == 0) {
 	family = AF_INET;
@@ -139,14 +180,34 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
 	str += 5;
     }
 
-    if (strncmp(str, "tcp,", 4) == 0) {
-	str += 4;
-    } else if (strncmp(str, "udp,", 4) == 0) {
+    if (strncmp(str, "tcp,", 4) == 0 ||
+		(args && strncmp(str, "tcp(", 4) == 0)) {
+	if (args) {
+	    str += 3;
+	    err = gensio_scan_args(&str, argc, args);
+	} else {
+	    str += 4;
+	}
+	if (err)
+	    return err;
+    } else if (strncmp(str, "udp,", 4) == 0 ||
+	       (args && strncmp(str, "udp(", 4) == 0)) {
 	/* Only allow UDP if asked for. */
 	if (!is_dgram)
 	    return EINVAL;
+	if (args) {
+	    str += 3;
+	    err = gensio_scan_args(&str, argc, args);
+	} else {
+	    str += 4;
+	}
+	if (err)
+	    return err;
 	socktype = SOCK_DGRAM;
-	str += 4;
+    } else if (args) {
+	err = str_to_argv_lengths("", argc, args, NULL, ")");
+	if (err)
+	    return err;
     }
 
     strtok_buffer = strdup(str);
@@ -180,6 +241,13 @@ scan_network_port(const char *str, struct addrinfo **rai, bool *is_dgram,
 	freeaddrinfo(*rai);
     *rai = ai;
     return 0;
+}
+
+int
+scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
+		  bool *is_port_set)
+{
+    return scan_network_port_args(str, ai, is_dgram, is_port_set, NULL, NULL);
 }
 
 bool
@@ -436,7 +504,6 @@ gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
 static int
 gensio_process_acc_filter(const char *str, enum gensio_type type,
 			  struct gensio_os_funcs *o,
-			  unsigned int max_read_size,
 			  const struct gensio_acceptor_callbacks *cbs,
 			  void *user_data,
 			  struct gensio_acceptor **acceptor)
@@ -447,27 +514,15 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
     char **args = NULL;
     const char *name = str;
 
-    if (*str== '(') {
-	err = str_to_argv_lengths_endchar(str + 1, &argc, &args, NULL,
-					  " \f\n\r\t\v,", ")", &str);
-	if (!err && (!str || *str != ','))
-	    err = EINVAL; /* No terminating ')' or ',' after */
-	else
-	    str++;
-    } else {
-	str += 1;
-	err = str_to_argv_lengths("", &argc, &args, NULL, ")");
-    }
-
+    err = gensio_scan_args(&str, &argc, &args);
     if (!err)
-	err = str_to_gensio_acceptor(str, o, max_read_size, NULL, NULL, &acc2);
+	err = str_to_gensio_acceptor(str, o, NULL, NULL, &acc2);
     if (!err) {
 	if (type == GENSIO_TYPE_SSL) {
-	    err = ssl_gensio_acceptor_alloc(name, args, o, acc2, max_read_size,
+	    err = ssl_gensio_acceptor_alloc(name, args, o, acc2,
 					   cbs, user_data, &acc);
 	} else if (type == GENSIO_TYPE_SER_TELNET) {
 	    err = sergensio_telnet_acceptor_alloc(name, args, o, acc2,
-						  max_read_size,
 						  cbs, user_data, &acc);
 	} else {
 	    err = EINVAL;
@@ -491,7 +546,6 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
 
 int str_to_gensio_acceptor(const char *str,
 			   struct gensio_os_funcs *o,
-			   unsigned int max_read_size,
 			   const struct gensio_acceptor_callbacks *cbs,
 			   void *user_data,
 			   struct gensio_acceptor **acceptor)
@@ -499,36 +553,48 @@ int str_to_gensio_acceptor(const char *str,
     int err;
     struct addrinfo *ai = NULL;
     bool is_dgram, is_port_set;
+    char *dummy_args[1] = { NULL };
+    int argc;
+    char **args = NULL;
 
     if (strisallzero(str)) {
-	err = stdio_gensio_acceptor_alloc(o, max_read_size, cbs, user_data,
+	err = stdio_gensio_acceptor_alloc(dummy_args, o, cbs, user_data,
 					  acceptor);
+    } else if (strncmp(str, "stdio,", 6) == 0 ||
+	       strncmp(str, "stdio(", 6) == 0) {
+	str += 5;
+	err = gensio_scan_args(&str, &argc, &args);
+	if (!err)
+	    err = stdio_gensio_acceptor_alloc(args, o, cbs, user_data,
+					      acceptor);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
 	err = gensio_process_acc_filter(str + 3, GENSIO_TYPE_SSL, o,
-					max_read_size, cbs, user_data,
-					acceptor);
+					cbs, user_data, acceptor);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
 	err = gensio_process_acc_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
-					max_read_size, cbs, user_data,
-					acceptor);
+					cbs, user_data, acceptor);
     } else {
-	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
+	err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
+				     &argc, &args);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_acceptor_alloc(str, o, ai, max_read_size, cbs,
+		err = udp_gensio_acceptor_alloc(str, args, o, ai, cbs,
 						user_data, acceptor);
 	    } else {
-		err = tcp_gensio_acceptor_alloc(str, o, ai, max_read_size, cbs,
+		err = tcp_gensio_acceptor_alloc(str, args, o, ai, cbs,
 						user_data, acceptor);
 	    }
 
 	    freeaddrinfo(ai);
 	}
     }
+
+    if (args && args != dummy_args)
+	str_to_argv_free(argc, args);
 
     return err;
 }
@@ -537,7 +603,6 @@ static int
 gensio_process_filter(const char *str,
 		      enum gensio_type type,
 		      struct gensio_os_funcs *o,
-		      unsigned int max_read_size,
 		      const struct gensio_callbacks *cbs,
 		      void *user_data,
 		      struct gensio **gensio)
@@ -548,20 +613,9 @@ gensio_process_filter(const char *str,
     int argc;
     char **args;
 
-    if (*str == '(') {
-	err = str_to_argv_lengths_endchar(str + 1, &argc, &args, NULL,
-					  NULL, ")", &str);
-	if (!err && (!str || *str != ','))
-	    err = EINVAL; /* No terminating ')' or ',' after */
-	else
-	    str++;
-    } else {
-	str += 1;
-	err = str_to_argv_lengths("", &argc, &args, NULL, ")");
-    }
-
+    err = gensio_scan_args(&str, &argc, &args);
     if (!err)
-	err = str_to_gensio(str, o, max_read_size, NULL, NULL, &io2);
+	err = str_to_gensio(str, o, NULL, NULL, &io2);
     if (!err) {
 	if (type == GENSIO_TYPE_SER_TELNET) {
 	    err = sergensio_telnet_alloc(io2, args, o, NULL, cbs, user_data,
@@ -569,8 +623,7 @@ gensio_process_filter(const char *str,
 	    if (!err)
 		io = sergensio_to_gensio(sio);
 	} else if (type == GENSIO_TYPE_SSL) {
-	    err = ssl_gensio_alloc(io2, args, o, max_read_size, cbs, user_data,
-				   &io);
+	    err = ssl_gensio_alloc(io2, args, o, cbs, user_data, &io);
 	} else {
 	    err = EINVAL;
 	}
@@ -594,7 +647,6 @@ gensio_process_filter(const char *str,
 int
 str_to_gensio(const char *str,
 	      struct gensio_os_funcs *o,
-	      unsigned int max_read_size,
 	      const struct gensio_callbacks *cbs,
 	      void *user_data,
 	      struct gensio **gensio)
@@ -602,49 +654,58 @@ str_to_gensio(const char *str,
     int err = 0;
     struct addrinfo *ai = NULL;
     bool is_dgram, is_port_set;
+    int argc;
+    char **args = NULL;
 
-    if (strncmp(str, "stdio,", 6) == 0) {
-	int argc;
-	char **argv;
+    if (strncmp(str, "stdio,", 6) == 0
+		|| strncmp(str, "stdio(", 6) == 0) {
+	int sargc;
+	char **sargv;
 
-	err = str_to_argv(str + 6, &argc, &argv, NULL);
-	if (err)
-	    return err;
-	err = stdio_gensio_alloc(argv, o, max_read_size, cbs, user_data,
-				 gensio);
-	str_to_argv_free(argc, argv);
+	str += 5;
+	err = gensio_scan_args(&str, &argc, &args);
+	if (!err)
+	    err = str_to_argv(str, &sargc, &sargv, NULL);
+	if (!err)
+	    err = stdio_gensio_alloc(sargv, args, o, cbs, user_data, gensio);
+	str_to_argv_free(sargc, sargv);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
 	err = gensio_process_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
-				    max_read_size, cbs, user_data, gensio);
+				    cbs, user_data, gensio);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
 	err = gensio_process_filter(str + 3, GENSIO_TYPE_SSL, o,
-				    max_read_size, cbs, user_data, gensio);
-    } else if (strncmp(str, "termios,", 8) == 0) {
+				    cbs, user_data, gensio);
+    } else if (strncmp(str, "termios,", 8) == 0 ||
+	       strncmp(str, "termios(", 8) == 0) {
 	struct sergensio *sio;
 
-	str += 8;
-	err = sergensio_termios_alloc(str, o, max_read_size, NULL,
-				      cbs, user_data, &sio);
+	str += 7;
+	err = gensio_scan_args(&str, &argc, &args);
+	if (!err)
+	    err = sergensio_termios_alloc(str, args, o, NULL,
+					  cbs, user_data, &sio);
 	if (!err)
 	    *gensio = sergensio_to_gensio(sio);
     } else {
-	err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
+	err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
+				     &argc, &args);
 	if (!err) {
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_alloc(ai, o, max_read_size, cbs,
-				       user_data, gensio);
+		err = udp_gensio_alloc(ai, args, o, cbs, user_data, gensio);
 	    } else {
-		err = tcp_gensio_alloc(ai, o, max_read_size, cbs,
-				       user_data, gensio);
+		err = tcp_gensio_alloc(ai, args, o, cbs, user_data, gensio);
 	    }
 
 	    freeaddrinfo(ai);
 	}
     }
+
+    if (args)
+	str_to_argv_free(argc, args);
 
     return err;
 }

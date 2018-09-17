@@ -526,7 +526,6 @@ gensio_ssl_server_filter_alloc(struct gensio_os_funcs *o,
 
 int
 gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
-			unsigned int max_read_size,
 			struct gensio_filter **rfilter)
 {
     struct gensio_filter *filter;
@@ -535,14 +534,17 @@ gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
     SSL_CTX *ctx;
     int success;
     unsigned int i;
-    unsigned int max_write_size = 4096; /* FIXME - magic number. */
+    unsigned int max_read_size = SSL3_RT_MAX_PLAIN_LENGTH;
+    unsigned int max_write_size = SSL3_RT_MAX_PLAIN_LENGTH;
 
     gensio_ssl_initialize(o);
 
     for (i = 0; args[i]; i++) {
 	if (gensio_check_keyvalue(args[i], "CA", &CAfilepath))
 	    continue;
-	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	if (gensio_check_keyuint(args[i], "writebuf", &max_write_size) > 0)
 	    continue;
 	return EINVAL;
     }

@@ -18,14 +18,19 @@
  */
 
 #include <errno.h>
-#include <gensio/gensio_internal.h>
-#include <gensio/gensio_base.h>
-
 #include <stdlib.h>
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
 #include <syslog.h>
+
+#include <gensio/gensio_internal.h>
+#include <gensio/gensio_base.h>
+
+#ifdef DEBUG_ON
+#define ENABLE_PRBUF 1
+#include <utils/utils.h>
+#endif
 
 enum basen_state { BASEN_CLOSED,
 		   BASEN_IN_LL_OPEN,
@@ -263,6 +268,10 @@ static int
 ll_write(struct basen_data *ndata, unsigned int *rcount,
 	 const unsigned char *buf, unsigned int buflen)
 {
+#ifdef DEBUG_ON
+    printf("LL write:");
+    prbuf(buf, buflen);
+#endif
     return ndata->ll_ops->write(ndata->ll, rcount, buf, buflen);
 }
 
@@ -410,13 +419,17 @@ basen_read_data_handler(void *cb_data,
 {
     struct basen_data *ndata = cb_data;
     struct gensio *mynet = &ndata->net;
+    unsigned int count = 0;
 
-    if (ndata->state != BASEN_OPEN || !ndata->read_enabled) {
-	*rcount = 0;
-	return 0;
+ retry:
+    if (ndata->state == BASEN_OPEN && ndata->read_enabled) {
+	count += mynet->cbs->read_callback(&ndata->net, 0, buf + count,
+					   buflen - count, 0);
+	if (count < buflen)
+	    goto retry;
     }
-	
-    *rcount = mynet->cbs->read_callback(&ndata->net, 0, buf, buflen, 0);
+
+    *rcount = count;
     return 0;
 }
 
@@ -824,6 +837,10 @@ basen_ll_read(void *cb_data, int readerr,
     struct gensio *mynet = &ndata->net;
     unsigned char *buf = ibuf;
 
+#ifdef DEBUG_ON
+    printf("LL read:");
+    prbuf(buf, buflen);
+#endif
     basen_lock(ndata);
     ll_set_read_callback_enable(ndata, false);
     if (readerr) {

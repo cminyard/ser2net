@@ -1041,7 +1041,6 @@ handle_net_fd_read(struct gensio *net, int readerr,
 {
     net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
-    unsigned int bufpos = 0;
     unsigned int rv = 0;
     char *reason;
     int count;
@@ -1063,6 +1062,9 @@ handle_net_fd_read(struct gensio *net, int readerr,
 	goto out_shutdown;
     }
 
+    if (buflen > port->net_to_dev.maxsize)
+	buflen = port->net_to_dev.maxsize;
+
     netcon->bytes_received += buflen;
 
     if (port->net_monitor != NULL)
@@ -1075,12 +1077,8 @@ handle_net_fd_read(struct gensio *net, int readerr,
 	/* Do both tracing, ignore errors. */
 	do_trace(port, port->tb, buf, buflen, NET);
 
-    if (buflen <= bufpos)
-	goto out_data_handled;
-
-    assert(buflen - bufpos <= port->net_to_dev.maxsize);
-    memcpy(port->net_to_dev.buf, buf + bufpos, buflen - bufpos);
-    port->net_to_dev.cursize = buflen - bufpos;
+    memcpy(port->net_to_dev.buf, buf, buflen);
+    port->net_to_dev.cursize = buflen;
 
     port->net_to_dev.pos = 0;
 
@@ -1134,7 +1132,6 @@ handle_net_fd_read(struct gensio *net, int readerr,
 
     reset_timer(netcon);
 
- out_data_handled:
     rv = buflen;
 
  out_unlock:
@@ -2206,8 +2203,8 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_gensio_acceptor(rot->portname, ser2net_o, 64,
-			       &rotator_cbs, rot, &rot->acceptor);
+    rv = str_to_gensio_acceptor(rot->portname, ser2net_o,
+				&rotator_cbs, rot, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
@@ -3246,7 +3243,6 @@ portconfig(struct absout *eout,
     }
 
     err = str_to_gensio_acceptor(new_port->portname, ser2net_o,
-				new_port->net_to_dev.maxsize,
 				&port_acceptor_cbs, new_port,
 				&new_port->acceptor);
     if (err) {
@@ -3262,7 +3258,6 @@ portconfig(struct absout *eout,
 	    args[0] = "rfc2217=true";
 	err = sergensio_telnet_acceptor_alloc(new_port->portname, args,
 					      ser2net_o, new_port->acceptor,
-					      new_port->net_to_dev.maxsize,
 					      &port_acceptor_cbs, new_port,
 					      &parent);
 	if (err)

@@ -466,7 +466,6 @@ bool gensio_acc_exit_on_close(struct gensio_acceptor *acceptor);
  * connections.
  */
 int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
-			   unsigned int max_read_size,
 			   const struct gensio_acceptor_callbacks *cbs,
 			   void *user_data,
 			   struct gensio_acceptor **acceptor);
@@ -477,7 +476,6 @@ int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
  */
 int str_to_gensio(const char *str,
 		  struct gensio_os_funcs *o,
-		  unsigned int max_read_size,
 		  const struct gensio_callbacks *cbs,
 		  void *user_data,
 		  struct gensio **gensio);
@@ -485,30 +483,28 @@ int str_to_gensio(const char *str,
 /*
  * Allocators for different I/O types.
  */
-int tcp_gensio_acceptor_alloc(const char *name,
+int tcp_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct addrinfo *ai,
-			      unsigned int max_read_size,
 			      const struct gensio_acceptor_callbacks *cbs,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
-int udp_gensio_acceptor_alloc(const char *name,
+
+int udp_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct addrinfo *ai,
-			      unsigned int max_read_size,
 			      const struct gensio_acceptor_callbacks *cbs,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
-int stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
-				unsigned int max_read_size,
+
+int stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
 				const struct gensio_acceptor_callbacks *cbs,
 				void *user_data,
 				struct gensio_acceptor **acceptor);
-int ssl_gensio_acceptor_alloc(const char *name,
-			      char *args[],
+
+int ssl_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct gensio_acceptor *child,
-			      unsigned int max_read_size,
 			      const struct gensio_acceptor_callbacks *cbs,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
@@ -518,9 +514,8 @@ int ssl_gensio_acceptor_alloc(const char *name,
 /*
  * Create a TCP gensio for the given ai.
  */
-int tcp_gensio_alloc(struct addrinfo *ai,
+int tcp_gensio_alloc(struct addrinfo *ai, char *args[],
 		     struct gensio_os_funcs *o,
-		     unsigned int max_read_size,
 		     const struct gensio_callbacks *cbs,
 		     void *user_data,
 		     struct gensio **new_gensio);
@@ -529,17 +524,15 @@ int tcp_gensio_alloc(struct addrinfo *ai,
  * Create a UDP gensio for the given ai.  It uses the first entry in
  * ai.
  */
-int udp_gensio_alloc(struct addrinfo *ai,
+int udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		     struct gensio_os_funcs *o,
-		     unsigned int max_read_size,
 		     const struct gensio_callbacks *cbs,
 		     void *user_data,
 		     struct gensio **new_gensio);
 
 /* Run a program (in argv[0]) and attach to it's stdio. */
-int stdio_gensio_alloc(char *const argv[],
+int stdio_gensio_alloc(char *const argv[], char *args[],
 		       struct gensio_os_funcs *o,
-		       unsigned int max_read_size,
 		       const struct gensio_callbacks *cbs,
 		       void *user_data,
 		       struct gensio **new_gensio);
@@ -547,10 +540,8 @@ int stdio_gensio_alloc(char *const argv[],
 /*
  * Make an SSL connection over another gensio.
  */
-int ssl_gensio_alloc(struct gensio *child,
-		     char *args[],
+int ssl_gensio_alloc(struct gensio *child, char *args[],
 		     struct gensio_os_funcs *o,
-		     unsigned int max_read_size,
 		     const struct gensio_callbacks *cbs, void *user_data,
 		     struct gensio **io);
 

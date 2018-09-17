@@ -38,7 +38,6 @@
 int
 ssl_gensio_alloc(struct gensio *child, char *args[],
 		 struct gensio_os_funcs *o,
-		 unsigned int max_read_size,
 		 const struct gensio_callbacks *cbs, void *user_data,
 		 struct gensio **net)
 {
@@ -47,7 +46,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     struct gensio_ll *ll;
     struct gensio *io;
 
-    err = gensio_ssl_filter_alloc(o, args, max_read_size, &filter);
+    err = gensio_ssl_filter_alloc(o, args, &filter);
     if (err)
 	return err;
 
@@ -102,7 +101,9 @@ sslna_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
     struct gensio_os_funcs *o = nadata->o;
     int err;
     struct gensio *io = NULL;
-    char *args[2] = {NULL, NULL};
+    char *args[4] = {NULL, NULL, NULL};
+    char buf1[50], buf2[50];
+    int i;
 
     args[0] = o->zalloc(o, strlen(nadata->CAfilepath) + 4);
     if (!args[0])
@@ -111,8 +112,17 @@ sslna_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
     strcpy(args[0], "CA=");
     strcat(args[0], nadata->CAfilepath);
 
-    err = ssl_gensio_alloc(child, args, o, nadata->max_read_size,
-			  NULL, NULL, &io);
+    i = 1;
+    if (nadata->max_read_size != SSL3_RT_MAX_PLAIN_LENGTH) {
+	snprintf(buf1, sizeof(buf1), "readbuf=%d", nadata->max_read_size);
+	args[i++] = buf1;
+    }
+    if (nadata->max_write_size != SSL3_RT_MAX_PLAIN_LENGTH) {
+	snprintf(buf2, sizeof(buf2), "writebuf=%d", nadata->max_write_size);
+	args[i++] = buf2;
+    }
+
+    err = ssl_gensio_alloc(child, args, o, NULL, NULL, &io);
 
     if (args[0])
 	o->free(o, args[0]);
@@ -147,7 +157,6 @@ ssl_gensio_acceptor_alloc(const char *name,
 			  char *args[],
 			  struct gensio_os_funcs *o,
 			  struct gensio_acceptor *child,
-			  unsigned int max_read_size,
 			  const struct gensio_acceptor_callbacks *cbs,
 			  void *user_data,
 			  struct gensio_acceptor **acceptor)
@@ -158,7 +167,8 @@ ssl_gensio_acceptor_alloc(const char *name,
     const char *CAfilepath = NULL;
     int err;
     unsigned int i;
-    unsigned int max_write_size = 4096; /* FIXME - magic number. */
+    unsigned int max_write_size = SSL3_RT_MAX_PLAIN_LENGTH;
+    unsigned int max_read_size = SSL3_RT_MAX_PLAIN_LENGTH;
 
     for (i = 0; args[i]; i++) {
 	if (gensio_check_keyvalue(args[i], "CA", &CAfilepath))
@@ -167,7 +177,9 @@ ssl_gensio_acceptor_alloc(const char *name,
 	    continue;
 	if (gensio_check_keyvalue(args[i], "cert", &certfile))
 	    continue;
-	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "writebuf", &max_write_size) > 0)
+	    continue;
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
 	    continue;
 	return EINVAL;
     }
@@ -217,7 +229,6 @@ ssl_gensio_acceptor_alloc(const char *name,
 int
 ssl_gensio_alloc(struct gensio *child, char *args[],
 		 struct gensio_os_funcs *o,
-		 unsigned int max_read_size,
 		 const struct gensio_callbacks *cbs, void *user_data,
 		 struct gensio **net)
 {

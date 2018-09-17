@@ -455,51 +455,48 @@ sergensio_set_ser_cbs(struct sergensio *sio,
 		     struct sergensio_callbacks *scbs)
 {
     sio->scbs = scbs;
+    if (sio->funcs->callbacks_set)
+	sio->funcs->callbacks_set(sio);
 }
 
 
 int
 str_to_sergensio(const char *str, struct gensio_os_funcs *o,
-		unsigned int read_buffer_size,
 		const struct sergensio_callbacks *scbs,
 		const struct gensio_callbacks *cbs, void *user_data,
 		struct sergensio **sio)
 {
     int err;
+    int argc;
+    char **args = NULL;
 
     if (strncmp(str, "telnet,", 7) == 0 ||
 	strncmp(str, "telnet(", 7) == 0) {
 	struct gensio *io;
-	int argc;
-	char **args = NULL;
 
-	if (str[6] == '(') {
-	    err = str_to_argv_lengths_endchar(str + 7, &argc, &args, NULL,
-					      NULL, ")", &str);
-	    if (!err && !str)
-		err = EINVAL; /* No terminating ')' */
-	} else {
-	    str += 7;
-	}
-
+	str += 7;
+	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = str_to_gensio(str, o, read_buffer_size, NULL, NULL, &io);
+	    err = str_to_gensio(str, o, NULL, NULL, &io);
 	if (!err)
 	    err = sergensio_telnet_alloc(io, args, o, scbs, cbs, user_data,
 					 sio);
 
-	if (args)
-	    str_to_argv_free(argc, args);
-
 	if (err && io)
 		gensio_free(io);
-    } else if (strncmp(str, "termios,", 8) == 0) {
+    } else if (strncmp(str, "termios,", 8) == 0 ||
+	       strncmp(str, "termios(", 8) == 0) {
 	str += 8;
-	err = sergensio_termios_alloc(str, o, read_buffer_size, scbs,
-				      cbs, user_data, sio);
+	err = gensio_scan_args(&str, &argc, &args);
+	if (!err)
+	    err = sergensio_termios_alloc(str, args, o, scbs, cbs, user_data,
+					  sio);
     } else {
 	err = EINVAL;
     }
+
+    if (args)
+	str_to_argv_free(argc, args);
 
     return err;
 }

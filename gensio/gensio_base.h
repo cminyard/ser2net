@@ -116,7 +116,6 @@ struct gensio_filter_ops {
 
 /* FIXME - make args const */
 int gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
-			    unsigned int max_read_size,
 			    struct gensio_filter **rfilter);
 
 int gensio_ssl_server_filter_alloc(struct gensio_os_funcs *o,

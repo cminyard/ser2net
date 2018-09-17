@@ -24,6 +24,8 @@
 #include <gensio/gensio_internal.h>
 #include <gensio/sergensio.h>
 
+#define GENSIO_TELNET_DEFAULT_BUFSIZE 1024
+
 struct sergensio_functions {
     int (*baud)(struct sergensio *sio, int baud,
 		void (*done)(struct sergensio *sio, int err,
@@ -79,6 +81,8 @@ struct sergensio_functions {
 		     void (*done)(struct sergensio *sio, int err, char *sig,
 				  unsigned int sig_len, void *cb_data),
 		     void *cb_data);
+
+    void (*callbacks_set)(struct sergensio *sio);
 };
 
 /*

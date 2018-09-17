@@ -192,14 +192,15 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
 				    nadata->read_data + nadata->data_pos,
 				    nadata->data_pending_len,
 				    nadata->read_flags);
-
     stdiona_lock(nadata);
     if (!err && count < nadata->data_pending_len) {
 	/* The user didn't consume all the data. */
 	nadata->data_pending_len -= count;
 	nadata->data_pos += count;
-	if (!nadata->closed && nadata->read_enabled)
+	if (!nadata->closed && nadata->read_enabled) {
+	    stdiona_unlock(nadata);
 	    goto retry;
+	}
     } else {
 	nadata->data_pending_len = 0;
     }
@@ -839,8 +840,7 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 }
 
 int
-stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
-			    unsigned int max_read_size,
+stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
 			    const struct gensio_acceptor_callbacks *cbs,
 			    void *user_data,
 			    struct gensio_acceptor **acceptor)
@@ -848,6 +848,14 @@ stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
     int err;
     struct gensio_acceptor *acc;
     struct stdiona_data *nadata = NULL;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    int i;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
 
     err = stdio_nadata_setup(o, max_read_size, &nadata);
     if (err)
@@ -869,9 +877,8 @@ stdio_gensio_acceptor_alloc(struct gensio_os_funcs *o,
 }
 
 int
-stdio_gensio_alloc(char *const argv[],
+stdio_gensio_alloc(char *const argv[], char *args[],
 		   struct gensio_os_funcs *o,
-		   unsigned int max_read_size,
 		   const struct gensio_callbacks *cbs,
 		   void *user_data,
 		   struct gensio **new_gensio)
@@ -879,6 +886,13 @@ stdio_gensio_alloc(char *const argv[],
     int err;
     struct stdiona_data *nadata = NULL;
     int i, argc;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
 
     err = stdio_nadata_setup(o, max_read_size, &nadata);
     if (err)

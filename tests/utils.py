@@ -40,7 +40,7 @@ class HandleData:
     object of that io will be this object.
     """
 
-    def __init__(self, o, iostr, bufsize, name = None, chunksize=10240,
+    def __init__(self, o, iostr, name = None, chunksize=10240,
                  io = None):
         """Start a gensio object with this handler"""
         if (name):
@@ -60,7 +60,7 @@ class HandleData:
             self.io = io
             io.set_cbs(self)
         else:
-            self.io = gensio.gensio(o, iostr, bufsize, self)
+            self.io = gensio.gensio(o, iostr, self)
         self.io.handler = self
         self.chunksize = chunksize
         self.debug = 0
@@ -131,6 +131,9 @@ class HandleData:
         else:
             count = len(buf)
 
+        if count > self.chunksize:
+            count = self.chunksize
+
         for i in range(0, count):
             if (buf[i] != self.to_compare[self.compared]):
                 raise HandlerException("%s: compare failure on byte %d, "
@@ -183,7 +186,7 @@ class HandleData:
                 print("Got unexpected modemstate %x" % modemstate)
             return
         if (modemstate != self.expected_modemstate):
-            raise HandlerException("%s: Expecting modemsate 0x%x, got 0x%x" %
+            raise HandlerException("%s: Expecting modemstate 0x%x, got 0x%x" %
                                    (self.name, self.expected_modemstate,
                                     modemstate))
         self.expecting_modemstate = False
@@ -201,7 +204,7 @@ class HandleData:
                 print("Got unexpected linestate %x" % linestate)
             return
         if (linestate != self.expected_linestate):
-            raise HandlerException("%s: Expecting linesate 0x%x, got 0x%x" %
+            raise HandlerException("%s: Expecting linestate 0x%x, got 0x%x" %
                                    (self.name, self.expected_linestate,
                                     linestate))
         self.expecting_linestate = False
@@ -377,7 +380,7 @@ class Ser2netDaemon:
         args = "stdio," + prog + " -r -d -c " + self.cfile.name + " " + extra_args
         if (debug):
             print("Running: " + args)
-        self.handler = HandleData(o, args, 1024, name="ser2net daemon")
+        self.handler = HandleData(o, args, name="ser2net daemon")
 
         self.io = self.handler.io
         self.io.closeme = True
@@ -440,12 +443,12 @@ class Ser2netDaemon:
             count -= 1
         raise Exception("ser2net did not terminate");
 
-def alloc_io(o, iostr, do_open = True, bufsize = 1024):
+def alloc_io(o, iostr, do_open = True, chunksize = 10240):
     """Allocate an io instance with a HandlerData handler
 
     If do_open is True (default), open it, too.
     """
-    h = HandleData(o, iostr, bufsize)
+    h = HandleData(o, iostr, chunksize = chunksize)
     if (do_open):
         h.io.open_s()
     return h.io

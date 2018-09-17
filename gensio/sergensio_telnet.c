@@ -55,6 +55,7 @@ struct stel_data {
     bool allow_2217;
     bool do_2217;
     bool cisco_baud;
+    bool reported_modemstate;
 
     struct stel_req *reqs;
 };
@@ -359,6 +360,19 @@ stel_flush(struct sergensio *sio, unsigned int val)
     return stel_send(sio, 12, val);
 }
 
+static void
+stel_callbacks_set(struct sergensio *sio)
+{
+    if (!sergensio_is_client(sio)) {
+	struct stel_data *sdata = mysergensio_to_stel(sio);
+	struct timeval timeout;
+
+	/* Schedule a modemstate report once the callbacks are set. */
+	timeout.tv_sec = 0;
+	timeout.tv_usec = 1;
+	sdata->rops->start_timer(sdata->filter, &timeout);
+    }
+}
 
 static const struct sergensio_functions stel_funcs = {
     .baud = stel_baud,
@@ -374,6 +388,7 @@ static const struct sergensio_functions stel_funcs = {
     .linestate = stel_linestate,
     .flowcontrol_state = stel_flowcontrol_state,
     .flush = stel_flush,
+    .callbacks_set = stel_callbacks_set,
     .signature = stel_signature
 };
 
@@ -526,6 +541,13 @@ stel_timeout(void *handler_data)
 	}
     }
 
+    if (!sdata->reported_modemstate &&
+		sdata->do_2217 && sdata->sio.scbs &&
+		sdata->sio.scbs->modemstate) {
+	sdata->reported_modemstate = true;
+	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+    }
+
     if (sdata->reqs) {
 	timeout.tv_sec = 1;
 	timeout.tv_usec = 0;
@@ -617,14 +639,14 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
     child->funcs->ref(child);
 
     err = gensio_telnet_filter_alloc(o, args, &sergensio_telnet_filter_cbs,
-				    sdata, &sdata->rops, &filter);
+				     sdata, &sdata->rops, &filter);
     if (err) {
 	ll->ops->free(ll);
 	goto out_err;
     }
 
     sdata->sio.io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SER_TELNET,
-				     cbs, user_data);
+				      cbs, user_data);
     if (!sdata->sio.io) {
 	filter->ops->free(filter);
 	ll->ops->free(ll);
@@ -637,6 +659,7 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
     sdata->sio.scbs = scbs;
     sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &stel_funcs;
+    sdata->reported_modemstate = true;
 
     *sio = &sdata->sio;
 
@@ -690,14 +713,20 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
     if (cmd != TN_WILL && cmd != TN_WONT)
 	/* We only handle these. */
 	return 0;
+    stel_lock(sdata);
     if (cmd == TN_WONT)
 	/* The remote end turned off RFC2217 handling. */
 	sdata->do_2217 = false;
     else
 	sdata->do_2217 = sdata->allow_2217;
 
-    if (sdata->do_2217 && sdata->sio.scbs && sdata->sio.scbs->modemstate)
+    if (!sdata->reported_modemstate &&
+		sdata->do_2217 && sdata->sio.scbs &&
+		sdata->sio.scbs->modemstate) {
+	sdata->reported_modemstate = true;
 	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+    }
+    stel_unlock(sdata);
 
     return sdata->do_2217;
 }
@@ -828,6 +857,7 @@ struct gensio_telnet_filter_callbacks sergensio_telnet_server_filter_cbs = {
     .got_sync = stela_cb_got_sync,
     .com_port_will_do = stela_cb_com_port_will_do,
     .com_port_cmd = stela_cb_com_port_cmd,
+    .timeout = stel_timeout,
     .free = stela_cb_free
 };
 
@@ -894,7 +924,6 @@ sergensio_telnet_acceptor_alloc(const char *name,
 				char *args[],
 				struct gensio_os_funcs *o,
 				struct gensio_acceptor *child,
-				unsigned int max_read_size,
 				const struct gensio_acceptor_callbacks *cbs,
 				void *user_data,
 				struct gensio_acceptor **acceptor)
@@ -902,7 +931,8 @@ sergensio_telnet_acceptor_alloc(const char *name,
     struct stela_data *stela;
     int err;
     unsigned int i;
-    unsigned int max_write_size = 4096; /* FIXME - magic number. */
+    unsigned int max_read_size = GENSIO_TELNET_DEFAULT_BUFSIZE;
+    unsigned int max_write_size = GENSIO_TELNET_DEFAULT_BUFSIZE;
     bool allow_2217 = false;
 
     for (i = 0; args[i]; i++) {
@@ -917,7 +947,9 @@ sergensio_telnet_acceptor_alloc(const char *name,
 		return EINVAL;
 	    continue;
 	}
-	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "writebuf", &max_write_size) > 0)
+	    continue;
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
 	    continue;
 	return EINVAL;
     }

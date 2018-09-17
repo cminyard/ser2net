@@ -873,8 +873,8 @@ sergensio_process_parms(struct sterm_data *sdata)
 }
 
 int
-sergensio_termios_alloc(const char *devname, struct gensio_os_funcs *o,
-			unsigned int max_read_size,
+sergensio_termios_alloc(const char *devname, char *args[],
+			struct gensio_os_funcs *o,
 			const struct sergensio_callbacks *scbs,
 			const struct gensio_callbacks *cbs, void *user_data,
 			struct sergensio **sio)
@@ -883,6 +883,14 @@ sergensio_termios_alloc(const char *devname, struct gensio_os_funcs *o,
     struct gensio_ll *ll;
     int err;
     char *comma;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    int i;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
 
     if (!sdata)
 	return ENOMEM;

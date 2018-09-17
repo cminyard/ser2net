@@ -254,10 +254,15 @@ void sergensio_set_ser_cbs(struct sergensio *sio,
  * Allocate a sergensio based on a string.
  */
 int str_to_sergensio(const char *str, struct gensio_os_funcs *o,
-		     unsigned int read_buffer_size,
 		     const struct sergensio_callbacks *scbs,
 		     const struct gensio_callbacks *cbs, void *user_data,
 		     struct sergensio **sio);
+
+int sergensio_termios_alloc(const char *devname, char *args[],
+			    struct gensio_os_funcs *o,
+			    const struct sergensio_callbacks *scbs,
+			    const struct gensio_callbacks *cbs, void *user_data,
+			    struct sergensio **sio);
 
 int sergensio_telnet_alloc(struct gensio *child, char *args[],
 			   struct gensio_os_funcs *o,
@@ -265,17 +270,9 @@ int sergensio_telnet_alloc(struct gensio *child, char *args[],
 			   const struct gensio_callbacks *cbs, void *user_data,
 			   struct sergensio **sio);
 
-int sergensio_termios_alloc(const char *devname, struct gensio_os_funcs *o,
-			    unsigned int read_buffer_size,
-			    const struct sergensio_callbacks *scbs,
-			    const struct gensio_callbacks *cbs, void *user_data,
-			    struct sergensio **sio);
-
-int sergensio_telnet_acceptor_alloc(const char *name,
-				    char *args[],
+int sergensio_telnet_acceptor_alloc(const char *name, char *args[],
 				    struct gensio_os_funcs *o,
 				    struct gensio_acceptor *child,
-				    unsigned int max_read_size,
 				    const struct gensio_acceptor_callbacks *cbs,
 				    void *user_data,
 				    struct gensio_acceptor **acceptor);

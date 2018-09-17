@@ -1085,10 +1085,9 @@ static const struct gensio_acceptor_functions gensio_acc_udp_funcs = {
 };
 
 int
-udp_gensio_acceptor_alloc(const char *name,
+udp_gensio_acceptor_alloc(const char *name, char *args[],
 			  struct gensio_os_funcs *o,
 			  struct addrinfo *iai,
-			  unsigned int max_read_size,
 			  const struct gensio_acceptor_callbacks *cbs,
 			  void *user_data,
 			  struct gensio_acceptor **acceptor)
@@ -1096,8 +1095,17 @@ udp_gensio_acceptor_alloc(const char *name,
     int err = ENOMEM;
     struct gensio_acceptor *acc;
     struct udpna_data *nadata;
-    struct addrinfo *ai = gensio_dup_addrinfo(o, iai);
+    struct addrinfo *ai;
+    unsigned int max_read_size = GENSIO_DEFAULT_UDP_BUF_SIZE;
+    int i;
 
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
+
+    ai = gensio_dup_addrinfo(o, iai);
     if (!ai && iai) /* Allow a null ai if it was passed in. */
 	return ENOMEM;
 
@@ -1153,9 +1161,8 @@ udp_gensio_acceptor_alloc(const char *name,
 }
 
 int
-udp_gensio_alloc(struct addrinfo *ai,
+udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		struct gensio_os_funcs *o,
-		unsigned int max_read_size,
 		const struct gensio_callbacks *cbs,
 		void *user_data,
 		struct gensio **new_gensio)
@@ -1165,6 +1172,14 @@ udp_gensio_alloc(struct addrinfo *ai,
     struct udpna_data *nadata = NULL;
     int err;
     int new_fd;
+    unsigned int max_read_size = GENSIO_DEFAULT_UDP_BUF_SIZE;
+    int i;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
 
     if (ai->ai_addrlen > sizeof(struct sockaddr_storage))
 	return E2BIG;
@@ -1187,8 +1202,8 @@ udp_gensio_alloc(struct addrinfo *ai,
     ndata->refcount = 1;
 
     /* Allocate a dummy network acceptor. */
-    err = udp_gensio_acceptor_alloc("dummy", o, NULL, max_read_size,
-				   NULL, NULL, &acceptor);
+    err = udp_gensio_acceptor_alloc("dummy", args, o,
+				    NULL, NULL, NULL, &acceptor);
     if (err) {
 	close(new_fd);
 	o->free(o, ndata);

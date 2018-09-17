@@ -212,9 +212,8 @@ static const struct gensio_fd_ll_ops tcp_fd_ll_ops = {
 };
 
 int
-tcp_gensio_alloc(struct addrinfo *iai,
+tcp_gensio_alloc(struct addrinfo *iai, char *args[],
 		 struct gensio_os_funcs *o,
-		 unsigned int max_read_size,
 		 const struct gensio_callbacks *cbs,
 		 void *user_data,
 		 struct gensio **new_gensio)
@@ -223,6 +222,14 @@ tcp_gensio_alloc(struct addrinfo *iai,
     struct addrinfo *ai;
     struct gensio_ll *ll;
     struct gensio *io;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    int i;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
 
     for (ai = iai; ai; ai = ai->ai_next) {
 	if (ai->ai_addrlen > sizeof(struct sockaddr_storage))
@@ -556,9 +563,14 @@ tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
     struct tcpna_data *nadata = acc_to_nadata(acceptor);
     struct gensio *net;
     int err;
+    char *args[2] = { NULL, NULL };
+    char buf[100];
 
-    err = tcp_gensio_alloc(addr, nadata->o, nadata->max_read_size,
-			  NULL, NULL, &net);
+    if (nadata->max_read_size != GENSIO_DEFAULT_BUF_SIZE) {
+	snprintf(buf, 100, "readbuf=%d", nadata->max_read_size);
+	args[0] = buf;
+    }
+    err = tcp_gensio_alloc(addr, args, nadata->o, NULL, NULL, &net);
     if (err)
 	return err;
     err = gensio_open(net, connect_done, cb_data);
@@ -576,18 +588,26 @@ static const struct gensio_acceptor_functions gensio_acc_tcp_funcs = {
 };
 
 int
-tcp_gensio_acceptor_alloc(const char *name,
+tcp_gensio_acceptor_alloc(const char *name, char *args[],
 			  struct gensio_os_funcs *o,
 			  struct addrinfo *iai,
-			  unsigned int max_read_size,
 			  const struct gensio_acceptor_callbacks *cbs,
 			  void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
     struct gensio_acceptor *acc;
     struct tcpna_data *nadata;
-    struct addrinfo *ai = gensio_dup_addrinfo(o, iai);
+    struct addrinfo *ai;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    int i;
 
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
+
+    ai = gensio_dup_addrinfo(o, iai);
     if (!ai)
 	return ENOMEM;
 

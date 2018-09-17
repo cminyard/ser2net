@@ -19,7 +19,7 @@ def t2():
     utils.io_close(io2)
 
 class TestAccept:
-    def __init__(self, o, io1, iostr, bufsize, tester, name = None,
+    def __init__(self, o, io1, iostr, tester, name = None,
                  io1_dummy_write = None):
         self.o = o
         if (name):
@@ -28,8 +28,7 @@ class TestAccept:
             self.name = iostr
         self.io1 = io1
         self.waiter = gensio.waiter(o)
-        self.bufsize = bufsize
-        self.acc = gensio.gensio_acceptor(o, iostr, bufsize, self);
+        self.acc = gensio.gensio_acceptor(o, iostr, self);
         self.acc.startup()
         io1.open_s()
         if (io1_dummy_write):
@@ -46,7 +45,7 @@ class TestAccept:
         tester(self.io1, self.io2)
 
     def new_connection(self, acc, io):
-        utils.HandleData(self.o, None, self.bufsize, io = io, name = self.name)
+        utils.HandleData(self.o, None, io = io, name = self.name)
         self.io2 = io
         self.waiter.wake()
 
@@ -59,17 +58,17 @@ def do_test(io1, io2):
 def ta_tcp():
     print("Test accept tcp")
     io1 = utils.alloc_io(o, "tcp,localhost,3023", do_open = False)
-    ta = TestAccept(o, io1, "tcp,3023", 1024, do_test)
+    TestAccept(o, io1, "tcp,3023", do_test)
 
 def ta_udp():
     print("Test accept udp")
     io1 = utils.alloc_io(o, "udp,localhost,3023", do_open = False)
-    ta = TestAccept(o, io1, "udp,3023", 1024, do_test, io1_dummy_write = "A")
+    TestAccept(o, io1, "udp,3023", do_test, io1_dummy_write = "A")
 
 def ta_ssl_tcp():
     print("Test accept ssl-tcp")
     io1 = utils.alloc_io(o, "ssl(CA=%s/CA.pem),tcp,localhost,3024" % utils.srcdir, do_open = False)
-    ta = TestAccept(o, io1, "ssl(key=%s/key.pem,cert=%s/cert.pem,CA=%s/CA.pem),3024" % (utils.srcdir, utils.srcdir, utils.srcdir), 1024, do_test)
+    ta = TestAccept(o, io1, "ssl(key=%s/key.pem,cert=%s/cert.pem,CA=%s/CA.pem),3024" % (utils.srcdir, utils.srcdir, utils.srcdir), do_test)
 
 def do_telnet_test(io1, io2):
     do_test(io1, io2)
@@ -154,8 +153,8 @@ def do_telnet_test(io1, io2):
 
 def ta_ssl_telnet():
     print("Test accept telnet")
-    io1 = utils.alloc_io(o, "telnet,tcp,localhost,3025", do_open = False)
-    ta = TestAccept(o, io1, "telnet(rfc2217=true),3025", 1024, do_telnet_test)
+    io1 = utils.alloc_io(o, "telnet,tcp,localhost,3027", do_open = False)
+    ta = TestAccept(o, io1, "telnet(rfc2217=true),3027", do_telnet_test)
 
 def test_modemstate():
     io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL"
@@ -249,6 +248,45 @@ def test_modemstate():
     utils.io_close(io2)
     print("  Success!")
     return
+
+def test_stdio_basic():
+    print("Test stdio basic echo")
+    io = utils.alloc_io(o, "stdio,cat", chunksize = 64)
+    utils.test_dataxfer(io, io, "This is a test string!")
+    utils.io_close(io)
+
+def test_stdio_small():
+    print("Test stdio small echo")
+    rb = gensio.get_random_bytes(512)
+    io = utils.alloc_io(o, "stdio,cat", chunksize = 64)
+    utils.test_dataxfer(io, io, rb)
+    utils.io_close(io)
+
+test_stdio_basic()
+test_stdio_small()
+
+def do_small_test(io1, io2):
+    rb = gensio.get_random_bytes(512)
+    print("  testing io1 to io2")
+    utils.test_dataxfer(io1, io2, rb)
+    print("  testing io2 to io1")
+    utils.test_dataxfer(io2, io1, rb)
+
+def test_tcp_small():
+    print("Test tcp small")
+    io1 = utils.alloc_io(o, "tcp,localhost,3025", do_open = False,
+                         chunksize = 64)
+    ta = TestAccept(o, io1, "tcp,3025", do_small_test)
+
+test_tcp_small()
+
+def test_telnet_small():
+    print("Test telnet small")
+    io1 = utils.alloc_io(o, "telnet,tcp,localhost,3026", do_open = False,
+                         chunksize = 64)
+    ta = TestAccept(o, io1, "telnet(rfc2217=true),3026", do_small_test)
+
+test_telnet_small()
 
 ta_ssl_telnet()
 t1()

@@ -276,7 +276,7 @@ alloc_gensio(struct sertest_context *c,
 	return ENOMEM;
     }
 
-    err = str_to_gensio(argv[2], c->o, 1024, &gcbs, le, &le->io);
+    err = str_to_gensio(argv[2], c->o, &gcbs, le, &le->io);
     if (err) {
 	abspr(c->out, "Error creating gensio\n");
 	my_o->free_waiter(le->waiter);

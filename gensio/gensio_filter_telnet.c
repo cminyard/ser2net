@@ -646,9 +646,9 @@ gensio_telnet_filter_alloc(struct gensio_os_funcs *o, char *args[],
 		return EINVAL;
 	    continue;
 	}
-	if (gensio_check_keyuint(args[i], "maxwrite", &max_write_size) > 0)
+	if (gensio_check_keyuint(args[i], "writebuf", &max_write_size) > 0)
 	    continue;
-	if (gensio_check_keyuint(args[i], "maxread", &max_read_size) > 0)
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
 	    continue;
 	return EINVAL;
     }
