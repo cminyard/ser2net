@@ -265,6 +265,11 @@ class HandleData:
             return
         return
 
+    def iflowcontrol(self, sio, err, iflowcontrol):
+        if not self.check_set_expected_telnet_cb("iflowcontrol", iflowcontrol):
+            return
+        return
+
     def sbreak(self, sio, err, sbreak):
         if not self.check_set_expected_telnet_cb("sbreak", sbreak):
             return
@@ -308,6 +313,12 @@ class HandleData:
         if not self.check_set_expected_telnet_cb("flowcontrol", flowcontrol):
             return
         sio.sg_flowcontrol(self.expected_server_return, None)
+        return
+
+    def siflowcontrol(self, sio, iflowcontrol):
+        if not self.check_set_expected_telnet_cb("iflowcontrol", iflowcontrol):
+            return
+        sio.sg_iflowcontrol(self.expected_server_return, None)
         return
 
     def ssbreak(self, sio, sbreak):

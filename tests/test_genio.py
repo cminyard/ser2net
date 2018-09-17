@@ -110,9 +110,17 @@ def do_telnet_test(io1, io2):
     if io1.handler.wait_timeout(1000):
         raise Exception("Timeout waiting for client stopbits response")
 
-    io2.handler.set_expected_server_cb("flowcontrol", False, True)
-    io1.handler.set_expected_client_cb("flowcontrol", True)
-    sio1.sg_flowcontrol(False, io1.handler)
+    io2.handler.set_expected_server_cb("flowcontrol", 1, 2)
+    io1.handler.set_expected_client_cb("flowcontrol", 2)
+    sio1.sg_flowcontrol(1, io1.handler)
+    if io2.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for server flowcontrol set")
+    if io1.handler.wait_timeout(1000):
+        raise Exception("Timeout waiting for client flowcontrol response")
+
+    io2.handler.set_expected_server_cb("iflowcontrol", 3, 4)
+    io1.handler.set_expected_client_cb("iflowcontrol", 4)
+    sio1.sg_iflowcontrol(3, io1.handler)
     if io2.handler.wait_timeout(1000):
         raise Exception("Timeout waiting for server flowcontrol set")
     if io1.handler.wait_timeout(1000):
