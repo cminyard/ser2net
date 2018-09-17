@@ -206,6 +206,7 @@ fd_deliver_read_data(struct fd_ll *fdll, int err)
     if (err || fdll->read_data_len) {
 	unsigned int count;
 
+    retry:
 	fd_unlock(fdll);
 	count = fdll->cbs->read_callback(fdll->cb_data, err,
 					 fdll->read_data + fdll->read_data_pos,
@@ -217,6 +218,8 @@ fd_deliver_read_data(struct fd_ll *fdll, int err)
 	} else {
 	    fdll->read_data_pos += count;
 	    fdll->read_data_len -= count;
+	    if (fdll->read_enabled)
+		goto retry;
 	}
     }
 }
