@@ -377,8 +377,11 @@ telnet_setup(struct genio_filter *filter)
     err = telnet_init(&tfilter->tn_data, tfilter, telnet_output_ready,
 		      telnet_cmd_handler, tfilter->telnet_cmds,
 		      tfilter->telnet_init_seq, tfilter->telnet_init_seq_len);
-    if (!err) {
+    if (tfilter->is_client)
 	tfilter->rfc2217_set = !tfilter->allow_2217;
+    else
+	tfilter->rfc2217_set = true; /* Don't wait for this on the server. */
+    if (!err && !tfilter->rfc2217_set) {
 	tfilter->o->get_monotonic_time(tfilter->o,
 				       &tfilter->rfc2217_end_wait);
 	tfilter->rfc2217_end_wait.tv_sec += 4; /* FIXME - magic number */
@@ -546,13 +549,21 @@ static struct telnet_cmd telnet_server_cmds[] =
     { TELNET_CMD_END_OPTION }
 };
 
-static unsigned char telnet_server_init_seq[] = {
+static unsigned char telnet_server_init_seq_2217[] = {
     TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
     TN_IAC, TN_WILL, TN_OPT_ECHO,
     TN_IAC, TN_DONT, TN_OPT_ECHO,
     TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
     TN_IAC, TN_WILL, TN_OPT_BINARY_TRANSMISSION,
     TN_IAC, TN_DO,   TN_OPT_COM_PORT,
+};
+
+static unsigned char telnet_server_init_seq[] = {
+    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
+    TN_IAC, TN_WILL, TN_OPT_ECHO,
+    TN_IAC, TN_DONT, TN_OPT_ECHO,
+    TN_IAC, TN_DO,   TN_OPT_BINARY_TRANSMISSION,
+    TN_IAC, TN_WILL, TN_OPT_BINARY_TRANSMISSION,
 };
 
 int
@@ -567,19 +578,24 @@ genio_telnet_server_filter_alloc(struct genio_os_funcs *o,
 {
     struct genio_filter *filter;
     const struct telnet_cmd *telnet_cmds;
-    unsigned int init_seq_len = sizeof(telnet_server_init_seq);
+    unsigned char *init_seq;
+    unsigned int init_seq_len;
 
-    if (allow_rfc2217)
+    if (allow_rfc2217) {
 	telnet_cmds = telnet_server_cmds_2217;
-    else
+	init_seq_len = sizeof(telnet_server_init_seq_2217);
+	init_seq = telnet_server_init_seq_2217;
+    } else {
 	telnet_cmds = telnet_server_cmds;
+	init_seq_len = sizeof(telnet_server_init_seq);
+	init_seq = telnet_server_init_seq;
+    }
 
     filter = genio_telnet_filter_raw_alloc(o, false, allow_rfc2217,
 					   max_read_size, max_write_size,
 					   cbs, handler_data,
 					   telnet_cmds,
-					   telnet_server_init_seq,
-					   init_seq_len, rops);
+					   init_seq, init_seq_len, rops);
 
     if (!filter)
 	return ENOMEM;
