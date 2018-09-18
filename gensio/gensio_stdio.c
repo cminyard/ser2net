@@ -871,6 +871,8 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     acc->cbs = cbs;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_stdio_funcs;
+    acc->is_packet = false;
+    acc->is_reliable = true;
 
     *acceptor = acc;
     return 0;

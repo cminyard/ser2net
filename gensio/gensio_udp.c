@@ -1139,6 +1139,8 @@ udp_gensio_acceptor_alloc(const char *name, char *args[],
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_udp_funcs;
     acc->type = GENSIO_TYPE_UDP;
+    acc->is_packet = true;
+    acc->is_reliable = false;
 
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;

@@ -46,6 +46,10 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     struct gensio_ll *ll;
     struct gensio *io;
 
+    if (!gensio_is_reliable(child))
+	/* Cowardly refusing to run SSL over an unreliable connection. */
+	return EOPNOTSUPP;
+
     err = gensio_ssl_filter_alloc(o, args, &filter);
     if (err)
 	return err;
@@ -179,6 +183,10 @@ ssl_gensio_acceptor_alloc(const char *name,
     unsigned int max_write_size = SSL3_RT_MAX_PLAIN_LENGTH;
     unsigned int max_read_size = SSL3_RT_MAX_PLAIN_LENGTH;
 
+    if (!gensio_acc_is_reliable(child))
+	/* Cowardly refusing to run SSL over an unreliable connection. */
+	return EOPNOTSUPP;
+
     for (i = 0; args[i]; i++) {
 	if (gensio_check_keyvalue(args[i], "CA", &CAfilepath))
 	    continue;
@@ -220,6 +228,7 @@ ssl_gensio_acceptor_alloc(const char *name,
 	goto out_nomem;
 
     err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SSL,
+				       true, true,
 				       cbs, user_data,
 				       &gensio_acc_ssl_funcs, nadata, acceptor);
     if (err)

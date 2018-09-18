@@ -135,6 +135,8 @@ struct gensio_acceptor {
     const struct gensio_acceptor_functions *funcs;
 
     enum gensio_type type;
+    bool is_packet;
+    bool is_reliable;
 };
 
 #define container_of(ptr, type, member) \

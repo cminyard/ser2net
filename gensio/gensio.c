@@ -513,6 +513,18 @@ gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
     return acceptor->type == GENSIO_TYPE_STDIO;
 }
 
+bool
+gensio_acc_is_reliable(struct gensio_acceptor *acceptor)
+{
+    return acceptor->is_reliable;
+}
+
+bool
+gensio_acc_is_packet(struct gensio_acceptor *acceptor)
+{
+    return acceptor->is_packet;
+}
+
 static int
 gensio_process_acc_filter(const char *str, enum gensio_type type,
 			  struct gensio_os_funcs *o,

@@ -967,6 +967,7 @@ sergensio_telnet_acceptor_alloc(const char *name,
     stela->allow_2217 = allow_2217;
 
     err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SER_TELNET,
+				       false, gensio_acc_is_reliable(child),
 				       cbs, user_data,
 				       &gensio_acc_telnet_funcs, stela,
 				       acceptor);

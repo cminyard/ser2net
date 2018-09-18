@@ -474,6 +474,19 @@ int gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
 bool gensio_acc_exit_on_close(struct gensio_acceptor *acceptor);
 
 /*
+ * Is the genio reliable (won't loose data).
+ */
+bool gensio_acc_is_reliable(struct gensio_acceptor *acceptor);
+
+/*
+ * Is the genio packet-oriented.  In a packet-oriented genio, if one
+ * side writes a chunk of data, when the other side does a read it
+ * will get the same chunk of data as a single unit assuming it's
+ * buffer sizes are set properly.
+ */
+bool gensio_acc_is_packet(struct gensio_acceptor *acceptor);
+
+/*
  * Convert a string representation of a network address into a network
  * acceptor.  max_read_size is the internal read buffer size for the
  * connections.
