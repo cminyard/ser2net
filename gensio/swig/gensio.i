@@ -434,6 +434,21 @@ struct waiter { };
 	gensio_set_write_callback_enable(self, enable);
     }
 
+    %rename(is_client) is_clientt;
+    bool is_clientt() {
+	return gensio_is_client(self);
+    }
+
+    %rename(is_packet) is_packett;
+    bool is_packett() {
+	return gensio_is_packet(self);
+    }
+
+    %rename(is_reliable) is_reliablet;
+    bool is_reliablet() {
+	return gensio_is_reliable(self);
+    }
+
     %newobject cast_to_sergensio;
     struct sergensio *cast_to_sergensio() {
 	struct gensio_data *data = gensio_get_user_data(self);
@@ -773,6 +788,15 @@ struct waiter { };
 
 	err_handle("shutdown", rv);
     }
+
+    bool is_packet() {
+	return gensio_acc_is_packet(self);
+    }
+
+    bool is_reliable() {
+	return gensio_acc_is_reliable(self);
+    }
+
 }
 
 %extend waiter {
