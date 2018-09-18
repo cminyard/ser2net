@@ -433,6 +433,18 @@ gensio_is_client(struct gensio *io)
     return io->is_client;
 }
 
+bool
+gensio_is_reliable(struct gensio *io)
+{
+    return io->is_reliable;
+}
+
+bool
+gensio_is_packet(struct gensio *io)
+{
+    return io->is_packet;
+}
+
 void *
 gensio_acc_get_user_data(struct gensio_acceptor *acceptor)
 {

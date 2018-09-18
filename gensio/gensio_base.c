@@ -974,7 +974,7 @@ gensio_alloc(struct gensio_os_funcs *o,
 	     struct gensio_ll *ll,
 	     struct gensio_filter *filter,
 	     enum gensio_type type,
-	     bool is_client,
+	     bool is_client, bool is_packet, bool is_reliable,
 	     void (*open_done)(struct gensio *net,
 			       int err,
 			       void *open_data),
@@ -1014,6 +1014,8 @@ gensio_alloc(struct gensio_os_funcs *o,
     ndata->net.funcs = &basen_net_funcs;
     ndata->net.type = type;
     ndata->net.is_client = is_client;
+    ndata->net.is_packet = is_packet;
+    ndata->net.is_reliable = is_reliable;
     ll->ops->set_callbacks(ll, &basen_ll_callbacks, ndata);
     if (is_client)
 	ndata->state = BASEN_CLOSED;
@@ -1041,9 +1043,11 @@ base_gensio_alloc(struct gensio_os_funcs *o,
 		  struct gensio_ll *ll,
 		  struct gensio_filter *filter,
 		  enum gensio_type type,
+		  bool is_packet, bool is_reliable,
 		  const struct gensio_callbacks *cbs, void *user_data)
 {
-    return gensio_alloc(o, ll, filter, type, true, NULL, NULL, cbs, user_data);
+    return gensio_alloc(o, ll, filter, type, true, is_packet, is_reliable,
+			NULL, NULL, cbs, user_data);
 }
 
 struct gensio *
@@ -1051,11 +1055,12 @@ base_gensio_server_alloc(struct gensio_os_funcs *o,
 			 struct gensio_ll *ll,
 			 struct gensio_filter *filter,
 			 enum gensio_type type,
+			 bool is_packet, bool is_reliable,
 			 void (*open_done)(struct gensio *net,
 					   int err,
 					   void *open_data),
 			 void *open_data)
 {
-    return gensio_alloc(o, ll, filter, type, false, open_done, open_data,
-			NULL, NULL);
+    return gensio_alloc(o, ll, filter, type, false, is_packet, is_reliable,
+			open_done, open_data, NULL, NULL);
 }

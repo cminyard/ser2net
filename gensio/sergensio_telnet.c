@@ -646,6 +646,7 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
     }
 
     sdata->sio.io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SER_TELNET,
+				      false, gensio_is_reliable(child),
 				      cbs, user_data);
     if (!sdata->sio.io) {
 	filter->ops->free(filter);
@@ -910,6 +911,8 @@ stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
 
     io->parent_object = &sdata->sio;
     sdata->sio.io = io;
+    io->is_packet = false;
+    io->is_reliable = true;
 }
 
 static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {

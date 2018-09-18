@@ -880,6 +880,8 @@ udpna_readhandler(int fd, void *cbdata)
 
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.type = GENSIO_TYPE_UDP;
+    ndata->net.is_packet = false;
+    ndata->net.is_reliable = true;
 
     /* Stick it on the end of the list. */
     udpn_add_to_list(&nadata->udpns, ndata);
@@ -1059,6 +1061,8 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.type = GENSIO_TYPE_UDP;
     ndata->myfd = nadata->fds[fdi].fd;
+    ndata->net.is_packet = false;
+    ndata->net.is_reliable = true;
 
     ndata->in_open = true;
     ndata->open_done = connect_done;
@@ -1237,6 +1241,8 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.type = GENSIO_TYPE_UDP;
     ndata->net.is_client = true;
+    ndata->net.is_packet = true;
+    ndata->net.is_reliable = false;
     ndata->net.cbs = cbs;
     ndata->net.user_data = user_data;
 

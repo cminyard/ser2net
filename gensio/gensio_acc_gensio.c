@@ -339,6 +339,7 @@ basena_new_child_connection(struct gensio_acceptor *acceptor, struct gensio *io)
 
     basena_lock(nadata);
     io = base_gensio_server_alloc(o, ll, filter, nadata->acceptor.type,
+				  false, false,
 				  basena_finish_server_open, nadata);
     if (io) {
 	basena_in_cb(nadata);

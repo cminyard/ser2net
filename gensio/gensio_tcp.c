@@ -257,7 +257,8 @@ tcp_gensio_alloc(struct addrinfo *iai, char *args[],
 	return ENOMEM;
     }
 
-    io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_TCP, cbs, user_data);
+    io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_TCP, false, true,
+			   cbs, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	gensio_free_addrinfo(o, ai);
@@ -420,7 +421,7 @@ tcpna_readhandler(int fd, void *cbdata)
     }
 
     io = base_gensio_server_alloc(nadata->o, ll, NULL, GENSIO_TYPE_TCP,
-				  NULL, NULL);
+				  false, true, NULL, NULL);
     if (!io) {
 	syslog(LOG_ERR, "No memory allocating tcp base %s", nadata->name);
 	ll->ops->free(ll);

@@ -96,6 +96,8 @@ struct gensio {
 
     enum gensio_type type;
     bool is_client;
+    bool is_packet;
+    bool is_reliable;
 };
 
 /*

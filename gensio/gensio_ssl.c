@@ -57,7 +57,8 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     }
     child->funcs->ref(child);
 
-    io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SSL, cbs, user_data);
+    io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SSL,
+			   true, true, cbs, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	filter->ops->free(filter);
@@ -146,9 +147,17 @@ sslna_new_child(void *acc_data, void **finish_data,
     return err;
 }
 
+static void
+sslna_finish_child(void *acc_data, void *finish_data, struct gensio *io)
+{
+    io->is_packet = true;
+    io->is_reliable = true;
+}
+
 static const struct gensio_gensio_acc_cbs gensio_acc_ssl_funcs = {
     .connect_start = sslna_connect_start,
     .new_child = sslna_new_child,
+    .finish_child = sslna_finish_child,
     .free = sslna_free,
 };
 

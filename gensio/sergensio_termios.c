@@ -937,7 +937,7 @@ sergensio_termios_alloc(const char *devname, char *args[],
 	goto out_nomem;
 
     sdata->sio.io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_SER_TERMIOS,
-				      cbs, user_data);
+				      false, false, cbs, user_data);
     if (!sdata->sio.io) {
 	ll->ops->free(ll);
 	goto out_nomem;

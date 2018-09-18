@@ -383,6 +383,19 @@ void gensio_set_write_callback_enable(struct gensio *io, bool enabled);
  */
 bool gensio_is_client(struct gensio *io);
 
+/*
+ * Is the genio reliable (won't loose data).
+ */
+bool gensio_is_reliable(struct gensio *io);
+
+/*
+ * Is the genio packet-oriented.  In a packet-oriented genio, if one
+ * side writes a chunk of data, when the other side does a read it
+ * will get the same chunk of data as a single unit assuming it's
+ * buffer sizes are set properly.
+ */
+bool gensio_is_packet(struct gensio *io);
+
 struct gensio_acceptor;
 
 struct gensio_acceptor_callbacks {

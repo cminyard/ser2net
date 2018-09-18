@@ -914,6 +914,8 @@ stdio_gensio_alloc(char *const argv[], char *args[],
     nadata->net.funcs = &gensio_stdio_funcs;
     nadata->net.type = GENSIO_TYPE_STDIO;
     nadata->net.is_client = true;
+    nadata->net.is_packet = false;
+    nadata->net.is_reliable = true;
 
     *new_gensio = &nadata->net;
 
