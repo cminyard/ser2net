@@ -541,13 +541,6 @@ stel_timeout(void *handler_data)
 	}
     }
 
-    if (!sdata->reported_modemstate &&
-		sdata->do_2217 && sdata->sio.scbs &&
-		sdata->sio.scbs->modemstate) {
-	sdata->reported_modemstate = true;
-	sdata->sio.scbs->modemstate(&sdata->sio, 255);
-    }
-
     if (sdata->reqs) {
 	timeout.tv_sec = 1;
 	timeout.tv_usec = 0;
@@ -854,11 +847,26 @@ stela_cb_free(void *handler_data)
     sdata->o->free(sdata->o, sdata);
 }
 
+static void
+stela_timeout(void *handler_data)
+{
+    struct stel_data *sdata = handler_data;
+
+    stel_lock(sdata);
+    if (!sdata->reported_modemstate &&
+		sdata->do_2217 && sdata->sio.scbs &&
+		sdata->sio.scbs->modemstate) {
+	sdata->reported_modemstate = true;
+	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+    }
+    stel_unlock(sdata);
+}
+
 struct gensio_telnet_filter_callbacks sergensio_telnet_server_filter_cbs = {
     .got_sync = stela_cb_got_sync,
     .com_port_will_do = stela_cb_com_port_will_do,
     .com_port_cmd = stela_cb_com_port_cmd,
-    .timeout = stel_timeout,
+    .timeout = stela_timeout,
     .free = stela_cb_free
 };
 
