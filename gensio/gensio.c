@@ -23,6 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #include <utils/utils.h>
 
@@ -581,6 +582,8 @@ int str_to_gensio_acceptor(const char *str,
     int argc;
     char **args = NULL;
 
+    while (isspace(*str))
+	str++;
     if (strisallzero(str)) {
 	err = stdio_gensio_acceptor_alloc(dummy_args, o, cbs, user_data,
 					  acceptor);
@@ -681,6 +684,8 @@ str_to_gensio(const char *str,
     int argc;
     char **args = NULL;
 
+    while (isspace(*str))
+	str++;
     if (strncmp(str, "stdio,", 6) == 0
 		|| strncmp(str, "stdio(", 6) == 0) {
 	int sargc;
