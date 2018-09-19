@@ -651,7 +651,8 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
     sdata->o = o;
     sdata->filter = filter;
     sdata->sio.scbs = scbs;
-    sdata->sio.io->parent_object = &sdata->sio;
+    if (allow_2217)
+	sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &stel_funcs;
     sdata->reported_modemstate = true;
 
@@ -917,7 +918,8 @@ stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
 {
     struct stel_data *sdata = finish_data;
 
-    io->parent_object = &sdata->sio;
+    if (sdata->allow_2217)
+	io->parent_object = &sdata->sio;
     sdata->sio.io = io;
     io->is_packet = false;
     io->is_reliable = true;
@@ -949,7 +951,10 @@ sergensio_telnet_acceptor_alloc(const char *name,
     for (i = 0; args[i]; i++) {
 	const char *val;
 
-	if (cmpstrval(args[i], "rfc2217=", &val)) {
+	if (strcmp(args[i], "rfc2217") == 0) {
+	    allow_2217 = true;
+	    continue;
+	} else if (cmpstrval(args[i], "rfc2217=", &val)) {
 	    if ((strcmp(val, "true") == 0) || (strcmp(val, "1") == 0))
 		allow_2217 = true;
 	    else if ((strcmp(val, "false") == 0) || (strcmp(val, "0") == 0))

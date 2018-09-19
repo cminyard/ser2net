@@ -41,7 +41,7 @@ static enum gensio_type sergensio_types[] =
 bool
 is_sergensio(struct gensio *io)
 {
-    return gensio_match_type(io, sergensio_types);
+    return gensio_match_type(io, sergensio_types) && io->parent_object;
 }
 
 struct sergensio *
