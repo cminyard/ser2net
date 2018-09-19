@@ -138,12 +138,12 @@ int sergensio_signature(struct sergensio *sio, char *sig, unsigned int len,
 int sergensio_linestate(struct sergensio *sio, unsigned int linestate);
 
 /* Note that for modemstate you should use the low 4 bits. */
-#define SERGENSIO_MODEMSTATE_CTS_CHANGED		(1 << 0)
-#define SERGENSIO_MODEMSTATE_DSR_CHANGED		(1 << 1)
+#define SERGENSIO_MODEMSTATE_CTS_CHANGED	(1 << 0)
+#define SERGENSIO_MODEMSTATE_DSR_CHANGED	(1 << 1)
 #define SERGENSIO_MODEMSTATE_RI_CHANGED		(1 << 2)
 #define SERGENSIO_MODEMSTATE_CD_CHANGED		(1 << 3)
-#define SERGENSIO_MODEMSTATE_CTS			(1 << 4)
-#define SERGENSIO_MODEMSTATE_DSR			(1 << 5)
+#define SERGENSIO_MODEMSTATE_CTS		(1 << 4)
+#define SERGENSIO_MODEMSTATE_DSR		(1 << 5)
 #define SERGENSIO_MODEMSTATE_RI			(1 << 6)
 #define SERGENSIO_MODEMSTATE_CD			(1 << 7)
 int sergensio_modemstate(struct sergensio *sio, unsigned int modemstate);
@@ -179,6 +179,8 @@ void *sergensio_get_user_data(struct sergensio *io);
  *
  * The free function should only be called if the code is not currently
  * in a blocking call using the sbio.
+ *
+ * These should not be called from a server gensio.
  */
 struct sergensio_b;
 
