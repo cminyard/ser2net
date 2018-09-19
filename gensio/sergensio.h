@@ -250,14 +250,6 @@ bool sergensio_is_client(struct sergensio *sio);
 void sergensio_set_ser_cbs(struct sergensio *sio,
 			   struct sergensio_callbacks *scbs);
 
-/*
- * Allocate a sergensio based on a string.
- */
-int str_to_sergensio(const char *str, struct gensio_os_funcs *o,
-		     const struct sergensio_callbacks *scbs,
-		     const struct gensio_callbacks *cbs, void *user_data,
-		     struct sergensio **sio);
-
 int sergensio_termios_alloc(const char *devname, char *args[],
 			    struct gensio_os_funcs *o,
 			    const struct sergensio_callbacks *scbs,
