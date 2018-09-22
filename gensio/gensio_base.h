@@ -254,8 +254,7 @@ struct gensio *base_gensio_alloc(struct gensio_os_funcs *o,
 				 struct gensio_filter *filter,
 				 enum gensio_type type,
 				 bool is_packet, bool is_reliable,
-				 const struct gensio_callbacks *cbs,
-				 void *user_data);
+				 gensio_event cb, void *user_data);
 
 struct gensio *base_gensio_server_alloc(struct gensio_os_funcs *o,
 					struct gensio_ll *ll,

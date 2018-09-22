@@ -524,8 +524,8 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 
 /* Data is ready to read on the TCP port. */
 static unsigned int
-controller_read(struct gensio *net, int readerr, unsigned char *buf,
-		unsigned int buflen, unsigned int flags)
+controller_read(struct gensio *net, int err,
+		unsigned char *buf, unsigned int buflen)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
     int read_count;
@@ -540,10 +540,10 @@ controller_read(struct gensio *net, int readerr, unsigned char *buf,
     if (cntlr->inbuf_count == INBUF_SIZE)
 	goto inbuf_overflow;
 
-    if (readerr) {
+    if (err) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for controller port: %s",
-	       strerror(readerr));
+	       strerror(err));
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }
@@ -680,10 +680,23 @@ controller_write_ready(struct gensio *net)
     shutdown_controller(cntlr); /* Releases the lock */
 }
 
-struct gensio_callbacks controller_gensio_callbacks = {
-    .read_callback = controller_read,
-    .write_callback = controller_write_ready,
-};
+static unsigned int
+controller_io_event(struct gensio *net, int event, int err,
+		    unsigned char *buf, unsigned int *buflen,
+		    unsigned long channel, void *auxdata)
+{
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	*buflen =  controller_read(net, err, buf, *buflen);
+	return 0;
+
+    case GENSIO_EVENT_WRITE_READY:
+	controller_write_ready(net);
+	return 0;
+    }
+
+    return ENOTSUP;
+}
 
 /* A connection request has come in for the control port. */
 static void
@@ -712,7 +725,7 @@ controller_new_connection(struct gensio_acceptor *acceptor, struct gensio *net)
 
     cntlr->net = net;
 
-    gensio_set_callbacks(net, &controller_gensio_callbacks, cntlr);
+    gensio_set_callback(net, controller_io_event, cntlr);
 
     cntlr->inbuf_count = 0;
     cntlr->outbuf = NULL;

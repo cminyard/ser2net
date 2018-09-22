@@ -458,8 +458,8 @@ udpn_finish_read(struct udpn_data *ndata)
 
  retry:
     udpna_unlock(nadata);
-    count = net->cbs->read_callback(net, 0, nadata->read_data,
-				    nadata->data_pending_len, 0);
+    count = nadata->data_pending_len;
+    net->cb(net, GENSIO_EVENT_READ, 0, nadata->read_data, &count, 0, NULL);
     udpna_lock(nadata);
 
     if (ndata->closed)
@@ -729,7 +729,7 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 
     ndata->in_write = true;
     udpna_unlock(nadata);
-    net->cbs->write_callback(net);
+    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
     udpna_lock(nadata);
     ndata->in_write = false;
 
@@ -863,7 +863,7 @@ udpna_readhandler(int fd, void *cbdata)
 	ndata->in_read = false;
 	ndata->in_open = false;
 	ndata->in_write = false;
-	ndata->net.cbs = NULL;
+	ndata->net.cb = NULL;
 	ndata->net.user_data = NULL;
 	goto restart_net;
     }
@@ -1169,8 +1169,7 @@ udp_gensio_acceptor_alloc(const char *name, char *args[],
 int
 udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		struct gensio_os_funcs *o,
-		const struct gensio_callbacks *cbs,
-		void *user_data,
+		gensio_event cb, void *user_data,
 		struct gensio **new_gensio)
 {
     struct udpn_data *ndata = NULL;
@@ -1245,7 +1244,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->net.is_client = true;
     ndata->net.is_packet = true;
     ndata->net.is_reliable = false;
-    ndata->net.cbs = cbs;
+    ndata->net.cb = cb;
     ndata->net.user_data = user_data;
 
     ndata->myfd = new_fd;

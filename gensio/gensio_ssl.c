@@ -38,7 +38,7 @@
 int
 ssl_gensio_alloc(struct gensio *child, char *args[],
 		 struct gensio_os_funcs *o,
-		 const struct gensio_callbacks *cbs, void *user_data,
+		 gensio_event cb, void *user_data,
 		 struct gensio **net)
 {
     int err;
@@ -62,7 +62,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     child->funcs->ref(child);
 
     io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SSL,
-			   true, true, cbs, user_data);
+			   true, true, cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	filter->ops->free(filter);
@@ -247,7 +247,7 @@ ssl_gensio_acceptor_alloc(const char *name,
 int
 ssl_gensio_alloc(struct gensio *child, char *args[],
 		 struct gensio_os_funcs *o,
-		 const struct gensio_callbacks *cbs, void *user_data,
+		 gensio_event cb, void *user_data,
 		 struct gensio **net)
 {
     return ENOTSUP;

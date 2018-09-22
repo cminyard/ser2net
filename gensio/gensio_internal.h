@@ -90,7 +90,7 @@ struct gensio_functions {
 struct gensio {
     void *user_data;
     void *parent_object;
-    const struct gensio_callbacks *cbs;
+    gensio_event cb;
 
     const struct gensio_functions *funcs;
 

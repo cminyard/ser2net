@@ -231,43 +231,58 @@ struct gensio_os_funcs {
 
 struct gensio;
 
-struct gensio_callbacks {
-    /*
-     * Called when data is read from the I/O device.
-     *
-     * If readerr is zero, buf points to a data buffer and buflen is
-     * the number of bytes available.
-     *
-     * If readerr is set, buf and buflen are undefined.  readerr is
-     * a standard *nix errno.
-     *
-     * Note that you must disable read if you don't consume all
-     * the bytes or in other situations where you don't want the
-     * read handler called.
-     *
-     * Flags are per-type options, they generally don't matter except
-     * for some specific situations.
-     */
-    unsigned int (*read_callback)(struct gensio *io, int readerr,
-				  unsigned char *buf, unsigned int buflen,
-				  unsigned int flags);
+/*
+ * Called when data is read from the I/O device.
+ *
+ * If err is zero, buf points to a data buffer and buflen is the
+ * number of bytes available.
+ *
+ * If err is set, buf and buflen are undefined.  readerr is a standard
+ * *nix errno.
+ *
+ * You must return the number of bytes consumed.  Note that you must
+ * disable read if you don't consume all the bytes or in other
+ * situations where you don't want the read handler called.
+ */
+#define GENSIO_EVENT_READ		1
+#define GENSIO_EVENT_WRITE_READY	2
+#define GENSIO_EVENT_URGENT		3
 
-    /* Flags for read callbacks. */
+/*
+ * If a user creates their own gensio with their own events, they should
+ * use this range.
+ */
+#define GENSIO_EVENT_USER_MIN		100000
+#define GENSIO_EVENT_USER_MAX		199999
 
-/* For stdin client gensio, data is from stderr instead of stdout. */
-#define GENSIO_ERR_OUTPUT	1
-
-    /*
-     * Called when the user may write to the gensio.
-     */
-    void (*write_callback)(struct gensio *io);
-
-    /*
-     * Called when urgent data is available.  This should only be done
-     * on TCP sockets.  Optional.
-     */
-    void (*urgent_callback)(struct gensio *io);
-};
+/*
+ * Called for any event from the I/O.  Parameters are:
+ *
+ *   event - What event is being reported?  One of GENSIO_EVENT_xxx.
+ *
+ *   err - If zero, there is no error.  If non-zero, this is reporting
+ *         an error.  Generally only on read events.
+ *
+ *   buf - For events reporting data transferred (generally read), this
+ *         is the data.  Undefined for events not transferring data.
+ *
+ *   buflen - The length of data being transferred.  This passes in the
+ *            lenth, the user should update it with the number of bytes
+ *            actually processed.  NULL for events not transferring data.
+ *
+ *   channel - For gensios that have sub-channels (ssh, websockets, etc)
+ *             this gives a channel number.  For stdio, 0 is stdout and
+ *             1 is stderr.
+ *
+ *   auxdata - Depending on the event, other data may be transferred.
+ *             this holds a pointer to it.
+ *
+ * This function should return 0 if it handled the event, or ENOTSUP if
+ * it didn't.
+ */
+typedef int (*gensio_event)(struct gensio *io, int event, int err,
+			    unsigned char *buf, unsigned int *buflen,
+			    unsigned long channel, void *auxdata);
 
 /*
  * Set the callback data for the net.  This must be done in the
@@ -276,8 +291,7 @@ struct gensio_callbacks {
  * be called with callbacks not set.  This function may be called
  * again if the gensio is not enabled.
  */
-void gensio_set_callbacks(struct gensio *io,
-			  const struct gensio_callbacks *cbs, void *user_data);
+void gensio_set_callback(struct gensio *io, gensio_event cb, void *user_data);
 
 /*
  * Return the user data supplied in gensio_set_callbacks().
@@ -502,8 +516,7 @@ int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
  */
 int str_to_gensio(const char *str,
 		  struct gensio_os_funcs *o,
-		  const struct gensio_callbacks *cbs,
-		  void *user_data,
+		  gensio_event cb, void *user_data,
 		  struct gensio **gensio);
 
 /*
@@ -542,8 +555,7 @@ int ssl_gensio_acceptor_alloc(const char *name, char *args[],
  */
 int tcp_gensio_alloc(struct addrinfo *ai, char *args[],
 		     struct gensio_os_funcs *o,
-		     const struct gensio_callbacks *cbs,
-		     void *user_data,
+		     gensio_event cb, void *user_data,
 		     struct gensio **new_gensio);
 
 /*
@@ -552,15 +564,13 @@ int tcp_gensio_alloc(struct addrinfo *ai, char *args[],
  */
 int udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		     struct gensio_os_funcs *o,
-		     const struct gensio_callbacks *cbs,
-		     void *user_data,
+		     gensio_event cb, void *user_data,
 		     struct gensio **new_gensio);
 
 /* Run a program (in argv[0]) and attach to it's stdio. */
 int stdio_gensio_alloc(char *const argv[], char *args[],
 		       struct gensio_os_funcs *o,
-		       const struct gensio_callbacks *cbs,
-		       void *user_data,
+		       gensio_event cb, void *user_data,
 		       struct gensio **new_gensio);
 
 /*
@@ -568,7 +578,7 @@ int stdio_gensio_alloc(char *const argv[], char *args[],
  */
 int ssl_gensio_alloc(struct gensio *child, char *args[],
 		     struct gensio_os_funcs *o,
-		     const struct gensio_callbacks *cbs, void *user_data,
+		     gensio_event cb, void *user_data,
 		     struct gensio **io);
 
 

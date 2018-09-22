@@ -133,111 +133,98 @@ start_exit(struct sertest_context *c,
 }
 
 static unsigned int
-data_read(struct gensio *net, int readerr,
-	  unsigned char *buf, unsigned int buflen,
-	  unsigned int flags)
+child_event(struct gensio *net, int event, int readerr,
+	    unsigned char *buf, unsigned int buflen,
+	    unsigned long channel, void *auxdata)
 {
     struct gensio_list *le = gensio_get_user_data(net);
     struct sertest_context *c = le->c;
     unsigned int to_cmp;
     unsigned int i;
+    unsigned int written = 0;
 
-    if (le->flush_read) {
-	if (readerr) {
-	    printf("Error from read: %s\n", strerror(readerr));
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	if (le->flush_read) {
+	    if (readerr) {
+		printf("Error from read: %s\n", strerror(readerr));
+		gensio_set_read_callback_enable(le->io, false);
+		return 0;
+	    }
+	    dbgout(c, 1, "flush %u bytes\n", buflen);
+	    return buflen;
+	}
+
+	if (!le->cmp_read) {
+	    dbgout(c, 1, "***No read data on read handler call\n");
 	    gensio_set_read_callback_enable(le->io, false);
 	    return 0;
 	}
-	dbgout(c, 1, "flush %u bytes\n", buflen);
-	return buflen;
-    }
 
-    if (!le->cmp_read) {
-	dbgout(c, 1, "***No read data on read handler call\n");
-	gensio_set_read_callback_enable(le->io, false);
-	return 0;
-    }
-
-    if (readerr) {
-	printf("Error from read: %s\n", strerror(readerr));
-	gensio_set_read_callback_enable(le->io, false);
-	my_o->wake(le->waiter);
-	return 0;
-    }
-
-    dbgout(c, 2, "Data read with %u bytes, %u to compare\n",
-	   buflen, le->cmp_read_len);
-    if (buflen > le->cmp_read_len)
-	to_cmp = le->cmp_read_len;
-    else
-	to_cmp = buflen;
-
-    for (i = 0; i < to_cmp; i++) {
-	if (buf[i] != *le->cmp_read) {
-	    to_cmp = i; /* Only read up to the last matching value. */
-	    le->expected = *le->cmp_read;
-	    le->got = buf[i];
-	    le->read_err = EINVAL;
-	    dbgout(c, 1, "Read compare fail at %u bytes, "
-		   "expected %2.2x, got %2.2x\n", le->curr_read_byte,
-		   le->expected, le->got);
-	    goto finish_op;
+	if (readerr) {
+	    printf("Error from read: %s\n", strerror(readerr));
+	    gensio_set_read_callback_enable(le->io, false);
+	    my_o->wake(le->waiter);
+	    return 0;
 	}
-	le->cmp_read++;
-	le->cmp_read_len--;
-	le->curr_read_byte++;
-    }
 
-    if (le->cmp_read_len == 0) {
-	dbgout(c, 1, "Read completed %u bytes\n", le->curr_read_byte);
-    finish_op:
-	le->cmp_read = NULL;
-	gensio_set_read_callback_enable(le->io, false);
-	my_o->wake(le->waiter);
-    }
+	dbgout(c, 2, "Data read with %u bytes, %u to compare\n",
+	       buflen, le->cmp_read_len);
+	if (buflen > le->cmp_read_len)
+	    to_cmp = le->cmp_read_len;
+	else
+	    to_cmp = buflen;
 
-    return to_cmp;
+	for (i = 0; i < to_cmp; i++) {
+	    if (buf[i] != *le->cmp_read) {
+		to_cmp = i; /* Only read up to the last matching value. */
+		le->expected = *le->cmp_read;
+		le->got = buf[i];
+		le->read_err = EINVAL;
+		dbgout(c, 1, "Read compare fail at %u bytes, "
+		       "expected %2.2x, got %2.2x\n", le->curr_read_byte,
+		       le->expected, le->got);
+		goto finish_op;
+	    }
+	    le->cmp_read++;
+	    le->cmp_read_len--;
+	    le->curr_read_byte++;
+	}
+
+	if (le->cmp_read_len == 0) {
+	    dbgout(c, 1, "Read completed %u bytes\n", le->curr_read_byte);
+	finish_op:
+	    le->cmp_read = NULL;
+	    gensio_set_read_callback_enable(le->io, false);
+	    my_o->wake(le->waiter);
+	}
+
+	return to_cmp;
+
+    case GENSIO_EVENT_WRITE_READY:
+	if (!le->to_write) {
+	    dbgout(c, 1, "Write ready with no write data\n");
+	    gensio_set_write_callback_enable(le->io, false);
+	    return 0;
+	}
+
+	le->write_err = gensio_write(le->io, &written, le->to_write,
+				     le->to_write_len);
+	if (le->write_err || written >= le->to_write_len) {
+	    dbgout(c, 2, "Write finished, err=%d, count=%d\n",
+		   le->write_err, written);
+	    gensio_set_write_callback_enable(le->io, false);
+	    le->to_write = NULL;
+	    le->to_write_len = 0;
+	    my_o->wake(le->waiter);
+	} else {
+	    dbgout(c, 2, "Partial write, count=%d\n", written);
+	    le->to_write += written;
+	    le->to_write_len -= written;
+	}
+	return 0;
+    }
 }
-
-static void
-write_ready(struct gensio *net)
-{
-    struct gensio_list *le = gensio_get_user_data(net);
-    struct sertest_context *c = le->c;
-    unsigned int written = 0;
-
-    if (!le->to_write) {
-	dbgout(c, 1, "Write ready with no write data\n");
-	gensio_set_write_callback_enable(le->io, false);
-	return;
-    }
-
-    le->write_err = gensio_write(le->io, &written, le->to_write,
-				le->to_write_len);
-    if (le->write_err || written >= le->to_write_len) {
-	dbgout(c, 2, "Write finished, err=%d, count=%d\n",
-	       le->write_err, written);
-	gensio_set_write_callback_enable(le->io, false);
-	le->to_write = NULL;
-	le->to_write_len = 0;
-	my_o->wake(le->waiter);
-    } else {
-	dbgout(c, 2, "Partial write, count=%d\n", written);
-	le->to_write += written;
-	le->to_write_len -= written;
-    }
-}
-
-static void
-urgent_data_read(struct gensio *net)
-{
-}
-
-struct gensio_callbacks gcbs = {
-    .read_callback = data_read,
-    .write_callback = write_ready,
-    .urgent_callback = urgent_data_read,
-};
 
 static int
 alloc_gensio(struct sertest_context *c,
@@ -276,7 +263,7 @@ alloc_gensio(struct sertest_context *c,
 	return ENOMEM;
     }
 
-    err = str_to_gensio(argv[2], c->o, &gcbs, le, &le->io);
+    err = str_to_gensio(argv[2], c->o, child_event, le, &le->io);
     if (err) {
 	abspr(c->out, "Error creating gensio\n");
 	my_o->free_waiter(le->waiter);

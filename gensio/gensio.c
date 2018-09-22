@@ -308,10 +308,9 @@ gensio_buffer_do_write(void *cb_data, void  *buf, size_t buflen,
 }
 
 void
-gensio_set_callbacks(struct gensio *io,
-		     const struct gensio_callbacks *cbs, void *user_data)
+gensio_set_callback(struct gensio *io, gensio_event cb, void *user_data)
 {
-    io->cbs = cbs;
+    io->cb = cb;
     io->user_data = user_data;
 }
 
@@ -630,8 +629,7 @@ static int
 gensio_process_filter(const char *str,
 		      enum gensio_type type,
 		      struct gensio_os_funcs *o,
-		      const struct gensio_callbacks *cbs,
-		      void *user_data,
+		      gensio_event cb, void *user_data,
 		      struct gensio **gensio)
 {
     int err = 0;
@@ -645,12 +643,12 @@ gensio_process_filter(const char *str,
 	err = str_to_gensio(str, o, NULL, NULL, &io2);
     if (!err) {
 	if (type == GENSIO_TYPE_SER_TELNET) {
-	    err = sergensio_telnet_alloc(io2, args, o, NULL, cbs, user_data,
+	    err = sergensio_telnet_alloc(io2, args, o, NULL, cb, user_data,
 					 &sio);
 	    if (!err)
 		io = sergensio_to_gensio(sio);
 	} else if (type == GENSIO_TYPE_SSL) {
-	    err = ssl_gensio_alloc(io2, args, o, cbs, user_data, &io);
+	    err = ssl_gensio_alloc(io2, args, o, cb, user_data, &io);
 	} else {
 	    err = EINVAL;
 	}
@@ -674,8 +672,7 @@ gensio_process_filter(const char *str,
 int
 str_to_gensio(const char *str,
 	      struct gensio_os_funcs *o,
-	      const struct gensio_callbacks *cbs,
-	      void *user_data,
+	      gensio_event cb, void *user_data,
 	      struct gensio **gensio)
 {
     int err = 0;
@@ -696,16 +693,16 @@ str_to_gensio(const char *str,
 	if (!err)
 	    err = str_to_argv(str, &sargc, &sargv, NULL);
 	if (!err)
-	    err = stdio_gensio_alloc(sargv, args, o, cbs, user_data, gensio);
+	    err = stdio_gensio_alloc(sargv, args, o, cb, user_data, gensio);
 	str_to_argv_free(sargc, sargv);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
 	err = gensio_process_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
-				    cbs, user_data, gensio);
+				    cb, user_data, gensio);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
 	err = gensio_process_filter(str + 3, GENSIO_TYPE_SSL, o,
-				    cbs, user_data, gensio);
+				    cb, user_data, gensio);
     } else if (strncmp(str, "termios,", 8) == 0 ||
 	       strncmp(str, "termios(", 8) == 0) {
 	struct sergensio *sio;
@@ -714,7 +711,7 @@ str_to_gensio(const char *str,
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
 	    err = sergensio_termios_alloc(str, args, o, NULL,
-					  cbs, user_data, &sio);
+					  cb, user_data, &sio);
 	if (!err)
 	    *gensio = sergensio_to_gensio(sio);
     } else {
@@ -724,9 +721,9 @@ str_to_gensio(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_alloc(ai, args, o, cbs, user_data, gensio);
+		err = udp_gensio_alloc(ai, args, o, cb, user_data, gensio);
 	    } else {
-		err = tcp_gensio_alloc(ai, args, o, cbs, user_data, gensio);
+		err = tcp_gensio_alloc(ai, args, o, cb, user_data, gensio);
 	    }
 
 	    freeaddrinfo(ai);

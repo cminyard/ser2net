@@ -244,8 +244,7 @@ filter_ll_urgent(struct basen_data *ndata)
 {
     if (ndata->filter)
 	return ndata->filter_ops->ll_urgent(ndata->filter);
-    if (ndata->net.cbs->urgent_callback)
-	ndata->net.cbs->urgent_callback(&ndata->net);
+    ndata->net.cb(&ndata->net, GENSIO_EVENT_URGENT, 0, NULL, 0, 0, NULL);
 }
 
 static int
@@ -419,12 +418,14 @@ basen_read_data_handler(void *cb_data,
 {
     struct basen_data *ndata = cb_data;
     struct gensio *mynet = &ndata->net;
-    unsigned int count = 0;
+    unsigned int count = 0, rval;
 
  retry:
     if (ndata->state == BASEN_OPEN && ndata->read_enabled) {
-	count += mynet->cbs->read_callback(&ndata->net, 0, buf + count,
-					   buflen - count, 0);
+	rval = buflen - count;
+	mynet->cb(&ndata->net, GENSIO_EVENT_READ, 0,
+		  buf + count, &rval, 0, NULL);
+	count += rval;
 	if (count < buflen)
 	    goto retry;
     }
@@ -855,9 +856,9 @@ basen_ll_read(void *cb_data, int readerr,
 			ndata->state == BASEN_IN_FILTER_CLOSE) {
 	    ndata->state = BASEN_IN_LL_CLOSE;
 	    ll_close(ndata, basen_ll_close_done, NULL);
-	} else if (mynet->cbs) {
+	} else if (mynet->cb) {
 	    basen_unlock(ndata);
-	    mynet->cbs->read_callback(mynet, readerr, NULL, 0, 0);
+	    mynet->cb(mynet, GENSIO_EVENT_READ, readerr, NULL, 0, 0, NULL);
 	    basen_lock(ndata);
 	} else {
 	    basen_i_close(ndata, NULL, NULL);
@@ -921,7 +922,8 @@ basen_ll_write_ready(void *cb_data)
     if (ndata->state != BASEN_IN_FILTER_OPEN && !filter_ll_write_pending(ndata)
 		&& ndata->xmit_enabled) {
 	basen_unlock(ndata);
-	ndata->net.cbs->write_callback(&ndata->net);
+	ndata->net.cb(&ndata->net, GENSIO_EVENT_WRITE_READY,
+		      0, NULL, 0, 0, NULL);
 	basen_lock(ndata);
     }
 
@@ -979,7 +981,7 @@ gensio_alloc(struct gensio_os_funcs *o,
 			       int err,
 			       void *open_data),
 	     void *open_data,
-	     const struct gensio_callbacks *cbs, void *user_data)
+	     gensio_event cb, void *user_data)
 {
     struct basen_data *ndata = o->zalloc(o, sizeof(*ndata));
 
@@ -1010,7 +1012,7 @@ gensio_alloc(struct gensio_os_funcs *o,
 	filter->ops->set_callbacks(filter, &basen_filter_cbs, ndata);
     }
     ndata->net.user_data = user_data;
-    ndata->net.cbs = cbs;
+    ndata->net.cb = cb;
     ndata->net.funcs = &basen_net_funcs;
     ndata->net.type = type;
     ndata->net.is_client = is_client;
@@ -1044,10 +1046,10 @@ base_gensio_alloc(struct gensio_os_funcs *o,
 		  struct gensio_filter *filter,
 		  enum gensio_type type,
 		  bool is_packet, bool is_reliable,
-		  const struct gensio_callbacks *cbs, void *user_data)
+		  gensio_event cb, void *user_data)
 {
     return gensio_alloc(o, ll, filter, type, true, is_packet, is_reliable,
-			NULL, NULL, cbs, user_data);
+			NULL, NULL, cb, user_data);
 }
 
 struct gensio *

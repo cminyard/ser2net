@@ -198,16 +198,16 @@ gensio_close_done(struct gensio *io, void *cb_data) {
     OI_PY_STATE_PUT(gstate);
 }
 
-static unsigned int
-gensio_got_read(struct gensio *io, int readerr,
-		unsigned char *buf, unsigned int buflen,
-		unsigned int flags)
+static int
+gensio_child_event(struct gensio *io, int event, int readerr,
+		   unsigned char *buf, unsigned int *buflen,
+		   unsigned long channel, void *auxdata)
 {
     struct gensio_data *data = gensio_get_user_data(io);
     swig_ref io_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
-    unsigned int rv;
+    unsigned int rv = ENOTSUP;
 
     gstate = OI_PY_STATE_GET();
 
@@ -215,45 +215,72 @@ gensio_got_read(struct gensio *io, int readerr,
 	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
 		     "gensio handler was not set");
 	wake_curr_waiter();
-	rv = 0;
 	goto out_put;
     }
 
-    args = PyTuple_New(4);
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	args = PyTuple_New(4);
 
-    io_ref = swig_make_ref(io, gensio);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, io_ref.val);
+	io_ref = swig_make_ref(io, gensio);
+	Py_INCREF(io_ref.val);
+	PyTuple_SET_ITEM(args, 0, io_ref.val);
 
-    if (readerr) {
-	o = OI_PI_FromString(strerror(readerr));
-    } else {
-	Py_INCREF(Py_None);
-	o = Py_None;
-    }
-    PyTuple_SET_ITEM(args, 1, o);
-
-    o = OI_PI_FromStringAndSize((char *) buf, buflen);
-    PyTuple_SET_ITEM(args, 2, o);
-
-    o = PyInt_FromLong(flags);
-    PyTuple_SET_ITEM(args, 3, o);
-
-    o = swig_finish_call_rv(data->handler_val, "read_callback", args);
-    if (o) {
-	rv = PyLong_AsUnsignedLong(o);
-	if (PyErr_Occurred()) {
-	    PyObject *t = PyObject_GetAttrString(data->handler_val,
-						 "__class__");
-	    PyObject *c = PyObject_GetAttrString(t, "__name__");
-	    char *class = PyString_AsString(c);
-
-	    PyErr_Format(PyExc_RuntimeError, "gensio callback: "
-			 "Class '%s' method 'read_callback' did not return "
-			 "an integer\n", class);
-	    wake_curr_waiter();
+	if (readerr) {
+	    o = OI_PI_FromString(strerror(readerr));
+	} else {
+	    Py_INCREF(Py_None);
+	    o = Py_None;
 	}
-	Py_DECREF(o);
+	PyTuple_SET_ITEM(args, 1, o);
+
+	o = OI_PI_FromStringAndSize((char *) buf, *buflen);
+	PyTuple_SET_ITEM(args, 2, o);
+
+	o = PyInt_FromLong(channel);
+	PyTuple_SET_ITEM(args, 3, o);
+
+	o = swig_finish_call_rv(data->handler_val, "read_callback", args);
+	if (o) {
+	    *buflen = PyLong_AsUnsignedLong(o);
+	    if (PyErr_Occurred()) {
+		PyObject *t = PyObject_GetAttrString(data->handler_val,
+						     "__class__");
+		PyObject *c = PyObject_GetAttrString(t, "__name__");
+		char *class = PyString_AsString(c);
+
+		PyErr_Format(PyExc_RuntimeError, "gensio callback: "
+			     "Class '%s' method 'read_callback' did not return "
+			     "an integer\n", class);
+		wake_curr_waiter();
+	    }
+	    Py_DECREF(o);
+	}
+	rv = 0;
+	break;
+
+    case GENSIO_EVENT_WRITE_READY:
+	io_ref = swig_make_ref(io, gensio);
+	args = PyTuple_New(1);
+	Py_INCREF(io_ref.val);
+	PyTuple_SET_ITEM(args, 0, io_ref.val);
+
+	swig_finish_call(data->handler_val, "write_callback", args);
+	rv = 0;
+	break;
+
+    case GENSIO_EVENT_URGENT:
+	io_ref = swig_make_ref(io, gensio);
+	args = PyTuple_New(1);
+	Py_INCREF(io_ref.val);
+	PyTuple_SET_ITEM(args, 0, io_ref.val);
+
+	swig_finish_call(data->handler_val, "urgent_callback", args);
+	rv = 0;
+	break;
+
+    default:
+	break;
     }
 
     swig_free_ref_check(io_ref, acceptor);
@@ -262,70 +289,6 @@ gensio_got_read(struct gensio *io, int readerr,
 
     return rv;
 }
-
-static void
-gensio_write_read(struct gensio *io)
-{
-    struct gensio_data *data = gensio_get_user_data(io);
-    swig_ref io_ref;
-    PyObject *args;
-    OI_PY_STATE gstate;
-
-    gstate = OI_PY_STATE_GET();
-
-    if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
-		     "gensio handler was not set");
-	wake_curr_waiter();
-	goto out_put;
-    }
-
-    io_ref = swig_make_ref(io, gensio);
-    args = PyTuple_New(1);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, io_ref.val);
-
-    swig_finish_call(data->handler_val, "write_callback", args);
-
-    swig_free_ref_check(io_ref, acceptor);
- out_put:
-    OI_PY_STATE_PUT(gstate);
-}
-
-static void
-gensio_got_urgent(struct gensio *io)
-{
-    struct gensio_data *data = gensio_get_user_data(io);
-    swig_ref io_ref;
-    PyObject *args;
-    OI_PY_STATE gstate;
-
-    gstate = OI_PY_STATE_GET();
-
-    if (!data->handler_val) {
-	PyErr_Format(PyExc_RuntimeError, "gensio callback: "
-		     "gensio handler was not set");
-	wake_curr_waiter();
-	goto out_put;
-    }
-
-    io_ref = swig_make_ref(io, gensio);
-    args = PyTuple_New(1);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, io_ref.val);
-
-    swig_finish_call(data->handler_val, "urgent_callback", args);
-
-    swig_free_ref_check(io_ref, acceptor);
- out_put:
-    OI_PY_STATE_PUT(gstate);
-}
-
-static struct gensio_callbacks gen_cbs = {
-    .read_callback = gensio_got_read,
-    .write_callback = gensio_write_read,
-    .urgent_callback = gensio_got_urgent
-};
 
 static void
 sgensio_call(struct sergensio *sio, long val, char *func)
@@ -520,7 +483,7 @@ gensio_acc_got_new(struct gensio_acceptor *acceptor, struct gensio *io)
     iodata->refcount = 1;
     iodata->handler_val = NULL;
     iodata->o = data->o;
-    gensio_set_callbacks(io, &gen_cbs, iodata);
+    gensio_set_callback(io, gensio_child_event, iodata);
     if (is_sergensio(io))
 	sergensio_set_ser_cbs(gensio_to_sergensio(io), &gen_scbs);
 

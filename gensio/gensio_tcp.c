@@ -214,8 +214,7 @@ static const struct gensio_fd_ll_ops tcp_fd_ll_ops = {
 int
 tcp_gensio_alloc(struct addrinfo *iai, char *args[],
 		 struct gensio_os_funcs *o,
-		 const struct gensio_callbacks *cbs,
-		 void *user_data,
+		 gensio_event cb, void *user_data,
 		 struct gensio **new_gensio)
 {
     struct tcp_data *tdata = NULL;
@@ -258,7 +257,7 @@ tcp_gensio_alloc(struct addrinfo *iai, char *args[],
     }
 
     io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_TCP, false, true,
-			   cbs, user_data);
+			   cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	gensio_free_addrinfo(o, ai);

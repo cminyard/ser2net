@@ -876,7 +876,7 @@ int
 sergensio_termios_alloc(const char *devname, char *args[],
 			struct gensio_os_funcs *o,
 			const struct sergensio_callbacks *scbs,
-			const struct gensio_callbacks *cbs, void *user_data,
+			gensio_event cb, void *user_data,
 			struct sergensio **sio)
 {
     struct sterm_data *sdata = o->zalloc(o, sizeof(*sdata));
@@ -937,7 +937,7 @@ sergensio_termios_alloc(const char *devname, char *args[],
 	goto out_nomem;
 
     sdata->sio.io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_SER_TERMIOS,
-				      false, false, cbs, user_data);
+				      false, false, cb, user_data);
     if (!sdata->sio.io) {
 	ll->ops->free(ll);
 	goto out_nomem;

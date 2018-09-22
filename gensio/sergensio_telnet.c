@@ -591,7 +591,7 @@ int
 sergensio_telnet_alloc(struct gensio *child, char *args[],
 		       struct gensio_os_funcs *o,
 		       const struct sergensio_callbacks *scbs,
-		       const struct gensio_callbacks *cbs, void *user_data,
+		       gensio_event cb, void *user_data,
 		       struct sergensio **sio)
 {
     struct stel_data *sdata;
@@ -640,7 +640,7 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
 
     sdata->sio.io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SER_TELNET,
 				      false, gensio_is_reliable(child),
-				      cbs, user_data);
+				      cb, user_data);
     if (!sdata->sio.io) {
 	filter->ops->free(filter);
 	ll->ops->free(ll);

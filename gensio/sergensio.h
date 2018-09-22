@@ -255,13 +255,13 @@ void sergensio_set_ser_cbs(struct sergensio *sio,
 int sergensio_termios_alloc(const char *devname, char *args[],
 			    struct gensio_os_funcs *o,
 			    const struct sergensio_callbacks *scbs,
-			    const struct gensio_callbacks *cbs, void *user_data,
+			    gensio_event cb, void *user_data,
 			    struct sergensio **sio);
 
 int sergensio_telnet_alloc(struct gensio *child, char *args[],
 			   struct gensio_os_funcs *o,
 			   const struct sergensio_callbacks *scbs,
-			   const struct gensio_callbacks *cbs, void *user_data,
+			   gensio_event cb, void *user_data,
 			   struct sergensio **sio);
 
 int sergensio_telnet_acceptor_alloc(const char *name, char *args[],

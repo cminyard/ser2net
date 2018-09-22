@@ -85,7 +85,7 @@ struct stdiona_data {
 
     unsigned int max_read_size;
     unsigned char *read_data;
-    unsigned int read_flags;
+    unsigned int channel;
 
     unsigned int data_pending_len;
     unsigned int data_pos;
@@ -188,10 +188,10 @@ stdion_finish_read(struct stdiona_data *nadata, int err)
     }
 
  retry:
-    count = net->cbs->read_callback(net, err,
-				    nadata->read_data + nadata->data_pos,
-				    nadata->data_pending_len,
-				    nadata->read_flags);
+    count = nadata->data_pending_len;
+    net->cb(net, GENSIO_EVENT_READ, err,
+	    nadata->read_data + nadata->data_pos, &count,
+	    nadata->channel, NULL);
     stdiona_lock(nadata);
     if (!err && count < nadata->data_pending_len) {
 	/* The user didn't consume all the data. */
@@ -374,9 +374,9 @@ stdion_read_ready(int fd, void *cbdata)
     if (nadata->ostderr != -1)
 	nadata->o->set_read_handler(nadata->o, nadata->ostderr, false);
     if (fd == nadata->ostderr)
-	nadata->read_flags = GENSIO_ERR_OUTPUT;
+	nadata->channel = 1;
     else
-	nadata->read_flags = 0;
+	nadata->channel = 0;
     nadata->in_read = true;
     nadata->data_pos = 0;
     stdiona_unlock(nadata);
@@ -405,7 +405,7 @@ stdion_write_ready(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct gensio *net = &nadata->net;
 
-    net->cbs->write_callback(net);
+    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
 }
 
 static int
@@ -881,8 +881,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
 int
 stdio_gensio_alloc(char *const argv[], char *args[],
 		   struct gensio_os_funcs *o,
-		   const struct gensio_callbacks *cbs,
-		   void *user_data,
+		   gensio_event cb, void *user_data,
 		   struct gensio **new_gensio)
 {
     int err;
@@ -911,7 +910,7 @@ stdio_gensio_alloc(char *const argv[], char *args[],
 	    goto out_nomem;
     }
     nadata->closed = true;
-    nadata->net.cbs = cbs;
+    nadata->net.cb = cb;
     nadata->net.user_data = user_data;
     nadata->net.funcs = &gensio_stdio_funcs;
     nadata->net.type = GENSIO_TYPE_STDIO;

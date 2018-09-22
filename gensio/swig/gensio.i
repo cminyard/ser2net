@@ -332,7 +332,7 @@ struct waiter { };
 	data->handler_val = ref_swig_cb(handler, read_callback);
 	data->o = o;
 
-	rv = str_to_gensio(str, o, &gen_cbs, data, &io);
+	rv = str_to_gensio(str, o, gensio_child_event, data, &io);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);

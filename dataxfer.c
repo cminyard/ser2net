@@ -67,11 +67,9 @@ char *state_str[] = { "unconnected", "waiting input", "waiting output",
 		      "closing" };
 
 #define PORT_DISABLED		0 /* The port is not open. */
-#define PORT_RAW		1 /* Port will not do telnet negotiation. */
-#define PORT_RAWLP		2 /* Port will not do telnet negotiation and
-                                     termios setting, open for output only. */
-#define PORT_TELNET		3 /* Port will do telnet negotiation. */
-char *enabled_str[] = { "off", "raw", "rawlp", "telnet" };
+#define PORT_ON			1 /* Port is open. */
+#define PORT_RAWLP		2 /* Port is open for output only. */
+char *enabled_str[] = { "off", "raw", "rawlp" };
 
 typedef struct trace_info_s
 {
@@ -140,17 +138,14 @@ struct port_info
     int            enabled;		/* If PORT_DISABLED, the port
 					   is disabled and the TCP
 					   accept port is not
-					   operational.  If PORT_RAW,
+					   operational.  If PORT_ON,
 					   the port is enabled and
 					   will not do any telnet
 					   negotiations.  If
 					   PORT_RAWLP, the port is enabled
 					   only for output without any
 					   termios setting - it allows
-					   to redirect /dev/lpX devices If
-					   PORT_TELNET, the port is
-					   enabled and it will do
-					   telnet negotiations. */
+					   to redirect /dev/lpX devices */
 
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
@@ -1037,7 +1032,7 @@ handle_dev_fd_devstr_write(port_info_t *port)
 /* Data is ready to read on the network port. */
 static unsigned int
 handle_net_fd_read(struct gensio *net, int readerr,
-		   unsigned char *buf, unsigned int buflen, unsigned int flags)
+		   unsigned char *buf, unsigned int buflen)
 {
     net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
@@ -1206,7 +1201,7 @@ finish_dev_to_net_write(port_info_t *port)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_net_fd_write(struct gensio *net)
+handle_net_fd_write_ready(struct gensio *net)
 {
     net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
@@ -1248,10 +1243,22 @@ handle_net_fd_write(struct gensio *net)
     UNLOCK(port->lock);
 }
 
-/* Handle an exception from the network port. */
-static void
-handle_net_fd_urgent(struct gensio *net)
+static unsigned int
+handle_net_event(struct gensio *net, int event, int err,
+		 unsigned char *buf, unsigned int *buflen,
+		 unsigned long channel, void *auxdata)
 {
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	*buflen = handle_net_fd_read(net, err, buf, *buflen);
+	return 0;
+
+    case GENSIO_EVENT_WRITE_READY:
+	handle_net_fd_write_ready(net);
+	return 0;
+    }
+
+    return ENOTSUP;
 }
 
 static void handle_net_fd_closed(struct gensio *net, void *cb_data);
@@ -1761,12 +1768,6 @@ recalc_port_chardelay(port_info_t *port)
 	port->chardelay = port->chardelay_min;
 }
 
-static const struct gensio_callbacks port_callbacks = {
-    .read_callback = handle_net_fd_read,
-    .write_callback = handle_net_fd_write,
-    .urgent_callback = handle_net_fd_urgent
-};
-
 static int
 port_dev_enable(port_info_t *port, net_info_t *netcon,
 		bool is_reconfig, const char **errstr)
@@ -1839,7 +1840,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 	}
     }
 
-    gensio_set_callbacks(netcon->net, &port_callbacks, netcon);
+    gensio_set_callback(netcon->net, handle_net_event, netcon);
 
     gensio_set_read_callback_enable(netcon->net, true);
     port->net_to_dev_state = PORT_WAITING_INPUT;
@@ -3147,6 +3148,7 @@ portconfig(struct absout *eout,
     enum str_type str_type;
     int err;
     unsigned int shutdown_count = 0;
+    bool do_telnet = false;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -3207,12 +3209,14 @@ portconfig(struct absout *eout,
     }
 
     if (strcmp(state, "raw") == 0) {
-	new_port->enabled = PORT_RAW;
+	new_port->enabled = PORT_ON;
     } else if (strcmp(state, "rawlp") == 0) {
 	new_port->enabled = PORT_RAWLP;
 	new_port->io.read_disabled = 1;
     } else if (strcmp(state, "telnet") == 0) {
-	new_port->enabled = PORT_TELNET;
+	/* FIXME - remove this someday. */
+	new_port->enabled = PORT_ON;
+	do_telnet = true;
     } else if (strcmp(state, "off") == 0) {
 	new_port->enabled = PORT_DISABLED;
     } else {
@@ -3250,7 +3254,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    if (new_port->enabled == PORT_TELNET) {
+    if (new_port->enabled == PORT_ON && do_telnet) {
 	char *args[] = { NULL, NULL };
 	struct gensio_acceptor *parent;
 
@@ -3750,11 +3754,9 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     if (strcmp(enable, "off") == 0) {
 	new_enable = PORT_DISABLED;
     } else if (strcmp(enable, "raw") == 0) {
-	new_enable = PORT_RAW;
+	new_enable = PORT_ON;
     } else if (strcmp(enable, "rawlp") == 0) {
 	new_enable = PORT_RAWLP;
-    } else if (strcmp(enable, "telnet") == 0) {
-	new_enable = PORT_TELNET;
     } else {
 	controller_outputf(cntlr, "Invalid enable: %s\r\n", enable);
 	goto out_unlock;

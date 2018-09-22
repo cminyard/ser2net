@@ -165,37 +165,30 @@ const static struct gensio_ll_ops child_ll_ops = {
     .free = child_free
 };
 
-static unsigned int
-child_read_callback(struct gensio *io, int readerr,
-		    unsigned char *buf, unsigned int buflen,
-		    unsigned int flags)
+static int
+child_event(struct gensio *io, int event, int err,
+	    unsigned char *buf, unsigned int *buflen,
+	    unsigned long channel, void *auxdata)
 {
     struct gensio_ll_child *cdata = gensio_get_user_data(io);
 
-    return cdata->cbs->read_callback(cdata->cb_data, readerr, buf, buflen);
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	*buflen = cdata->cbs->read_callback(cdata->cb_data, err, buf, *buflen);
+	return 0;
+
+    case GENSIO_EVENT_WRITE_READY:
+	cdata->cbs->write_callback(cdata->cb_data);
+	return 0;
+
+    case GENSIO_EVENT_URGENT:
+	cdata->cbs->urgent_callback(cdata->cb_data);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
 }
-
-static void
-child_write_callback(struct gensio *io)
-{
-    struct gensio_ll_child *cdata = gensio_get_user_data(io);
-
-    return cdata->cbs->write_callback(cdata->cb_data);
-}
-
-static void
-child_urgent_callback(struct gensio *io)
-{
-    struct gensio_ll_child *cdata = gensio_get_user_data(io);
-
-    return cdata->cbs->urgent_callback(cdata->cb_data);
-}
-
-static const struct gensio_callbacks gensio_ll_gensio_cbs = {
-    .read_callback = child_read_callback,
-    .write_callback = child_write_callback,
-    .urgent_callback = child_urgent_callback
-};
 
 struct gensio_ll *
 gensio_gensio_ll_alloc(struct gensio_os_funcs *o,
@@ -211,7 +204,7 @@ gensio_gensio_ll_alloc(struct gensio_os_funcs *o,
     cdata->child = child;
     cdata->ll.ops = &child_ll_ops;
 
-    gensio_set_callbacks(child, &gensio_ll_gensio_cbs, cdata);
+    gensio_set_callback(child, child_event, cdata);
 
     return &cdata->ll;
 }
