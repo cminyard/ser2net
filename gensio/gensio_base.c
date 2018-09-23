@@ -311,7 +311,7 @@ ll_close(struct basen_data *ndata, gensio_ll_close_done done, void *close_data)
 {
     int err;
 
-    err = ndata->ll_ops->close(ndata->ll, done, ndata);
+    err = ndata->ll_ops->close(ndata->ll, done, close_data);
     if (err == EINPROGRESS) {
 	basen_ref(ndata);
     } else {
@@ -857,8 +857,10 @@ basen_ll_read(void *cb_data, int readerr,
 	    ndata->state = BASEN_IN_LL_CLOSE;
 	    ll_close(ndata, basen_ll_close_done, NULL);
 	} else if (mynet->cb) {
+	    unsigned int len = 0;
+
 	    basen_unlock(ndata);
-	    mynet->cb(mynet, GENSIO_EVENT_READ, readerr, NULL, 0, 0, NULL);
+	    mynet->cb(mynet, GENSIO_EVENT_READ, readerr, NULL, &len, 0, NULL);
 	    basen_lock(ndata);
 	} else {
 	    basen_i_close(ndata, NULL, NULL);

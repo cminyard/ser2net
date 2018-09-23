@@ -418,7 +418,8 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     int val = 0, cmd;
     struct stel_req *curr, *prev = NULL;
     char *sig = NULL;
-    unsigned int sig_len;
+    unsigned int sig_len, vlen = sizeof(int);
+    struct gensio *io = sergensio_to_gensio(&sdata->sio);
 
     if (len < 2)
 	return;
@@ -449,32 +450,37 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     case 6:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs && sdata->sio.scbs->linestate)
-	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 7:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs && sdata->sio.scbs->modemstate)
-	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 8:
-	if (sdata->sio.scbs && sdata->sio.scbs->flowcontrol)
-	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
+	val = 1;
+	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 9:
-	if (sdata->sio.scbs && sdata->sio.scbs->flowcontrol)
-	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
+	val = 0;
+	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 12:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs && sdata->sio.scbs->flush)
-	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_FLUSH, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     default:
@@ -508,6 +514,7 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 		curr->done(&sdata->sio, 0, val - curr->minval, curr->cb_data);
 	}
 	sdata->o->free(sdata->o, curr);
+	return;
     }
 }
 
@@ -590,7 +597,6 @@ struct gensio_telnet_filter_callbacks sergensio_telnet_filter_cbs = {
 int
 sergensio_telnet_alloc(struct gensio *child, char *args[],
 		       struct gensio_os_funcs *o,
-		       const struct sergensio_callbacks *scbs,
 		       gensio_event cb, void *user_data,
 		       struct sergensio **sio)
 {
@@ -650,7 +656,6 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
 
     sdata->o = o;
     sdata->filter = filter;
-    sdata->sio.scbs = scbs;
     if (allow_2217)
 	sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &stel_funcs;
@@ -693,7 +698,7 @@ stela_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
     struct sergensio *sio = NULL;
     char *args[2] = {NULL, NULL};
 
-    err = sergensio_telnet_alloc(child, args, o, NULL, NULL, NULL, &sio);
+    err = sergensio_telnet_alloc(child, args, o, NULL, NULL, &sio);
     if (!err)
 	*rio = sergensio_to_gensio(sio);
 
@@ -715,11 +720,17 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
     else
 	sdata->do_2217 = sdata->allow_2217;
 
-    if (!sdata->reported_modemstate &&
-		sdata->do_2217 && sdata->sio.scbs &&
-		sdata->sio.scbs->modemstate) {
-	sdata->reported_modemstate = true;
-	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+    if (!sdata->reported_modemstate &&sdata->do_2217) {
+	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+
+	if (io->cb) {
+	    int val = 255;
+	    unsigned int vlen = sizeof(val);
+
+	    sdata->reported_modemstate = true;
+	    io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
+	}
     }
     stel_unlock(sdata);
 
@@ -732,12 +743,12 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 {
     struct stel_data *sdata = handler_data;
     int val = 0;
+    unsigned int vlen = sizeof(int);
+    struct gensio *io = sergensio_to_gensio(&sdata->sio);
 
     if (len < 2)
 	return;
     if (option[1] >= 100)
-	return;
-    if (!sdata->sio.scbs)
 	return;
 
     switch (option[1]) {
@@ -753,25 +764,32 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    val |= option[4] << 8;
 	    val |= option[5];
 	}
-	sdata->sio.scbs->baud(&sdata->sio, val);
+	io->cb(io, GENSIO_EVENT_SER_BAUD, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 2:
 	if (len < 3)
 	    return;
-	sdata->sio.scbs->datasize(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_DATASIZE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 3:
 	if (len < 3)
 	    return;
-	sdata->sio.scbs->parity(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_PARITY, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 4:
 	if (len < 3)
 	    return;
-	sdata->sio.scbs->stopbits(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_STOPBITS, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 5:
@@ -779,51 +797,66 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	switch(option[2]) {
 	case 0: case 1: case 2: case 3:
-	    sdata->sio.scbs->flowcontrol(&sdata->sio, option[2]);
+	    val = option[2];
+	    io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 4: case 5: case 6:
-	    sdata->sio.scbs->sbreak(&sdata->sio, option[2] - 4);
+	    val = option[2] - 4;
+	    io->cb(io, GENSIO_EVENT_SER_SBREAK, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 7: case 8: case 9:
-	    sdata->sio.scbs->dtr(&sdata->sio, option[2] - 7);
+	    val = option[2] - 7;
+	    io->cb(io, GENSIO_EVENT_SER_DTR, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 10: case 11: case 12:
-	    sdata->sio.scbs->rts(&sdata->sio, option[2] - 10);
+	    val = option[2] - 10;
+	    io->cb(io, GENSIO_EVENT_SER_RTS, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 13: case 14: case 15: case 16: case 17: case 18: case 19:
-	    sdata->sio.scbs->iflowcontrol(&sdata->sio, option[2] - 13);
+	    val = option[2] - 13;
+	    io->cb(io, GENSIO_EVENT_SER_IFLOWCONTROL, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
 	}
 	break;
 
     case 8:
-	if (sdata->sio.scbs->flowcontrol)
-	    sdata->sio.scbs->flowcontrol(&sdata->sio, true);
+	val = 1;
+	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 9:
-	if (sdata->sio.scbs->flowcontrol)
-	    sdata->sio.scbs->flowcontrol(&sdata->sio, false);
+	val = 0;
+	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 10:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->linestate)
-	    sdata->sio.scbs->linestate(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 11:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->modemstate)
-	    sdata->sio.scbs->modemstate(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 	
     case 12:
 	if (len < 3)
 	    return;
-	if (sdata->sio.scbs->flush)
-	    sdata->sio.scbs->flush(&sdata->sio, option[2]);
+	val = option[2];
+	io->cb(io, GENSIO_EVENT_SER_FLUSH, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     default:
@@ -835,9 +868,9 @@ static void
 stela_cb_got_sync(void *handler_data)
 {
     struct stel_data *sdata = handler_data;
+    struct gensio *io = sergensio_to_gensio(&sdata->sio);
 
-    if (sdata->sio.scbs && sdata->sio.scbs->sync)
-	sdata->sio.scbs->sync(&sdata->sio);
+    io->cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, 0, 0, NULL);
 }
 
 static void
@@ -854,11 +887,14 @@ stela_timeout(void *handler_data)
     struct stel_data *sdata = handler_data;
 
     stel_lock(sdata);
-    if (!sdata->reported_modemstate &&
-		sdata->do_2217 && sdata->sio.scbs &&
-		sdata->sio.scbs->modemstate) {
+    if (!sdata->reported_modemstate &&sdata->do_2217) {
+	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+	int val = 255;
+	unsigned int vlen = sizeof(val);
+
 	sdata->reported_modemstate = true;
-	sdata->sio.scbs->modemstate(&sdata->sio, 255);
+	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+	       (unsigned char *) &val, &vlen, 0, NULL);
     }
     stel_unlock(sdata);
 }

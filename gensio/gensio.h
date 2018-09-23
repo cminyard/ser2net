@@ -249,6 +249,11 @@ struct gensio;
 #define GENSIO_EVENT_URGENT		3
 
 /*
+ * Serial callbacks start here and run to 2000.
+ */
+#define SERGENIO_EVENT_BASE	1000
+
+/*
  * If a user creates their own gensio with their own events, they should
  * use this range.
  */

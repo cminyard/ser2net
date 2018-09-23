@@ -591,9 +591,13 @@ termios_timeout(struct gensio_timer *t, void *cb_data)
      * The bottom 4 buts of modemstate is the "changed" bits, only
      * report this if someing changed that was in the mask.
      */
-    if ((force_send || modemstate & 0xf) &&
-		sdata->sio.scbs && sdata->sio.scbs->modemstate)
-	sdata->sio.scbs->modemstate(&sdata->sio, modemstate);
+    if ((force_send || modemstate & 0xf)) {
+	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+	unsigned int vlen = sizeof(modemstate);
+
+	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+	       (unsigned char *) &modemstate, &vlen, 0, NULL);
+    }
 
     if (sdata->modemstate_mask) {
 	struct timeval timeout = {1, 0};
@@ -875,7 +879,6 @@ sergensio_process_parms(struct sterm_data *sdata)
 int
 sergensio_termios_alloc(const char *devname, char *args[],
 			struct gensio_os_funcs *o,
-			const struct sergensio_callbacks *scbs,
 			gensio_event cb, void *user_data,
 			struct sergensio **sio)
 {
@@ -943,7 +946,6 @@ sergensio_termios_alloc(const char *devname, char *args[],
 	goto out_nomem;
     }
 
-    sdata->sio.scbs = scbs;
     sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &sterm_funcs;
 

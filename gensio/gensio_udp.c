@@ -729,7 +729,7 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 
     ndata->in_write = true;
     udpna_unlock(nadata);
-    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
+    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
     udpna_lock(nadata);
     ndata->in_write = false;
 

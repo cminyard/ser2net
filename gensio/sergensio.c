@@ -449,12 +449,3 @@ sergensio_rts_b(struct sergensio_b *sbio, int *rts)
 
     return err;
 }
-
-void
-sergensio_set_ser_cbs(struct sergensio *sio,
-		      struct sergensio_callbacks *scbs)
-{
-    sio->scbs = scbs;
-    if (sio->funcs->callbacks_set)
-	sio->funcs->callbacks_set(sio);
-}

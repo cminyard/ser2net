@@ -1,5 +1,5 @@
 /*
- *  gensio - A library for abstracting stream I/O
+v *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -91,8 +91,6 @@ struct sergensio_functions {
  */
 struct sergensio {
     struct gensio *io;
-
-    const struct sergensio_callbacks *scbs;
 
     const struct sergensio_functions *funcs;
 };

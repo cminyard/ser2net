@@ -339,8 +339,6 @@ struct waiter { };
 	    ser_err_handle("gensio alloc", rv);
 	} else {
 	    odata->refcount++;
-	    if (is_sergensio(io))
-		sergensio_set_ser_cbs(gensio_to_sergensio(io), &gen_scbs);
 	}
 
 	return io;

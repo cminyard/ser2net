@@ -198,69 +198,63 @@ int sergensio_dtr_b(struct sergensio_b *sbio, int *dtr);
 int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 
 /*
- * Callbacks for dynamic changes to the serial port.  The user may
- * supply a NULL one of these if they don't care.
+ * Events for dynamic changes to the serial port.  Users can ignore these
+ * if they don't care.
  */
 
-struct sergensio_callbacks {
-    /*
-     * On the client side, these are for reporting changes to the
-     * client.  On the server side, this is for reporting that the
-     * client has requested the mask be changed.
-     */
-    void (*modemstate)(struct sergensio *sio, unsigned int modemstate);
-    void (*linestate)(struct sergensio *sio, unsigned int linestate);
+/*
+ * On the client side, these are for reporting changes to the client.
+ * On the server side, this is for reporting that the client has
+ * requested the mask be changed.  buf points to an unsigned integer
+ * holding the modem or line state.
+ */
+#define GENSIO_EVENT_SER_MODEMSTATE	(SERGENIO_EVENT_BASE + 1)
+#define GENSIO_EVENT_SER_LINESTATE	(SERGENIO_EVENT_BASE + 2)
 
-    /*
-     * On the server side, these are for reporting that the client is
-     * requesting the signature (sig and sig_len are not used).  On
-     * the client side, this is the signature response.
-     */
-    void (*signature)(struct sergensio *sio, char *sig, unsigned int sig_len);
+/*
+ * On the server side, these are for reporting that the client is
+ * requesting the signature (sig and sig_len are not used).  On
+ * the client side, this is the signature response.  The signature
+ * is in buf and the signature length is in buflen.  The return value
+ * in buflen is ignored.
+ */
+#define GENSIO_EVENT_SER_SIGNATURE	(SERGENIO_EVENT_BASE + 3)
 
-    /*
-     * The remote end is asking the user to flow control or flush.
-     */
-    void (*flowcontrol_state)(struct sergensio *sio, bool val);
-    void (*flush)(struct sergensio *sio, unsigned int val);
+/*
+ * The remote end is asking the user to flow control or flush.  buf
+ * points to an unsigned integer holding the modem or line state.
+ */
+#define GENSIO_EVENT_SER_FLOW_STATE	(SERGENIO_EVENT_BASE + 4)
+#define GENSIO_EVENT_SER_FLUSH		(SERGENIO_EVENT_BASE + 5)
 
-    /* Got a sync from the other end. */
-    void (*sync)(struct sergensio *sio);
+/* Got a sync from the other end. */
+#define GENSIO_EVENT_SER_SYNC		(SERGENIO_EVENT_BASE + 6)
 
-    /*
-     * Server callbacks.  These only come in in server mode, you must
-     * call the equivalent sergensio_xxx() function to return the response,
-     * though the done callback is ignored in that case.
-     */
-    void (*baud)(struct sergensio *sio, int baud);
-    void (*datasize)(struct sergensio *sio, int datasize);
-    void (*parity)(struct sergensio *sio, int parity);
-    void (*stopbits)(struct sergensio *sio, int stopbits);
-    void (*flowcontrol)(struct sergensio *sio, int flowcontrol);
-    void (*iflowcontrol)(struct sergensio *sio, int iflowcontrol);
-    void (*sbreak)(struct sergensio *sio, int breakv);
-    void (*dtr)(struct sergensio *sio, int dtr);
-    void (*rts)(struct sergensio *sio, int rts);
-};
+/*
+ * Server callbacks.  These only come in in server mode, you must
+ * call the equivalent sergensio_xxx() function to return the response,
+ * though the done callback is ignored in that case.  buf points to
+ * an integer holding the value.
+ */
+#define GENSIO_EVENT_SER_BAUD		(SERGENIO_EVENT_BASE + 7)
+#define GENSIO_EVENT_SER_DATASIZE	(SERGENIO_EVENT_BASE + 8)
+#define GENSIO_EVENT_SER_PARITY		(SERGENIO_EVENT_BASE + 9)
+#define GENSIO_EVENT_SER_STOPBITS	(SERGENIO_EVENT_BASE + 10)
+#define GENSIO_EVENT_SER_FLOWCONTROL	(SERGENIO_EVENT_BASE + 11)
+#define GENSIO_EVENT_SER_IFLOWCONTROL	(SERGENIO_EVENT_BASE + 12)
+#define GENSIO_EVENT_SER_SBREAK		(SERGENIO_EVENT_BASE + 13)
+#define GENSIO_EVENT_SER_DTR		(SERGENIO_EVENT_BASE + 14)
+#define GENSIO_EVENT_SER_RTS		(SERGENIO_EVENT_BASE + 15)
 
 bool sergensio_is_client(struct sergensio *sio);
 
-/*
- * Set the sergensio callbacks.  This should only be done if the gensio
- * is closed or completely disabled for read and not in a write.
- */
-void sergensio_set_ser_cbs(struct sergensio *sio,
-			   struct sergensio_callbacks *scbs);
-
 int sergensio_termios_alloc(const char *devname, char *args[],
 			    struct gensio_os_funcs *o,
-			    const struct sergensio_callbacks *scbs,
 			    gensio_event cb, void *user_data,
 			    struct sergensio **sio);
 
 int sergensio_telnet_alloc(struct gensio *child, char *args[],
 			   struct gensio_os_funcs *o,
-			   const struct sergensio_callbacks *scbs,
 			   gensio_event cb, void *user_data,
 			   struct sergensio **sio);
 

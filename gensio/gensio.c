@@ -641,8 +641,7 @@ gensio_process_filter(const char *str,
 	err = str_to_gensio(str, o, NULL, NULL, &io2);
     if (!err) {
 	if (type == GENSIO_TYPE_SER_TELNET) {
-	    err = sergensio_telnet_alloc(io2, args, o, NULL, cb, user_data,
-					 &sio);
+	    err = sergensio_telnet_alloc(io2, args, o, cb, user_data, &sio);
 	    if (!err)
 		io = sergensio_to_gensio(sio);
 	} else if (type == GENSIO_TYPE_SSL) {
@@ -708,8 +707,7 @@ str_to_gensio(const char *str,
 	str += 7;
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = sergensio_termios_alloc(str, args, o, NULL,
-					  cb, user_data, &sio);
+	    err = sergensio_termios_alloc(str, args, o, cb, user_data, &sio);
 	if (!err)
 	    *gensio = sergensio_to_gensio(sio);
     } else {

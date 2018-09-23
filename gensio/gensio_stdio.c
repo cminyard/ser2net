@@ -405,7 +405,7 @@ stdion_write_ready(int fd, void *cbdata)
     struct stdiona_data *nadata = cbdata;
     struct gensio *net = &nadata->net;
 
-    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
+    net->cb(net, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
 }
 
 static int
