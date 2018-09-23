@@ -398,7 +398,7 @@ gensio_child_event(struct gensio *io, int event, int readerr,
 		   unsigned long channel, void *auxdata)
 {
     struct gensio_data *data = gensio_get_user_data(io);
-    swig_ref io_ref;
+    swig_ref io_ref = { .val = NULL };
     PyObject *args, *o;
     OI_PY_STATE gstate;
     unsigned int rv = 0;
@@ -537,7 +537,8 @@ gensio_child_event(struct gensio *io, int event, int readerr,
 	break;
     }
 
-    swig_free_ref_check(io_ref, acceptor);
+    if (io_ref.val)
+	swig_free_ref_check(io_ref, acceptor);
  out_put:
     OI_PY_STATE_PUT(gstate);
 
