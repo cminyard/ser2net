@@ -81,8 +81,6 @@ struct sergensio_functions {
 		     void (*done)(struct sergensio *sio, int err, char *sig,
 				  unsigned int sig_len, void *cb_data),
 		     void *cb_data);
-
-    void (*callbacks_set)(struct sergensio *sio);
 };
 
 /*

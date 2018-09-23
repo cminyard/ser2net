@@ -360,20 +360,6 @@ stel_flush(struct sergensio *sio, unsigned int val)
     return stel_send(sio, 12, val);
 }
 
-static void
-stel_callbacks_set(struct sergensio *sio)
-{
-    if (!sergensio_is_client(sio)) {
-	struct stel_data *sdata = mysergensio_to_stel(sio);
-	struct timeval timeout;
-
-	/* Schedule a modemstate report once the callbacks are set. */
-	timeout.tv_sec = 0;
-	timeout.tv_usec = 1;
-	sdata->rops->start_timer(sdata->filter, &timeout);
-    }
-}
-
 static const struct sergensio_functions stel_funcs = {
     .baud = stel_baud,
     .datasize = stel_datasize,
@@ -388,7 +374,6 @@ static const struct sergensio_functions stel_funcs = {
     .linestate = stel_linestate,
     .flowcontrol_state = stel_flowcontrol_state,
     .flush = stel_flush,
-    .callbacks_set = stel_callbacks_set,
     .signature = stel_signature
 };
 
@@ -730,6 +715,13 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
 	    sdata->reported_modemstate = true;
 	    io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
 		   (unsigned char *) &val, &vlen, 0, NULL);
+	} else {
+	    struct timeval timeout;
+
+	    /* Schedule a modemstate report once the callbacks are set. */
+	    timeout.tv_sec = 0;
+	    timeout.tv_usec = 1000;
+	    sdata->rops->start_timer(sdata->filter, &timeout);
 	}
     }
     stel_unlock(sdata);
@@ -892,9 +884,17 @@ stela_timeout(void *handler_data)
 	int val = 255;
 	unsigned int vlen = sizeof(val);
 
-	sdata->reported_modemstate = true;
-	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	if (io->cb) {
+	    sdata->reported_modemstate = true;
+	    io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		   (unsigned char *) &val, &vlen, 0, NULL);
+	} else {
+	    struct timeval timeout;
+
+	    timeout.tv_sec = 0;
+	    timeout.tv_usec = 1000;
+	    sdata->rops->start_timer(sdata->filter, &timeout);
+	}
     }
     stel_unlock(sdata);
 }

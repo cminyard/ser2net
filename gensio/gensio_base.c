@@ -51,6 +51,8 @@ struct basen_data {
 
     struct gensio_lock *lock;
     struct gensio_timer *timer;
+    bool timer_start_pending;
+    struct timeval pending_timer;
 
     unsigned int refcount;
 
@@ -510,6 +512,8 @@ basen_finish_open(struct basen_data *ndata, int err)
 	filter_cleanup(ndata);
     } else {
 	ndata->state = BASEN_OPEN;
+	if (ndata->timer_start_pending)
+	    ndata->o->start_timer(ndata->timer, &ndata->pending_timer);
     }
 
     if (ndata->open_done) {
@@ -612,6 +616,7 @@ basen_open(struct gensio *net, void (*open_done)(struct gensio *net,
 	ndata->deferred_close = false;
 	ndata->read_enabled = false;
 	ndata->xmit_enabled = false;
+	ndata->timer_start_pending = false;
 
 	ndata->open_done = open_done;
 	ndata->open_data = open_data;
@@ -963,8 +968,12 @@ basen_start_timer(void *cb_data, struct timeval *timeout)
     struct basen_data *ndata = cb_data;
 
     basen_lock(ndata);
-    if (ndata->state == BASEN_OPEN)
+    if (ndata->state == BASEN_OPEN) {
 	ndata->o->start_timer(ndata->timer, timeout);
+    } else {
+	ndata->timer_start_pending = true;
+	ndata->pending_timer = *timeout;
+    }
     basen_unlock(ndata);
 }
 
