@@ -183,7 +183,8 @@ class HandleData:
     def modemstate(self, io, modemstate):
         if (not self.expecting_modemstate):
             if (debug or self.debug):
-                print("Got unexpected modemstate %x" % modemstate)
+                print("Got unexpected modemstate for %s: %x" %
+                      (self.name, modemstate))
             return
         if (modemstate != self.expected_modemstate):
             raise HandlerException("%s: Expecting modemstate 0x%x, got 0x%x" %
