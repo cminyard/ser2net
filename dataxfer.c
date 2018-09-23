@@ -2131,6 +2131,30 @@ handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon)
     setup_port(port, netcon, false);
 }
 
+int gensio_log_level_to_syslog(int gloglevel)
+{
+    switch (gloglevel) {
+    case GENSIO_LOG_FATAL:
+	return LOG_EMERG;
+    case GENSIO_LOG_ERR:
+	return LOG_ERR;
+    case GENSIO_LOG_WARNING:
+	return LOG_WARNING;
+    case GENSIO_LOG_INFO:
+	return LOG_INFO;
+    }
+    return LOG_ERR;
+}
+
+static void
+do_gensio_log(const char *name, struct gensio_loginfo *i)
+{
+    char buf[256];
+
+    vsnprintf(buf, sizeof(buf), i->str, i->args);
+    syslog(gensio_log_level_to_syslog(i->level), "%s: %s", name, buf);
+}
+
 typedef struct rotator
 {
     /* Rotators use the ports_lock for mutex. */
@@ -2155,6 +2179,11 @@ handle_rot_child_event(struct gensio_acceptor *acceptor, int event, void *data)
     int i;
     const char *err;
     struct gensio *net;
+
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	do_gensio_log(rot->portname, data);
+	return 0;
+    }
 
     if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
 	return ENOTSUP;
@@ -2315,6 +2344,11 @@ handle_port_child_event(struct gensio_acceptor *acceptor, int event, void *data)
     struct sockaddr_storage addr;
     socklen_t socklen;
     struct gensio *net;
+
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	do_gensio_log(port->portname, data);
+	return 0;
+    }
 
     if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
 	return ENOTSUP;
