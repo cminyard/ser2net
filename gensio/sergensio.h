@@ -248,20 +248,4 @@ int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 
 bool sergensio_is_client(struct sergensio *sio);
 
-int sergensio_termios_alloc(const char *devname, char *args[],
-			    struct gensio_os_funcs *o,
-			    gensio_event cb, void *user_data,
-			    struct sergensio **sio);
-
-int sergensio_telnet_alloc(struct gensio *child, char *args[],
-			   struct gensio_os_funcs *o,
-			   gensio_event cb, void *user_data,
-			   struct sergensio **sio);
-
-int sergensio_telnet_acceptor_alloc(struct gensio_acceptor *child, char *args[],
-				    struct gensio_os_funcs *o,
-				    gensio_acceptor_event cb,
-				    void *user_data,
-				    struct gensio_acceptor **acceptor);
-
 #endif /* SERGENSIO_H */

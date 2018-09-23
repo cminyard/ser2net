@@ -29,7 +29,6 @@
 
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
-#include <gensio/sergensio.h>
 
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
@@ -544,8 +543,8 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
 	    err = ssl_gensio_acceptor_alloc(acc2, args, o,
 					   cb, user_data, &acc);
 	} else if (type == GENSIO_TYPE_SER_TELNET) {
-	    err = sergensio_telnet_acceptor_alloc(acc2, args, o,
-						  cb, user_data, &acc);
+	    err = telnet_gensio_acceptor_alloc(acc2, args, o,
+					       cb, user_data, &acc);
 	} else {
 	    err = EINVAL;
 	}
@@ -631,7 +630,6 @@ gensio_process_filter(const char *str,
 {
     int err = 0;
     struct gensio *io = NULL, *io2 = NULL;
-    struct sergensio *sio = NULL;
     int argc;
     char **args;
 
@@ -640,9 +638,7 @@ gensio_process_filter(const char *str,
 	err = str_to_gensio(str, o, NULL, NULL, &io2);
     if (!err) {
 	if (type == GENSIO_TYPE_SER_TELNET) {
-	    err = sergensio_telnet_alloc(io2, args, o, cb, user_data, &sio);
-	    if (!err)
-		io = sergensio_to_gensio(sio);
+	    err = telnet_gensio_alloc(io2, args, o, cb, user_data, &io);
 	} else if (type == GENSIO_TYPE_SSL) {
 	    err = ssl_gensio_alloc(io2, args, o, cb, user_data, &io);
 	} else {
@@ -701,14 +697,10 @@ str_to_gensio(const char *str,
 				    cb, user_data, gensio);
     } else if (strncmp(str, "termios,", 8) == 0 ||
 	       strncmp(str, "termios(", 8) == 0) {
-	struct sergensio *sio;
-
 	str += 7;
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = sergensio_termios_alloc(str, args, o, cb, user_data, &sio);
-	if (!err)
-	    *gensio = sergensio_to_gensio(sio);
+	    err = termios_gensio_alloc(str, args, o, cb, user_data, gensio);
     } else {
 	err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
 				     &argc, &args);

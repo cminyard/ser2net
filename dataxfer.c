@@ -3334,10 +3334,10 @@ portconfig(struct absout *eout,
 
 	if (new_port->allow_2217)
 	    args[0] = "rfc2217=true";
-	err = sergensio_telnet_acceptor_alloc(new_port->acceptor, args,
-					      ser2net_o,
-					      handle_port_child_event,
-					      new_port, &parent);
+	err = telnet_gensio_acceptor_alloc(new_port->acceptor, args,
+					   ser2net_o,
+					   handle_port_child_event,
+					   new_port, &parent);
 	if (err)
 	    goto errout;
 	new_port->acceptor = parent;

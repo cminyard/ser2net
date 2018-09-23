@@ -351,7 +351,7 @@ int gensio_get_raddr(struct gensio *io,
 
 /*
  * Returns an id for the remote end.  For stdio clients this is the
- * pid.  For sergensio_termios this is the fd.  It returns an error
+ * pid.  For termios this is the fd.  It returns an error
  * for all others.
  */
 int gensio_remote_id(struct gensio *io, int *id);
@@ -577,6 +577,12 @@ int ssl_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
+int telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
+				 struct gensio_os_funcs *o,
+				 gensio_acceptor_event cb,
+				 void *user_data,
+				 struct gensio_acceptor **acceptor);
+
 /* Client allocators. */
 
 /*
@@ -609,6 +615,16 @@ int ssl_gensio_alloc(struct gensio *child, char *args[],
 		     struct gensio_os_funcs *o,
 		     gensio_event cb, void *user_data,
 		     struct gensio **io);
+
+int termios_gensio_alloc(const char *devname, char *args[],
+			 struct gensio_os_funcs *o,
+			 gensio_event cb, void *user_data,
+			 struct gensio **sio);
+
+int telnet_gensio_alloc(struct gensio *child, char *args[],
+			struct gensio_os_funcs *o,
+			gensio_event cb, void *user_data,
+			struct gensio **sio);
 
 
 /*

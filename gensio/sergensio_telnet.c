@@ -580,10 +580,10 @@ struct gensio_telnet_filter_callbacks sergensio_telnet_filter_cbs = {
 };
 
 int
-sergensio_telnet_alloc(struct gensio *child, char *args[],
-		       struct gensio_os_funcs *o,
-		       gensio_event cb, void *user_data,
-		       struct sergensio **sio)
+telnet_gensio_alloc(struct gensio *child, char *args[],
+		    struct gensio_os_funcs *o,
+		    gensio_event cb, void *user_data,
+		    struct gensio **io)
 {
     struct stel_data *sdata;
     struct gensio_ll *ll;
@@ -646,7 +646,7 @@ sergensio_telnet_alloc(struct gensio *child, char *args[],
     sdata->sio.funcs = &stel_funcs;
     sdata->reported_modemstate = true;
 
-    *sio = &sdata->sio;
+    *io = sdata->sio.io;
 
     return 0;
 
@@ -679,15 +679,9 @@ stela_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
 {
     struct stela_data *stela = acc_data;
     struct gensio_os_funcs *o = stela->o;
-    int err;
-    struct sergensio *sio = NULL;
     char *args[2] = {NULL, NULL};
 
-    err = sergensio_telnet_alloc(child, args, o, NULL, NULL, &sio);
-    if (!err)
-	*rio = sergensio_to_gensio(sio);
-
-    return err;
+    return telnet_gensio_alloc(child, args, o, NULL, NULL, rio);
 }
 
 static int
@@ -969,10 +963,10 @@ static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {
 };
 
 int
-sergensio_telnet_acceptor_alloc(struct gensio_acceptor *child, char *args[],
-				struct gensio_os_funcs *o,
-				gensio_acceptor_event cb, void *user_data,
-				struct gensio_acceptor **acceptor)
+telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
+			     struct gensio_os_funcs *o,
+			     gensio_acceptor_event cb, void *user_data,
+			     struct gensio_acceptor **acceptor)
 {
     struct stela_data *stela;
     int err;

@@ -877,10 +877,10 @@ sergensio_process_parms(struct sterm_data *sdata)
 }
 
 int
-sergensio_termios_alloc(const char *devname, char *args[],
-			struct gensio_os_funcs *o,
-			gensio_event cb, void *user_data,
-			struct sergensio **sio)
+termios_gensio_alloc(const char *devname, char *args[],
+		     struct gensio_os_funcs *o,
+		     gensio_event cb, void *user_data,
+		     struct gensio **io)
 {
     struct sterm_data *sdata = o->zalloc(o, sizeof(*sdata));
     struct gensio_ll *ll;
@@ -949,7 +949,7 @@ sergensio_termios_alloc(const char *devname, char *args[],
     sdata->sio.io->parent_object = &sdata->sio;
     sdata->sio.funcs = &sterm_funcs;
 
-    *sio = &sdata->sio;
+    *io = sdata->sio.io;
     return 0;
 
  out_nomem:
