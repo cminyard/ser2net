@@ -572,44 +572,83 @@ gensio_acc_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
     OI_PY_STATE_PUT(gstate);
 }
 
+const char *gensio_log_level_to_str(int gloglevel)
+{
+    switch (gloglevel) {
+    case GENSIO_LOG_FATAL:
+	return "fatal";
+    case GENSIO_LOG_ERR:
+	return "error";
+    case GENSIO_LOG_WARNING:
+	return "warning";
+    case GENSIO_LOG_INFO:
+	return "info";
+    }
+    return "error";
+}
+
 static int
 gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 {
     struct gensio_acc_data *data = gensio_acc_get_user_data(acceptor);
     swig_ref acc_ref, io_ref;
-    PyObject *args;
+    PyObject *args, *o;
     OI_PY_STATE gstate;
     struct gensio_data *iodata;
     struct gensio *io;
 
-    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
-	return ENOTSUP;
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	struct gensio_loginfo *i = cdata;
+	char buf[256];
 
-    io = cdata;
-    iodata = malloc(sizeof(*data));
-    if (!iodata)
+	gstate = OI_PY_STATE_GET();
+
+	acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+	args = PyTuple_New(3);
+	Py_INCREF(acc_ref.val);
+	PyTuple_SET_ITEM(args, 0, acc_ref.val);
+	o = OI_PI_FromString(gensio_log_level_to_str(i->level));
+	PyTuple_SET_ITEM(args, 1, o);
+	vsnprintf(buf, sizeof(buf), i->str, i->args);
+	o = OI_PI_FromString(buf);
+	PyTuple_SET_ITEM(args, 2, o);
+
+	swig_finish_call(data->handler_val, "acceptor_log", args);
+
+	swig_free_ref_check(acc_ref, acceptor);
+	OI_PY_STATE_PUT(gstate);
 	return 0;
-    iodata->refcount = 1;
-    iodata->handler_val = NULL;
-    iodata->o = data->o;
-    gensio_set_callback(io, gensio_child_event, iodata);
+    }
 
-    gstate = OI_PY_STATE_GET();
+    if (event == GENSIO_ACC_EVENT_NEW_CONNECTION) {
+	io = cdata;
+	iodata = malloc(sizeof(*data));
+	if (!iodata)
+	    return 0;
+	iodata->refcount = 1;
+	iodata->handler_val = NULL;
+	iodata->o = data->o;
+	gensio_set_callback(io, gensio_child_event, iodata);
 
-    acc_ref = swig_make_ref(acceptor, gensio_acceptor);
-    io_ref = swig_make_ref(io, gensio);
-    args = PyTuple_New(2);
-    Py_INCREF(acc_ref.val);
-    Py_INCREF(io_ref.val);
-    PyTuple_SET_ITEM(args, 0, acc_ref.val);
-    PyTuple_SET_ITEM(args, 1, io_ref.val);
+	gstate = OI_PY_STATE_GET();
 
-    swig_finish_call(data->handler_val, "new_connection", args);
+	acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+	io_ref = swig_make_ref(io, gensio);
+	args = PyTuple_New(2);
+	Py_INCREF(acc_ref.val);
+	Py_INCREF(io_ref.val);
+	PyTuple_SET_ITEM(args, 0, acc_ref.val);
+	PyTuple_SET_ITEM(args, 1, io_ref.val);
 
-    swig_free_ref_check(acc_ref, acceptor);
-    swig_free_ref_check(io_ref, acceptor);
-    OI_PY_STATE_PUT(gstate);
-    return 0;
+	swig_finish_call(data->handler_val, "new_connection", args);
+
+	swig_free_ref_check(acc_ref, acceptor);
+	swig_free_ref_check(io_ref, acceptor);
+	OI_PY_STATE_PUT(gstate);
+	return 0;
+    }
+
+    return ENOTSUP;
 }
 
 struct sergensio_cbdata {
