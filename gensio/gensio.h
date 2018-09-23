@@ -27,6 +27,7 @@
 #define GENSIO_H
 
 #include <stdbool.h>
+#include <stdarg.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -423,6 +424,23 @@ struct gensio_acceptor;
 #define GENSIO_ACC_EVENT_NEW_CONNECTION	1
 
 /*
+ * The gensio acceptor had an issue that wouldn't otherwise be reported
+ * as an error return.  data points to a gensio_loginfo.
+ */
+#define GENSIO_ACC_EVENT_LOG		2
+enum gensio_log_levels {
+    GENSIO_LOG_FATAL,
+    GENSIO_LOG_ERR,
+    GENSIO_LOG_WARNING,
+    GENSIO_LOG_INFO
+};
+struct gensio_loginfo {
+    enum gensio_log_levels level;
+    char *str;
+    va_list args;
+};
+
+/*
  * Report an event from the acceptor to the user.
  *
  *  event - The event that occurred, of the type GENSIO_ACCEPTOR_EVENT_xxx.
@@ -535,28 +553,26 @@ int str_to_gensio(const char *str,
 /*
  * Allocators for different I/O types.
  */
-int tcp_gensio_acceptor_alloc(const char *name, char *args[],
+int tcp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
 			      struct gensio_os_funcs *o,
-			      struct addrinfo *ai,
 			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
-int udp_gensio_acceptor_alloc(const char *name, char *args[],
+int udp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
 			      struct gensio_os_funcs *o,
-			      struct addrinfo *ai,
 			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
-int stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
+int stdio_gensio_acceptor_alloc(char *prog, char *args[],
+				struct gensio_os_funcs *o,
 				gensio_acceptor_event cb,
 				void *user_data,
 				struct gensio_acceptor **acceptor);
 
-int ssl_gensio_acceptor_alloc(const char *name, char *args[],
+int ssl_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
 			      struct gensio_os_funcs *o,
-			      struct gensio_acceptor *child,
 			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);

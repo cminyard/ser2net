@@ -22,15 +22,12 @@
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
-#include <syslog.h>
 
 #include <gensio/gensio_internal.h>
 #include <gensio/gensio_base.h>
 
 struct basena_data {
     struct gensio_acceptor acceptor;
-
-    char *name;
 
     struct gensio_os_funcs *o;
 
@@ -73,8 +70,6 @@ basena_finish_free(struct basena_data *nadata)
 	gensio_acc_free(nadata->child);
     if (nadata->lock)
 	nadata->o->free_lock(nadata->lock);
-    if (nadata->name)
-	nadata->o->free(nadata->o, nadata->name);
     if (nadata->acc_cbs)
 	nadata->acc_cbs->free(nadata->acc_data);
     nadata->o->free(nadata->o, nadata);
@@ -330,6 +325,11 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
     void *finish_data;
     int err;
 
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	nadata->acceptor.cb(&nadata->acceptor, event, data);
+	return 0;
+    }
+
     if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
 	return ENOTSUP;
 
@@ -365,15 +365,14 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
  out_nomem:
     err = ENOMEM;
  out_err:
-    syslog(LOG_ERR, "Error allocating basena gensio: %s", strerror(err));
-
+    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		   "Error allocating basena gensio: %s", strerror(err));
     return 0;
 }
 
 int
-gensio_gensio_acceptor_alloc(const char *name,
+gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 			     struct gensio_os_funcs *o,
-			     struct gensio_acceptor *child,
 			     enum gensio_type type,
 			     bool is_packet, bool is_reliable,
 			     gensio_acceptor_event cb, void *user_data,
@@ -387,10 +386,6 @@ gensio_gensio_acceptor_alloc(const char *name,
     nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
 	return ENOMEM;
-
-    nadata->name = gensio_strdup(o, name);
-    if (!nadata->name)
-	goto out_nomem;
 
     nadata->lock = o->alloc_lock(o);
     if (!nadata->lock)

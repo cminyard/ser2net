@@ -22,7 +22,6 @@
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
-#include <syslog.h>
 
 #include <gensio/gensio_internal.h>
 #include <gensio/gensio_base.h>

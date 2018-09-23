@@ -27,7 +27,6 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
-#include <syslog.h>
 #include <assert.h>
 
 #include <gensio/gensio.h>
@@ -81,8 +80,6 @@ struct udpna_data {
     struct gensio_os_funcs *o;
 
     struct gensio_lock *lock;
-
-    char *name;
 
     unsigned int max_read_size;
 
@@ -280,8 +277,6 @@ static void udpna_do_free(struct udpna_data *nadata)
 
     if (nadata->deferred_op_runner)
 	nadata->o->free_runner(nadata->deferred_op_runner);
-    if (nadata->name)
-	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
 	gensio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->fds)
@@ -797,12 +792,14 @@ udpna_readhandler(int fd, void *cbdata)
     if (datalen == -1) {
 	/* FIXME - There is no really good way to report this error. */
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
+	    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+			   "Could not accept: %s", strerror(errno));
 	goto out_unlock;
     }
     if (addrlen > sizeof(struct sockaddr_storage)) {
 	/* Shouldn't happen. */
-	syslog(LOG_ERR, "Address too long on %s: %d", nadata->name, addrlen);
+	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		       "Address too long: %d", addrlen);
 	goto out_unlock;
     }
 
@@ -923,7 +920,8 @@ udpna_readhandler(int fd, void *cbdata)
 
  out_nomem:
     nadata->data_pending_len = 0;
-    syslog(LOG_ERR, "Out of memory allocating for udp port %s", nadata->name);
+    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		   "Out of memory allocating for udp port");
  out_unlock_enable:
     udpna_fd_read_enable(nadata);
  out_unlock:
@@ -1090,9 +1088,8 @@ static const struct gensio_acceptor_functions gensio_acc_udp_funcs = {
 };
 
 int
-udp_gensio_acceptor_alloc(const char *name, char *args[],
+udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 			  struct gensio_os_funcs *o,
-			  struct addrinfo *iai,
 			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
@@ -1117,10 +1114,6 @@ udp_gensio_acceptor_alloc(const char *name, char *args[],
     if (!nadata)
 	goto out_err;
     nadata->o = o;
-
-    nadata->name = gensio_strdup(o, name);
-    if (!nadata->name)
-	goto out_err;
 
     nadata->read_data = o->zalloc(o, max_read_size);
     if (!nadata->read_data)
@@ -1152,8 +1145,6 @@ udp_gensio_acceptor_alloc(const char *name, char *args[],
     if (ai)
 	gensio_free_addrinfo(nadata->o, ai);
     if (nadata) {
-	if (nadata->name)
-	    o->free(o, nadata->name);
 	if (nadata->read_data)
 	    o->free(o, nadata->read_data);
 	if (nadata->deferred_op_runner)
@@ -1207,8 +1198,8 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->refcount = 1;
 
     /* Allocate a dummy network acceptor. */
-    err = udp_gensio_acceptor_alloc("dummy", args, o,
-				    NULL, NULL, NULL, &acceptor);
+    err = udp_gensio_acceptor_alloc(NULL, args, o,
+				    NULL, NULL, &acceptor);
     if (err) {
 	close(new_fd);
 	o->free(o, ndata);

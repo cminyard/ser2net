@@ -27,7 +27,6 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
-#include <syslog.h>
 #include <assert.h>
 
 #include <utils/locking.h>
@@ -274,8 +273,6 @@ struct tcpna_data {
 
     struct gensio_os_funcs *o;
 
-    char *name;
-
     unsigned int max_read_size;
 
     struct gensio_lock *lock;
@@ -316,8 +313,6 @@ tcpna_finish_free(struct tcpna_data *nadata)
 {
     if (nadata->lock)
 	nadata->o->free_lock(nadata->lock);
-    if (nadata->name)
-	nadata->o->free(nadata->o, nadata->name);
     if (nadata->ai)
 	gensio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->acceptfds)
@@ -377,7 +372,8 @@ tcpna_readhandler(int fd, void *cbdata)
     new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
     if (new_fd == -1) {
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    syslog(LOG_ERR, "Could not accept on %s: %m", nadata->name);
+	    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+			   "Could not accept: %s", strerror(errno));
 	return;
     }
 
@@ -403,8 +399,8 @@ tcpna_readhandler(int fd, void *cbdata)
     
     err = tcp_socket_setup(tdata, new_fd);
     if (err) {
-	syslog(LOG_ERR, "Error setting up tcp port %s: %s", nadata->name,
-	       strerror(err));
+	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		       "Error setting up tcp port: %s", strerror(err));
 	close(new_fd);
 	tcp_free(tdata);
 	return;
@@ -413,7 +409,8 @@ tcpna_readhandler(int fd, void *cbdata)
     ll = fd_gensio_ll_alloc(nadata->o, new_fd, &tcp_server_fd_ll_ops, tdata,
 			    nadata->max_read_size);
     if (!ll) {
-	syslog(LOG_ERR, "No memory allocating tcp ll %s", nadata->name);
+	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		       "Out of memory allocating tcp ll");
 	close(new_fd);
 	tcp_free(tdata);
 	return;
@@ -422,7 +419,8 @@ tcpna_readhandler(int fd, void *cbdata)
     io = base_gensio_server_alloc(nadata->o, ll, NULL, GENSIO_TYPE_TCP,
 				  false, true, NULL, NULL);
     if (!io) {
-	syslog(LOG_ERR, "No memory allocating tcp base %s", nadata->name);
+	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+		       "Out of memory allocating tcp base");
 	ll->ops->free(ll);
 	close(new_fd);
 	tcp_free(tdata);
@@ -588,9 +586,9 @@ static const struct gensio_acceptor_functions gensio_acc_tcp_funcs = {
 };
 
 int
-tcp_gensio_acceptor_alloc(const char *name, char *args[],
+tcp_gensio_acceptor_alloc(struct addrinfo *iai,
+			  char *args[],
 			  struct gensio_os_funcs *o,
-			  struct addrinfo *iai,
 			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
@@ -621,10 +619,6 @@ tcp_gensio_acceptor_alloc(const char *name, char *args[],
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->name = gensio_strdup(o, name);
-    if (!nadata->name)
-	goto out_nomem;
-
     acc = &nadata->acceptor;
 
     acc->cb = cb;
@@ -645,10 +639,7 @@ tcp_gensio_acceptor_alloc(const char *name, char *args[],
 	gensio_free_addrinfo(o, ai);
     if (nadata->lock)
 	o->free_lock(nadata->lock);
-    if (nadata) {
-	if (nadata->name)
-	    free(nadata->name);
+    if (nadata)
 	free(nadata);
-    }
     return ENOMEM;
 }

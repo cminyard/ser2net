@@ -969,10 +969,8 @@ static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {
 };
 
 int
-sergensio_telnet_acceptor_alloc(const char *name,
-				char *args[],
+sergensio_telnet_acceptor_alloc(struct gensio_acceptor *child, char *args[],
 				struct gensio_os_funcs *o,
-				struct gensio_acceptor *child,
 				gensio_acceptor_event cb, void *user_data,
 				struct gensio_acceptor **acceptor)
 {
@@ -1014,7 +1012,7 @@ sergensio_telnet_acceptor_alloc(const char *name,
     stela->max_read_size = max_read_size;
     stela->allow_2217 = allow_2217;
 
-    err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SER_TELNET,
+    err = gensio_gensio_acceptor_alloc(child, o, GENSIO_TYPE_SER_TELNET,
 				       false, gensio_acc_is_reliable(child),
 				       cb, user_data,
 				       &gensio_acc_telnet_funcs, stela,

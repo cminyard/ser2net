@@ -275,9 +275,8 @@ struct gensio_gensio_acc_cbs {
     void (*free)(void *acc_data);
 };
 
-int gensio_gensio_acceptor_alloc(const char *name,
+int gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 				 struct gensio_os_funcs *o,
-				 struct gensio_acceptor *child,
 				 enum gensio_type type,
 				 bool is_packet, bool is_reliable,
 				 gensio_acceptor_event cb, void *user_data,

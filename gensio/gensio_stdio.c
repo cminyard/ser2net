@@ -23,7 +23,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <assert.h>
@@ -841,7 +840,7 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 }
 
 int
-stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
+stdio_gensio_acceptor_alloc(char *prog, char *args[], struct gensio_os_funcs *o,
 			    gensio_acceptor_event cb, void *user_data,
 			    struct gensio_acceptor **acceptor)
 {

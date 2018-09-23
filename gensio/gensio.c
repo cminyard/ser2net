@@ -535,17 +535,16 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
     struct gensio_acceptor *acc = NULL, *acc2 = NULL;
     int argc;
     char **args = NULL;
-    const char *name = str;
 
     err = gensio_scan_args(&str, &argc, &args);
     if (!err)
 	err = str_to_gensio_acceptor(str, o, NULL, NULL, &acc2);
     if (!err) {
 	if (type == GENSIO_TYPE_SSL) {
-	    err = ssl_gensio_acceptor_alloc(name, args, o, acc2,
+	    err = ssl_gensio_acceptor_alloc(acc2, args, o,
 					   cb, user_data, &acc);
 	} else if (type == GENSIO_TYPE_SER_TELNET) {
-	    err = sergensio_telnet_acceptor_alloc(name, args, o, acc2,
+	    err = sergensio_telnet_acceptor_alloc(acc2, args, o,
 						  cb, user_data, &acc);
 	} else {
 	    err = EINVAL;
@@ -582,14 +581,14 @@ int str_to_gensio_acceptor(const char *str,
     while (isspace(*str))
 	str++;
     if (strisallzero(str)) {
-	err = stdio_gensio_acceptor_alloc(dummy_args, o, cb, user_data,
+	err = stdio_gensio_acceptor_alloc("", dummy_args, o, cb, user_data,
 					  acceptor);
     } else if (strncmp(str, "stdio,", 6) == 0 ||
 	       strncmp(str, "stdio(", 6) == 0) {
 	str += 5;
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = stdio_gensio_acceptor_alloc(args, o, cb, user_data,
+	    err = stdio_gensio_acceptor_alloc(args[0], args, o, cb, user_data,
 					      acceptor);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
@@ -606,10 +605,10 @@ int str_to_gensio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_acceptor_alloc(str, args, o, ai, cb,
+		err = udp_gensio_acceptor_alloc(ai, args, o, cb,
 						user_data, acceptor);
 	    } else {
-		err = tcp_gensio_acceptor_alloc(str, args, o, ai, cb,
+		err = tcp_gensio_acceptor_alloc(ai, args, o, cb,
 						user_data, acceptor);
 	    }
 
@@ -863,4 +862,27 @@ gensio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
 
     *rvalue = value;
     return 1;
+}
+
+void
+gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
+		char *str, va_list args)
+{
+    struct gensio_loginfo info;
+
+    info.level = level;
+    info.str = str;
+    va_copy(info.args, args);
+    acc->cb(acc, GENSIO_ACC_EVENT_LOG, &info);
+}
+
+void
+gensio_acc_log(struct gensio_acceptor *acc, enum gensio_log_levels level,
+	       char *str, ...)
+{
+    va_list args;
+
+    va_start(args, str);
+    gensio_acc_vlog(acc, level, str, args);
+    va_end(args);
 }

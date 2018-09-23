@@ -27,7 +27,6 @@
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
-#include <syslog.h>
 
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
@@ -166,10 +165,9 @@ static const struct gensio_gensio_acc_cbs gensio_acc_ssl_funcs = {
 };
 
 int
-ssl_gensio_acceptor_alloc(const char *name,
+ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
 			  char *args[],
 			  struct gensio_os_funcs *o,
-			  struct gensio_acceptor *child,
 			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
@@ -226,7 +224,7 @@ ssl_gensio_acceptor_alloc(const char *name,
     if (!nadata->CAfilepath)
 	goto out_nomem;
 
-    err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SSL,
+    err = gensio_gensio_acceptor_alloc(child, o, GENSIO_TYPE_SSL,
 				       true, true,
 				       cb, user_data,
 				       &gensio_acc_ssl_funcs, nadata, acceptor);
@@ -253,8 +251,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
 }
 
 int
-ssl_gensio_acceptor_alloc(const char *name,
-			  char *args[],
+ssl_gensio_acceptor_alloc(char *args[],
 			  struct gensio_os_funcs *o,
 			  struct gensio_acceptor *child,
 			  unsigned int max_read_size,
