@@ -49,6 +49,9 @@ class TestAccept:
         self.io2 = io
         self.waiter.wake()
 
+    def acceptor_log(self, acc, level, logstr):
+        print("***%s LOG: %s: %s" % (level, self.name, logstr))
+
     def wait(self):
         self.waiter.wait()
 
