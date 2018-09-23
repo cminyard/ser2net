@@ -459,11 +459,11 @@ gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
 }
 
 void
-gensio_acc_set_callbacks(struct gensio_acceptor *acceptor,
-			 struct gensio_acceptor_callbacks *cbs,
-			 void *user_data)
+gensio_acc_set_callback(struct gensio_acceptor *acceptor,
+			gensio_acceptor_event cb,
+			void *user_data)
 {
-    acceptor->cbs = cbs;
+    acceptor->cb = cb;
     acceptor->user_data = user_data;
 }
 
@@ -528,8 +528,7 @@ gensio_acc_is_packet(struct gensio_acceptor *acceptor)
 static int
 gensio_process_acc_filter(const char *str, enum gensio_type type,
 			  struct gensio_os_funcs *o,
-			  const struct gensio_acceptor_callbacks *cbs,
-			  void *user_data,
+			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
     int err = 0;
@@ -544,10 +543,10 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
     if (!err) {
 	if (type == GENSIO_TYPE_SSL) {
 	    err = ssl_gensio_acceptor_alloc(name, args, o, acc2,
-					   cbs, user_data, &acc);
+					   cb, user_data, &acc);
 	} else if (type == GENSIO_TYPE_SER_TELNET) {
 	    err = sergensio_telnet_acceptor_alloc(name, args, o, acc2,
-						  cbs, user_data, &acc);
+						  cb, user_data, &acc);
 	} else {
 	    err = EINVAL;
 	}
@@ -570,8 +569,7 @@ gensio_process_acc_filter(const char *str, enum gensio_type type,
 
 int str_to_gensio_acceptor(const char *str,
 			   struct gensio_os_funcs *o,
-			   const struct gensio_acceptor_callbacks *cbs,
-			   void *user_data,
+			   gensio_acceptor_event cb, void *user_data,
 			   struct gensio_acceptor **acceptor)
 {
     int err;
@@ -584,23 +582,23 @@ int str_to_gensio_acceptor(const char *str,
     while (isspace(*str))
 	str++;
     if (strisallzero(str)) {
-	err = stdio_gensio_acceptor_alloc(dummy_args, o, cbs, user_data,
+	err = stdio_gensio_acceptor_alloc(dummy_args, o, cb, user_data,
 					  acceptor);
     } else if (strncmp(str, "stdio,", 6) == 0 ||
 	       strncmp(str, "stdio(", 6) == 0) {
 	str += 5;
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = stdio_gensio_acceptor_alloc(args, o, cbs, user_data,
+	    err = stdio_gensio_acceptor_alloc(args, o, cb, user_data,
 					      acceptor);
     } else if (strncmp(str, "ssl,", 4) == 0 ||
 	       strncmp(str, "ssl(", 4) == 0) {
 	err = gensio_process_acc_filter(str + 3, GENSIO_TYPE_SSL, o,
-					cbs, user_data, acceptor);
+					cb, user_data, acceptor);
     } else if (strncmp(str, "telnet,", 7) == 0 ||
 	       strncmp(str, "telnet(", 7) == 0) {
 	err = gensio_process_acc_filter(str + 6, GENSIO_TYPE_SER_TELNET, o,
-					cbs, user_data, acceptor);
+					cb, user_data, acceptor);
     } else {
 	err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
 				     &argc, &args);
@@ -608,10 +606,10 @@ int str_to_gensio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_acceptor_alloc(str, args, o, ai, cbs,
+		err = udp_gensio_acceptor_alloc(str, args, o, ai, cb,
 						user_data, acceptor);
 	    } else {
-		err = tcp_gensio_acceptor_alloc(str, args, o, ai, cbs,
+		err = tcp_gensio_acceptor_alloc(str, args, o, ai, cb,
 						user_data, acceptor);
 	    }
 

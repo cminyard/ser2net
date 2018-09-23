@@ -170,8 +170,7 @@ ssl_gensio_acceptor_alloc(const char *name,
 			  char *args[],
 			  struct gensio_os_funcs *o,
 			  struct gensio_acceptor *child,
-			  const struct gensio_acceptor_callbacks *cbs,
-			  void *user_data,
+			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
     struct sslna_data *nadata;
@@ -229,7 +228,7 @@ ssl_gensio_acceptor_alloc(const char *name,
 
     err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SSL,
 				       true, true,
-				       cbs, user_data,
+				       cb, user_data,
 				       &gensio_acc_ssl_funcs, nadata, acceptor);
     if (err)
 	goto out_err;
@@ -259,8 +258,7 @@ ssl_gensio_acceptor_alloc(const char *name,
 			  struct gensio_os_funcs *o,
 			  struct gensio_acceptor *child,
 			  unsigned int max_read_size,
-			  const struct gensio_acceptor_callbacks *cbs,
-			  void *user_data,
+			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
     return ENOTSUP;

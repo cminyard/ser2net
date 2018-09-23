@@ -1243,7 +1243,7 @@ handle_net_fd_write_ready(struct gensio *net)
     UNLOCK(port->lock);
 }
 
-static unsigned int
+static int
 handle_net_event(struct gensio *net, int event, int err,
 		 unsigned char *buf, unsigned int *buflen,
 		 unsigned long channel, void *auxdata)
@@ -2112,13 +2112,18 @@ typedef struct rotator
 static rotator_t *rotators = NULL;
 
 /* A connection request has come in on a port. */
-static void
-handle_rot_accept(struct gensio_acceptor *acceptor, struct gensio *net)
+static int
+handle_rot_child_event(struct gensio_acceptor *acceptor, int event, void *data)
 {
     rotator_t *rot = gensio_acc_get_user_data(acceptor);
     int i;
     const char *err;
+    struct gensio *net;
 
+    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
+	return ENOTSUP;
+
+    net = data;
     LOCK(ports_lock);
     i = rot->curr_port;
     do {
@@ -2132,7 +2137,7 @@ handle_rot_accept(struct gensio_acceptor *acceptor, struct gensio *net)
 	    UNLOCK(ports_lock);
 	    handle_new_net(port, net, &port->netcons[netconnum]);
 	    UNLOCK(port->lock);
-	    return;
+	    return 0;
 	}
     } while (i != rot->curr_port);
     UNLOCK(ports_lock);
@@ -2140,6 +2145,7 @@ handle_rot_accept(struct gensio_acceptor *acceptor, struct gensio *net)
     err = "No free port found\r\n";
     gensio_write(net, NULL, err, strlen(err));
     gensio_free(net);
+    return 0;
 }
 
 static waiter_t *rotator_shutdown_wait;
@@ -2179,10 +2185,6 @@ free_rotators(void)
     rotators = NULL;
 }
 
-static const struct gensio_acceptor_callbacks rotator_cbs = {
-    .new_connection = handle_rot_accept,
-};
-
 int
 add_rotator(char *portname, char *ports, int lineno)
 {
@@ -2205,7 +2207,7 @@ add_rotator(char *portname, char *ports, int lineno)
 	goto out;
 
     rv = str_to_gensio_acceptor(rot->portname, ser2net_o,
-				&rotator_cbs, rot, &rot->acceptor);
+				handle_rot_child_event, rot, &rot->acceptor);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
@@ -2268,15 +2270,20 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 }
 
 /* A connection request has come in on a port. */
-static void
-handle_port_accept(struct gensio_acceptor *acceptor, struct gensio *net)
+static int
+handle_port_child_event(struct gensio_acceptor *acceptor, int event, void *data)
 {
     port_info_t *port = gensio_acc_get_user_data(acceptor);
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
     socklen_t socklen;
+    struct gensio *net;
 
+    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
+	return ENOTSUP;
+
+    net = data;
     LOCK(ports_lock); /* For is_device_already_inuse() */
     LOCK(port->lock);
 
@@ -2331,7 +2338,7 @@ handle_port_accept(struct gensio_acceptor *acceptor, struct gensio *net)
 	UNLOCK(ports_lock);
 	gensio_write(net, NULL, err, strlen(err));
 	gensio_free(net);
-	return;
+	return 0;
     }
 
     /* We have to hold the ports_lock until after this call so the
@@ -2340,6 +2347,7 @@ handle_port_accept(struct gensio_acceptor *acceptor, struct gensio *net)
  out:
     UNLOCK(port->lock);
     UNLOCK(ports_lock);
+    return 0;
 }
 
 static void
@@ -3129,10 +3137,6 @@ myconfig(void *data, struct absout *eout, const char *pos)
     return 0;
 }
 
-static const struct gensio_acceptor_callbacks port_acceptor_cbs = {
-    .new_connection = handle_port_accept,
-};
-
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
@@ -3247,7 +3251,7 @@ portconfig(struct absout *eout,
     }
 
     err = str_to_gensio_acceptor(new_port->portname, ser2net_o,
-				&port_acceptor_cbs, new_port,
+				handle_port_child_event, new_port,
 				&new_port->acceptor);
     if (err) {
 	eout->out(eout, "Invalid port name/number");
@@ -3262,8 +3266,8 @@ portconfig(struct absout *eout,
 	    args[0] = "rfc2217=true";
 	err = sergensio_telnet_acceptor_alloc(new_port->portname, args,
 					      ser2net_o, new_port->acceptor,
-					      &port_acceptor_cbs, new_port,
-					      &parent);
+					      handle_port_child_event,
+					      new_port, &parent);
 	if (err)
 	    goto errout;
 	new_port->acceptor = parent;

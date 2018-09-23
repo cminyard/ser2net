@@ -748,7 +748,7 @@ struct waiter { };
 	data->o = o;
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_gensio_acceptor(str, o, &gen_acc_cbs, data, &acc);
+	rv = str_to_gensio_acceptor(str, o, gensio_acc_child_event, data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);

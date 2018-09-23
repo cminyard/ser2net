@@ -937,8 +937,7 @@ sergensio_telnet_acceptor_alloc(const char *name,
 				char *args[],
 				struct gensio_os_funcs *o,
 				struct gensio_acceptor *child,
-				const struct gensio_acceptor_callbacks *cbs,
-				void *user_data,
+				gensio_acceptor_event cb, void *user_data,
 				struct gensio_acceptor **acceptor)
 {
     struct stela_data *stela;
@@ -981,7 +980,7 @@ sergensio_telnet_acceptor_alloc(const char *name,
 
     err = gensio_gensio_acceptor_alloc(name, o, child, GENSIO_TYPE_SER_TELNET,
 				       false, gensio_acc_is_reliable(child),
-				       cbs, user_data,
+				       cb, user_data,
 				       &gensio_acc_telnet_funcs, stela,
 				       acceptor);
     if (err)

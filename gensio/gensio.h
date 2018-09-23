@@ -412,12 +412,22 @@ bool gensio_is_packet(struct gensio *io);
 
 struct gensio_acceptor;
 
-struct gensio_acceptor_callbacks {
-    /*
-     * A new connection for the acceptor is in io.
-     */
-    void (*new_connection)(struct gensio_acceptor *acceptor, struct gensio *io);
-};
+/*
+ * Got a new connection on the event.  data points to the new gensio.
+ */
+#define GENSIO_ACC_EVENT_NEW_CONNECTION	1
+
+/*
+ * Report an event from the acceptor to the user.
+ *
+ *  event - The event that occurred, of the type GENSIO_ACCEPTOR_EVENT_xxx.
+ *
+ *  data - Specific data for the event, see the event description.
+ *
+ */
+typedef int (*gensio_acceptor_event)(struct gensio_acceptor *acceptor,
+				     int event,
+				     void *data);
 
 /*
  * Return the user data supplied to the allocator.
@@ -434,9 +444,8 @@ void gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
  * Set the callbacks and user data.  May be called if the acceptor is
  * not enabled.
  */
-void gensio_acc_set_callbacks(struct gensio_acceptor *acceptor,
-			      struct gensio_acceptor_callbacks *cbs,
-			      void *user_data);
+void gensio_acc_set_callback(struct gensio_acceptor *acceptor,
+			     gensio_acceptor_event cb, void *user_data);
 
 /*
  * An acceptor is allocated without opening any sockets.  This
@@ -506,8 +515,7 @@ bool gensio_acc_is_packet(struct gensio_acceptor *acceptor);
  * connections.
  */
 int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
-			   const struct gensio_acceptor_callbacks *cbs,
-			   void *user_data,
+			   gensio_acceptor_event cb, void *user_data,
 			   struct gensio_acceptor **acceptor);
 
 /*
@@ -525,26 +533,26 @@ int str_to_gensio(const char *str,
 int tcp_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct addrinfo *ai,
-			      const struct gensio_acceptor_callbacks *cbs,
+			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
 int udp_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct addrinfo *ai,
-			      const struct gensio_acceptor_callbacks *cbs,
+			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
 int stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
-				const struct gensio_acceptor_callbacks *cbs,
+				gensio_acceptor_event cb,
 				void *user_data,
 				struct gensio_acceptor **acceptor);
 
 int ssl_gensio_acceptor_alloc(const char *name, char *args[],
 			      struct gensio_os_funcs *o,
 			      struct gensio_acceptor *child,
-			      const struct gensio_acceptor_callbacks *cbs,
+			      gensio_acceptor_event cb,
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 

@@ -680,7 +680,7 @@ controller_write_ready(struct gensio *net)
     shutdown_controller(cntlr); /* Releases the lock */
 }
 
-static unsigned int
+static int
 controller_io_event(struct gensio *net, int event, int err,
 		    unsigned char *buf, unsigned int *buflen,
 		    unsigned long channel, void *auxdata)
@@ -699,13 +699,19 @@ controller_io_event(struct gensio *net, int event, int err,
 }
 
 /* A connection request has come in for the control port. */
-static void
-controller_new_connection(struct gensio_acceptor *acceptor, struct gensio *net)
+static int
+controller_acc_child_event(struct gensio_acceptor *acceptor, int event,
+			   void *data)
 {
     controller_info_t *cntlr;
     char              *err = NULL;
     int rv;
+    struct gensio *net;
 
+    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
+	return ENOTSUP;
+
+    net = data;
     LOCK(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\r\n";
@@ -750,13 +756,14 @@ controller_new_connection(struct gensio_acceptor *acceptor, struct gensio *net)
     num_controller_ports++;
 
     UNLOCK(cntlr_lock);
-    return;
+    return 0;
 
 errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
     gensio_write(net, NULL, err, strlen(err));
     gensio_free(net);
+    return 0;
 }
 
 static void
@@ -764,10 +771,6 @@ controller_shutdown_done(struct gensio_acceptor *net, void *cb_data)
 {
     wake_waiter(accept_waiter);
 }
-
-struct gensio_acceptor_callbacks controller_gensio_acceptor_callbacks = {
-    .new_connection = controller_new_connection,
-};
 
 /* Set up the controller port to accept connections. */
 int
@@ -791,7 +794,7 @@ controller_init(char *controller_port)
     }
 
     rv = str_to_gensio_acceptor(controller_port, ser2net_o,
-				&controller_gensio_acceptor_callbacks, NULL,
+				controller_acc_child_event, NULL,
 				&controller_acceptor);
     if (rv) {
 	if (rv == EINVAL)

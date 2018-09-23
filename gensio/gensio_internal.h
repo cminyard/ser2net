@@ -130,7 +130,7 @@ struct gensio_acceptor_functions {
  */
 struct gensio_acceptor {
     void *user_data;
-    const struct gensio_acceptor_callbacks *cbs;
+    gensio_acceptor_event cb;
 
     const struct gensio_acceptor_functions *funcs;
 

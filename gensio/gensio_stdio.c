@@ -625,7 +625,8 @@ stdiona_do_connect(struct gensio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
-    nadata->acceptor.cbs->new_connection(&nadata->acceptor, &nadata->net);
+    nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION,
+			&nadata->net);
 }
 
 static void
@@ -841,8 +842,7 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 
 int
 stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
-			    const struct gensio_acceptor_callbacks *cbs,
-			    void *user_data,
+			    gensio_acceptor_event cb, void *user_data,
 			    struct gensio_acceptor **acceptor)
 {
     int err;
@@ -868,7 +868,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     acc = &nadata->acceptor;
     acc->type = GENSIO_TYPE_STDIO;
 
-    acc->cbs = cbs;
+    acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_stdio_funcs;
     acc->is_packet = false;

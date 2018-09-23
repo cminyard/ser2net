@@ -311,21 +311,29 @@ basena_finish_server_open(struct gensio *net, int err, void *cb_data)
     if (err)
 	gensio_free(net);
     else
-	nadata->acceptor.cbs->new_connection(&nadata->acceptor, net);
+	nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION,
+			    net);
 
     basena_lock(nadata);
     basena_leave_cb_unlock(nadata);
 }
 
-static void
-basena_new_child_connection(struct gensio_acceptor *acceptor, struct gensio *io)
+static int
+basena_child_event(struct gensio_acceptor *acceptor, int event,
+		   void *data)
 {
     struct basena_data *nadata = gensio_acc_get_user_data(acceptor);
     struct gensio_os_funcs *o = nadata->o;
     struct gensio_filter *filter;
     struct gensio_ll *ll;
+    struct gensio *io;
     void *finish_data;
     int err;
+
+    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
+	return ENOTSUP;
+
+    io = data;
 
     err = nadata->acc_cbs->new_child(nadata->acc_data, &finish_data, &filter);
     if (err)
@@ -352,17 +360,15 @@ basena_new_child_connection(struct gensio_acceptor *acceptor, struct gensio *io)
 	filter->ops->free(filter);
 	goto out_nomem;
     }
-    return;
+    return 0;
 
  out_nomem:
     err = ENOMEM;
  out_err:
     syslog(LOG_ERR, "Error allocating basena gensio: %s", strerror(err));
-}
 
-static struct gensio_acceptor_callbacks basena_acc_cbs = {
-    .new_connection = basena_new_child_connection
-};
+    return 0;
+}
 
 int
 gensio_gensio_acceptor_alloc(const char *name,
@@ -370,8 +376,7 @@ gensio_gensio_acceptor_alloc(const char *name,
 			     struct gensio_acceptor *child,
 			     enum gensio_type type,
 			     bool is_packet, bool is_reliable,
-			     const struct gensio_acceptor_callbacks *cbs,
-			     void *user_data,
+			     gensio_acceptor_event cb, void *user_data,
 			     const struct gensio_gensio_acc_cbs *acc_cbs,
 			     void *acc_data,
 			     struct gensio_acceptor **acceptor)
@@ -392,7 +397,7 @@ gensio_gensio_acceptor_alloc(const char *name,
 	goto out_nomem;
 
     acc = &nadata->acceptor;
-    acc->cbs = cbs;
+    acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_basena_funcs;
     acc->type = type;
@@ -403,7 +408,7 @@ gensio_gensio_acceptor_alloc(const char *name,
     nadata->acc_data = acc_data;
     nadata->refcount = 1;
 
-    gensio_acc_set_callbacks(child, &basena_acc_cbs, nadata);
+    gensio_acc_set_callback(child, basena_child_event, nadata);
 
     *acceptor = acc;
 

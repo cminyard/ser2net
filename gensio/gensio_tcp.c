@@ -429,7 +429,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
     
-    nadata->acceptor.cbs->new_connection(&nadata->acceptor, io);
+    nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION, io);
 }
 
 static void
@@ -591,8 +591,7 @@ int
 tcp_gensio_acceptor_alloc(const char *name, char *args[],
 			  struct gensio_os_funcs *o,
 			  struct addrinfo *iai,
-			  const struct gensio_acceptor_callbacks *cbs,
-			  void *user_data,
+			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
     struct gensio_acceptor *acc;
@@ -628,7 +627,7 @@ tcp_gensio_acceptor_alloc(const char *name, char *args[],
 
     acc = &nadata->acceptor;
 
-    acc->cbs = cbs;
+    acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_tcp_funcs;
     acc->type = GENSIO_TYPE_TCP;

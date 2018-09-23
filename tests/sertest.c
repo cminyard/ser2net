@@ -132,9 +132,9 @@ start_exit(struct sertest_context *c,
     return 0;
 }
 
-static unsigned int
+static int
 child_event(struct gensio *net, int event, int readerr,
-	    unsigned char *buf, unsigned int buflen,
+	    unsigned char *buf, unsigned int *buflen,
 	    unsigned long channel, void *auxdata)
 {
     struct gensio_list *le = gensio_get_user_data(net);
@@ -151,8 +151,8 @@ child_event(struct gensio *net, int event, int readerr,
 		gensio_set_read_callback_enable(le->io, false);
 		return 0;
 	    }
-	    dbgout(c, 1, "flush %u bytes\n", buflen);
-	    return buflen;
+	    dbgout(c, 1, "flush %u bytes\n", *buflen);
+	    return 0;
 	}
 
 	if (!le->cmp_read) {
@@ -169,11 +169,11 @@ child_event(struct gensio *net, int event, int readerr,
 	}
 
 	dbgout(c, 2, "Data read with %u bytes, %u to compare\n",
-	       buflen, le->cmp_read_len);
-	if (buflen > le->cmp_read_len)
+	       *buflen, le->cmp_read_len);
+	if (*buflen > le->cmp_read_len)
 	    to_cmp = le->cmp_read_len;
 	else
-	    to_cmp = buflen;
+	    to_cmp = *buflen;
 
 	for (i = 0; i < to_cmp; i++) {
 	    if (buf[i] != *le->cmp_read) {
@@ -199,7 +199,8 @@ child_event(struct gensio *net, int event, int readerr,
 	    my_o->wake(le->waiter);
 	}
 
-	return to_cmp;
+	*buflen = to_cmp;
+	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
 	if (!le->to_write) {
@@ -224,6 +225,8 @@ child_event(struct gensio *net, int event, int readerr,
 	}
 	return 0;
     }
+
+    return ENOTSUP;
 }
 
 static int

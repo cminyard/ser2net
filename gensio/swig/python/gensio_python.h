@@ -468,18 +468,23 @@ gensio_acc_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
     OI_PY_STATE_PUT(gstate);
 }
 
-static void
-gensio_acc_got_new(struct gensio_acceptor *acceptor, struct gensio *io)
+static int
+gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 {
     struct gensio_acc_data *data = gensio_acc_get_user_data(acceptor);
     swig_ref acc_ref, io_ref;
     PyObject *args;
     OI_PY_STATE gstate;
     struct gensio_data *iodata;
+    struct gensio *io;
 
+    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
+	return ENOTSUP;
+
+    io = cdata;
     iodata = malloc(sizeof(*data));
     if (!iodata)
-	return;
+	return 0;
     iodata->refcount = 1;
     iodata->handler_val = NULL;
     iodata->o = data->o;
@@ -502,11 +507,8 @@ gensio_acc_got_new(struct gensio_acceptor *acceptor, struct gensio *io)
     swig_free_ref_check(acc_ref, acceptor);
     swig_free_ref_check(io_ref, acceptor);
     OI_PY_STATE_PUT(gstate);
+    return 0;
 }
-
-static struct gensio_acceptor_callbacks gen_acc_cbs = {
-    .new_connection = gensio_acc_got_new
-};
 
 struct sergensio_cbdata {
     const char *cbname;

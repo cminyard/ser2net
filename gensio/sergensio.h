@@ -267,7 +267,7 @@ int sergensio_telnet_alloc(struct gensio *child, char *args[],
 int sergensio_telnet_acceptor_alloc(const char *name, char *args[],
 				    struct gensio_os_funcs *o,
 				    struct gensio_acceptor *child,
-				    const struct gensio_acceptor_callbacks *cbs,
+				    gensio_acceptor_event cb,
 				    void *user_data,
 				    struct gensio_acceptor **acceptor);
 
