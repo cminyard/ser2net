@@ -958,3 +958,12 @@ termios_gensio_alloc(const char *devname, char *args[],
     sterm_free(sdata);
     return err;
 }
+
+int
+str_to_termios_gensio(const char *str, char *args[],
+		      struct gensio_os_funcs *o,
+		      gensio_event cb, void *user_data,
+		      struct gensio **new_gensio)
+{
+    return termios_gensio_alloc(str, args, o, cb, user_data, new_gensio);
+}

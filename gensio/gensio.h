@@ -533,17 +533,62 @@ bool gensio_acc_is_reliable(struct gensio_acceptor *acceptor);
 bool gensio_acc_is_packet(struct gensio_acceptor *acceptor);
 
 /*
- * Convert a string representation of a network address into a network
- * acceptor.  max_read_size is the internal read buffer size for the
- * connections.
+ * Convert a string representation of an I/O location into an acceptor.
  */
 int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
 			   gensio_acceptor_event cb, void *user_data,
 			   struct gensio_acceptor **acceptor);
 
 /*
- * Convert a string representation of a network address into a
- * client gensio.
+ * Handler registered so that str_to_gensio_acceptor can process an
+ * acceptor.  This is so users can create their own gensio acceptor
+ * types.
+ */
+typedef int (*str_to_gensio_acc_handler)(const char *str, char *args[],
+					 struct gensio_os_funcs *o,
+					 gensio_acceptor_event cb,
+					 void *user_data,
+					 struct gensio_acceptor **new_gensio);
+/*
+ * Add a gensio acceptor to the set of registered gensio acceptors.
+ */
+int register_gensio_acceptor(struct gensio_os_funcs *o,
+			     const char *name,
+			     str_to_gensio_acc_handler handler);
+
+/*
+ * Allocators for the various gensio acceptor types, compatible with
+ * register_gensio_acceptor().
+ */
+int str_to_tcp_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_os_funcs *o,
+			       gensio_acceptor_event cb,
+			       void *user_data,
+			       struct gensio_acceptor **new_acc);
+int str_to_udp_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_os_funcs *o,
+			       gensio_acceptor_event cb,
+			       void *user_data,
+			       struct gensio_acceptor **new_acc);
+int str_to_stdio_gensio_acceptor(const char *str, char *args[],
+				 struct gensio_os_funcs *o,
+				 gensio_acceptor_event cb,
+				 void *user_data,
+				 struct gensio_acceptor **new_acc);
+int str_to_ssl_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_os_funcs *o,
+			       gensio_acceptor_event cb,
+			       void *user_data,
+			       struct gensio_acceptor **new_acc);
+int str_to_telnet_gensio_acceptor(const char *str, char *args[],
+				  struct gensio_os_funcs *o,
+				  gensio_acceptor_event cb,
+				  void *user_data,
+				  struct gensio_acceptor **acc_gensio);
+
+/*
+ * Convert a string representation of an I/O location into a client
+ * gensio.
  */
 int str_to_gensio(const char *str,
 		  struct gensio_os_funcs *o,
@@ -551,7 +596,52 @@ int str_to_gensio(const char *str,
 		  struct gensio **gensio);
 
 /*
- * Allocators for different I/O types.
+ * Handler registered so that str_to_gensio can process a gensio.
+ * This is so users can create their own gensio types.
+ */
+typedef int (*str_to_gensio_handler)(const char *str, char *args[],
+				     struct gensio_os_funcs *o,
+				     gensio_event cb, void *user_data,
+				     struct gensio **new_gensio);
+
+/*
+ * Add a gensio to the set of registered gensios.
+ */
+int register_gensio(struct gensio_os_funcs *o,
+		    const char *name, str_to_gensio_handler handler);
+
+/*
+ * Allocators for the various gensio types, compatible with
+ * register_gensio().
+ */
+int str_to_tcp_gensio(const char *str, char *args[],
+		      struct gensio_os_funcs *o,
+		      gensio_event cb, void *user_data,
+		      struct gensio **new_gensio);
+int str_to_udp_gensio(const char *str, char *args[],
+		      struct gensio_os_funcs *o,
+		      gensio_event cb, void *user_data,
+		      struct gensio **new_gensio);
+int str_to_stdio_gensio(const char *str, char *args[],
+			struct gensio_os_funcs *o,
+			gensio_event cb, void *user_data,
+			struct gensio **new_gensio);
+int str_to_ssl_gensio(const char *str, char *args[],
+		      struct gensio_os_funcs *o,
+		      gensio_event cb, void *user_data,
+		      struct gensio **new_gensio);
+int str_to_telnet_gensio(const char *str, char *args[],
+			 struct gensio_os_funcs *o,
+			 gensio_event cb, void *user_data,
+			 struct gensio **new_gensio);
+int str_to_termios_gensio(const char *str, char *args[],
+			  struct gensio_os_funcs *o,
+			  gensio_event cb, void *user_data,
+			  struct gensio **new_gensio);
+
+
+/*
+ * Allocators for acceptors for different I/O types.
  */
 int tcp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
 			      struct gensio_os_funcs *o,
@@ -565,7 +655,7 @@ int udp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
 			      void *user_data,
 			      struct gensio_acceptor **acceptor);
 
-int stdio_gensio_acceptor_alloc(char *prog, char *args[],
+int stdio_gensio_acceptor_alloc(char *args[],
 				struct gensio_os_funcs *o,
 				gensio_acceptor_event cb,
 				void *user_data,
@@ -626,6 +716,13 @@ int telnet_gensio_alloc(struct gensio *child, char *args[],
 			gensio_event cb, void *user_data,
 			struct gensio **sio);
 
+/*
+ * Take a string in the form [ipv4|ipv6,][hostname,]port and convert
+ * it to an addrinfo structure.  If this returns success, the user
+ * must free rai with freeaddrinfo().  If is_dgram is true, allocate
+ * a datagram socket, otherwise a stream socket.
+ */
+int gensio_scan_netaddr(const char *str, bool is_dgram, struct addrinfo **rai);
 
 /*
  * Compare two sockaddr structure and return TRUE if they are equal

@@ -1158,6 +1158,26 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 }
 
 int
+str_to_udp_gensio_acceptor(const char *str, char *args[],
+			   struct gensio_os_funcs *o,
+			   gensio_acceptor_event cb,
+			   void *user_data,
+			   struct gensio_acceptor **acc)
+{
+    int err;
+    struct addrinfo *ai;
+
+    err = gensio_scan_netaddr(str, true, &ai);
+    if (err)
+	return err;
+
+    err = udp_gensio_acceptor_alloc(ai, args, o, cb, user_data, acc);
+    freeaddrinfo(ai);
+
+    return err;
+}
+
+int
 udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		struct gensio_os_funcs *o,
 		gensio_event cb, void *user_data,
@@ -1257,5 +1277,23 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
 	*new_gensio = &ndata->net;
     }
 
+    return err;
+}
+
+int
+str_to_udp_gensio(const char *str, char *args[],
+		  struct gensio_os_funcs *o,
+		  gensio_event cb, void *user_data,
+		  struct gensio **new_gensio)
+{
+    struct addrinfo *ai;
+    int err;
+
+    err = gensio_scan_netaddr(str, true, &ai);
+    if (err)
+	return err;
+
+    err = udp_gensio_alloc(ai, args, o, cb, user_data, new_gensio);
+    freeaddrinfo(ai);
     return err;
 }

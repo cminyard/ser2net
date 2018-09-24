@@ -73,6 +73,26 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     return 0;
 }
 
+int
+str_to_ssl_gensio(const char *str, char *args[],
+		  struct gensio_os_funcs *o,
+		  gensio_event cb, void *user_data,
+		  struct gensio **new_gensio)
+{
+    int err;
+    struct gensio *io2;
+
+    err = str_to_gensio(str, o, NULL, NULL, &io2);
+    if (err)
+	return err;
+
+    err = ssl_gensio_alloc(io2, args, o, cb, user_data, new_gensio);
+    if (err)
+	gensio_free(io2);
+
+    return err;
+}
+
 struct sslna_data {
     unsigned int max_read_size;
     unsigned int max_write_size;
@@ -237,6 +257,26 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
     err = ENOMEM;
  out_err:
     sslna_free(nadata);
+    return err;
+}
+
+int
+str_to_ssl_gensio_acceptor(const char *str, char *args[],
+			   struct gensio_os_funcs *o,
+			   gensio_acceptor_event cb,
+			   void *user_data,
+			   struct gensio_acceptor **acc)
+{
+    int err;
+    struct gensio_acceptor *acc2 = NULL;
+
+    err = str_to_gensio_acceptor(str, o, NULL, NULL, &acc2);
+    if (!err) {
+	err = ssl_gensio_acceptor_alloc(acc2, args, o, cb, user_data, acc);
+	if (err)
+	    gensio_acc_free(acc2);
+    }
+
     return err;
 }
 

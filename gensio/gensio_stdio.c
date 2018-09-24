@@ -28,6 +28,7 @@
 #include <assert.h>
 
 #include <utils/locking.h>
+#include <utils/utils.h>
 
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
@@ -840,7 +841,7 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 }
 
 int
-stdio_gensio_acceptor_alloc(char *prog, char *args[], struct gensio_os_funcs *o,
+stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
 			    gensio_acceptor_event cb, void *user_data,
 			    struct gensio_acceptor **acceptor)
 {
@@ -875,6 +876,16 @@ stdio_gensio_acceptor_alloc(char *prog, char *args[], struct gensio_os_funcs *o,
 
     *acceptor = acc;
     return 0;
+}
+
+int
+str_to_stdio_gensio_acceptor(const char *str, char *args[],
+			     struct gensio_os_funcs *o,
+			     gensio_acceptor_event cb,
+			     void *user_data,
+			     struct gensio_acceptor **acc)
+{
+    return stdio_gensio_acceptor_alloc(args, o, cb, user_data, acc);
 }
 
 int
@@ -924,4 +935,21 @@ stdio_gensio_alloc(char *const argv[], char *args[],
  out_nomem:
     stdiona_finish_free(nadata);
     return ENOMEM;
+}
+
+int
+str_to_stdio_gensio(const char *str, char *args[],
+		    struct gensio_os_funcs *o,
+		    gensio_event cb, void *user_data,
+		    struct gensio **new_gensio)
+{
+    int err, argc;
+    char **argv;
+
+    err = str_to_argv(str, &argc, &argv, NULL);
+    if (!err) {
+	err = stdio_gensio_alloc(argv, args, o, cb, user_data, new_gensio);
+	str_to_argv_free(argc, argv);
+    }
+    return err;
 }

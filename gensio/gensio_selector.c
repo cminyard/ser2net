@@ -442,9 +442,11 @@ gensio_sel_call_once(struct gensio_os_funcs *f, struct gensio_once *once,
     LOCK(once_lock);
     if (!once->called) {
 	once->called = true;
+	UNLOCK(once_lock);
 	func(cb_data);
+    } else {
+	UNLOCK(once_lock);
     }
-    UNLOCK(once_lock);
 }
 
 static void

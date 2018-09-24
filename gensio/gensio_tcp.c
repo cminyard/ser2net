@@ -268,6 +268,25 @@ tcp_gensio_alloc(struct addrinfo *iai, char *args[],
     return 0;
 }
 
+int
+str_to_tcp_gensio(const char *str, char *args[],
+		  struct gensio_os_funcs *o,
+		  gensio_event cb, void *user_data,
+		  struct gensio **new_gensio)
+{
+    struct addrinfo *ai;
+    int err;
+
+    err = gensio_scan_netaddr(str, false, &ai);
+    if (err)
+	return err;
+
+    err = tcp_gensio_alloc(ai, args, o, cb, user_data, new_gensio);
+    freeaddrinfo(ai);
+
+    return err;
+}
+
 struct tcpna_data {
     struct gensio_acceptor acceptor;
 
@@ -642,4 +661,24 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
     if (nadata)
 	free(nadata);
     return ENOMEM;
+}
+
+int
+str_to_tcp_gensio_acceptor(const char *str, char *args[],
+			   struct gensio_os_funcs *o,
+			   gensio_acceptor_event cb,
+			   void *user_data,
+			   struct gensio_acceptor **acc)
+{
+    int err;
+    struct addrinfo *ai;
+
+    err = gensio_scan_netaddr(str, false, &ai);
+    if (err)
+	return err;
+
+    err = tcp_gensio_acceptor_alloc(ai, args, o, cb, user_data, acc);
+    freeaddrinfo(ai);
+
+    return err;
 }
