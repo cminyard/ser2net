@@ -60,12 +60,14 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     }
     child->funcs->ref(child);
 
-    io = base_gensio_alloc(o, ll, filter, "ssl", true, true, cb, user_data);
+    io = base_gensio_alloc(o, ll, filter, "ssl", cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	filter->ops->free(filter);
 	return ENOMEM;
     }
+    gensio_set_is_packet(io, true);
+    gensio_set_is_reliable(io, true);
     gensio_free(child); /* Lose the ref we acquired. */
 
     *net = io;
@@ -172,8 +174,8 @@ sslna_new_child(void *acc_data, void **finish_data,
 static void
 sslna_finish_child(void *acc_data, void *finish_data, struct gensio *io)
 {
-    io->is_packet = true;
-    io->is_reliable = true;
+    gensio_set_is_packet(io, true);
+    gensio_set_is_reliable(io, true);
 }
 
 static const struct gensio_gensio_acc_cbs gensio_acc_ssl_funcs = {
@@ -243,11 +245,12 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
     if (!nadata->CAfilepath)
 	goto out_nomem;
 
-    err = gensio_gensio_acceptor_alloc(child, o, "ssl", true, true,
-				       cb, user_data,
+    err = gensio_gensio_acceptor_alloc(child, o, "ssl", cb, user_data,
 				       &gensio_acc_ssl_funcs, nadata, acceptor);
     if (err)
 	goto out_err;
+    gensio_acc_set_is_packet(*acceptor, true);
+    gensio_acc_set_is_reliable(*acceptor, true);
 
     return 0;
 

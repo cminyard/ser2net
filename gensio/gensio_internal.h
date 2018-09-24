@@ -25,16 +25,9 @@
 
 /*
  * This is the default for most gensio layers.  Some have specific buffer
- * sizes, especially packet protocols like UDP (below) and SSL (defined
- * by SSL).
+ * sizes, especially packet protocols like UDP and SSL.
  */
 #define GENSIO_DEFAULT_BUF_SIZE		1024
-
-/*
- * Maximum UDP packet size, this avoids partial packet reads.  Probably
- * not a good idea to override this.
- */
-#define GENSIO_DEFAULT_UDP_BUF_SIZE	65536
 
 struct gensio_functions {
     int (*write)(struct gensio *io, unsigned int *count,
@@ -49,8 +42,7 @@ struct gensio_functions {
     int (*remote_id)(struct gensio *io, int *id);
 
     int (*open)(struct gensio *io,
-		void (*open_done)(struct gensio *io, int open,
-				  void *open_data),
+		void (*open_done)(struct gensio *io, int err, void *open_data),
 		void *open_data);
 
     int (*close)(struct gensio *io,
@@ -91,6 +83,10 @@ struct gensio {
     bool is_reliable;
 };
 
+void gensio_set_is_client(struct gensio *io, bool is_client);
+void gensio_set_is_packet(struct gensio *io, bool is_packet);
+void gensio_set_is_reliable(struct gensio *io, bool is_reliable);
+
 /*
  * If io->type is in the types array, return true.  Return false otherwise.
  */
@@ -130,6 +126,9 @@ struct gensio_acceptor {
     bool is_packet;
     bool is_reliable;
 };
+
+void gensio_acc_set_is_packet(struct gensio_acceptor *io, bool is_packet);
+void gensio_acc_set_is_reliable(struct gensio_acceptor *io, bool is_reliable);
 
 void gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
 		     char *str, va_list args);

@@ -629,14 +629,13 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
 	goto out_err;
     }
 
-    sdata->sio.io = base_gensio_alloc(o, ll, filter, "telnet",
-				      false, gensio_is_reliable(child),
-				      cb, user_data);
+    sdata->sio.io = base_gensio_alloc(o, ll, filter, "telnet", cb, user_data);
     if (!sdata->sio.io) {
 	filter->ops->free(filter);
 	ll->ops->free(ll);
 	goto out_err;
     }
+    gensio_set_is_reliable(sdata->sio.io, gensio_is_reliable(child));
     gensio_free(child); /* Lose the ref we acquired. */
 
     sdata->o = o;
@@ -684,6 +683,7 @@ struct stela_data {
     struct gensio_os_funcs *o;
 
     bool allow_2217;
+    bool is_reliable;
 };
 
 static void
@@ -966,13 +966,13 @@ stela_new_child(void *acc_data, void **finish_data,
 static void
 stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
 {
+    struct stela_data *stela = acc_data;
     struct stel_data *sdata = finish_data;
 
     if (sdata->allow_2217)
 	io->parent_object = &sdata->sio;
     sdata->sio.io = io;
-    io->is_packet = false;
-    io->is_reliable = true;
+    gensio_set_is_reliable(io, stela->is_reliable);
 }
 
 static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {
@@ -1025,14 +1025,15 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
     stela->max_write_size = max_write_size;
     stela->max_read_size = max_read_size;
     stela->allow_2217 = allow_2217;
+    stela->is_reliable = gensio_acc_is_reliable(child);
 
     err = gensio_gensio_acceptor_alloc(child, o, "telnet",
-				       false, gensio_acc_is_reliable(child),
 				       cb, user_data,
 				       &gensio_acc_telnet_funcs, stela,
 				       acceptor);
     if (err)
 	goto out_err;
+    gensio_acc_set_is_reliable(*acceptor, stela->is_reliable);
 
     return 0;
 

@@ -871,8 +871,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_stdio_funcs;
-    acc->is_packet = false;
-    acc->is_reliable = true;
+    gensio_acc_set_is_reliable(&nadata->acceptor, true);
 
     *acceptor = acc;
     return 0;
@@ -924,9 +923,8 @@ stdio_gensio_alloc(char *const argv[], char *args[],
     nadata->net.user_data = user_data;
     nadata->net.funcs = &gensio_stdio_funcs;
     nadata->net.typename = "stdio";
-    nadata->net.is_client = true;
-    nadata->net.is_packet = false;
-    nadata->net.is_reliable = true;
+    gensio_set_is_client(&nadata->net, true);
+    gensio_set_is_reliable(&nadata->net, true);
 
     *new_gensio = &nadata->net;
 

@@ -32,6 +32,12 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
 
+/*
+ * Maximum UDP packet size, this avoids partial packet reads.  Probably
+ * not a good idea to override this.
+ */
+#define GENSIO_DEFAULT_UDP_BUF_SIZE	65536
+
 struct udpna_data;
 
 struct udpn_data {
@@ -558,7 +564,7 @@ udpn_open(struct gensio *net, void (*open_done)(struct gensio *net,
     int err = EBUSY;
 
     udpna_lock(nadata);
-    if (!ndata->net.is_client) {
+    if (!gensio_is_client(&ndata->net)) {
 	err = ENOTTY;
     } else if (ndata->closed && !ndata->in_close) {
 	udpn_remove_from_list(&nadata->closed_udpns, ndata);
@@ -877,8 +883,7 @@ udpna_readhandler(int fd, void *cbdata)
 
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.typename = "udp";
-    ndata->net.is_packet = false;
-    ndata->net.is_reliable = true;
+    gensio_set_is_packet(&ndata->net, true);
 
     /* Stick it on the end of the list. */
     udpn_add_to_list(&nadata->udpns, ndata);
@@ -1062,8 +1067,7 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.typename = "udp";
     ndata->myfd = nadata->fds[fdi].fd;
-    ndata->net.is_packet = false;
-    ndata->net.is_reliable = true;
+    gensio_set_is_packet(&ndata->net, true);
 
     ndata->in_open = true;
     ndata->open_done = connect_done;
@@ -1134,8 +1138,7 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_udp_funcs;
     acc->typename = "udp";
-    acc->is_packet = true;
-    acc->is_reliable = false;
+    gensio_acc_set_is_packet(&nadata->acceptor, true);
 
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;
@@ -1254,9 +1257,8 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
 
     ndata->net.funcs = &gensio_udp_funcs;
     ndata->net.typename = "udp";
-    ndata->net.is_client = true;
-    ndata->net.is_packet = true;
-    ndata->net.is_reliable = false;
+    gensio_set_is_client(&ndata->net, true);
+    gensio_set_is_packet(&ndata->net, true);
     ndata->net.cb = cb;
     ndata->net.user_data = user_data;
 

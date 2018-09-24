@@ -982,16 +982,16 @@ static const struct gensio_filter_callbacks basen_filter_cbs = {
 };
 
 static struct gensio *
-gensio_alloc(struct gensio_os_funcs *o,
-	     struct gensio_ll *ll,
-	     struct gensio_filter *filter,
-	     const char *typename,
-	     bool is_client, bool is_packet, bool is_reliable,
-	     void (*open_done)(struct gensio *net,
-			       int err,
-			       void *open_data),
-	     void *open_data,
-	     gensio_event cb, void *user_data)
+gensio_i_alloc(struct gensio_os_funcs *o,
+	       struct gensio_ll *ll,
+	       struct gensio_filter *filter,
+	       const char *typename,
+	       bool is_client,
+	       void (*open_done)(struct gensio *net,
+				 int err,
+				 void *open_data),
+	       void *open_data,
+	       gensio_event cb, void *user_data)
 {
     struct basen_data *ndata = o->zalloc(o, sizeof(*ndata));
 
@@ -1025,9 +1025,7 @@ gensio_alloc(struct gensio_os_funcs *o,
     ndata->net.cb = cb;
     ndata->net.funcs = &basen_net_funcs;
     ndata->net.typename = typename;
-    ndata->net.is_client = is_client;
-    ndata->net.is_packet = is_packet;
-    ndata->net.is_reliable = is_reliable;
+    gensio_set_is_client(&ndata->net, is_client);
     ll->ops->set_callbacks(ll, &basen_ll_callbacks, ndata);
     if (is_client)
 	ndata->state = BASEN_CLOSED;
@@ -1055,11 +1053,10 @@ base_gensio_alloc(struct gensio_os_funcs *o,
 		  struct gensio_ll *ll,
 		  struct gensio_filter *filter,
 		  const char *typename,
-		  bool is_packet, bool is_reliable,
 		  gensio_event cb, void *user_data)
 {
-    return gensio_alloc(o, ll, filter, typename, true, is_packet, is_reliable,
-			NULL, NULL, cb, user_data);
+    return gensio_i_alloc(o, ll, filter, typename, true,
+			  NULL, NULL, cb, user_data);
 }
 
 struct gensio *
@@ -1067,12 +1064,11 @@ base_gensio_server_alloc(struct gensio_os_funcs *o,
 			 struct gensio_ll *ll,
 			 struct gensio_filter *filter,
 			 const char *typename,
-			 bool is_packet, bool is_reliable,
 			 void (*open_done)(struct gensio *net,
 					   int err,
 					   void *open_data),
 			 void *open_data)
 {
-    return gensio_alloc(o, ll, filter, typename, false, is_packet, is_reliable,
-			open_done, open_data, NULL, NULL);
+    return gensio_i_alloc(o, ll, filter, typename, false,
+			  open_done, open_data, NULL, NULL);
 }

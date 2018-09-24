@@ -255,13 +255,14 @@ tcp_gensio_alloc(struct addrinfo *iai, char *args[],
 	return ENOMEM;
     }
 
-    io = base_gensio_alloc(o, ll, NULL, "tcp", false, true, cb, user_data);
+    io = base_gensio_alloc(o, ll, NULL, "tcp", cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	gensio_free_addrinfo(o, ai);
 	o->free(o, tdata);
 	return ENOMEM;
     }
+    gensio_set_is_reliable(io, true);
 
     *new_gensio = io;
     return 0;
@@ -434,8 +435,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    io = base_gensio_server_alloc(nadata->o, ll, NULL, "tcp",
-				  false, true, NULL, NULL);
+    io = base_gensio_server_alloc(nadata->o, ll, NULL, "tcp", NULL, NULL);
     if (!io) {
 	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
 		       "Out of memory allocating tcp base");
@@ -444,6 +444,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	tcp_free(tdata);
 	return;
     }
+    gensio_set_is_reliable(io, true);
     
     nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION, io);
 }
@@ -645,8 +646,8 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_tcp_funcs;
     acc->typename = "tcp";
-    acc->is_packet = false;
-    acc->is_reliable = true;
+    gensio_acc_set_is_reliable(&nadata->acceptor, true);
+
 
     nadata->ai = ai;
     nadata->max_read_size = max_read_size;

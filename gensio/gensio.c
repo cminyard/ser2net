@@ -491,6 +491,24 @@ gensio_is_packet(struct gensio *io)
     return io->is_packet;
 }
 
+void
+gensio_set_is_client(struct gensio *io, bool is_client)
+{
+    io->is_client = is_client;
+}
+
+void
+gensio_set_is_reliable(struct gensio *io, bool is_reliable)
+{
+    io->is_reliable = is_reliable;
+}
+
+void
+gensio_set_is_packet(struct gensio *io, bool is_packet)
+{
+    io->is_packet = is_packet;
+}
+
 void *
 gensio_acc_get_user_data(struct gensio_acceptor *acceptor)
 {
@@ -569,6 +587,18 @@ bool
 gensio_acc_is_packet(struct gensio_acceptor *acceptor)
 {
     return acceptor->is_packet;
+}
+
+void
+gensio_acc_set_is_reliable(struct gensio_acceptor *acceptor, bool is_reliable)
+{
+     acceptor->is_reliable = is_reliable;
+}
+
+void
+gensio_acc_set_is_packet(struct gensio_acceptor *acceptor, bool is_packet)
+{
+    acceptor->is_packet = is_packet;
 }
 
 struct registered_gensio_acceptor {
