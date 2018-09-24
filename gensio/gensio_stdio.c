@@ -819,11 +819,6 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->io = gensio_data_alloc(nadata->o, NULL, NULL, &gensio_stdio_funcs,
-				   "stdio", nadata);
-    if (!nadata->io)
-	goto out_nomem;
-
     *new_nadata = nadata;
 
     return 0;
@@ -853,6 +848,13 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     err = stdio_nadata_setup(o, max_read_size, &nadata);
     if (err)
 	return err;
+
+    nadata->io = gensio_data_alloc(o, NULL, NULL, &gensio_stdio_funcs,
+                                  "stdio", nadata);
+    if (!nadata->io) {
+	stdiona_finish_free(nadata);
+	return ENOMEM;
+    }
 
     nadata->ostdin = 1;
     nadata->ostdout = 0;
