@@ -824,7 +824,7 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 	goto out_err;
 
     nadata->net.funcs = &gensio_stdio_funcs;
-    nadata->net.type = GENSIO_TYPE_STDIO;
+    nadata->net.typename = "stdio";
 
     *new_nadata = nadata;
 
@@ -866,7 +866,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     nadata->ostderr = -1;
 
     acc = &nadata->acceptor;
-    acc->type = GENSIO_TYPE_STDIO;
+    acc->typename = "stdio";
 
     acc->cb = cb;
     acc->user_data = user_data;
@@ -923,7 +923,7 @@ stdio_gensio_alloc(char *const argv[], char *args[],
     nadata->net.cb = cb;
     nadata->net.user_data = user_data;
     nadata->net.funcs = &gensio_stdio_funcs;
-    nadata->net.type = GENSIO_TYPE_STDIO;
+    nadata->net.typename = "stdio";
     nadata->net.is_client = true;
     nadata->net.is_packet = false;
     nadata->net.is_reliable = true;

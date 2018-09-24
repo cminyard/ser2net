@@ -255,8 +255,7 @@ tcp_gensio_alloc(struct addrinfo *iai, char *args[],
 	return ENOMEM;
     }
 
-    io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_TCP, false, true,
-			   cb, user_data);
+    io = base_gensio_alloc(o, ll, NULL, "tcp", false, true, cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	gensio_free_addrinfo(o, ai);
@@ -435,7 +434,7 @@ tcpna_readhandler(int fd, void *cbdata)
 	return;
     }
 
-    io = base_gensio_server_alloc(nadata->o, ll, NULL, GENSIO_TYPE_TCP,
+    io = base_gensio_server_alloc(nadata->o, ll, NULL, "tcp",
 				  false, true, NULL, NULL);
     if (!io) {
 	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
@@ -492,9 +491,11 @@ tcpna_startup(struct gensio_acceptor *acceptor)
 	goto out_unlock;
     }
 
-    nadata->acceptfds = open_socket(nadata->o,
-				    nadata->ai, tcpna_readhandler, NULL, nadata,
-				    &nadata->nr_acceptfds, tcpna_fd_cleared);
+    nadata->acceptfds = gensio_open_socket(nadata->o,
+					   nadata->ai,
+					   tcpna_readhandler, NULL, nadata,
+					   &nadata->nr_acceptfds,
+					   tcpna_fd_cleared);
     if (nadata->acceptfds == NULL) {
 	rv = errno;
     } else {
@@ -643,7 +644,7 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
     acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_tcp_funcs;
-    acc->type = GENSIO_TYPE_TCP;
+    acc->typename = "tcp";
     acc->is_packet = false;
     acc->is_reliable = true;
 

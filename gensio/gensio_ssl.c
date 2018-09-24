@@ -60,8 +60,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     }
     child->funcs->ref(child);
 
-    io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SSL,
-			   true, true, cb, user_data);
+    io = base_gensio_alloc(o, ll, filter, "ssl", true, true, cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
 	filter->ops->free(filter);
@@ -244,8 +243,7 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
     if (!nadata->CAfilepath)
 	goto out_nomem;
 
-    err = gensio_gensio_acceptor_alloc(child, o, GENSIO_TYPE_SSL,
-				       true, true,
+    err = gensio_gensio_acceptor_alloc(child, o, "ssl", true, true,
 				       cb, user_data,
 				       &gensio_acc_ssl_funcs, nadata, acceptor);
     if (err)

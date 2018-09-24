@@ -31,12 +31,7 @@ sergensio_to_gensio(struct sergensio *sio)
     return sio->io;
 }
 
-static enum gensio_type sergensio_types[] =
-{
-    GENSIO_TYPE_SER_TELNET,
-    GENSIO_TYPE_SER_TERMIOS,
-    GENSIO_TYPE_INVALID
-};
+static char *sergensio_types[] = { "telnet", "termios", NULL };
 
 bool
 is_sergensio(struct gensio *io)

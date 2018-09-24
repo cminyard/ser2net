@@ -876,7 +876,7 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
     ndata->net.funcs = &gensio_udp_funcs;
-    ndata->net.type = GENSIO_TYPE_UDP;
+    ndata->net.typename = "udp";
     ndata->net.is_packet = false;
     ndata->net.is_reliable = true;
 
@@ -937,9 +937,11 @@ udpna_startup(struct gensio_acceptor *acceptor)
 
     udpna_lock(nadata);
     if (!nadata->fds) {
-	nadata->fds = open_socket(nadata->o, nadata->ai, udpna_readhandler,
-				  udpna_writehandler,
-				  nadata, &nadata->nr_fds, udpna_fd_cleared);
+	nadata->fds = gensio_open_socket(nadata->o, nadata->ai,
+					 udpna_readhandler,
+					 udpna_writehandler,
+					 nadata, &nadata->nr_fds,
+					 udpna_fd_cleared);
 	if (nadata->fds == NULL) {
 	    rv = errno;
 	    goto out_unlock;
@@ -1058,7 +1060,7 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
     ndata->raddrlen = ai->ai_addrlen;
 
     ndata->net.funcs = &gensio_udp_funcs;
-    ndata->net.type = GENSIO_TYPE_UDP;
+    ndata->net.typename = "udp";
     ndata->myfd = nadata->fds[fdi].fd;
     ndata->net.is_packet = false;
     ndata->net.is_reliable = true;
@@ -1131,7 +1133,7 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
     acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_udp_funcs;
-    acc->type = GENSIO_TYPE_UDP;
+    acc->typename = "udp";
     acc->is_packet = true;
     acc->is_reliable = false;
 
@@ -1251,7 +1253,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->raddrlen = ai->ai_addrlen;
 
     ndata->net.funcs = &gensio_udp_funcs;
-    ndata->net.type = GENSIO_TYPE_UDP;
+    ndata->net.typename = "udp";
     ndata->net.is_client = true;
     ndata->net.is_packet = true;
     ndata->net.is_reliable = false;

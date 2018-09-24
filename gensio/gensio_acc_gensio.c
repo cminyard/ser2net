@@ -346,7 +346,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
     }
 
     basena_lock(nadata);
-    io = base_gensio_server_alloc(o, ll, filter, nadata->acceptor.type,
+    io = base_gensio_server_alloc(o, ll, filter, nadata->acceptor.typename,
 				  false, false,
 				  basena_finish_server_open, nadata);
     if (io) {
@@ -373,7 +373,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 int
 gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 			     struct gensio_os_funcs *o,
-			     enum gensio_type type,
+			     const char *typename,
 			     bool is_packet, bool is_reliable,
 			     gensio_acceptor_event cb, void *user_data,
 			     const struct gensio_gensio_acc_cbs *acc_cbs,
@@ -395,7 +395,7 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
     acc->cb = cb;
     acc->user_data = user_data;
     acc->funcs = &gensio_acc_basena_funcs;
-    acc->type = type;
+    acc->typename = typename;
 
     nadata->o = o;
     nadata->child = child;

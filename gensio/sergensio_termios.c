@@ -939,7 +939,7 @@ termios_gensio_alloc(const char *devname, char *args[],
     if (!ll)
 	goto out_nomem;
 
-    sdata->sio.io = base_gensio_alloc(o, ll, NULL, GENSIO_TYPE_SER_TERMIOS,
+    sdata->sio.io = base_gensio_alloc(o, ll, NULL, "termios",
 				      false, false, cb, user_data);
     if (!sdata->sio.io) {
 	ll->ops->free(ll);

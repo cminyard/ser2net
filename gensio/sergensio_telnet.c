@@ -629,7 +629,7 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
 	goto out_err;
     }
 
-    sdata->sio.io = base_gensio_alloc(o, ll, filter, GENSIO_TYPE_SER_TELNET,
+    sdata->sio.io = base_gensio_alloc(o, ll, filter, "telnet",
 				      false, gensio_is_reliable(child),
 				      cb, user_data);
     if (!sdata->sio.io) {
@@ -1026,7 +1026,7 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
     stela->max_read_size = max_read_size;
     stela->allow_2217 = allow_2217;
 
-    err = gensio_gensio_acceptor_alloc(child, o, GENSIO_TYPE_SER_TELNET,
+    err = gensio_gensio_acceptor_alloc(child, o, "telnet",
 				       false, gensio_acc_is_reliable(child),
 				       cb, user_data,
 				       &gensio_acc_telnet_funcs, stela,

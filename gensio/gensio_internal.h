@@ -36,16 +36,6 @@
  */
 #define GENSIO_DEFAULT_UDP_BUF_SIZE	65536
 
-enum gensio_type {
-    GENSIO_TYPE_INVALID = 0,
-    GENSIO_TYPE_TCP,
-    GENSIO_TYPE_UDP,
-    GENSIO_TYPE_STDIO,
-    GENSIO_TYPE_SER_TELNET,
-    GENSIO_TYPE_SER_TERMIOS,
-    GENSIO_TYPE_SSL
-};
-
 struct gensio_functions {
     int (*write)(struct gensio *io, unsigned int *count,
 		 const void *buf, unsigned int buflen);
@@ -94,7 +84,8 @@ struct gensio {
 
     const struct gensio_functions *funcs;
 
-    enum gensio_type type;
+    const char *typename;
+
     bool is_client;
     bool is_packet;
     bool is_reliable;
@@ -103,7 +94,7 @@ struct gensio {
 /*
  * If io->type is in the types array, return true.  Return false otherwise.
  */
-bool gensio_match_type(struct gensio *io, enum gensio_type *types);
+bool gensio_match_type(struct gensio *io, char *types[]);
 
 struct gensio_acceptor_functions {
     int (*startup)(struct gensio_acceptor *acceptor);
@@ -134,7 +125,8 @@ struct gensio_acceptor {
 
     const struct gensio_acceptor_functions *funcs;
 
-    enum gensio_type type;
+    const char *typename;
+
     bool is_packet;
     bool is_reliable;
 };
@@ -163,14 +155,13 @@ struct opensocks
  * Also, open IPV6 addresses first.  This way, addresses in shared
  * namespaces (like IPV4 and IPV6 on INADDR6_ANY) will work properly
  */
-struct opensocks *open_socket(struct gensio_os_funcs *o,
-			      struct addrinfo *ai,
-			      void (*readhndlr)(int, void *),
-			      void (*writehndlr)(int, void *), void *data,
-			      unsigned int *nr_fds,
-			      void (*fd_handler_cleared)(int, void *));
-
-void check_ipv6_only(int family, struct sockaddr *addr, int fd);
+struct opensocks *gensio_open_socket(struct gensio_os_funcs *o,
+				     struct addrinfo *ai,
+				     void (*readhndlr)(int, void *),
+				     void (*writehndlr)(int, void *),
+				     void *data,
+				     unsigned int *nr_fds,
+				     void (*fd_handler_cleared)(int, void *));
 
 /* Returns a NULL if the fd is ok, a non-NULL error string if not */
 const char *gensio_check_tcpd_ok(int new_fd);

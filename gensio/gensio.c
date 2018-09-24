@@ -30,12 +30,27 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
 
+void
+check_ipv6_only(int family, struct sockaddr *addr, int fd)
+{
+    int null = 0;
+
+    if (family != AF_INET6)
+	return;
+
+    if (!IN6_IS_ADDR_UNSPECIFIED(&(((struct sockaddr_in6 *) addr)->sin6_addr)))
+	return;
+
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &null, sizeof(null));
+}
+
 /* FIXME - The error handling in this function isn't good, fix it. */
 struct opensocks *
-open_socket(struct gensio_os_funcs *o,
-	    struct addrinfo *ai, void (*readhndlr)(int, void *),
-	    void (*writehndlr)(int, void *), void *data,
-	    unsigned int *nr_fds, void (*fd_handler_cleared)(int, void *))
+gensio_open_socket(struct gensio_os_funcs *o,
+		   struct addrinfo *ai, void (*readhndlr)(int, void *),
+		   void (*writehndlr)(int, void *), void *data,
+		   unsigned int *nr_fds,
+		   void (*fd_handler_cleared)(int, void *))
 {
     struct addrinfo *rp;
     int optval = 1;
@@ -104,20 +119,6 @@ open_socket(struct gensio_os_funcs *o,
     }
     *nr_fds = curr_fd;
     return fds;
-}
-
-void
-check_ipv6_only(int family, struct sockaddr *addr, int fd)
-{
-    int null = 0;
-
-    if (family != AF_INET6)
-	return;
-
-    if (!IN6_IS_ADDR_UNSPECIFIED(&(((struct sockaddr_in6 *) addr)->sin6_addr)))
-	return;
-
-    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &null, sizeof(null));
 }
 
 int
@@ -555,7 +556,7 @@ gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
 bool
 gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
 {
-    return acceptor->type == GENSIO_TYPE_STDIO;
+    return strcmp(acceptor->typename, "stdio") == 0;
 }
 
 bool
@@ -781,12 +782,13 @@ str_to_gensio(const char *str,
 }
 
 bool
-gensio_match_type(struct gensio *io, enum gensio_type *types)
+gensio_match_type(struct gensio *io, char *types[])
 {
-    while (*types) {
-	if (io->type == *types)
+    unsigned int i;
+
+    for (i = 0; types[i]; i++) {
+	if (strcmp(io->typename, types[i]) == 0)
 	    return true;
-	types++;
     }
     return false;
 }
