@@ -98,11 +98,8 @@ struct stdiona_data {
     struct gensio_runner *deferred_op_runner;
 
     struct gensio *io;
-    struct gensio_acceptor acceptor;
+    struct gensio_acceptor *acc;
 };
-
-#define net_to_nadata(net) container_of(net, struct stdiona_data, net);
-#define acc_to_nadata(acc) container_of(acc, struct stdiona_data, acceptor);
 
 static void
 stdiona_lock(struct stdiona_data *nadata)
@@ -626,15 +623,14 @@ stdiona_do_connect(struct gensio_runner *runner, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
 
-    nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION,
-			nadata->io);
+    gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION, nadata->io);
 }
 
 static void
 stdiona_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct gensio_acceptor *acceptor = &nadata->acceptor;
+    struct gensio_acceptor *acceptor = nadata->acc;
 
     stdiona_lock(nadata);
     nadata->oio_count--;
@@ -657,7 +653,7 @@ stdiona_fd_cleared(int fd, void *cbdata)
 static int
 stdiona_startup(struct gensio_acceptor *acceptor)
 {
-    struct stdiona_data *nadata = acc_to_nadata(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     stdiona_lock(nadata);
@@ -731,7 +727,7 @@ stdiona_shutdown(struct gensio_acceptor *acceptor,
 				       void *shutdown_data),
 		 void *shutdown_data)
 {
-    struct stdiona_data *nadata = acc_to_nadata(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     stdiona_lock(nadata);
@@ -759,7 +755,7 @@ stdiona_set_accept_callback_enable(struct gensio_acceptor *acceptor,
 static void
 stdiona_free(struct gensio_acceptor *acceptor)
 {
-    struct stdiona_data *nadata = acc_to_nadata(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     stdiona_lock(nadata);
     nadata->in_free = true;
@@ -844,7 +840,6 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
 			    struct gensio_acceptor **acceptor)
 {
     int err;
-    struct gensio_acceptor *acc;
     struct stdiona_data *nadata = NULL;
     unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
     int i;
@@ -863,15 +858,16 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     nadata->ostdout = 0;
     nadata->ostderr = -1;
 
-    acc = &nadata->acceptor;
-    acc->typename = "stdio";
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data,
+					&gensio_acc_stdio_funcs,
+					"stdio", nadata);
+    if (!nadata->acc) {
+	stdiona_finish_free(nadata);
+	return ENOMEM;
+    }
+    gensio_acc_set_is_reliable(nadata->acc, true);
 
-    acc->cb = cb;
-    acc->user_data = user_data;
-    acc->funcs = &gensio_acc_stdio_funcs;
-    gensio_acc_set_is_reliable(&nadata->acceptor, true);
-
-    *acceptor = acc;
+    *acceptor = nadata->acc;
     return 0;
 }
 

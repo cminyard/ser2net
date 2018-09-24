@@ -108,21 +108,17 @@ struct gensio_acceptor_functions {
 		   void *cb_data, struct gensio **new_io);
 };
 
-/*
- * This function handles accepts on network I/O code and calls back the
- * user for the new connection.
- */
-struct gensio_acceptor {
-    void *user_data;
-    gensio_acceptor_event cb;
-
-    const struct gensio_acceptor_functions *funcs;
-
-    const char *typename;
-
-    bool is_packet;
-    bool is_reliable;
-};
+struct gensio_acceptor *gensio_acc_data_alloc(struct gensio_os_funcs *o,
+		      gensio_acceptor_event cb, void *user_data,
+		      const struct gensio_acceptor_functions *funcs,
+		      const char *typename, void *gensio_acc_data);
+void gensio_acc_data_free(struct gensio_acceptor *acc);
+void *gensio_acc_get_gensio_data(struct gensio_acceptor *acc);
+int gensio_acc_cb(struct gensio_acceptor *acc, int event, void *data);
+int gensio_acc_addclass(struct gensio_acceptor *acc,
+			const char *name, void *classdata);
+void *gensio_acc_getclass(struct gensio_acceptor *acc, const char *name);
+const char *gensio_acc_get_type(struct gensio_acceptor *acc);
 
 void gensio_acc_set_is_packet(struct gensio_acceptor *io, bool is_packet);
 void gensio_acc_set_is_reliable(struct gensio_acceptor *io, bool is_reliable);

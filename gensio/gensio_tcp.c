@@ -288,7 +288,7 @@ str_to_tcp_gensio(const char *str, char *args[],
 }
 
 struct tcpna_data {
-    struct gensio_acceptor acceptor;
+    struct gensio_acceptor *acc;
 
     struct gensio_os_funcs *o;
 
@@ -314,8 +314,6 @@ struct tcpna_data {
     unsigned int   nr_accept_close_waiting;
 };
 
-#define acc_to_nadata(acc) container_of(acc, struct tcpna_data, acceptor);
-
 static void
 write_nofail(int fd, const char *data, size_t count)
 {
@@ -336,6 +334,8 @@ tcpna_finish_free(struct tcpna_data *nadata)
 	gensio_free_addrinfo(nadata->o, nadata->ai);
     if (nadata->acceptfds)
 	nadata->o->free(nadata->o, nadata->acceptfds);
+    if (nadata->acc)
+	gensio_acc_data_free(nadata->acc);
     nadata->o->free(nadata->o, nadata);
 }
 
@@ -391,7 +391,7 @@ tcpna_readhandler(int fd, void *cbdata)
     new_fd = accept(fd, (struct sockaddr *) &addr, &addrlen);
     if (new_fd == -1) {
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	    gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 			   "Could not accept: %s", strerror(errno));
 	return;
     }
@@ -418,7 +418,7 @@ tcpna_readhandler(int fd, void *cbdata)
     
     err = tcp_socket_setup(tdata, new_fd);
     if (err) {
-	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		       "Error setting up tcp port: %s", strerror(err));
 	close(new_fd);
 	tcp_free(tdata);
@@ -428,7 +428,7 @@ tcpna_readhandler(int fd, void *cbdata)
     ll = fd_gensio_ll_alloc(nadata->o, new_fd, &tcp_server_fd_ll_ops, tdata,
 			    nadata->max_read_size);
     if (!ll) {
-	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		       "Out of memory allocating tcp ll");
 	close(new_fd);
 	tcp_free(tdata);
@@ -437,7 +437,7 @@ tcpna_readhandler(int fd, void *cbdata)
 
     io = base_gensio_server_alloc(nadata->o, ll, NULL, "tcp", NULL, NULL);
     if (!io) {
-	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		       "Out of memory allocating tcp base");
 	ll->ops->free(ll);
 	close(new_fd);
@@ -446,14 +446,14 @@ tcpna_readhandler(int fd, void *cbdata)
     }
     gensio_set_is_reliable(io, true);
     
-    nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION, io);
+    gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION, io);
 }
 
 static void
 tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
-    struct gensio_acceptor *acceptor = &nadata->acceptor;
+    struct gensio_acceptor *acceptor = nadata->acc;
     unsigned int num_left;
 
     close(fd);
@@ -483,7 +483,7 @@ tcpna_set_fd_enables(struct tcpna_data *nadata, bool enable)
 static int
 tcpna_startup(struct gensio_acceptor *acceptor)
 {
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     tcpna_lock(nadata);
@@ -536,7 +536,7 @@ tcpna_shutdown(struct gensio_acceptor *acceptor,
 				     void *shutdown_data),
 	       void *shutdown_data)
 {
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     tcpna_lock(nadata);
@@ -552,7 +552,7 @@ tcpna_shutdown(struct gensio_acceptor *acceptor,
 static void
 tcpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 {
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     tcpna_lock(nadata);
     if (nadata->enabled != enabled) {
@@ -565,7 +565,7 @@ tcpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 static void
 tcpna_free(struct gensio_acceptor *acceptor)
 {
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     tcpna_lock(nadata);
     if (nadata->setup)
@@ -579,7 +579,7 @@ tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
 				   void *cb_data),
 	      void *cb_data, struct gensio **new_net)
 {
-    struct tcpna_data *nadata = acc_to_nadata(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     struct gensio *net;
     int err;
     char *args[2] = { NULL, NULL };
@@ -613,9 +613,7 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
 			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
-    struct gensio_acceptor *acc;
     struct tcpna_data *nadata;
-    struct addrinfo *ai;
     unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
     int i;
 
@@ -625,43 +623,34 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
 	return EINVAL;
     }
 
-    ai = gensio_dup_addrinfo(o, iai);
-    if (!ai)
-	return ENOMEM;
-
     nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
-	goto out_nomem;
-
+	return ENOMEM;
     nadata->o = o;
+
+    nadata->ai = gensio_dup_addrinfo(o, iai);
+    if (!nadata->ai)
+	goto out_nomem;
     tcpna_ref(nadata);
 
     nadata->lock = o->alloc_lock(o);
     if (!nadata->lock)
 	goto out_nomem;
 
-    acc = &nadata->acceptor;
-
-    acc->cb = cb;
-    acc->user_data = user_data;
-    acc->funcs = &gensio_acc_tcp_funcs;
-    acc->typename = "tcp";
-    gensio_acc_set_is_reliable(&nadata->acceptor, true);
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, &gensio_acc_tcp_funcs,
+					"tcp", nadata);
+    if (!nadata->acc)
+	goto out_nomem;
+    gensio_acc_set_is_reliable(nadata->acc, true);
 
 
-    nadata->ai = ai;
     nadata->max_read_size = max_read_size;
 
-    *acceptor = acc;
+    *acceptor = nadata->acc;
     return 0;
 
  out_nomem:
-    if (ai)
-	gensio_free_addrinfo(o, ai);
-    if (nadata->lock)
-	o->free_lock(nadata->lock);
-    if (nadata)
-	free(nadata);
+    tcpna_finish_free(nadata);
     return ENOMEM;
 }
 

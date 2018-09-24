@@ -36,6 +36,35 @@ struct gensio_classobj {
     struct gensio_classobj *next;
 };
 
+int
+gen_addclass(struct gensio_os_funcs *o,
+	     struct gensio_classobj **classes,
+	     const char *name, void *classdata)
+{
+    struct gensio_classobj *c;
+
+    c = o->zalloc(o, sizeof(*c));
+    if (!c)
+	return ENOMEM;
+    c->name = name;
+    c->classdata = classdata;
+    c->next = *classes;
+    *classes = c;
+    return 0;
+}
+
+void *
+gen_getclass(struct gensio_classobj *classes, const char *name)
+{
+    struct gensio_classobj *c;
+
+    for (c = classes; c; c = c->next) {
+	if (strcmp(c->name, name) == 0)
+	    return c->classdata;
+    }
+    return NULL;
+}
+
 struct gensio {
     struct gensio_os_funcs *o;
     void *user_data;
@@ -115,28 +144,94 @@ gensio_cb(struct gensio *io, int event, int err,
 int
 gensio_addclass(struct gensio *io, const char *name, void *classdata)
 {
-    struct gensio_classobj *c;
-
-    c = io->o->zalloc(io->o, sizeof(*c));
-    if (!c)
-	return ENOMEM;
-    c->name = name;
-    c->classdata = classdata;
-    c->next = io->classes;
-    io->classes = c;
-    return 0;
+    return gen_addclass(io->o, &io->classes, name, classdata);
 }
 
 void *
 gensio_getclass(struct gensio *io, const char *name)
 {
-    struct gensio_classobj *c;
+    return gen_getclass(io->classes, name);
+}
 
-    for (c = io->classes; c; c = c->next) {
-	if (strcmp(c->name, name) == 0)
-	    return c->classdata;
+struct gensio_acceptor {
+    struct gensio_os_funcs *o;
+
+    void *user_data;
+    gensio_acceptor_event cb;
+
+    struct gensio_classobj *classes;
+
+    const struct gensio_acceptor_functions *funcs;
+    void *gensio_acc_data;
+
+    const char *typename;
+
+    bool is_packet;
+    bool is_reliable;
+};
+
+struct gensio_acceptor *
+gensio_acc_data_alloc(struct gensio_os_funcs *o,
+		      gensio_acceptor_event cb, void *user_data,
+		      const struct gensio_acceptor_functions *funcs,
+		      const char *typename, void *gensio_acc_data)
+{
+    struct gensio_acceptor *acc = o->zalloc(o, sizeof(*acc));
+
+    if (!acc)
+	return NULL;
+
+    acc->o = o;
+    acc->cb = cb;
+    acc->user_data = user_data;
+    acc->funcs = funcs;
+    acc->typename = typename;
+    acc->gensio_acc_data = gensio_acc_data;
+
+    return acc;
+}
+
+void
+gensio_acc_data_free(struct gensio_acceptor *acc)
+{
+    while (acc->classes) {
+	struct gensio_classobj *c = acc->classes;
+
+	acc->classes = c->next;
+	acc->o->free(acc->o, c);
     }
-    return NULL;
+    acc->o->free(acc->o, acc);
+}
+
+void *
+gensio_acc_get_gensio_data(struct gensio_acceptor *acc)
+{
+    return acc->gensio_acc_data;
+}
+
+int
+gensio_acc_cb(struct gensio_acceptor *acc, int event, void *data)
+{
+    return acc->cb(acc, event, data);
+}
+
+int
+gensio_acc_addclass(struct gensio_acceptor *acc,
+		    const char *name, void *classdata)
+{
+    return gen_addclass(acc->o, &acc->classes, name, classdata);
+}
+
+void *
+gensio_acc_getclass(struct gensio_acceptor *acc, const char *name)
+{
+    return gen_getclass(acc->classes, name);
+}
+
+const char *
+gensio_acc_get_type(struct gensio_acceptor *acc)
+{
+    return acc->typename;
 }
 
 void

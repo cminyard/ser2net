@@ -79,7 +79,7 @@ struct udpn_data {
 #define gensio_to_ndata(net) container_of(net, struct udpn_data, net);
 
 struct udpna_data {
-    struct gensio_acceptor acceptor;
+    struct gensio_acceptor *acc;
     struct udpn_data *udpns;
     unsigned int udpn_count;
 
@@ -125,8 +125,6 @@ struct udpna_data {
     unsigned int read_disable_count;
     unsigned int write_enable_count;
 };
-
-#define acc_to_nadata(acc) container_of(acc, struct udpna_data, acceptor);
 
 static void
 udpna_lock(struct udpna_data *nadata)
@@ -291,6 +289,8 @@ static void udpna_do_free(struct udpna_data *nadata)
 	nadata->o->free(nadata->o, nadata->read_data);
     if (nadata->lock)
 	nadata->o->free_lock(nadata->lock);
+    if (nadata->acc)
+	gensio_acc_data_free(nadata->acc);
     nadata->o->free(nadata->o, nadata);
 }
 
@@ -501,7 +501,7 @@ udpna_deferred_op(struct gensio_runner *runner, void *cbdata)
     }
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
-	struct gensio_acceptor *acceptor = &nadata->acceptor;
+	struct gensio_acceptor *acceptor = nadata->acc;
 
 	if (nadata->shutdown_done) {
 	    udpna_unlock(nadata);
@@ -800,13 +800,13 @@ udpna_readhandler(int fd, void *cbdata)
     if (datalen == -1) {
 	/* FIXME - There is no really good way to report this error. */
 	if (errno != EAGAIN && errno != EWOULDBLOCK)
-	    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	    gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 			   "Could not accept: %s", strerror(errno));
 	goto out_unlock;
     }
     if (addrlen > sizeof(struct sockaddr_storage)) {
 	/* Shouldn't happen. */
-	gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+	gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		       "Address too long: %d", addrlen);
 	goto out_unlock;
     }
@@ -906,8 +906,7 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->in_read = true;
     udpna_unlock(nadata);
 
-    nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION,
-			ndata->io);
+    gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION, ndata->io);
 
     udpna_lock(nadata);
     ndata->in_read = false;
@@ -919,7 +918,7 @@ udpna_readhandler(int fd, void *cbdata)
 	udpn_handle_read_incoming(nadata, ndata);
 
     if (nadata->in_shutdown) {
-	struct gensio_acceptor *acceptor = &nadata->acceptor;
+	struct gensio_acceptor *acceptor = nadata->acc;
 
 	if (nadata->shutdown_done)
 	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
@@ -930,7 +929,7 @@ udpna_readhandler(int fd, void *cbdata)
 
  out_nomem:
     nadata->data_pending_len = 0;
-    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+    gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		   "Out of memory allocating for udp port");
  out_unlock_enable:
     udpna_fd_read_enable(nadata);
@@ -942,7 +941,7 @@ udpna_readhandler(int fd, void *cbdata)
 static int
 udpna_startup(struct gensio_acceptor *acceptor)
 {
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     udpna_lock(nadata);
@@ -974,7 +973,7 @@ udpna_shutdown(struct gensio_acceptor *acceptor,
 				     void *shutdown_data),
 	       void *shutdown_data)
 {
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
 
     udpna_lock(nadata);
@@ -997,7 +996,7 @@ udpna_shutdown(struct gensio_acceptor *acceptor,
 static void
 udpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 {
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     udpna_lock(nadata);
     nadata->enabled = true;
@@ -1007,7 +1006,7 @@ udpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 static void
 udpna_free(struct gensio_acceptor *acceptor)
 {
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     udpna_lock(nadata);
 
@@ -1025,7 +1024,7 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
 				   void *cb_data),
 	      void *cb_data, struct gensio **new_net)
 {
-    struct udpna_data *nadata = acc_to_nadata(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     struct udpn_data *ndata;
     struct addrinfo *ai = gensio_dup_addrinfo(nadata->o, addr);
     unsigned int fdi;
@@ -1111,10 +1110,7 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 			  gensio_acceptor_event cb, void *user_data,
 			  struct gensio_acceptor **acceptor)
 {
-    int err = ENOMEM;
-    struct gensio_acceptor *acc;
     struct udpna_data *nadata;
-    struct addrinfo *ai;
     unsigned int max_read_size = GENSIO_DEFAULT_UDP_BUF_SIZE;
     int i;
 
@@ -1124,54 +1120,41 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 	return EINVAL;
     }
 
-    ai = gensio_dup_addrinfo(o, iai);
-    if (!ai && iai) /* Allow a null ai if it was passed in. */
-	return ENOMEM;
-
     nadata = o->zalloc(o, sizeof(*nadata));
     if (!nadata)
-	goto out_err;
+	return ENOMEM;
     nadata->o = o;
+
+    nadata->ai = gensio_dup_addrinfo(o, iai);
+    if (!nadata->ai && iai) /* Allow a null ai if it was passed in. */
+	goto out_nomem;
 
     nadata->read_data = o->zalloc(o, max_read_size);
     if (!nadata->read_data)
-	goto out_err;
+	goto out_nomem;
 
     nadata->deferred_op_runner = o->alloc_runner(o, udpna_deferred_op, nadata);
     if (!nadata->deferred_op_runner)
-	goto out_err;
+	goto out_nomem;
 
     nadata->lock = o->alloc_lock(o);
     if (!nadata->lock)
-	goto out_err;
+	goto out_nomem;
 
-    acc = &nadata->acceptor;
-    acc->cb = cb;
-    acc->user_data = user_data;
-    acc->funcs = &gensio_acc_udp_funcs;
-    acc->typename = "udp";
-    gensio_acc_set_is_packet(&nadata->acceptor, true);
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, &gensio_acc_udp_funcs,
+					"udp", nadata);
+    if (!nadata->acc)
+	goto out_nomem;
+    gensio_acc_set_is_packet(nadata->acc, true);
 
-    nadata->ai = ai;
     nadata->max_read_size = max_read_size;
 
-    *acceptor = acc;
+    *acceptor = nadata->acc;
     return 0;
 
- out_err:
-    if (ai)
-	gensio_free_addrinfo(nadata->o, ai);
-    if (nadata) {
-	if (nadata->read_data)
-	    o->free(o, nadata->read_data);
-	if (nadata->deferred_op_runner)
-	    nadata->o->free_runner(nadata->deferred_op_runner);
-	if (nadata->lock)
-	    nadata->o->free_lock(nadata->lock);
-	o->free(o, nadata);
-    }
-
-    return err;
+ out_nomem:
+    udpna_do_free(nadata);
+    return ENOMEM;
 }
 
 int
@@ -1242,7 +1225,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
 	o->free(o, ndata);
 	return err;
     }
-    nadata = acc_to_nadata(acceptor);
+    nadata = gensio_acc_get_gensio_data(acceptor);
 
     nadata->fds = o->zalloc(o, sizeof(*nadata->fds));
     if (!nadata->fds) {

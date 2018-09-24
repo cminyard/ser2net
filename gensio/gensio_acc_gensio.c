@@ -27,7 +27,7 @@
 #include <gensio/gensio_base.h>
 
 struct basena_data {
-    struct gensio_acceptor acceptor;
+    struct gensio_acceptor *acc;
 
     struct gensio_os_funcs *o;
 
@@ -48,8 +48,6 @@ struct basena_data {
 			  void *shutdown_data);
     void *shutdown_data;
 };
-
-#define acc_to_nadata(acc) container_of(acc, struct basena_data, acceptor);
 
 static void
 basena_lock(struct basena_data *nadata)
@@ -72,6 +70,8 @@ basena_finish_free(struct basena_data *nadata)
 	nadata->o->free_lock(nadata->lock);
     if (nadata->acc_cbs)
 	nadata->acc_cbs->free(nadata->acc_data);
+    if (nadata->acc)
+	gensio_acc_data_free(nadata->acc);
     nadata->o->free(nadata->o, nadata);
 }
 
@@ -107,7 +107,7 @@ basena_finish_shutdown_unlock(struct basena_data *nadata)
     basena_unlock(nadata);
 
     if (shutdown_done)
-	shutdown_done(&nadata->acceptor, shutdown_data);
+	shutdown_done(nadata->acc, shutdown_data);
 
     basena_lock(nadata);
     basena_deref_and_unlock(nadata);
@@ -133,7 +133,7 @@ basena_leave_cb_unlock(struct basena_data *nadata)
 static int
 basena_startup(struct gensio_acceptor *acceptor)
 {
-    struct basena_data *nadata = acc_to_nadata(acceptor);
+    struct basena_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     return gensio_acc_startup(nadata->child);
 }
@@ -159,7 +159,7 @@ basena_shutdown(struct gensio_acceptor *acceptor,
 				     void *shutdown_data),
 	       void *shutdown_data)
 {
-    struct basena_data *nadata = acc_to_nadata(acceptor);
+    struct basena_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = EBUSY;
 
     basena_lock(nadata);
@@ -182,7 +182,7 @@ static void
 basena_set_accept_callback_enable(struct gensio_acceptor *acceptor,
 				  bool enabled)
 {
-    struct basena_data *nadata = acc_to_nadata(acceptor);
+    struct basena_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     gensio_acc_set_accept_callback_enable(nadata->child, enabled);
 }
@@ -190,7 +190,7 @@ basena_set_accept_callback_enable(struct gensio_acceptor *acceptor,
 static void
 basena_free(struct gensio_acceptor *acceptor)
 {
-    struct basena_data *nadata = acc_to_nadata(acceptor);
+    struct basena_data *nadata = gensio_acc_get_gensio_data(acceptor);
 
     basena_lock(nadata);
     basena_deref_and_unlock(nadata);
@@ -240,7 +240,7 @@ basena_connect(struct gensio_acceptor *acceptor, void *addr,
 	       void (*connect_done)(struct gensio *net, int err, void *cb_data),
 	       void *cb_data, struct gensio **new_net)
 {
-    struct basena_data *nadata = acc_to_nadata(acceptor);
+    struct basena_data *nadata = gensio_acc_get_gensio_data(acceptor);
     struct gensio_os_funcs *o = nadata->o;
     int err;
     struct basena_connect_data *cdata;
@@ -306,8 +306,7 @@ basena_finish_server_open(struct gensio *net, int err, void *cb_data)
     if (err)
 	gensio_free(net);
     else
-	nadata->acceptor.cb(&nadata->acceptor, GENSIO_ACC_EVENT_NEW_CONNECTION,
-			    net);
+	gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION, net);
 
     basena_lock(nadata);
     basena_leave_cb_unlock(nadata);
@@ -326,7 +325,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
     int err;
 
     if (event == GENSIO_ACC_EVENT_LOG) {
-	nadata->acceptor.cb(&nadata->acceptor, event, data);
+	gensio_acc_cb(nadata->acc, event, data);
 	return 0;
     }
 
@@ -346,7 +345,8 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
     }
 
     basena_lock(nadata);
-    io = base_gensio_server_alloc(o, ll, filter, nadata->acceptor.typename,
+    io = base_gensio_server_alloc(o, ll, filter,
+				  gensio_acc_get_type(nadata->acc),
 				  basena_finish_server_open, nadata);
     if (io) {
 	basena_in_cb(nadata);
@@ -373,7 +373,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
  out_nomem:
     err = ENOMEM;
  out_err:
-    gensio_acc_log(&nadata->acceptor, GENSIO_LOG_ERR,
+    gensio_acc_log(nadata->acc, GENSIO_LOG_ERR,
 		   "Error allocating basena gensio: %s", strerror(err));
     return 0;
 }
@@ -387,7 +387,6 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 			     void *acc_data,
 			     struct gensio_acceptor **acceptor)
 {
-    struct gensio_acceptor *acc;
     struct basena_data *nadata;
 
     nadata = o->zalloc(o, sizeof(*nadata));
@@ -398,11 +397,11 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
     if (!nadata->lock)
 	goto out_nomem;
 
-    acc = &nadata->acceptor;
-    acc->cb = cb;
-    acc->user_data = user_data;
-    acc->funcs = &gensio_acc_basena_funcs;
-    acc->typename = typename;
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data,
+					&gensio_acc_basena_funcs,
+					typename, nadata);
+    if (!nadata->acc)
+	goto out_nomem;
 
     nadata->o = o;
     nadata->child = child;
@@ -412,7 +411,7 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 
     gensio_acc_set_callback(child, basena_child_event, nadata);
 
-    *acceptor = acc;
+    *acceptor = nadata->acc;
 
     return 0;
 
