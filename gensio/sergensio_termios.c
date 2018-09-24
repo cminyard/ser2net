@@ -48,7 +48,7 @@ struct termio_op_q {
 };
 
 struct sterm_data {
-    struct sergensio sio;
+    struct sergensio *sio;
     struct gensio_os_funcs *o;
 
     struct gensio_lock *lock;
@@ -77,8 +77,6 @@ struct sterm_data {
 };
 
 static void termios_process(struct sterm_data *sdata);
-
-#define mysergensio_to_sterm(v) container_of(v, struct sterm_data, sio)
 
 static void
 sterm_lock(struct sterm_data *sdata)
@@ -149,7 +147,7 @@ termios_process(struct sterm_data *sdata)
 	}
 
 	sterm_unlock(sdata);
-	qe->done(&sdata->sio, err, val, qe->cb_data);
+	qe->done(sdata->sio, err, val, qe->cb_data);
 	sdata->o->free(sdata->o, qe);
 	sterm_lock(sdata);
     }
@@ -276,7 +274,8 @@ sterm_baud(struct sergensio *sio, int baud,
 			int baud, void *cb_data),
 	   void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), baud, TERMIO_OP_TERMIO,
+    return termios_set_get(sergensio_get_gensio_data(sio), baud,
+			   TERMIO_OP_TERMIO,
 			   termios_get_set_baud, done, cb_data);
 }
 
@@ -315,7 +314,7 @@ sterm_datasize(struct sergensio *sio, int datasize,
 			    void *cb_data),
 	       void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), datasize,
+    return termios_set_get(sergensio_get_gensio_data(sio), datasize,
 			   TERMIO_OP_TERMIO,
 			   termios_get_set_datasize, done, cb_data);
 }
@@ -371,7 +370,8 @@ sterm_parity(struct sergensio *sio, int parity,
 			  void *cb_data),
 	     void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), parity, TERMIO_OP_TERMIO,
+    return termios_set_get(sergensio_get_gensio_data(sio), parity,
+			   TERMIO_OP_TERMIO,
 			   termios_get_set_parity, done, cb_data);
 }
 
@@ -401,7 +401,7 @@ sterm_stopbits(struct sergensio *sio, int stopbits,
 			    void *cb_data),
 	       void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), stopbits,
+    return termios_set_get(sergensio_get_gensio_data(sio), stopbits,
 			   TERMIO_OP_TERMIO,
 			   termios_get_set_stopbits, done, cb_data);
 }
@@ -464,7 +464,7 @@ sterm_flowcontrol(struct sergensio *sio, int flowcontrol,
 			       int flowcontrol, void *cb_data),
 		  void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), flowcontrol,
+    return termios_set_get(sergensio_get_gensio_data(sio), flowcontrol,
 			   TERMIO_OP_TERMIO,
 			   termios_get_set_flowcontrol, done, cb_data);
 }
@@ -475,7 +475,7 @@ sterm_iflowcontrol(struct sergensio *sio, int iflowcontrol,
 				int iflowcontrol, void *cb_data),
 		   void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), iflowcontrol,
+    return termios_set_get(sergensio_get_gensio_data(sio), iflowcontrol,
 			   TERMIO_OP_TERMIO,
 			   termios_get_set_iflowcontrol, done, cb_data);
 }
@@ -486,7 +486,8 @@ sterm_sbreak(struct sergensio *sio, int breakv,
 			  void *cb_data),
 	     void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), breakv, TERMIO_OP_BRK,
+    return termios_set_get(sergensio_get_gensio_data(sio), breakv,
+			   TERMIO_OP_BRK,
 			   NULL, done, cb_data);
 }
 
@@ -516,7 +517,7 @@ sterm_dtr(struct sergensio *sio, int dtr,
 		       void *cb_data),
 	  void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), dtr, TERMIO_OP_MCTL,
+    return termios_set_get(sergensio_get_gensio_data(sio), dtr, TERMIO_OP_MCTL,
 			   termios_get_set_dtr, done, cb_data);
 }
 
@@ -546,7 +547,7 @@ sterm_rts(struct sergensio *sio, int rts,
 		       void *cb_data),
 	  void *cb_data)
 {
-    return termios_set_get(mysergensio_to_sterm(sio), rts, TERMIO_OP_MCTL,
+    return termios_set_get(sergensio_get_gensio_data(sio), rts, TERMIO_OP_MCTL,
 			   termios_get_set_rts, done, cb_data);
 }
 
@@ -592,7 +593,7 @@ termios_timeout(struct gensio_timer *t, void *cb_data)
      * report this if someing changed that was in the mask.
      */
     if ((force_send || modemstate & 0xf)) {
-	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+	struct gensio *io = sergensio_to_gensio(sdata->sio);
 	unsigned int vlen = sizeof(modemstate);
 
 	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
@@ -613,7 +614,7 @@ termios_timeout(struct gensio_timer *t, void *cb_data)
 static int
 sterm_modemstate(struct sergensio *sio, unsigned int val)
 {
-    struct sterm_data *sdata = mysergensio_to_sterm(sio);
+    struct sterm_data *sdata = sergensio_get_gensio_data(sio);
 
     sterm_lock(sdata);
     sdata->modemstate_mask = val;
@@ -631,7 +632,7 @@ sterm_modemstate(struct sergensio *sio, unsigned int val)
 static int
 sterm_flowcontrol_state(struct sergensio *sio, bool val)
 {
-    struct sterm_data *sdata = mysergensio_to_sterm(sio);
+    struct sterm_data *sdata = sergensio_get_gensio_data(sio);
     int err;
     int tval;
 
@@ -649,7 +650,7 @@ sterm_flowcontrol_state(struct sergensio *sio, bool val)
 static int
 sterm_flush(struct sergensio *sio, unsigned int val)
 {
-    struct sterm_data *sdata = mysergensio_to_sterm(sio);
+    struct sterm_data *sdata = sergensio_get_gensio_data(sio);
     int err;
     int tval;
 
@@ -786,7 +787,7 @@ sterm_sub_open(void *handler_data,
     sdata->sent_first_modemstate = false;
     sterm_unlock(sdata);
 
-    sterm_modemstate(&sdata->sio, 255);
+    sterm_modemstate(sdata->sio, 255);
 
     *fd = sdata->fd;
 
@@ -834,6 +835,7 @@ static void
 sterm_free(void *handler_data)
 {
     struct sterm_data *sdata = handler_data;
+    struct gensio *io;
 
     if (sdata->lock)
 	sdata->o->free_lock(sdata->lock);
@@ -843,8 +845,9 @@ sterm_free(void *handler_data)
 	sdata->o->free(sdata->o, sdata->devname);
     if (sdata->deferred_op_runner)
 	sdata->o->free_runner(sdata->deferred_op_runner);
-    if (sdata->sio.io)
-	sdata->o->free(sdata->o, sdata->sio.io);
+    io = sergensio_to_gensio(sdata->sio);
+    if (io)
+	gensio_data_free(io);
     sdata->o->free(sdata->o, sdata);
 }
 
@@ -880,10 +883,11 @@ int
 termios_gensio_alloc(const char *devname, char *args[],
 		     struct gensio_os_funcs *o,
 		     gensio_event cb, void *user_data,
-		     struct gensio **io)
+		     struct gensio **rio)
 {
     struct sterm_data *sdata = o->zalloc(o, sizeof(*sdata));
     struct gensio_ll *ll;
+    struct gensio *io;
     int err;
     char *comma;
     unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
@@ -939,16 +943,25 @@ termios_gensio_alloc(const char *devname, char *args[],
     if (!ll)
 	goto out_nomem;
 
-    sdata->sio.io = base_gensio_alloc(o, ll, NULL, "termios", cb, user_data);
-    if (!sdata->sio.io) {
+    io = base_gensio_alloc(o, ll, NULL, "termios", cb, user_data);
+    if (!io) {
 	ll->ops->free(ll);
 	goto out_nomem;
     }
 
-    err = gensio_addclass(sdata->sio.io, "sergensio", &sdata->sio);
-    sdata->sio.funcs = &sterm_funcs;
+    sdata->sio = sergensio_data_alloc(o, io, &sterm_funcs, sdata);
+    if (!sdata->sio) {
+	gensio_free(io);
+	goto out_nomem;
+    }
 
-    *io = sdata->sio.io;
+    err = gensio_addclass(io, "sergensio", sdata->sio);
+    if (err) {
+	gensio_free(io);
+	goto out_err;
+    }
+
+    *rio = io;
     return 0;
 
  out_nomem:

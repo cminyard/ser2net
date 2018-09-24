@@ -44,7 +44,7 @@ struct stel_req {
 };
 
 struct stel_data {
-    struct sergensio sio;
+    struct sergensio *sio;
 
     struct gensio_os_funcs *o;
 
@@ -59,8 +59,6 @@ struct stel_data {
 
     struct stel_req *reqs;
 };
-
-#define mysergensio_to_stel(v) container_of(v, struct stel_data, sio)
 
 static void
 stel_lock(struct stel_data *sdata)
@@ -128,7 +126,7 @@ stel_baud(struct sergensio *sio, int baud,
 		       int baud, void *cb_data),
 	  void *cb_data)
 {
-    struct stel_data *sdata = mysergensio_to_stel(sio);
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
     bool is_client = gensio_is_client(sergensio_to_gensio(sio));
     unsigned char buf[6];
     int err;
@@ -163,7 +161,7 @@ stel_queue_and_send(struct sergensio *sio, int option, int val,
 				 void *cb_data),
 		    void *cb_data)
 {
-    struct stel_data *sdata = mysergensio_to_stel(sio);
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
     unsigned char buf[3];
     bool is_client = gensio_is_client(sergensio_to_gensio(sio));
     int err;
@@ -266,7 +264,7 @@ stel_signature(struct sergensio *sio, char *sig, unsigned int sig_len,
 			    unsigned int sig_len, void *cb_data),
 	       void *cb_data)
 {
-    struct stel_data *sdata = mysergensio_to_stel(sio);
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
     unsigned char outopt[MAX_TELNET_CMD_XMIT_BUF];
     bool is_client = gensio_is_client(sergensio_to_gensio(sio));
 
@@ -295,7 +293,7 @@ stel_signature(struct sergensio *sio, char *sig, unsigned int sig_len,
 static int
 stel_send(struct sergensio *sio, unsigned int opt, unsigned int val)
 {
-    struct stel_data *sdata = mysergensio_to_stel(sio);
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
     unsigned char buf[3];
 
     buf[0] = 44;
@@ -337,7 +335,7 @@ stel_linestate(struct sergensio *sio, unsigned int val)
 static int
 stel_flowcontrol_state(struct sergensio *sio, bool val)
 {
-    struct stel_data *sdata = mysergensio_to_stel(sio);
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
     unsigned char buf[2];
 
     buf[0] = 44;
@@ -404,7 +402,7 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     struct stel_req *curr, *prev = NULL;
     char *sig = NULL;
     unsigned int sig_len, vlen = sizeof(int);
-    struct gensio *io = sergensio_to_gensio(&sdata->sio);
+    struct gensio *io = sergensio_to_gensio(sdata->sio);
 
     if (len < 2)
 	return;
@@ -493,10 +491,10 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
     if (curr) {
 	if (sig) {
 	    if (curr->donesig)
-		curr->donesig(&sdata->sio, 0, sig, sig_len, curr->cb_data);
+		curr->donesig(sdata->sio, 0, sig, sig_len, curr->cb_data);
 	} else {
 	    if (curr->done)
-		curr->done(&sdata->sio, 0, val - curr->minval, curr->cb_data);
+		curr->done(sdata->sio, 0, val - curr->minval, curr->cb_data);
 	}
 	sdata->o->free(sdata->o, curr);
 	return;
@@ -542,7 +540,7 @@ stel_timeout(void *handler_data)
 
     req = to_complete;
     while (req) {
-	req->done(&sdata->sio, ETIMEDOUT, 0, req->cb_data);
+	req->done(sdata->sio, ETIMEDOUT, 0, req->cb_data);
 	prev = req;
 	req = req->next;
 	sdata->o->free(sdata->o, prev);
@@ -568,6 +566,8 @@ stel_free(void *handler_data)
 	sdata->reqs = req->next;
 	sdata->o->free(sdata->o, req);
     }
+    if (sdata->sio)
+	sergensio_data_free(sdata->sio);
     sdata->o->free(sdata->o, sdata);
 }
 
@@ -583,11 +583,12 @@ int
 telnet_gensio_alloc(struct gensio *child, char *args[],
 		    struct gensio_os_funcs *o,
 		    gensio_event cb, void *user_data,
-		    struct gensio **io)
+		    struct gensio **rio)
 {
     struct stel_data *sdata;
     struct gensio_ll *ll;
     struct gensio_filter *filter;
+    struct gensio *io;
     unsigned int i;
     bool allow_2217 = true;
     int err;
@@ -629,26 +630,32 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
 	goto out_err;
     }
 
-    sdata->sio.io = base_gensio_alloc(o, ll, filter, "telnet", cb, user_data);
-    if (!sdata->sio.io) {
+    io = base_gensio_alloc(o, ll, filter, "telnet", cb, user_data);
+    if (!io) {
 	filter->ops->free(filter);
 	ll->ops->free(ll);
-	goto out_err;
+	goto out_nomem;
     }
-    gensio_set_is_reliable(sdata->sio.io, gensio_is_reliable(child));
+    gensio_set_is_reliable(io, gensio_is_reliable(child));
     gensio_free(child); /* Lose the ref we acquired. */
 
-    sdata->o = o;
+    sdata->sio = sergensio_data_alloc(o, io, &stel_funcs, sdata);
+    if (!sdata->sio) {
+	gensio_free(io);
+	goto out_nomem;
+    }
+
     sdata->filter = filter;
     if (allow_2217) {
-	err = gensio_addclass(sdata->sio.io, "sergensio", &sdata->sio);
-	if (err)
+	err = gensio_addclass(io, "sergensio", sdata->sio);
+	if (err) {
+	    gensio_free(io);
 	    goto out_err;
+	}
     }
-    sdata->sio.funcs = &stel_funcs;
     sdata->reported_modemstate = true;
 
-    *io = sdata->sio.io;
+    *rio = io;
 
     return 0;
 
@@ -723,7 +730,7 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
 	sdata->do_2217 = sdata->allow_2217;
 
     if (!sdata->reported_modemstate &&sdata->do_2217) {
-	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+	struct gensio *io = sergensio_to_gensio(sdata->sio);
 
 	if (gensio_get_cb(io)) {
 	    int val = 255;
@@ -753,7 +760,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
     struct stel_data *sdata = handler_data;
     int val = 0;
     unsigned int vlen = sizeof(int);
-    struct gensio *io = sergensio_to_gensio(&sdata->sio);
+    struct gensio *io = sergensio_to_gensio(sdata->sio);
 
     if (len < 2)
 	return;
@@ -877,7 +884,7 @@ static void
 stela_cb_got_sync(void *handler_data)
 {
     struct stel_data *sdata = handler_data;
-    struct gensio *io = sergensio_to_gensio(&sdata->sio);
+    struct gensio *io = sergensio_to_gensio(sdata->sio);
 
     gensio_cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, 0, 0, NULL);
 }
@@ -897,7 +904,7 @@ stela_timeout(void *handler_data)
 
     stel_lock(sdata);
     if (!sdata->reported_modemstate &&sdata->do_2217) {
-	struct gensio *io = sergensio_to_gensio(&sdata->sio);
+	struct gensio *io = sergensio_to_gensio(sdata->sio);
 	int val = 255;
 	unsigned int vlen = sizeof(val);
 
@@ -939,7 +946,6 @@ stela_new_child(void *acc_data, void **finish_data,
 
     sdata->o = o;
     sdata->allow_2217 = stela->allow_2217;
-    sdata->sio.funcs = &stel_funcs;
 
     sdata->lock = o->alloc_lock(o);
     if (!sdata->lock) {
@@ -972,13 +978,19 @@ stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
     struct stela_data *stela = acc_data;
     struct stel_data *sdata = finish_data;
 
-    if (sdata->allow_2217) {
-	int err = gensio_addclass(io, "sergensio", &sdata->sio);
+    sdata->sio = sergensio_data_alloc(sdata->o, io, &stel_funcs, sdata);
+    if (!sdata->sio)
+	return ENOMEM;
 
-	if (err)
+    if (sdata->allow_2217) {
+	int err = gensio_addclass(io, "sergensio", sdata->sio);
+
+	if (err) {
+	    sergensio_data_free(sdata->sio);
+	    sdata->sio = NULL;
 	    return err;
+	}
     }
-    sdata->sio.io = io;
     gensio_set_is_reliable(io, stela->is_reliable);
     return 0;
 }

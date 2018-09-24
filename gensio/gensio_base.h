@@ -20,6 +20,9 @@
 #ifndef GENSIO_BASE_H
 #define GENSIO_BASE_H
 
+#define container_of(ptr, type, member)			\
+    ((type *)(((char *) ptr) - offsetof(type, member)))
+
 #include <gensio/gensio.h>
 
 struct gensio_filter {

@@ -25,6 +25,16 @@
 
 #include <gensio/sergensio_internal.h>
 
+struct sergensio {
+    struct gensio_os_funcs *o;
+
+    struct gensio *io;
+
+    const struct sergensio_functions *funcs;
+
+    void *gensio_data;
+};
+
 struct gensio *
 sergensio_to_gensio(struct sergensio *sio)
 {
@@ -35,6 +45,35 @@ struct sergensio *
 gensio_to_sergensio(struct gensio *io)
 {
     return gensio_getclass(io, "sergensio");
+}
+
+struct sergensio *
+sergensio_data_alloc(struct gensio_os_funcs *o, struct gensio *io,
+		     const struct sergensio_functions *funcs,
+		     void *gensio_data)
+{
+    struct sergensio *sio = o->zalloc(o, sizeof(*sio));
+
+    if (!sio)
+	return NULL;
+
+    sio->o = o;
+    sio->io = io;
+    sio->funcs = funcs;
+    sio->gensio_data = gensio_data;
+    return sio;
+}
+
+void
+sergensio_data_free(struct sergensio *sio)
+{
+    sio->o->free(sio->o, sio);
+}
+
+void *
+sergensio_get_gensio_data(struct sergensio *sio)
+{
+    return sio->gensio_data;
 }
 
 int

@@ -128,9 +128,6 @@ void gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
 void gensio_acc_log(struct gensio_acceptor *acc, enum gensio_log_levels level,
 		    char *str, ...);
 
-#define container_of(ptr, type, member)			\
-    ((type *)(((char *) ptr) - offsetof(type, member)))
-
 struct opensocks
 {
     int fd;

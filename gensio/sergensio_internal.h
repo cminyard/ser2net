@@ -81,14 +81,12 @@ struct sergensio_functions {
 		     void *cb_data);
 };
 
-/*
- * This structure represents a network connection, return from the
- * acceptor callback in sergensio_acceptor.
- */
-struct sergensio {
-    struct gensio *io;
+struct sergensio *sergensio_data_alloc(struct gensio_os_funcs *o,
+				       struct gensio *io,
+				       const struct sergensio_functions *funcs,
+				       void *gensio_data);
+void sergensio_data_free(struct sergensio *sio);
 
-    const struct sergensio_functions *funcs;
-};
+void *sergensio_get_gensio_data(struct sergensio *sio);
 
 #endif /* SERGENSIO_INTERNAL_H */
