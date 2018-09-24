@@ -24,8 +24,6 @@ v *  gensio - A library for abstracting stream I/O
 #include <gensio/gensio_internal.h>
 #include <gensio/sergensio.h>
 
-#define GENSIO_TELNET_DEFAULT_BUFSIZE 1024
-
 struct sergensio_functions {
     int (*baud)(struct sergensio *sio, int baud,
 		void (*done)(struct sergensio *sio, int err,

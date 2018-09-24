@@ -31,20 +31,10 @@ sergensio_to_gensio(struct sergensio *sio)
     return sio->io;
 }
 
-static char *sergensio_types[] = { "telnet", "termios", NULL };
-
-bool
-is_sergensio(struct gensio *io)
-{
-    return gensio_match_type(io, sergensio_types) && io->parent_object;
-}
-
 struct sergensio *
 gensio_to_sergensio(struct gensio *io)
 {
-    if (!is_sergensio(io))
-	return NULL;
-    return io->parent_object;
+    return gensio_getclass(io, "sergensio");
 }
 
 int
@@ -182,7 +172,7 @@ sergensio_is_client(struct sergensio *sio)
 void *
 sergensio_get_user_data(struct sergensio *sio)
 {
-    return sio->io->user_data;
+    return gensio_get_user_data(sio->io);
 }
 
 struct sergensio_b {

@@ -436,36 +436,36 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 7:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 8:
 	val = 1;
-	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 9:
 	val = 0;
-	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     case 12:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_FLUSH, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLUSH, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	return;
 
     default:
@@ -620,7 +620,7 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
     ll = gensio_gensio_ll_alloc(o, child);
     if (!ll)
 	goto out_nomem;
-    child->funcs->ref(child);
+    gensio_ref(child);
 
     err = gensio_telnet_filter_alloc(o, args, &sergensio_telnet_filter_cbs,
 				     sdata, &sdata->rops, &filter);
@@ -640,8 +640,11 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
 
     sdata->o = o;
     sdata->filter = filter;
-    if (allow_2217)
-	sdata->sio.io->parent_object = &sdata->sio;
+    if (allow_2217) {
+	err = gensio_addclass(sdata->sio.io, "sergensio", &sdata->sio);
+	if (err)
+	    goto out_err;
+    }
     sdata->sio.funcs = &stel_funcs;
     sdata->reported_modemstate = true;
 
@@ -722,13 +725,13 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
     if (!sdata->reported_modemstate &&sdata->do_2217) {
 	struct gensio *io = sergensio_to_gensio(&sdata->sio);
 
-	if (io->cb) {
+	if (gensio_get_cb(io)) {
 	    int val = 255;
 	    unsigned int vlen = sizeof(val);
 
 	    sdata->reported_modemstate = true;
-	    io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	} else {
 	    struct timeval timeout;
 
@@ -770,32 +773,32 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    val |= option[4] << 8;
 	    val |= option[5];
 	}
-	io->cb(io, GENSIO_EVENT_SER_BAUD, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_BAUD, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 2:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_DATASIZE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_DATASIZE, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 3:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_PARITY, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_PARITY, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 4:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_STOPBITS, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_STOPBITS, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 5:
@@ -804,65 +807,65 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	switch(option[2]) {
 	case 0: case 1: case 2: case 3:
 	    val = option[2];
-	    io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 4: case 5: case 6:
 	    val = option[2] - 4;
-	    io->cb(io, GENSIO_EVENT_SER_SBREAK, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_SBREAK, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 7: case 8: case 9:
 	    val = option[2] - 7;
-	    io->cb(io, GENSIO_EVENT_SER_DTR, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_DTR, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 10: case 11: case 12:
 	    val = option[2] - 10;
-	    io->cb(io, GENSIO_EVENT_SER_RTS, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_RTS, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	    break;
 	case 13: case 14: case 15: case 16: case 17: case 18: case 19:
 	    val = option[2] - 13;
-	    io->cb(io, GENSIO_EVENT_SER_IFLOWCONTROL, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_IFLOWCONTROL, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	}
 	break;
 
     case 8:
 	val = 1;
-	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 9:
 	val = 0;
-	io->cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 10:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     case 11:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 	
     case 12:
 	if (len < 3)
 	    return;
 	val = option[2];
-	io->cb(io, GENSIO_EVENT_SER_FLUSH, 0,
-	       (unsigned char *) &val, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_FLUSH, 0,
+		  (unsigned char *) &val, &vlen, 0, NULL);
 	break;
 
     default:
@@ -876,7 +879,7 @@ stela_cb_got_sync(void *handler_data)
     struct stel_data *sdata = handler_data;
     struct gensio *io = sergensio_to_gensio(&sdata->sio);
 
-    io->cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, 0, 0, NULL);
+    gensio_cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, 0, 0, NULL);
 }
 
 static void
@@ -898,10 +901,10 @@ stela_timeout(void *handler_data)
 	int val = 255;
 	unsigned int vlen = sizeof(val);
 
-	if (io->cb) {
+	if (gensio_get_cb(io)) {
 	    sdata->reported_modemstate = true;
-	    io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		   (unsigned char *) &val, &vlen, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		      (unsigned char *) &val, &vlen, 0, NULL);
 	} else {
 	    struct timeval timeout;
 
@@ -963,16 +966,21 @@ stela_new_child(void *acc_data, void **finish_data,
     return err;
 }
 
-static void
+static int
 stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
 {
     struct stela_data *stela = acc_data;
     struct stel_data *sdata = finish_data;
 
-    if (sdata->allow_2217)
-	io->parent_object = &sdata->sio;
+    if (sdata->allow_2217) {
+	int err = gensio_addclass(io, "sergensio", &sdata->sio);
+
+	if (err)
+	    return err;
+    }
     sdata->sio.io = io;
     gensio_set_is_reliable(io, stela->is_reliable);
+    return 0;
 }
 
 static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {
@@ -991,8 +999,8 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
     struct stela_data *stela;
     int err;
     unsigned int i;
-    unsigned int max_read_size = GENSIO_TELNET_DEFAULT_BUFSIZE;
-    unsigned int max_write_size = GENSIO_TELNET_DEFAULT_BUFSIZE;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    unsigned int max_write_size = GENSIO_DEFAULT_BUF_SIZE;
     bool allow_2217 = false;
 
     for (i = 0; args[i]; i++) {

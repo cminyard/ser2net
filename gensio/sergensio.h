@@ -39,7 +39,6 @@ struct sergensio;
  */
 struct gensio *sergensio_to_gensio(struct sergensio *sio);
 struct sergensio *gensio_to_sergensio(struct gensio *io);
-bool is_sergensio(struct gensio *io);
 
 /*
  * The following functions set various serial parameters.  The done()

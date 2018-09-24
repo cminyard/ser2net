@@ -350,8 +350,17 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 				  basena_finish_server_open, nadata);
     if (io) {
 	basena_in_cb(nadata);
-	if (nadata->acc_cbs->finish_child)
-	    nadata->acc_cbs->finish_child(nadata->acc_data, finish_data, io);
+	if (nadata->acc_cbs->finish_child) {
+	    err = nadata->acc_cbs->finish_child(nadata->acc_data,
+						finish_data, io);
+	    if (err) {
+		basena_unlock(nadata);
+		gensio_free(io);
+		ll->ops->free(ll);
+		filter->ops->free(filter);
+		goto out_err;
+	    }
+	}
 	basena_unlock(nadata);
     } else {
 	basena_unlock(nadata);

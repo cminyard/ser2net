@@ -40,7 +40,7 @@ enum basen_state { BASEN_CLOSED,
 		   BASEN_IN_LL_CLOSE };
 
 struct basen_data {
-    struct gensio net;
+    struct gensio *io;
 
     struct gensio_os_funcs *o;
     struct gensio_filter *filter;
@@ -59,10 +59,10 @@ struct basen_data {
 
     enum basen_state state;
 
-    void (*open_done)(struct gensio *net, int err, void *open_data);
+    void (*open_done)(struct gensio *io, int err, void *open_data);
     void *open_data;
 
-    void (*close_done)(struct gensio *net, void *close_data);
+    void (*close_done)(struct gensio *io, void *close_data);
     void *close_data;
 
     bool read_enabled;
@@ -93,8 +93,6 @@ struct basen_data {
     struct stel_req *reqs;
 };
 
-#define mygensio_to_basen(v) container_of(v, struct basen_data, net)
-
 static void
 basen_lock(struct basen_data *ndata)
 {
@@ -120,6 +118,8 @@ basen_finish_free(struct basen_data *ndata)
 	ndata->filter_ops->free(ndata->filter);
     if (ndata->ll)
 	ndata->ll_ops->free(ndata->ll);
+    if (ndata->io)
+	gensio_data_free(ndata->io);
     ndata->o->free(ndata->o, ndata);
 }
 
@@ -245,7 +245,7 @@ filter_ll_urgent(struct basen_data *ndata)
 {
     if (ndata->filter)
 	return ndata->filter_ops->ll_urgent(ndata->filter);
-    ndata->net.cb(&ndata->net, GENSIO_EVENT_URGENT, 0, NULL, 0, 0, NULL);
+    gensio_cb(ndata->io, GENSIO_EVENT_URGENT, 0, NULL, 0, 0, NULL);
 }
 
 static int
@@ -359,10 +359,10 @@ basen_write_data_handler(void *cb_data,
 }
 
 static int
-basen_write(struct gensio *net, unsigned int *rcount,
+basen_write(struct gensio *io, unsigned int *rcount,
 	    const void *buf, unsigned int buflen)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
     int err = 0;
 
     basen_lock(ndata);
@@ -386,27 +386,27 @@ basen_write(struct gensio *net, unsigned int *rcount,
 }
 
 static int
-basen_raddr_to_str(struct gensio *net, int *pos,
+basen_raddr_to_str(struct gensio *io, int *pos,
 		  char *buf, unsigned int buflen)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     return ll_raddr_to_str(ndata, pos, buf, buflen);
 }
 
 static int
-basen_get_raddr(struct gensio *net,
+basen_get_raddr(struct gensio *io,
 		struct sockaddr *addr, socklen_t *addrlen)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     return ll_get_raddr(ndata, addr, addrlen);
 }
 
 static int
-basen_remote_id(struct gensio *net, int *id)
+basen_remote_id(struct gensio *io, int *id)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     return ll_remote_id(ndata, id);
 }
@@ -418,14 +418,12 @@ basen_read_data_handler(void *cb_data,
 			unsigned int buflen)
 {
     struct basen_data *ndata = cb_data;
-    struct gensio *mynet = &ndata->net;
     unsigned int count = 0, rval;
 
  retry:
     if (ndata->state == BASEN_OPEN && ndata->read_enabled) {
 	rval = buflen - count;
-	mynet->cb(&ndata->net, GENSIO_EVENT_READ, 0,
-		  buf + count, &rval, 0, NULL);
+	gensio_cb(ndata->io, GENSIO_EVENT_READ, 0, buf + count, &rval, 0, NULL);
 	count += rval;
 	if (count < buflen)
 	    goto retry;
@@ -498,7 +496,7 @@ basen_finish_close(struct basen_data *ndata)
     ndata->state = BASEN_CLOSED;
     if (ndata->close_done) {
 	basen_unlock(ndata);
-	ndata->close_done(&ndata->net, ndata->close_data);
+	ndata->close_done(ndata->io, ndata->close_data);
 	basen_lock(ndata);
     }
 }
@@ -517,7 +515,7 @@ basen_finish_open(struct basen_data *ndata, int err)
 
     if (ndata->open_done) {
 	basen_unlock(ndata);
-	ndata->open_done(&ndata->net, err, ndata->open_data);
+	ndata->open_done(ndata->io, err, ndata->open_data);
 	basen_lock(ndata);
     }
 }
@@ -595,12 +593,12 @@ basen_ll_open_done(void *cb_data, int err, void *open_data)
 }
 
 static int
-basen_open(struct gensio *net, void (*open_done)(struct gensio *net,
-						 int err,
-						 void *open_data),
+basen_open(struct gensio *io, void (*open_done)(struct gensio *io,
+						int err,
+						void *open_data),
 	   void *open_data)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
     int err = EBUSY;
 
     basen_lock(ndata);
@@ -662,7 +660,7 @@ basen_try_close(struct basen_data *ndata)
 }
 
 static void
-basen_i_close(struct basen_data *ndata, void (*close_done)(struct gensio *net,
+basen_i_close(struct basen_data *ndata, void (*close_done)(struct gensio *io,
 							   void *close_data),
 	      void *close_data)
 {
@@ -681,11 +679,11 @@ basen_i_close(struct basen_data *ndata, void (*close_done)(struct gensio *net,
 }
 
 static int
-basen_close(struct gensio *net, void (*close_done)(struct gensio *net,
-						   void *close_data),
+basen_close(struct gensio *io, void (*close_done)(struct gensio *io,
+						  void *close_data),
 	   void *close_data)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
     int err = 0;
 
     basen_lock(ndata);
@@ -706,9 +704,9 @@ basen_close(struct gensio *net, void (*close_done)(struct gensio *net,
 }
 
 static void
-basen_free(struct gensio *net)
+basen_free(struct gensio *io)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     basen_lock(ndata);
     assert(ndata->freeref > 0);
@@ -732,9 +730,9 @@ basen_free(struct gensio *net)
 }
 
 static void
-basen_do_ref(struct gensio *net)
+basen_do_ref(struct gensio *io)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     basen_lock(ndata);
     ndata->freeref++;
@@ -772,9 +770,9 @@ basen_timeout(struct gensio_timer *timer, void *cb_data)
 }
 
 static void
-basen_set_read_callback_enable(struct gensio *net, bool enabled)
+basen_set_read_callback_enable(struct gensio *io, bool enabled)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
     bool read_pending;
 
     basen_lock(ndata);
@@ -805,9 +803,9 @@ basen_set_read_callback_enable(struct gensio *net, bool enabled)
 }
 
 static void
-basen_set_write_callback_enable(struct gensio *net, bool enabled)
+basen_set_write_callback_enable(struct gensio *io, bool enabled)
 {
-    struct basen_data *ndata = mygensio_to_basen(net);
+    struct basen_data *ndata = gensio_get_gensio_data(io);
 
     basen_lock(ndata);
     if (ndata->state == BASEN_CLOSED || ndata->state == BASEN_IN_FILTER_CLOSE ||
@@ -821,7 +819,7 @@ basen_set_write_callback_enable(struct gensio *net, bool enabled)
     basen_unlock(ndata);
 }
 
-static const struct gensio_functions basen_net_funcs = {
+static const struct gensio_functions basen_io_funcs = {
     .write = basen_write,
     .raddr_to_str = basen_raddr_to_str,
     .get_raddr = basen_get_raddr,
@@ -839,7 +837,7 @@ basen_ll_read(void *cb_data, int readerr,
 	      unsigned char *ibuf, unsigned int buflen)
 {
     struct basen_data *ndata = cb_data;
-    struct gensio *mynet = &ndata->net;
+    struct gensio *io = ndata->io;
     unsigned char *buf = ibuf;
 
 #ifdef DEBUG_ON
@@ -860,11 +858,11 @@ basen_ll_read(void *cb_data, int readerr,
 			ndata->state == BASEN_IN_FILTER_CLOSE) {
 	    ndata->state = BASEN_IN_LL_CLOSE;
 	    ll_close(ndata, basen_ll_close_done, NULL);
-	} else if (mynet->cb) {
+	} else if (gensio_get_cb(io)) {
 	    unsigned int len = 0;
 
 	    basen_unlock(ndata);
-	    mynet->cb(mynet, GENSIO_EVENT_READ, readerr, NULL, &len, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_READ, readerr, NULL, &len, 0, NULL);
 	    basen_lock(ndata);
 	} else {
 	    basen_i_close(ndata, NULL, NULL);
@@ -928,8 +926,7 @@ basen_ll_write_ready(void *cb_data)
     if (ndata->state != BASEN_IN_FILTER_OPEN && !filter_ll_write_pending(ndata)
 		&& ndata->xmit_enabled) {
 	basen_unlock(ndata);
-	ndata->net.cb(&ndata->net, GENSIO_EVENT_WRITE_READY,
-		      0, NULL, 0, 0, NULL);
+	gensio_cb(ndata->io, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
 	basen_lock(ndata);
     }
 
@@ -987,7 +984,7 @@ gensio_i_alloc(struct gensio_os_funcs *o,
 	       struct gensio_filter *filter,
 	       const char *typename,
 	       bool is_client,
-	       void (*open_done)(struct gensio *net,
+	       void (*open_done)(struct gensio *io,
 				 int err,
 				 void *open_data),
 	       void *open_data,
@@ -1021,11 +1018,11 @@ gensio_i_alloc(struct gensio_os_funcs *o,
 	ndata->filter_ops = filter->ops;
 	filter->ops->set_callbacks(filter, &basen_filter_cbs, ndata);
     }
-    ndata->net.user_data = user_data;
-    ndata->net.cb = cb;
-    ndata->net.funcs = &basen_net_funcs;
-    ndata->net.typename = typename;
-    gensio_set_is_client(&ndata->net, is_client);
+    ndata->io = gensio_data_alloc(o, cb, user_data, &basen_io_funcs, typename,
+				  ndata);
+    if (!ndata->io)
+	goto out_nomem;
+    gensio_set_is_client(ndata->io, is_client);
     ll->ops->set_callbacks(ll, &basen_ll_callbacks, ndata);
     if (is_client)
 	ndata->state = BASEN_CLOSED;
@@ -1041,7 +1038,7 @@ gensio_i_alloc(struct gensio_os_funcs *o,
 	basen_set_ll_enables(ndata);
     }
 
-    return &ndata->net;
+    return ndata->io;
 
 out_nomem:
     basen_finish_free(ndata);
@@ -1064,7 +1061,7 @@ base_gensio_server_alloc(struct gensio_os_funcs *o,
 			 struct gensio_ll *ll,
 			 struct gensio_filter *filter,
 			 const char *typename,
-			 void (*open_done)(struct gensio *net,
+			 void (*open_done)(struct gensio *io,
 					   int err,
 					   void *open_data),
 			 void *open_data)

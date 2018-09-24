@@ -595,8 +595,8 @@ termios_timeout(struct gensio_timer *t, void *cb_data)
 	struct gensio *io = sergensio_to_gensio(&sdata->sio);
 	unsigned int vlen = sizeof(modemstate);
 
-	io->cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-	       (unsigned char *) &modemstate, &vlen, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
+		  (unsigned char *) &modemstate, &vlen, 0, NULL);
     }
 
     if (sdata->modemstate_mask) {
@@ -945,7 +945,7 @@ termios_gensio_alloc(const char *devname, char *args[],
 	goto out_nomem;
     }
 
-    sdata->sio.io->parent_object = &sdata->sio;
+    err = gensio_addclass(sdata->sio.io, "sergensio", &sdata->sio);
     sdata->sio.funcs = &sterm_funcs;
 
     *io = sdata->sio.io;

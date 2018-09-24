@@ -269,7 +269,7 @@ struct gensio_gensio_acc_cbs {
 			 struct gensio **new_net);
     int (*new_child)(void *acc_data, void **finish_data,
 		     struct gensio_filter **filter);
-    void (*finish_child)(void *acc_data, void *finish_data, struct gensio *io);
+    int (*finish_child)(void *acc_data, void *finish_data, struct gensio *io);
     void (*free)(void *acc_data);
 };
 

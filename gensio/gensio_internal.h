@@ -51,13 +51,6 @@ struct gensio_functions {
 
     void (*free)(struct gensio *io);
 
-    /*
-     * Increment the gensio's refcount.  There are situations where one
-     * piece of code passes a gensio into another piece of code, and
-     * that other piece of code that might free it on an error, but
-     * the upper layer gets the error and wants to free it, too.  This
-     * keeps it around for that situation.
-     */
     void (*ref)(struct gensio *io);
 
     void (*set_read_callback_enable)(struct gensio *io, bool enabled);
@@ -66,31 +59,35 @@ struct gensio_functions {
 };
 
 /*
- * This structure represents a network connection, return from the
- * acceptor callback in gensio_acceptor.
+ * Increment the gensio's refcount.  There are situations where one
+ * piece of code passes a gensio into another piece of code, and
+ * that other piece of code that might free it on an error, but
+ * the upper layer gets the error and wants to free it, too.  This
+ * keeps it around for that situation.
  */
-struct gensio {
-    void *user_data;
-    void *parent_object;
-    gensio_event cb;
+void gensio_ref(struct gensio *io);
 
-    const struct gensio_functions *funcs;
-
-    const char *typename;
-
-    bool is_client;
-    bool is_packet;
-    bool is_reliable;
-};
+struct gensio *gensio_data_alloc(struct gensio_os_funcs *o,
+				 gensio_event cb, void *user_data,
+				 const struct gensio_functions *funcs,
+				 const char *typename, void *gensio_data);
+void gensio_data_free(struct gensio *io);
+void *gensio_get_gensio_data(struct gensio *io);
 
 void gensio_set_is_client(struct gensio *io, bool is_client);
 void gensio_set_is_packet(struct gensio *io, bool is_packet);
 void gensio_set_is_reliable(struct gensio *io, bool is_reliable);
+gensio_event gensio_get_cb(struct gensio *io);
+void gensio_set_cb(struct gensio *io, gensio_event cb, void *user_data);
+int gensio_cb(struct gensio *io, int event, int err,
+	      unsigned char *buf, unsigned int *buflen,
+	      unsigned long channel, void *auxdata);
 
 /*
- * If io->type is in the types array, return true.  Return false otherwise.
+ * Add and get the classdata for a gensio.
  */
-bool gensio_match_type(struct gensio *io, char *types[]);
+int gensio_addclass(struct gensio *io, const char *name, void *classdata);
+void *gensio_getclass(struct gensio *io, const char *name);
 
 struct gensio_acceptor_functions {
     int (*startup)(struct gensio_acceptor *acceptor);

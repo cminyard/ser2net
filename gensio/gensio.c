@@ -30,6 +30,115 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
 
+struct gensio_classobj {
+    const char *name;
+    void *classdata;
+    struct gensio_classobj *next;
+};
+
+struct gensio {
+    struct gensio_os_funcs *o;
+    void *user_data;
+    gensio_event cb;
+
+    struct gensio_classobj *classes;
+
+    const struct gensio_functions *funcs;
+    void *gensio_data;
+
+    const char *typename;
+
+    bool is_client;
+    bool is_packet;
+    bool is_reliable;
+};
+
+struct gensio *
+gensio_data_alloc(struct gensio_os_funcs *o,
+		  gensio_event cb, void *user_data,
+		  const struct gensio_functions *funcs,
+		  const char *typename, void *gensio_data)
+{
+    struct gensio *io = o->zalloc(o, sizeof(*io));
+
+    if (!io)
+	return NULL;
+
+    io->o = o;
+    io->cb = cb;
+    io->user_data = user_data;
+    io->funcs = funcs;
+    io->typename = typename;
+    io->gensio_data = gensio_data;
+
+    return io;
+}
+
+void
+gensio_data_free(struct gensio *io)
+{
+    while (io->classes) {
+	struct gensio_classobj *c = io->classes;
+
+	io->classes = c->next;
+	io->o->free(io->o, c);
+    }
+    io->o->free(io->o, io);
+}
+
+void *
+gensio_get_gensio_data(struct gensio *io)
+{
+    return io->gensio_data;
+}
+
+gensio_event
+gensio_get_cb(struct gensio *io)
+{
+    return io->cb;
+}
+
+void gensio_set_cb(struct gensio *io, gensio_event cb, void *user_data)
+{
+    io->cb = NULL;
+    io->user_data = NULL;
+}
+
+int
+gensio_cb(struct gensio *io, int event, int err,
+	  unsigned char *buf, unsigned int *buflen,
+	  unsigned long channel, void *auxdata)
+{
+    return io->cb(io, event, err, buf, buflen, channel, auxdata);
+}
+
+int
+gensio_addclass(struct gensio *io, const char *name, void *classdata)
+{
+    struct gensio_classobj *c;
+
+    c = io->o->zalloc(io->o, sizeof(*c));
+    if (!c)
+	return ENOMEM;
+    c->name = name;
+    c->classdata = classdata;
+    c->next = io->classes;
+    io->classes = c;
+    return 0;
+}
+
+void *
+gensio_getclass(struct gensio *io, const char *name)
+{
+    struct gensio_classobj *c;
+
+    for (c = io->classes; c; c = c->next) {
+	if (strcmp(c->name, name) == 0)
+	    return c->classdata;
+    }
+    return NULL;
+}
+
 void
 check_ipv6_only(int family, struct sockaddr *addr, int fd)
 {
@@ -473,6 +582,12 @@ gensio_set_write_callback_enable(struct gensio *io, bool enabled)
     io->funcs->set_write_callback_enable(io, enabled);
 }
 
+void
+gensio_ref(struct gensio *io)
+{
+    io->funcs->ref(io);
+}
+
 bool
 gensio_is_client(struct gensio *io)
 {
@@ -571,6 +686,7 @@ gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
 				    new_io);
 }
 
+/* FIXME - this is a cheap hack and needs to be fixed. */
 bool
 gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
 {
@@ -809,18 +925,6 @@ str_to_gensio(const char *str,
 	str_to_argv_free(argc, args);
 
     return err;
-}
-
-bool
-gensio_match_type(struct gensio *io, char *types[])
-{
-    unsigned int i;
-
-    for (i = 0; types[i]; i++) {
-	if (strcmp(io->typename, types[i]) == 0)
-	    return true;
-    }
-    return false;
 }
 
 const char *
