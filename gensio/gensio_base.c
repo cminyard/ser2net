@@ -359,7 +359,7 @@ basen_write_data_handler(void *cb_data,
 }
 
 static int
-basen_write(struct gensio *io, unsigned int *rcount,
+basen_write(struct gensio *io, unsigned int *rcount, unsigned long channel,
 	    const void *buf, unsigned int buflen)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);

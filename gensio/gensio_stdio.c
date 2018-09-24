@@ -114,7 +114,7 @@ stdiona_unlock(struct stdiona_data *nadata)
 }
 
 static int
-stdion_write(struct gensio *io, unsigned int *count,
+stdion_write(struct gensio *io, unsigned int *count, unsigned long channel,
 	     const void *buf, unsigned int buflen)
 {
     struct stdiona_data *nadata = gensio_get_gensio_data(io);

@@ -291,7 +291,7 @@ void
 controller_write(struct controller_info *cntlr, const char *data,
 		 unsigned int count)
 {
-    gensio_write(cntlr->net, NULL, data, count);
+    gensio_write(cntlr->net, NULL, 0, data, count);
 }
 
 static void
@@ -648,7 +648,7 @@ controller_write_ready(struct gensio *net)
 	    goto out;
     }
 
-    err = gensio_write(net, &write_count,
+    err = gensio_write(net, &write_count, 0,
 		       &(cntlr->outbuf[cntlr->outbuf_pos]),
 		       cntlr->outbuf_count);
     if (err == EAGAIN) {
@@ -761,7 +761,7 @@ controller_acc_child_event(struct gensio_acceptor *acceptor, int event,
 errout:
     UNLOCK(cntlr_lock);
     /* We have a problem so refuse this one. */
-    gensio_write(net, NULL, err, strlen(err));
+    gensio_write(net, NULL, 0, err, strlen(err));
     gensio_free(net);
     return 0;
 }

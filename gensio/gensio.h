@@ -246,7 +246,19 @@ struct gensio;
  * situations where you don't want the read handler called.
  */
 #define GENSIO_EVENT_READ		1
+
+/*
+ * Called when data can be written to the I/O device.  Only io is
+ * set, all other parameters are unused and the return value is
+ * ignored.
+ */
 #define GENSIO_EVENT_WRITE_READY	2
+
+/*
+ * Called when an urgent signal is received from the I/O device.  Only
+ * io is set, all other parameters are unused and the return value is
+ * ignored.
+ */
 #define GENSIO_EVENT_URGENT		3
 
 /*
@@ -323,7 +335,7 @@ void gensio_set_user_data(struct gensio *io, void *user_data);
  * Note that count may be set to zero.  This can happen on an
  * EAGAIN type situation.  count may be NULL if you don't care.
  */
-int gensio_write(struct gensio *io, unsigned int *count,
+int gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
 		 const void *buf, unsigned int buflen);
 
 /*

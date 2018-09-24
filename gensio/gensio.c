@@ -550,7 +550,7 @@ gensio_buffer_do_write(void *cb_data, void  *buf, size_t buflen,
     int err = 0;
     unsigned int count;
 
-    err = gensio_write(io, &count, buf, buflen);
+    err = gensio_write(io, &count, 0, buf, buflen);
     if (!err)
 	*written = count;
 
@@ -577,10 +577,10 @@ gensio_set_user_data(struct gensio *io, void *user_data)
 }
 
 int
-gensio_write(struct gensio *io, unsigned int *count,
+gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
 	     const void *buf, unsigned int buflen)
 {
-    return io->funcs->write(io, count, buf, buflen);
+    return io->funcs->write(io, count, channel, buf, buflen);
 }
 
 int

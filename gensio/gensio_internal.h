@@ -30,7 +30,7 @@
 #define GENSIO_DEFAULT_BUF_SIZE		1024
 
 struct gensio_functions {
-    int (*write)(struct gensio *io, unsigned int *count,
+    int (*write)(struct gensio *io, unsigned int *count, unsigned long channel,
 		 const void *buf, unsigned int buflen);
 
     int (*raddr_to_str)(struct gensio *io, int *pos,

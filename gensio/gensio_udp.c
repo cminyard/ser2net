@@ -336,7 +336,7 @@ static void udpn_finish_free(struct udpn_data *ndata)
 }
 
 static int
-udpn_write(struct gensio *io, unsigned int *count,
+udpn_write(struct gensio *io, unsigned int *count, unsigned long channel,
 	   const void *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);

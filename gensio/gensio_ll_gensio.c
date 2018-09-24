@@ -57,7 +57,7 @@ child_write(struct gensio_ll *ll, unsigned int *rcount,
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_write(cdata->child, rcount, buf, buflen);
+    return gensio_write(cdata->child, rcount, 0, buf, buflen);
 }
 
 static int

@@ -33,7 +33,7 @@ class TestAccept:
         io1.open_s()
         if (io1_dummy_write):
             # For UDP, kick start things.
-            io1.write(io1_dummy_write)
+            io1.write(0, io1_dummy_write)
         self.wait()
         if (io1_dummy_write):
             self.io2.handler.set_compare(io1_dummy_write)
