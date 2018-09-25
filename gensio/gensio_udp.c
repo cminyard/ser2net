@@ -1118,13 +1118,33 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
     return 0;
 }
 
-static const struct gensio_acceptor_functions gensio_acc_udp_funcs = {
-    .startup = udpna_startup,
-    .shutdown = udpna_shutdown,
-    .set_accept_callback_enable = udpna_set_accept_callback_enable,
-    .free = udpna_free,
-    .connect = udpna_connect
-};
+static int
+gensio_acc_udp_func(struct gensio_acceptor *acc, int func, int val,
+		    void *addr, void *done, void *data,
+		    void *ret)
+{
+    switch (func) {
+    case GENSIO_ACC_FUNC_STARTUP:
+	return udpna_startup(acc);
+
+    case GENSIO_ACC_FUNC_SHUTDOWN:
+	return udpna_shutdown(acc, done, data);
+
+    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
+	udpna_set_accept_callback_enable(acc, val);
+	return 0;
+
+    case GENSIO_ACC_FUNC_FREE:
+	udpna_free(acc);
+	return 0;
+
+    case GENSIO_ACC_FUNC_CONNECT:
+	return udpna_connect(acc, addr, done, data, ret);
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 int
 udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
@@ -1163,7 +1183,7 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, &gensio_acc_udp_funcs,
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_udp_func,
 					"udp", nadata);
     if (!nadata->acc)
 	goto out_nomem;

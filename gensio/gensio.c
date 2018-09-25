@@ -162,6 +162,7 @@ struct gensio_acceptor {
     struct gensio_classobj *classes;
 
     const struct gensio_acceptor_functions *funcs;
+    gensio_acc_func func;
     void *gensio_acc_data;
 
     const char *typename;
@@ -173,7 +174,7 @@ struct gensio_acceptor {
 struct gensio_acceptor *
 gensio_acc_data_alloc(struct gensio_os_funcs *o,
 		      gensio_acceptor_event cb, void *user_data,
-		      const struct gensio_acceptor_functions *funcs,
+		      gensio_acc_func func,
 		      const char *typename, void *gensio_acc_data)
 {
     struct gensio_acceptor *acc = o->zalloc(o, sizeof(*acc));
@@ -184,7 +185,7 @@ gensio_acc_data_alloc(struct gensio_os_funcs *o,
     acc->o = o;
     acc->cb = cb;
     acc->user_data = user_data;
-    acc->funcs = funcs;
+    acc->func = func;
     acc->typename = typename;
     acc->gensio_acc_data = gensio_acc_data;
 
@@ -734,27 +735,30 @@ gensio_acc_set_callback(struct gensio_acceptor *acceptor,
 int
 gensio_acc_startup(struct gensio_acceptor *acceptor)
 {
-    return acceptor->funcs->startup(acceptor);
+    return acceptor->func(acceptor, GENSIO_ACC_FUNC_STARTUP, 0,
+			  NULL, NULL, NULL, NULL);
 }
 
 int
 gensio_acc_shutdown(struct gensio_acceptor *acceptor,
 		    gensio_acc_done shutdown_done, void *shutdown_data)
 {
-    return acceptor->funcs->shutdown(acceptor, shutdown_done, shutdown_data);
+    return acceptor->func(acceptor, GENSIO_ACC_FUNC_SHUTDOWN, 0,
+			  0, shutdown_done, shutdown_data, NULL);
 }
 
 void
 gensio_acc_set_accept_callback_enable(struct gensio_acceptor *acceptor,
 				      bool enabled)
 {
-    acceptor->funcs->set_accept_callback_enable(acceptor, enabled);
+    acceptor->func(acceptor, GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK, enabled,
+		   NULL, NULL, NULL, NULL);
 }
 
 void
 gensio_acc_free(struct gensio_acceptor *acceptor)
 {
-    acceptor->funcs->free(acceptor);
+    acceptor->func(acceptor, GENSIO_ACC_FUNC_FREE, 0, NULL, NULL, NULL, NULL);
 }
 
 int
@@ -762,10 +766,8 @@ gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
 		   gensio_done_err connect_done, void *cb_data,
 		   struct gensio **new_io)
 {
-    if (!acceptor->funcs->connect)
-	return ENOTSUP;
-    return acceptor->funcs->connect(acceptor, addr, connect_done, cb_data,
-				    new_io);
+    return acceptor->func(acceptor, GENSIO_ACC_FUNC_FREE, 0,
+			  addr, connect_done, cb_data, new_io);
 }
 
 /* FIXME - this is a cheap hack and needs to be fixed. */

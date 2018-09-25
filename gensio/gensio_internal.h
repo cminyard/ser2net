@@ -119,25 +119,46 @@ int gensio_cb(struct gensio *io, int event, int err,
 int gensio_addclass(struct gensio *io, const char *name, void *classdata);
 void *gensio_getclass(struct gensio *io, const char *name);
 
-struct gensio_acceptor_functions {
-    int (*startup)(struct gensio_acceptor *acceptor);
+/*
+ * Functions for gensio_acc_func...
+ */
 
-    int (*shutdown)(struct gensio_acceptor *acceptor,
-		    gensio_acc_done shutdown_done, void *shutdown_data);
+/*
+ * No translation needed
+ */
+#define GENSIO_ACC_FUNC_STARTUP			1
 
-    void (*set_accept_callback_enable)(struct gensio_acceptor *acceptor,
-				       bool enabled);
+/*
+ * shutdown_done => done
+ * shutdown_data => data
+ */
+#define GENSIO_ACC_FUNC_SHUTDOWN		2
 
-    void (*free)(struct gensio_acceptor *acceptor);
+/*
+ * enabled => val
+ */
+#define GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK	3
 
-    int (*connect)(struct gensio_acceptor *acceptor, void *addr,
-		   gensio_done_err connect_done, void *cb_data,
-		   struct gensio **new_io);
-};
+/*
+ * No translation needed
+ */
+#define GENSIO_ACC_FUNC_FREE			4
+
+/*
+ * addr => addr
+ * connect_done => done
+ * cb_data => data
+ * new_io => ret
+ */
+#define GENSIO_ACC_FUNC_CONNECT			5
+
+typedef int (*gensio_acc_func)(struct gensio_acceptor *acc, int func, int val,
+			       void *addr, void *done, void *data,
+			       void *ret);
 
 struct gensio_acceptor *gensio_acc_data_alloc(struct gensio_os_funcs *o,
 		      gensio_acceptor_event cb, void *user_data,
-		      const struct gensio_acceptor_functions *funcs,
+		      gensio_acc_func func,
 		      const char *typename, void *gensio_acc_data);
 void gensio_acc_data_free(struct gensio_acceptor *acc);
 void *gensio_acc_get_gensio_data(struct gensio_acceptor *acc);

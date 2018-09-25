@@ -290,13 +290,33 @@ basena_connect(struct gensio_acceptor *acceptor, void *addr,
     return err;
 }
 
-static const struct gensio_acceptor_functions gensio_acc_basena_funcs = {
-    .startup = basena_startup,
-    .shutdown = basena_shutdown,
-    .set_accept_callback_enable = basena_set_accept_callback_enable,
-    .free = basena_free,
-    .connect = basena_connect
-};
+static int
+gensio_acc_base_func(struct gensio_acceptor *acc, int func, int val,
+		    void *addr, void *done, void *data,
+		    void *ret)
+{
+    switch (func) {
+    case GENSIO_ACC_FUNC_STARTUP:
+	return basena_startup(acc);
+
+    case GENSIO_ACC_FUNC_SHUTDOWN:
+	return basena_shutdown(acc, done, data);
+
+    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
+	basena_set_accept_callback_enable(acc, val);
+	return 0;
+
+    case GENSIO_ACC_FUNC_FREE:
+	basena_free(acc);
+	return 0;
+
+    case GENSIO_ACC_FUNC_CONNECT:
+	return basena_connect(acc, addr, done, data, ret);
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 static void
 basena_finish_server_open(struct gensio *net, int err, void *cb_data)
@@ -397,8 +417,7 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->acc = gensio_acc_data_alloc(o, cb, user_data,
-					&gensio_acc_basena_funcs,
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_base_func,
 					typename, nadata);
     if (!nadata->acc)
 	goto out_nomem;

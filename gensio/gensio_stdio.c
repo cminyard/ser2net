@@ -806,12 +806,31 @@ gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
     }
 }
 
-static const struct gensio_acceptor_functions gensio_acc_stdio_funcs = {
-    .startup = stdiona_startup,
-    .shutdown = stdiona_shutdown,
-    .set_accept_callback_enable = stdiona_set_accept_callback_enable,
-    .free = stdiona_free
-};
+static int
+gensio_acc_stdio_func(struct gensio_acceptor *acc, int func, int val,
+		      void *addr, void *done, void *data,
+		      void *ret)
+{
+    switch (func) {
+    case GENSIO_ACC_FUNC_STARTUP:
+	return stdiona_startup(acc);
+
+    case GENSIO_ACC_FUNC_SHUTDOWN:
+	return stdiona_shutdown(acc, done, data);
+
+    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
+	stdiona_set_accept_callback_enable(acc, val);
+	return 0;
+
+    case GENSIO_ACC_FUNC_FREE:
+	stdiona_free(acc);
+	return 0;
+
+    case GENSIO_ACC_FUNC_CONNECT:
+    default:
+	return ENOTSUP;
+    }
+}
 
 static int
 stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
@@ -883,8 +902,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     nadata->ostdout = 0;
     nadata->ostderr = -1;
 
-    nadata->acc = gensio_acc_data_alloc(o, cb, user_data,
-					&gensio_acc_stdio_funcs,
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_stdio_func,
 					"stdio", nadata);
     if (!nadata->acc) {
 	stdiona_finish_free(nadata);

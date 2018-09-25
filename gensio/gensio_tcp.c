@@ -591,13 +591,33 @@ tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
     return err;
 }
 
-static const struct gensio_acceptor_functions gensio_acc_tcp_funcs = {
-    .startup = tcpna_startup,
-    .shutdown = tcpna_shutdown,
-    .set_accept_callback_enable = tcpna_set_accept_callback_enable,
-    .free = tcpna_free,
-    .connect = tcpna_connect
-};
+static int
+gensio_acc_tcp_func(struct gensio_acceptor *acc, int func, int val,
+		    void *addr, void *done, void *data,
+		    void *ret)
+{
+    switch (func) {
+    case GENSIO_ACC_FUNC_STARTUP:
+	return tcpna_startup(acc);
+
+    case GENSIO_ACC_FUNC_SHUTDOWN:
+	return tcpna_shutdown(acc, done, data);
+
+    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
+	tcpna_set_accept_callback_enable(acc, val);
+	return 0;
+
+    case GENSIO_ACC_FUNC_FREE:
+	tcpna_free(acc);
+	return 0;
+
+    case GENSIO_ACC_FUNC_CONNECT:
+	return tcpna_connect(acc, addr, done, data, ret);
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 int
 tcp_gensio_acceptor_alloc(struct addrinfo *iai,
@@ -630,7 +650,7 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
     if (!nadata->lock)
 	goto out_nomem;
 
-    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, &gensio_acc_tcp_funcs,
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_tcp_func,
 					"tcp", nadata);
     if (!nadata->acc)
 	goto out_nomem;
