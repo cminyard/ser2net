@@ -811,18 +811,51 @@ basen_set_write_callback_enable(struct gensio *io, bool enabled)
     basen_unlock(ndata);
 }
 
-static const struct gensio_functions basen_io_funcs = {
-    .write = basen_write,
-    .raddr_to_str = basen_raddr_to_str,
-    .get_raddr = basen_get_raddr,
-    .remote_id = basen_remote_id,
-    .open = basen_open,
-    .close = basen_close,
-    .free = basen_free,
-    .ref = basen_do_ref,
-    .set_read_callback_enable = basen_set_read_callback_enable,
-    .set_write_callback_enable = basen_set_write_callback_enable
-};
+static int
+gensio_base_func(struct gensio *io, int func, unsigned int *count,
+		unsigned long channel,
+		const void *buf, unsigned int buflen,
+		void *auxdata)
+{
+    switch (func) {
+    case GENSIO_FUNC_WRITE:
+	return basen_write(io, count, channel, buf, buflen);
+
+    case GENSIO_FUNC_RADDR_TO_STR:
+	return basen_raddr_to_str(io, count, auxdata, buflen);
+
+    case GENSIO_FUNC_GET_RADDR:
+	return basen_get_raddr(io, auxdata, count);
+
+    case GENSIO_FUNC_OPEN:
+	return basen_open(io, buf, auxdata);
+
+    case GENSIO_FUNC_CLOSE:
+	return basen_close(io, buf, auxdata);
+
+    case GENSIO_FUNC_FREE:
+	basen_free(io);
+	return 0;
+
+    case GENSIO_FUNC_REF:
+	basen_do_ref(io);
+	return 0;
+
+    case GENSIO_FUNC_SET_READ_CALLBACK:
+	basen_set_read_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_SET_WRITE_CALLBACK:
+	basen_set_write_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_REMOTE_ID:
+	return basen_remote_id(io, auxdata);
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 static unsigned int
 basen_ll_read(void *cb_data, int readerr,
@@ -1007,7 +1040,7 @@ gensio_i_alloc(struct gensio_os_funcs *o,
 	ndata->filter_ops = filter->ops;
 	filter->ops->set_callbacks(filter, &basen_filter_cbs, ndata);
     }
-    ndata->io = gensio_data_alloc(o, cb, user_data, &basen_io_funcs, typename,
+    ndata->io = gensio_data_alloc(o, cb, user_data, gensio_base_func, typename,
 				  ndata);
     if (!ndata->io)
 	goto out_nomem;

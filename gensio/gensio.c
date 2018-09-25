@@ -72,7 +72,7 @@ struct gensio {
 
     struct gensio_classobj *classes;
 
-    const struct gensio_functions *funcs;
+    gensio_func func;
     void *gensio_data;
 
     const char *typename;
@@ -85,7 +85,7 @@ struct gensio {
 struct gensio *
 gensio_data_alloc(struct gensio_os_funcs *o,
 		  gensio_event cb, void *user_data,
-		  const struct gensio_functions *funcs,
+		  gensio_func func,
 		  const char *typename, void *gensio_data)
 {
     struct gensio *io = o->zalloc(o, sizeof(*io));
@@ -96,7 +96,7 @@ gensio_data_alloc(struct gensio_os_funcs *o,
     io->o = o;
     io->cb = cb;
     io->user_data = user_data;
-    io->funcs = funcs;
+    io->func = func;
     io->typename = typename;
     io->gensio_data = gensio_data;
 
@@ -580,36 +580,32 @@ int
 gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
 	     const void *buf, unsigned int buflen)
 {
-    return io->funcs->write(io, count, channel, buf, buflen);
+    return io->func(io, GENSIO_FUNC_WRITE, count, channel, buf, buflen, NULL);
 }
 
 int
 gensio_raddr_to_str(struct gensio *io, unsigned int *pos,
 		    char *buf, unsigned int buflen)
 {
-    return io->funcs->raddr_to_str(io, pos, buf, buflen);
+    return io->func(io, GENSIO_FUNC_RADDR_TO_STR, pos, 0, NULL, buflen, buf);
 }
 
 int
 gensio_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen)
 {
-    if (!io->funcs->get_raddr)
-	return ENOTSUP;
-    return io->funcs->get_raddr(io, addr, addrlen);
+    return io->func(io, GENSIO_FUNC_GET_RADDR, addrlen, 0, NULL, 0, addr);
 }
 
 int
 gensio_remote_id(struct gensio *io, int *id)
 {
-    if (!io->funcs->remote_id)
-	return ENOTSUP;
-    return io->funcs->remote_id(io, id);
+    return io->func(io, GENSIO_FUNC_REMOTE_ID, NULL, 0, NULL, 0, id);
 }
 
 int
 gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
-    return io->funcs->open(io, open_done, open_data);
+    return io->func(io, GENSIO_FUNC_OPEN, NULL, 0, open_done, 0, open_data);
 }
 
 struct gensio_open_s_data {
@@ -650,31 +646,31 @@ gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
 int
 gensio_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
-    return io->funcs->close(io, close_done, close_data);
+    return io->func(io, GENSIO_FUNC_CLOSE, NULL, 0, close_done, 0, close_data);
 }
 
 void
 gensio_free(struct gensio *io)
 {
-    return io->funcs->free(io);
+    io->func(io, GENSIO_FUNC_FREE, NULL, 0, NULL, 0, NULL);
 }
 
 void
 gensio_set_read_callback_enable(struct gensio *io, bool enabled)
 {
-    io->funcs->set_read_callback_enable(io, enabled);
+    io->func(io, GENSIO_FUNC_SET_READ_CALLBACK, NULL, 0, NULL, enabled, NULL);
 }
 
 void
 gensio_set_write_callback_enable(struct gensio *io, bool enabled)
 {
-    io->funcs->set_write_callback_enable(io, enabled);
+    io->func(io, GENSIO_FUNC_SET_WRITE_CALLBACK, NULL, 0, NULL, enabled, NULL);
 }
 
 void
 gensio_ref(struct gensio *io)
 {
-    io->funcs->ref(io);
+    io->func(io, GENSIO_FUNC_REF, NULL, 0, NULL, 0, NULL);
 }
 
 bool

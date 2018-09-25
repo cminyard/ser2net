@@ -762,17 +762,49 @@ udpna_writehandler(int fd, void *cbdata)
     udpna_unlock(nadata);
 }
 
-static const struct gensio_functions gensio_udp_funcs = {
-    .write = udpn_write,
-    .raddr_to_str = udpn_raddr_to_str,
-    .get_raddr = udpn_get_raddr,
-    .open = udpn_open,
-    .close = udpn_close,
-    .free = udpn_free,
-    .ref = udpn_ref,
-    .set_read_callback_enable = udpn_set_read_callback_enable,
-    .set_write_callback_enable = udpn_set_write_callback_enable
-};
+static int
+gensio_udp_func(struct gensio *io, int func, unsigned int *count,
+		unsigned long channel,
+		const void *buf, unsigned int buflen,
+		void *auxdata)
+{
+    switch (func) {
+    case GENSIO_FUNC_WRITE:
+	return udpn_write(io, count, channel, buf, buflen);
+
+    case GENSIO_FUNC_RADDR_TO_STR:
+	return udpn_raddr_to_str(io, count, auxdata, buflen);
+
+    case GENSIO_FUNC_GET_RADDR:
+	return udpn_get_raddr(io, auxdata, count);
+
+    case GENSIO_FUNC_OPEN:
+	return udpn_open(io, buf, auxdata);
+
+    case GENSIO_FUNC_CLOSE:
+	return udpn_close(io, buf, auxdata);
+
+    case GENSIO_FUNC_FREE:
+	udpn_free(io);
+	return 0;
+
+    case GENSIO_FUNC_REF:
+	udpn_ref(io);
+	return 0;
+
+    case GENSIO_FUNC_SET_READ_CALLBACK:
+	udpn_set_read_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_SET_WRITE_CALLBACK:
+	udpn_set_write_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_REMOTE_ID:
+    default:
+	return ENOTSUP;
+    }
+}
 
 static void
 udpna_readhandler(int fd, void *cbdata)
@@ -875,7 +907,7 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->nadata = nadata;
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
-    ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, &gensio_udp_funcs,
+    ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, gensio_udp_func,
 				  "udp", ndata);
     if (!ndata->io) {
 	nadata->o->free(nadata->o, ndata);
@@ -1059,7 +1091,7 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
     memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
     ndata->raddrlen = ai->ai_addrlen;
 
-    ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, &gensio_udp_funcs,
+    ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, gensio_udp_func,
 				  "udp", ndata);
     if (!ndata->io) {
 	nadata->o->free_runner(ndata->deferred_op_runner);
@@ -1240,7 +1272,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     memcpy(ndata->raddr, ai->ai_addr, ai->ai_addrlen);
     ndata->raddrlen = ai->ai_addrlen;
 
-    ndata->io = gensio_data_alloc(nadata->o, cb, user_data, &gensio_udp_funcs,
+    ndata->io = gensio_data_alloc(nadata->o, cb, user_data, gensio_udp_func,
 				  "udp", ndata);
     if (!ndata->io) {
 	close(new_fd);

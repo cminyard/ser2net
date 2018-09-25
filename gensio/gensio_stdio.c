@@ -762,17 +762,49 @@ stdiona_free(struct gensio_acceptor *acceptor)
     stdiona_unlock(nadata);
 }
 
-static const struct gensio_functions gensio_stdio_funcs = {
-    .write = stdion_write,
-    .raddr_to_str = stdion_raddr_to_str,
-    .remote_id = stdion_remote_id,
-    .open = stdion_open,
-    .close = stdion_close,
-    .free = stdion_free,
-    .ref = stdion_ref,
-    .set_read_callback_enable = stdion_set_read_callback_enable,
-    .set_write_callback_enable = stdion_set_write_callback_enable
-};
+static int
+gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
+		  unsigned long channel,
+		  const void *buf, unsigned int buflen,
+		  void *auxdata)
+{
+    switch (func) {
+    case GENSIO_FUNC_WRITE:
+	return stdion_write(io, count, channel, buf, buflen);
+
+    case GENSIO_FUNC_RADDR_TO_STR:
+	return stdion_raddr_to_str(io, count, auxdata, buflen);
+
+    case GENSIO_FUNC_OPEN:
+	return stdion_open(io, buf, auxdata);
+
+    case GENSIO_FUNC_CLOSE:
+	return stdion_close(io, buf, auxdata);
+
+    case GENSIO_FUNC_FREE:
+	stdion_free(io);
+	return 0;
+
+    case GENSIO_FUNC_REF:
+	stdion_ref(io);
+	return 0;
+
+    case GENSIO_FUNC_SET_READ_CALLBACK:
+	stdion_set_read_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_SET_WRITE_CALLBACK:
+	stdion_set_write_callback_enable(io, buflen);
+	return 0;
+
+    case GENSIO_FUNC_REMOTE_ID:
+	return stdion_remote_id(io, auxdata);
+
+    case GENSIO_FUNC_GET_RADDR:
+    default:
+	return ENOTSUP;
+    }
+}
 
 static const struct gensio_acceptor_functions gensio_acc_stdio_funcs = {
     .startup = stdiona_startup,
@@ -840,7 +872,7 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     if (err)
 	return err;
 
-    nadata->io = gensio_data_alloc(o, NULL, NULL, &gensio_stdio_funcs,
+    nadata->io = gensio_data_alloc(o, NULL, NULL, gensio_stdio_func,
                                   "stdio", nadata);
     if (!nadata->io) {
 	stdiona_finish_free(nadata);
@@ -907,7 +939,7 @@ stdio_gensio_alloc(char *const argv[], char *args[],
     }
     nadata->closed = true;
     nadata->io = gensio_data_alloc(nadata->o, cb, user_data,
-				   &gensio_stdio_funcs, "stdio", nadata);
+				   gensio_stdio_func, "stdio", nadata);
     if (!nadata->io)
 	goto out_nomem;
     gensio_set_is_client(nadata->io, true);

@@ -29,30 +29,64 @@
  */
 #define GENSIO_DEFAULT_BUF_SIZE		1024
 
-struct gensio_functions {
-    int (*write)(struct gensio *io, unsigned int *count, unsigned long channel,
-		 const void *buf, unsigned int buflen);
+/*
+ * Functions for gensio_func...
+ */
 
-    int (*raddr_to_str)(struct gensio *io, unsigned int *pos,
-			char *buf, unsigned int buflen);
+/*
+ * count => count
+ * channel => channel
+ * buf => buf
+ * buflen => buflen
+ */
+#define GENSIO_FUNC_WRITE		1
 
-    int (*get_raddr)(struct gensio *io,
-		     void *addr, unsigned int *addrlen);
+/*
+ * pos => count
+ * buf => auxdata
+ * buflen => buflen
+ */
+#define GENSIO_FUNC_RADDR_TO_STR	2
 
-    int (*remote_id)(struct gensio *io, int *id);
+/*
+ * addr => auxdata
+ * addrlen => count
+ */
+#define GENSIO_FUNC_GET_RADDR		3
 
-    int (*open)(struct gensio *io, gensio_done_err open_done, void *open_data);
+/*
+ * id => auxdata
+ */
+#define GENSIO_FUNC_REMOTE_ID		4
 
-    int (*close)(struct gensio *io, gensio_done close_done, void *close_data);
+/*
+ * open_done => buf
+ * open_data => auxdata
+ */
+#define GENSIO_FUNC_OPEN		5
 
-    void (*free)(struct gensio *io);
+/*
+ * close_done => buf
+ * close_data => auxdata
+ */
+#define GENSIO_FUNC_CLOSE		6
 
-    void (*ref)(struct gensio *io);
+/* No translations needed, return value not used */
+#define GENSIO_FUNC_FREE		7
 
-    void (*set_read_callback_enable)(struct gensio *io, bool enabled);
+/* No translations needed, return value not used */
+#define GENSIO_FUNC_REF			8
 
-    void (*set_write_callback_enable)(struct gensio *io, bool enabled);
-};
+/* enabled => buflen, return value not used. */
+#define GENSIO_FUNC_SET_READ_CALLBACK	9
+
+/* enabled => buflen, return value not used. */
+#define GENSIO_FUNC_SET_WRITE_CALLBACK	10
+
+typedef int (*gensio_func)(struct gensio *io, int func, unsigned int *count,
+			   unsigned long channel,
+			   const void *buf, unsigned int buflen,
+			   void *auxdata);
 
 /*
  * Increment the gensio's refcount.  There are situations where one
@@ -65,7 +99,7 @@ void gensio_ref(struct gensio *io);
 
 struct gensio *gensio_data_alloc(struct gensio_os_funcs *o,
 				 gensio_event cb, void *user_data,
-				 const struct gensio_functions *funcs,
+				 gensio_func func,
 				 const char *typename, void *gensio_data);
 void gensio_data_free(struct gensio *io);
 void *gensio_get_gensio_data(struct gensio *io);
