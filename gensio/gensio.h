@@ -303,6 +303,16 @@ typedef int (*gensio_event)(struct gensio *io, int event, int err,
 			    unsigned long channel, void *auxdata);
 
 /*
+ * Callbacks for functions that don't give an error (close);
+ */
+typedef void (*gensio_done)(struct gensio *io, void *open_data);
+
+/*
+ * Callbacks for functions that give an error (open);
+ */
+typedef void (*gensio_done_err)(struct gensio *io, int err, void *open_data);
+
+/*
  * Set the callback data for the net.  This must be done in the
  * new_connection callback for the acceptor before any other operation
  * is done on the gensio.  The only exception is that gensio_close() may
@@ -374,9 +384,7 @@ int gensio_remote_id(struct gensio *io, int *id);
  * before use.  If no error is returned, the gensio will be open when
  * the open_done callback is called.
  */
-int gensio_open(struct gensio *io,
-		void (*open_done)(struct gensio *io, int err, void *open_data),
-		void *open_data);
+int gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data);
 
 /*
  * Like gensio_open(), but waits for the open to complete.
@@ -388,9 +396,7 @@ int gensio_open_s(struct gensio *io, struct gensio_os_funcs *o);
  * until close_done() is called.  This shuts down internal file
  * descriptors and such, but does not free the gensio.
  */
-int gensio_close(struct gensio *io,
-		 void (*close_done)(struct gensio *io, void *close_data),
-		 void *close_data);
+int gensio_close(struct gensio *io, gensio_done close_done, void *close_data);
 
 /*
  * Frees data assoicated with the gensio.  If it is open, the gensio is
@@ -465,6 +471,11 @@ typedef int (*gensio_acceptor_event)(struct gensio_acceptor *acceptor,
 				     void *data);
 
 /*
+ * Callbacks for functions that don't give an error (close);
+ */
+typedef void (*gensio_acc_done)(struct gensio_acceptor *acc, void *open_data);
+
+/*
  * Return the user data supplied to the allocator.
  */
 void *gensio_acc_get_user_data(struct gensio_acceptor *acceptor);
@@ -500,9 +511,7 @@ int gensio_acc_startup(struct gensio_acceptor *acceptor);
  * otherwise.
  */
 int gensio_acc_shutdown(struct gensio_acceptor *acceptor,
-			void (*shutdown_done)(struct gensio_acceptor *acceptor,
-					      void *shutdown_data),
-			void *shutdown_data);
+			gensio_acc_done shutdown_done, void *shutdown_data);
 
 /*
  * Enable the accept callback when connections come in.
@@ -523,9 +532,8 @@ void gensio_acc_free(struct gensio_acceptor *acceptor);
  * is *not* automatically freed.  You must do that.
  */
 int gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
-		       void (*connect_done)(struct gensio *io, int err,
-					    void *cb_data),
-		       void *cb_data, struct gensio **new_io);
+		       gensio_done_err connect_done, void *cb_data,
+		       struct gensio **new_io);
 /*
  * Returns if the acceptor requests exit on close.  A hack for stdio.
  */

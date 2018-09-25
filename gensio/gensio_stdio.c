@@ -52,8 +52,7 @@ struct stdiona_data {
     /* For the acceptor only. */
     bool in_free;
     bool in_shutdown;
-    void (*shutdown_done)(struct gensio_acceptor *acceptor,
-			  void *shutdown_data);
+    gensio_acc_done shutdown_done;
     void *shutdown_data;
 
     bool read_enabled;
@@ -62,13 +61,13 @@ struct stdiona_data {
     bool deferred_read;
 
     bool in_open;
-    void (*open_done)(struct gensio *io, int err, void *open_data);
+    gensio_done_err open_done;
     void *open_data;
 
     /* For the client only. */
     bool in_close; /* A close is pending the running running. */
     bool closed;
-    void (*close_done)(struct gensio *io, void *close_data);
+    gensio_done close_done;
     void *close_data;
 
     /*
@@ -407,10 +406,7 @@ stdion_write_ready(int fd, void *cbdata)
 }
 
 static int
-stdion_open(struct gensio *io, void (*open_done)(struct gensio *io,
-						  int err,
-						  void *open_data),
-	    void *open_data)
+stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
     struct stdiona_data *nadata = gensio_get_gensio_data(io);
     int err;
@@ -548,8 +544,7 @@ stdion_open(struct gensio *io, void (*open_done)(struct gensio *io,
 
 static void
 __stdion_close(struct stdiona_data *nadata,
-	       void (*close_done)(struct gensio *io, void *close_data),
-	       void *close_data)
+	       gensio_done close_done, void *close_data)
 {
     nadata->closed = true;
     nadata->in_close = true;
@@ -566,9 +561,7 @@ __stdion_close(struct stdiona_data *nadata,
 }
 
 static int
-stdion_close(struct gensio *io, void (*close_done)(struct gensio *io,
-						    void *close_data),
-	     void *close_data)
+stdion_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
     struct stdiona_data *nadata = gensio_get_gensio_data(io);
     int err = 0;
@@ -723,9 +716,7 @@ stdiona_startup(struct gensio_acceptor *acceptor)
 
 static int
 stdiona_shutdown(struct gensio_acceptor *acceptor,
-		 void (*shutdown_done)(struct gensio_acceptor *acceptor,
-				       void *shutdown_data),
-		 void *shutdown_data)
+		 gensio_acc_done shutdown_done, void *shutdown_data)
 {
     struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;

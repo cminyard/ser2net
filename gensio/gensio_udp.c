@@ -56,11 +56,11 @@ struct udpn_data {
     bool in_write;	/* Currently in a write callback. */
 
     bool in_open;
-    void (*open_done)(struct gensio *io, int err, void *open_data);
+    gensio_done_err open_done;
     void *open_data;
 
     bool in_close;	/* In the closing process, close_done is not called. */
-    void (*close_done)(struct gensio *io, void *close_data);
+    gensio_done close_done;
     void *close_data;
     bool closed;	/* Has this net been closed? */
     bool in_free;	/* Free the data when closed? */
@@ -111,8 +111,7 @@ struct udpna_data {
     bool enabled;
     bool closed;
     bool in_shutdown;
-    void (*shutdown_done)(struct gensio_acceptor *acceptor,
-			  void *shutdown_data);
+    gensio_acc_done shutdown_done;
     void *shutdown_data;
 
     struct addrinfo    *ai;		/* The address list for the portname. */
@@ -557,10 +556,7 @@ static void udpn_start_deferred_op(struct udpn_data *ndata)
 }
 
 static int
-udpn_open(struct gensio *io, void (*open_done)(struct gensio *io,
-					       int err,
-					       void *open_data),
-	  void *open_data)
+udpn_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);
     struct udpna_data *nadata = ndata->nadata;
@@ -587,8 +583,7 @@ udpn_open(struct gensio *io, void (*open_done)(struct gensio *io,
 
 static void
 udpn_start_close(struct udpn_data *ndata,
-		 void (*close_done)(struct gensio *io, void *close_data),
-		 void *close_data)
+		 gensio_done close_done, void *close_data)
 {
     struct udpna_data *nadata = ndata->nadata;
 
@@ -605,9 +600,7 @@ udpn_start_close(struct udpn_data *ndata,
 }
 
 static int
-udpn_close(struct gensio *io, void (*close_done)(struct gensio *io,
-						  void *close_data),
-	   void *close_data)
+udpn_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);
     struct udpna_data *nadata = ndata->nadata;
@@ -970,9 +963,7 @@ udpna_startup(struct gensio_acceptor *acceptor)
 
 static int
 udpna_shutdown(struct gensio_acceptor *acceptor,
-	       void (*shutdown_done)(struct gensio_acceptor *acceptor,
-				     void *shutdown_data),
-	       void *shutdown_data)
+	       gensio_acc_done shutdown_done, void *shutdown_data)
 {
     struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
@@ -1021,9 +1012,8 @@ udpna_free(struct gensio_acceptor *acceptor)
 
 int
 udpna_connect(struct gensio_acceptor *acceptor, void *addr,
-	      void (*connect_done)(struct gensio *io, int err,
-				   void *cb_data),
-	      void *cb_data, struct gensio **new_net)
+	      gensio_done_err connect_done, void *cb_data,
+	      struct gensio **new_net)
 {
     struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     struct udpn_data *ndata;

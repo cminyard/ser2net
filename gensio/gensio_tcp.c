@@ -302,8 +302,7 @@ struct tcpna_data {
 
     unsigned int refcount;
 
-    void (*shutdown_done)(struct gensio_acceptor *acceptor,
-			  void *shutdown_data);
+    gensio_acc_done shutdown_done;
     void *shutdown_data;
 
     struct addrinfo    *ai;		/* The address list for the portname. */
@@ -514,9 +513,7 @@ tcpna_startup(struct gensio_acceptor *acceptor)
 
 static void
 _tcpna_shutdown(struct tcpna_data *nadata,
-		void (*shutdown_done)(struct gensio_acceptor *acceptor,
-				      void *shutdown_data),
-		void *shutdown_data)
+		gensio_acc_done shutdown_done, void *shutdown_data)
 {
     unsigned int i;
 
@@ -532,9 +529,7 @@ _tcpna_shutdown(struct tcpna_data *nadata,
 
 static int
 tcpna_shutdown(struct gensio_acceptor *acceptor,
-	       void (*shutdown_done)(struct gensio_acceptor *acceptor,
-				     void *shutdown_data),
-	       void *shutdown_data)
+	       gensio_acc_done shutdown_done, void *shutdown_data)
 {
     struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     int rv = 0;
@@ -575,9 +570,8 @@ tcpna_free(struct gensio_acceptor *acceptor)
 
 int
 tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
-	      void (*connect_done)(struct gensio *net, int err,
-				   void *cb_data),
-	      void *cb_data, struct gensio **new_net)
+	      gensio_done_err connect_done, void *cb_data,
+	      struct gensio **new_net)
 {
     struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
     struct gensio *net;

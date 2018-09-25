@@ -41,13 +41,9 @@ struct gensio_functions {
 
     int (*remote_id)(struct gensio *io, int *id);
 
-    int (*open)(struct gensio *io,
-		void (*open_done)(struct gensio *io, int err, void *open_data),
-		void *open_data);
+    int (*open)(struct gensio *io, gensio_done_err open_done, void *open_data);
 
-    int (*close)(struct gensio *io,
-		 void (*close_done)(struct gensio *io, void *close_data),
-		 void *close_data);
+    int (*close)(struct gensio *io, gensio_done close_done, void *close_data);
 
     void (*free)(struct gensio *io);
 
@@ -93,9 +89,7 @@ struct gensio_acceptor_functions {
     int (*startup)(struct gensio_acceptor *acceptor);
 
     int (*shutdown)(struct gensio_acceptor *acceptor,
-		    void (*shutdown_done)(struct gensio_acceptor *acceptor,
-					  void *shutdown_data),
-		    void *shutdown_data);
+		    gensio_acc_done shutdown_done, void *shutdown_data);
 
     void (*set_accept_callback_enable)(struct gensio_acceptor *acceptor,
 				       bool enabled);
@@ -103,9 +97,8 @@ struct gensio_acceptor_functions {
     void (*free)(struct gensio_acceptor *acceptor);
 
     int (*connect)(struct gensio_acceptor *acceptor, void *addr,
-		   void (*connect_done)(struct gensio *io, int err,
-					void *cb_data),
-		   void *cb_data, struct gensio **new_io);
+		   gensio_done_err connect_done, void *cb_data,
+		   struct gensio **new_io);
 };
 
 struct gensio_acceptor *gensio_acc_data_alloc(struct gensio_os_funcs *o,

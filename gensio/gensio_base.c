@@ -59,10 +59,10 @@ struct basen_data {
 
     enum basen_state state;
 
-    void (*open_done)(struct gensio *io, int err, void *open_data);
+    gensio_done_err open_done;
     void *open_data;
 
-    void (*close_done)(struct gensio *io, void *close_data);
+    gensio_done close_done;
     void *close_data;
 
     bool read_enabled;
@@ -593,10 +593,7 @@ basen_ll_open_done(void *cb_data, int err, void *open_data)
 }
 
 static int
-basen_open(struct gensio *io, void (*open_done)(struct gensio *io,
-						int err,
-						void *open_data),
-	   void *open_data)
+basen_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);
     int err = EBUSY;
@@ -660,9 +657,8 @@ basen_try_close(struct basen_data *ndata)
 }
 
 static void
-basen_i_close(struct basen_data *ndata, void (*close_done)(struct gensio *io,
-							   void *close_data),
-	      void *close_data)
+basen_i_close(struct basen_data *ndata,
+	      gensio_done close_done, void *close_data)
 {
     ndata->close_done = close_done;
     ndata->close_data = close_data;
@@ -679,9 +675,7 @@ basen_i_close(struct basen_data *ndata, void (*close_done)(struct gensio *io,
 }
 
 static int
-basen_close(struct gensio *io, void (*close_done)(struct gensio *io,
-						  void *close_data),
-	   void *close_data)
+basen_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);
     int err = 0;
@@ -984,10 +978,7 @@ gensio_i_alloc(struct gensio_os_funcs *o,
 	       struct gensio_filter *filter,
 	       const char *typename,
 	       bool is_client,
-	       void (*open_done)(struct gensio *io,
-				 int err,
-				 void *open_data),
-	       void *open_data,
+	       gensio_done_err open_done, void *open_data,
 	       gensio_event cb, void *user_data)
 {
     struct basen_data *ndata = o->zalloc(o, sizeof(*ndata));
@@ -1061,10 +1052,7 @@ base_gensio_server_alloc(struct gensio_os_funcs *o,
 			 struct gensio_ll *ll,
 			 struct gensio_filter *filter,
 			 const char *typename,
-			 void (*open_done)(struct gensio *io,
-					   int err,
-					   void *open_data),
-			 void *open_data)
+			 gensio_done_err open_done, void *open_data)
 {
     return gensio_i_alloc(o, ll, filter, typename, false,
 			  open_done, open_data, NULL, NULL);

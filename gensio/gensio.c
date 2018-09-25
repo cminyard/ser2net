@@ -608,10 +608,7 @@ gensio_remote_id(struct gensio *io, int *id)
 }
 
 int
-gensio_open(struct gensio *io, void (*open_done)(struct gensio *io,
-						 int err,
-						 void *open_data),
-	   void *open_data)
+gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
     return io->funcs->open(io, open_done, open_data);
 }
@@ -652,9 +649,7 @@ gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
 }
 
 int
-gensio_close(struct gensio *io, void (*close_done)(struct gensio *io,
-						   void *close_data),
-	    void *close_data)
+gensio_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
     return io->funcs->close(io, close_done, close_data);
 }
@@ -749,9 +744,7 @@ gensio_acc_startup(struct gensio_acceptor *acceptor)
 
 int
 gensio_acc_shutdown(struct gensio_acceptor *acceptor,
-		    void (*shutdown_done)(struct gensio_acceptor *acceptor,
-					  void *shutdown_data),
-		    void *shutdown_data)
+		    gensio_acc_done shutdown_done, void *shutdown_data)
 {
     return acceptor->funcs->shutdown(acceptor, shutdown_done, shutdown_data);
 }
@@ -771,9 +764,8 @@ gensio_acc_free(struct gensio_acceptor *acceptor)
 
 int
 gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
-		   void (*connect_done)(struct gensio *io, int err,
-					void *cb_data),
-		   void *cb_data, struct gensio **new_io)
+		   gensio_done_err connect_done, void *cb_data,
+		   struct gensio **new_io)
 {
     if (!acceptor->funcs->connect)
 	return ENOTSUP;
