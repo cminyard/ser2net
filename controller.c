@@ -27,7 +27,6 @@
 #include <utils/selector.h>
 #include <utils/utils.h>
 #include <utils/locking.h>
-#include <utils/telnet.h>
 #include <utils/waiter.h>
 
 #include <gensio/gensio.h>
@@ -88,9 +87,6 @@ typedef struct controller_info {
     struct controller_info *next;	/* Used to keep these items in
 					   a linked list. */
 
-    /* Data used by the telnet processing. */
-    telnet_data_t tn_data;
-
     void (*shutdown_complete)(void *);
     void *shutdown_complete_cb_data;
 } controller_info_t;
@@ -99,22 +95,6 @@ static waiter_t *controller_shutdown_waiter;
 
 /* List of current control connections. */
 controller_info_t *controllers = NULL;
-
-/* Used to initialize the telnet session. */
-static unsigned char telnet_init_seq[] = {
-    TN_IAC, TN_WILL, TN_OPT_SUPPRESS_GO_AHEAD,
-    TN_IAC, TN_WILL, TN_OPT_ECHO,
-    TN_IAC, TN_DONT, TN_OPT_ECHO,
-};
-
-static struct telnet_cmd telnet_cmds[] =
-{
-    /*                        I will,  I do,  sent will, sent do */
-    { TN_OPT_SUPPRESS_GO_AHEAD,	   0,     1,          1,       0, },
-    { TN_OPT_ECHO,		   0,     1,          1,       1, },
-    { TN_OPT_BINARY_TRANSMISSION,  1,     1,          0,       1, },
-    { 255 }
-};
 
 static void
 controller_close_done(struct gensio *net, void *cb_data)
@@ -154,8 +134,6 @@ controller_close_done(struct gensio *net, void *cb_data)
 	curr = curr->next;
     }
     UNLOCK(cntlr_lock);
-
-    telnet_cleanup(&cntlr->tn_data);
 
     shutdown_complete = cntlr->shutdown_complete;
     shutdown_complete_cb_data = cntlr->shutdown_complete_cb_data;
@@ -292,22 +270,6 @@ controller_write(struct controller_info *cntlr, const char *data,
 		 unsigned int count)
 {
     gensio_write(cntlr->net, NULL, 0, data, count);
-}
-
-static void
-telnet_output_ready(void *cb_data)
-{
-    struct controller_info *cntlr = cb_data;
-
-    gensio_set_read_callback_enable(cntlr->net, false);
-    gensio_set_write_callback_enable(cntlr->net, true);
-}
-
-/* Called when a telnet command is received. */
-void
-telnet_cmd_handler(void *cb_data, unsigned char cmd)
-{
-    /* These are ignored for now. */
 }
 
 static char *help_str =
@@ -508,7 +470,7 @@ out:
 /* Removes one or more characters starting at pos and going backwards.
    So, for instance, if inbuf holds "abcde", pos points to d, and
    count is 2, the new inbuf will be "abe".  This is used for
-   backspacing and for removing telnet command characters. */
+   backspacing. */
 static int
 remove_chars(controller_info_t *cntlr, int pos, int count) {
     int j;
@@ -528,9 +490,7 @@ controller_read(struct gensio *net, int err,
 		unsigned char *buf, unsigned int buflen)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
-    int read_count;
     int read_start;
-    unsigned int bytesleft;
     int i;
 
     LOCK(cntlr->lock);
@@ -549,18 +509,11 @@ controller_read(struct gensio *net, int err,
     }
 
     read_start = cntlr->inbuf_count;
-    bytesleft = buflen;
-    read_count = process_telnet_data(cntlr->inbuf + read_start,
-				     INBUF_SIZE - read_start,
-				     &buf, &bytesleft, &cntlr->tn_data);
-    if (cntlr->tn_data.error) {
-	shutdown_controller(cntlr); /* Releases the lock */
-	goto out;
-    }
-    if (bytesleft)
-	goto inbuf_overflow;
+    if (buflen > INBUF_SIZE - read_start)
+	buflen = INBUF_SIZE - read_start;
+    memcpy(cntlr->inbuf + read_start, buf, buflen);
 
-    cntlr->inbuf_count += read_count;
+    cntlr->inbuf_count += buflen;
     for (i = read_start; i < cntlr->inbuf_count; i++) {
 	if (cntlr->inbuf[i] == 0x0) {
 	    /* Ignore nulls. */
@@ -620,33 +573,12 @@ static void
 controller_write_ready(struct gensio *net)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
-    telnet_data_t *td;
     int err;
     unsigned int write_count;
 
     LOCK(cntlr->lock);
     if (cntlr->in_shutdown)
 	goto out;
-
-    td = &cntlr->tn_data;
-    if (buffer_cursize(&td->out_telnet_cmd) > 0) {
-	int buferr, reterr;
-
-	reterr = buffer_write(gensio_buffer_do_write, net,
-			      &td->out_telnet_cmd, &buferr);
-	if (reterr == -1) {
-	    if (buferr == EPIPE) {
-		goto out_fail;
-	    } else {
-		/* Some other bad error. */
-		syslog(LOG_ERR, "The tcp write for controller had error: %m");
-		goto out_fail;
-	    }
-	}
-	if (buffer_cursize(&td->out_telnet_cmd) > 0)
-	    /* Still telnet data left, don't send regular data */
-	    goto out;
-    }
 
     err = gensio_write(net, &write_count, 0,
 		       &(cntlr->outbuf[cntlr->outbuf_pos]),
@@ -705,7 +637,6 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
 {
     controller_info_t *cntlr;
     char              *err = NULL;
-    int rv;
     struct gensio *net;
 
     if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
@@ -737,18 +668,6 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
 
-    /* Send the telnet negotiation string.  We do this by
-       putting the data in the dev to tcp buffer and turning
-       the tcp write selector on. */
-
-    rv = telnet_init(&cntlr->tn_data, cntlr, telnet_output_ready,
-		     telnet_cmd_handler,
-		     telnet_cmds,
-		     telnet_init_seq, sizeof(telnet_init_seq));
-    if (rv) {
-	err = "Out of memory\r\n";
-	goto errout;
-    }
     controller_outs(cntlr, prompt);
 
     cntlr->next = controllers;
@@ -835,7 +754,6 @@ shutdown_controller_done(void *cb_data)
 void
 free_controllers(void)
 {
-    controller_shutdown();
     while (controllers) {
 	controllers->shutdown_complete = shutdown_controller_done;
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
@@ -843,6 +761,7 @@ free_controllers(void)
 	shutdown_controller(controllers); /* Releases the lock. */
 	wait_for_waiter(controller_shutdown_waiter, 1);
     }
+    controller_shutdown();
     if (controller_shutdown_waiter)
 	free_waiter(controller_shutdown_waiter);
     if (accept_waiter)

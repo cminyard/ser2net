@@ -20,7 +20,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include <utils/telnet.h>
+#include <gensio/telnet.h>
 #include <utils/utils.h>
 
 #include <gensio/gensio_class.h>

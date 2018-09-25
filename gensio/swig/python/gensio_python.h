@@ -677,7 +677,7 @@ cleanup_sergensio_cbdata(struct sergensio_cbdata *cbd)
 }
 
 static void
-sergensio_cb(struct sergensio *sio, int err, int val, void *cb_data)
+sergensio_cb(struct sergensio *sio, int err, unsigned int val, void *cb_data)
 {
     struct sergensio_cbdata *cbd = cb_data;
     swig_ref sio_ref;

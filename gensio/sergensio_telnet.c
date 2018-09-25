@@ -24,7 +24,7 @@
 #include <stdio.h>
 
 #include <utils/utils.h>
-#include <utils/telnet.h>
+#include <gensio/telnet.h>
 
 #include <gensio/sergensio_class.h>
 #include <gensio/gensio_ll_gensio.h>
