@@ -32,7 +32,9 @@
 #include <openssl/bio.h>
 #include <openssl/err.h>
 
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_filter_ssl.h>
+#include <gensio/gensio_ll_gensio.h>
+#include <gensio/gensio_acc_gensio.h>
 
 int
 ssl_gensio_alloc(struct gensio *child, char *args[],

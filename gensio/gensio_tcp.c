@@ -33,7 +33,7 @@
 
 #include <gensio/gensio.h>
 #include <gensio/gensio_internal.h>
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_ll_fd.h>
 
 struct tcp_data {
     struct gensio_os_funcs *o;

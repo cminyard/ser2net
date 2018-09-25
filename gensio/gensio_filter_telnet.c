@@ -24,7 +24,7 @@
 #include <utils/utils.h>
 
 #include <gensio/gensio_internal.h>
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_filter_telnet.h>
 
 enum telnet_write_state {
     TELNET_NOT_WRITING,

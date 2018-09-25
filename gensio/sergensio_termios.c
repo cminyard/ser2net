@@ -31,7 +31,7 @@
 #include <utils/uucplock.h>
 
 #include <gensio/sergensio_internal.h>
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_ll_fd.h>
 
 enum termio_op {
     TERMIO_OP_TERMIO,

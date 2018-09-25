@@ -24,7 +24,8 @@
 #include <assert.h>
 
 #include <gensio/gensio_internal.h>
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_acc_gensio.h>
+#include <gensio/gensio_ll_gensio.h>
 
 struct basena_data {
     struct gensio_acceptor *acc;

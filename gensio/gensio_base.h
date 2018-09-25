@@ -188,50 +188,6 @@ struct gensio_filter {
     gensio_filter_func func;
 };
 
-/* FIXME - make args const */
-int gensio_ssl_filter_alloc(struct gensio_os_funcs *o, char *args[],
-			    struct gensio_filter **rfilter);
-
-int gensio_ssl_server_filter_alloc(struct gensio_os_funcs *o,
-				   char *keyfile,
-				   char *certfile,
-				   char *CAfilepath,
-				   unsigned int max_read_size,
-				   unsigned int max_write_size,
-				   struct gensio_filter **rfilter);
-
-struct gensio_telnet_filter_callbacks {
-    void (*got_sync)(void *handler_data);
-    void (*got_cmd)(void *handler_data, unsigned char cmd);
-    int (*com_port_will_do)(void *handler_data, unsigned char cmd);
-    void (*com_port_cmd)(void *handler_data, const unsigned char *option,
-			 unsigned int len);
-    void (*timeout)(void *handler_data);
-    void (*free)(void *handler_data);
-};
-
-struct gensio_telnet_filter_rops {
-    void (*send_option)(struct gensio_filter *filter,
-			const unsigned char *buf, unsigned int len);
-    void (*start_timer)(struct gensio_filter *filter, struct timeval *timeout);
-};
-
-int gensio_telnet_filter_alloc(struct gensio_os_funcs *o, char *args[],
-			       const struct gensio_telnet_filter_callbacks *cbs,
-			       void *handler_data,
-			       const struct gensio_telnet_filter_rops **rops,
-			       struct gensio_filter **rfilter);
-
-int gensio_telnet_server_filter_alloc(
-		     struct gensio_os_funcs *o,
-		     bool allow_rfc2217,
-		     unsigned int max_read_size,
-		     unsigned int max_write_size,
-		     const struct gensio_telnet_filter_callbacks *cbs,
-		     void *handler_data,
-		     const struct gensio_telnet_filter_rops **rops,
-		     struct gensio_filter **rfilter);
-
 struct gensio_ll;
 
 typedef void (*gensio_ll_open_done)(void *cb_data, int err, void *open_data);
@@ -337,45 +293,6 @@ struct gensio_ll {
     gensio_ll_func func;
 };
 
-enum gensio_ll_close_state {
-    GENSIO_LL_CLOSE_STATE_START,
-    GENSIO_LL_CLOSE_STATE_DONE
-};
-
-struct gensio_fd_ll_ops {
-    int (*sub_open)(void *handler_data,
-		    int (**check_open)(void *handler_data, int fd),
-		    int (**retry_open)(void *handler_data, int *fd),
-		    int *fd);
-
-    int (*raddr_to_str)(void *handler_data, unsigned int *pos,
-			char *buf, unsigned int buflen);
-
-    int (*get_raddr)(void *handler_data, void *addr, unsigned int *addrlen);
-
-    int (*remote_id)(void *handler_data, int *id);
-
-    /*
-     * When GENSIO_LL_CLOSE_STATE_START, timeout will be NULL and the
-     * return value is ignored.  Return 0.  When
-     * GENSIO_LL_CLOSE_STATE_DONE, return EAGAIN to get called again
-     * after next_timeout milliseconds, zero to continue the close.
-     */
-    int (*check_close)(void *handler_data, enum gensio_ll_close_state state,
-		       struct timeval *next_timeout);
-
-    void (*free)(void *handler_data);
-};
-
-struct gensio_ll *fd_gensio_ll_alloc(struct gensio_os_funcs *o,
-				     int fd,
-				     const struct gensio_fd_ll_ops *ops,
-				     void *handler_data,
-				     unsigned int max_read_size);
-
-struct gensio_ll *gensio_gensio_ll_alloc(struct gensio_os_funcs *o,
-					 struct gensio *child);
-
 struct gensio *base_gensio_alloc(struct gensio_os_funcs *o,
 				 struct gensio_ll *ll,
 				 struct gensio_filter *filter,
@@ -386,26 +303,7 @@ struct gensio *base_gensio_server_alloc(struct gensio_os_funcs *o,
 					struct gensio_ll *ll,
 					struct gensio_filter *filter,
 					const char *typename,
-					void (*open_done)(struct gensio *net,
-							  int err,
-							  void *open_data),
+					gensio_done_err open_done,
 					void *open_data);
-
-struct gensio_gensio_acc_cbs {
-    int (*connect_start)(void *acc_data, struct gensio *child,
-			 struct gensio **new_net);
-    int (*new_child)(void *acc_data, void **finish_data,
-		     struct gensio_filter **filter);
-    int (*finish_child)(void *acc_data, void *finish_data, struct gensio *io);
-    void (*free)(void *acc_data);
-};
-
-int gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
-				 struct gensio_os_funcs *o,
-				 const char *typename,
-				 gensio_acceptor_event cb, void *user_data,
-				 const struct gensio_gensio_acc_cbs *acc_cbs,
-				 void *acc_data,
-				 struct gensio_acceptor **acceptor);
 
 #endif /* GENSIO_BASE_H */

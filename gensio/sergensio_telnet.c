@@ -27,7 +27,9 @@
 #include <utils/telnet.h>
 
 #include <gensio/sergensio_internal.h>
-#include <gensio/gensio_base.h>
+#include <gensio/gensio_ll_gensio.h>
+#include <gensio/gensio_filter_telnet.h>
+#include <gensio/gensio_acc_gensio.h>
 
 #define SERCTL_WAIT_TIME 5
 
