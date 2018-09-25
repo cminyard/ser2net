@@ -135,8 +135,15 @@ static int
 basena_startup(struct gensio_accepter *accepter)
 {
     struct basena_data *nadata = gensio_acc_get_gensio_data(accepter);
+    int err;
 
-    return gensio_acc_startup(nadata->child);
+    basena_lock(nadata);
+    err = gensio_acc_startup(nadata->child);
+    if (!err)
+	nadata->enabled = true;
+    basena_unlock(nadata);
+
+    return err;
 }
 
 static void
