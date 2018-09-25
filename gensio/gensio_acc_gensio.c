@@ -36,7 +36,7 @@ struct basena_data {
 
     struct gensio_acceptor *child;
 
-    const struct gensio_gensio_acc_cbs *acc_cbs;
+    gensio_gensio_acc_cb acc_cb;
     void *acc_data;
 
     unsigned int refcount;
@@ -69,8 +69,8 @@ basena_finish_free(struct basena_data *nadata)
 	gensio_acc_free(nadata->child);
     if (nadata->lock)
 	nadata->o->free_lock(nadata->lock);
-    if (nadata->acc_cbs)
-	nadata->acc_cbs->free(nadata->acc_data);
+    if (nadata->acc_cb)
+	nadata->acc_cb(nadata->acc_data, GENSIO_GENSIO_ACC_FREE, NULL, NULL);
     if (nadata->acc)
 	gensio_acc_data_free(nadata->acc);
     nadata->o->free(nadata->o, nadata);
@@ -271,7 +271,8 @@ basena_connect(struct gensio_acceptor *acceptor, void *addr,
 
     basena_in_cb(nadata);
 
-    err = nadata->acc_cbs->connect_start(nadata->acc_data, child, &cdata->io);
+    err = nadata->acc_cb(nadata->acc_data, GENSIO_GENSIO_ACC_CONNECT_START,
+			 child, &cdata->io);
     if (err) {
 	cdata->ignore = true;
 	o->unlock(cdata->lock);
@@ -355,7 +356,8 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 
     io = data;
 
-    err = nadata->acc_cbs->new_child(nadata->acc_data, &finish_data, &filter);
+    err = nadata->acc_cb(nadata->acc_data, GENSIO_GENSIO_ACC_NEW_CHILD,
+			 &finish_data, &filter);
     if (err)
 	goto out_err;
 
@@ -371,16 +373,14 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 				  basena_finish_server_open, nadata);
     if (io) {
 	basena_in_cb(nadata);
-	if (nadata->acc_cbs->finish_child) {
-	    err = nadata->acc_cbs->finish_child(nadata->acc_data,
-						finish_data, io);
-	    if (err) {
-		basena_unlock(nadata);
-		gensio_free(io);
-		gensio_ll_free(ll);
-		gensio_filter_free(filter);
-		goto out_err;
-	    }
+	err = nadata->acc_cb(nadata->acc_data, GENSIO_GENSIO_ACC_FINISH_PARENT,
+			     finish_data, io);
+	if (err && err != ENOTSUP) {
+	    basena_unlock(nadata);
+	    gensio_free(io);
+	    gensio_ll_free(ll);
+	    gensio_filter_free(filter);
+	    goto out_err;
 	}
 	basena_unlock(nadata);
     } else {
@@ -404,7 +404,7 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 			     struct gensio_os_funcs *o,
 			     const char *typename,
 			     gensio_acceptor_event cb, void *user_data,
-			     const struct gensio_gensio_acc_cbs *acc_cbs,
+			     gensio_gensio_acc_cb acc_cb,
 			     void *acc_data,
 			     struct gensio_acceptor **acceptor)
 {
@@ -425,7 +425,7 @@ gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 
     nadata->o = o;
     nadata->child = child;
-    nadata->acc_cbs = acc_cbs;
+    nadata->acc_cb = acc_cb;
     nadata->acc_data = acc_data;
     nadata->refcount = 1;
 

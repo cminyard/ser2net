@@ -22,20 +22,46 @@
 
 #include <gensio/gensio_base.h>
 
-struct gensio_gensio_acc_cbs {
-    int (*connect_start)(void *acc_data, struct gensio *child,
-			 struct gensio **new_net);
-    int (*new_child)(void *acc_data, void **finish_data,
-		     struct gensio_filter **filter);
-    int (*finish_child)(void *acc_data, void *finish_data, struct gensio *io);
-    void (*free)(void *acc_data);
-};
+/*
+ * Create the new parent gensio over the child, for the "connect" function
+ * of the genio.  This creates a client gensio.
+ *
+ * child => data1
+ * *new_io => data2
+ */
+#define GENSIO_GENSIO_ACC_CONNECT_START		1
+
+/*
+ * A new child gensio was created, create a filter for it's parent
+ * gensio.  Whatever you return in finish_data will be passed in to
+ * finish parent when that is called.
+ *
+ * *finish_data => data1
+ * *new_filter => data2
+ */
+#define GENSIO_GENSIO_ACC_NEW_CHILD		2
+
+/*
+ * The parent gensio has been created for the child, finish things up.
+ *
+ * finish_data => data1
+ * new_parent => data2
+ */
+#define GENSIO_GENSIO_ACC_FINISH_PARENT		3
+
+/*
+ * Free the data.
+ */
+#define GENSIO_GENSIO_ACC_FREE			4
+
+typedef int (*gensio_gensio_acc_cb)(void *acc_data, int op,
+				    void *data1, void *data2);
 
 int gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
 				 struct gensio_os_funcs *o,
 				 const char *typename,
 				 gensio_acceptor_event cb, void *user_data,
-				 const struct gensio_gensio_acc_cbs *acc_cbs,
+				 gensio_gensio_acc_cb acc_cb,
 				 void *acc_data,
 				 struct gensio_acceptor **acceptor);
 

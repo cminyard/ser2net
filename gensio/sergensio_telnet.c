@@ -975,7 +975,7 @@ stela_new_child(void *acc_data, void **finish_data,
 }
 
 static int
-stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
+stela_finish_parent(void *acc_data, void *finish_data, struct gensio *io)
 {
     struct stela_data *stela = acc_data;
     struct stel_data *sdata = finish_data;
@@ -997,12 +997,27 @@ stela_finish_child(void *acc_data, void *finish_data, struct gensio *io)
     return 0;
 }
 
-static const struct gensio_gensio_acc_cbs gensio_acc_telnet_funcs = {
-    .connect_start = stela_connect_start,
-    .new_child = stela_new_child,
-    .finish_child = stela_finish_child,
-    .free = stela_free,
-};
+static int
+gensio_gensio_acc_telnet_cb(void *acc_data, int op, void *data1, void *data2)
+{
+    switch (op) {
+    case GENSIO_GENSIO_ACC_CONNECT_START:
+	return stela_connect_start(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_NEW_CHILD:
+	return stela_new_child(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_FINISH_PARENT:
+	return stela_finish_parent(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_FREE:
+	stela_free(acc_data);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 int
 telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
@@ -1051,7 +1066,7 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
 
     err = gensio_gensio_acceptor_alloc(child, o, "telnet",
 				       cb, user_data,
-				       &gensio_acc_telnet_funcs, stela,
+				       gensio_gensio_acc_telnet_cb, stela,
 				       acceptor);
     if (err)
 	goto out_err;

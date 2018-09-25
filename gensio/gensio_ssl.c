@@ -127,7 +127,6 @@ sslna_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
     struct sslna_data *nadata = acc_data;
     struct gensio_os_funcs *o = nadata->o;
     int err;
-    struct gensio *io = NULL;
     char *args[4] = {NULL, NULL, NULL};
     char buf1[50], buf2[50];
     int i;
@@ -149,7 +148,7 @@ sslna_connect_start(void *acc_data, struct gensio *child, struct gensio **rio)
 	args[i++] = buf2;
     }
 
-    err = ssl_gensio_alloc(child, args, o, NULL, NULL, &io);
+    err = ssl_gensio_alloc(child, args, o, NULL, NULL, rio);
 
     if (args[0])
 	o->free(o, args[0]);
@@ -174,19 +173,34 @@ sslna_new_child(void *acc_data, void **finish_data,
 }
 
 static int
-sslna_finish_child(void *acc_data, void *finish_data, struct gensio *io)
+sslna_finish_parent(void *acc_data, void *finish_data, struct gensio *io)
 {
     gensio_set_is_packet(io, true);
     gensio_set_is_reliable(io, true);
     return 0;
 }
 
-static const struct gensio_gensio_acc_cbs gensio_acc_ssl_funcs = {
-    .connect_start = sslna_connect_start,
-    .new_child = sslna_new_child,
-    .finish_child = sslna_finish_child,
-    .free = sslna_free,
-};
+static int
+gensio_gensio_acc_ssl_cb(void *acc_data, int op, void *data1, void *data2)
+{
+    switch (op) {
+    case GENSIO_GENSIO_ACC_CONNECT_START:
+	return sslna_connect_start(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_NEW_CHILD:
+	return sslna_new_child(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_FINISH_PARENT:
+	return sslna_finish_parent(acc_data, data1, data2);
+
+    case GENSIO_GENSIO_ACC_FREE:
+	sslna_free(acc_data);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 int
 ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
@@ -249,7 +263,8 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
 	goto out_nomem;
 
     err = gensio_gensio_acceptor_alloc(child, o, "ssl", cb, user_data,
-				       &gensio_acc_ssl_funcs, nadata, acceptor);
+				       gensio_gensio_acc_ssl_cb, nadata,
+				       acceptor);
     if (err)
 	goto out_err;
     gensio_acc_set_is_packet(*acceptor, true);
