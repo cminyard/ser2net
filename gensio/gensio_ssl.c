@@ -62,7 +62,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
 
     io = base_gensio_alloc(o, ll, filter, "ssl", cb, user_data);
     if (!io) {
-	ll->ops->free(ll);
+	gensio_ll_free(ll);
 	gensio_filter_free(filter);
 	return ENOMEM;
     }

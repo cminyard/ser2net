@@ -626,14 +626,14 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
     err = gensio_telnet_filter_alloc(o, args, &sergensio_telnet_filter_cbs,
 				     sdata, &sdata->rops, &filter);
     if (err) {
-	ll->ops->free(ll);
+	gensio_ll_free(ll);
 	goto out_err;
     }
 
     io = base_gensio_alloc(o, ll, filter, "telnet", cb, user_data);
     if (!io) {
 	gensio_filter_free(filter);
-	ll->ops->free(ll);
+	gensio_ll_free(ll);
 	goto out_nomem;
     }
     gensio_set_is_reliable(io, gensio_is_reliable(child));

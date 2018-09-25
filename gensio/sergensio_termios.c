@@ -945,7 +945,7 @@ termios_gensio_alloc(const char *devname, char *args[],
 
     io = base_gensio_alloc(o, ll, NULL, "termios", cb, user_data);
     if (!io) {
-	ll->ops->free(ll);
+	gensio_ll_free(ll);
 	goto out_nomem;
     }
 

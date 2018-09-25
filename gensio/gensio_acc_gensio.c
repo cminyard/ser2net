@@ -376,7 +376,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 	    if (err) {
 		basena_unlock(nadata);
 		gensio_free(io);
-		ll->ops->free(ll);
+		gensio_ll_free(ll);
 		gensio_filter_free(filter);
 		goto out_err;
 	    }
@@ -384,7 +384,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 	basena_unlock(nadata);
     } else {
 	basena_unlock(nadata);
-	ll->ops->free(ll);
+	gensio_ll_free(ll);
 	gensio_filter_free(filter);
 	goto out_nomem;
     }

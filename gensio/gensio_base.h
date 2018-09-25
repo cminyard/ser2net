@@ -232,54 +232,109 @@ int gensio_telnet_server_filter_alloc(
 		     const struct gensio_telnet_filter_rops **rops,
 		     struct gensio_filter **rfilter);
 
-struct gensio_ll {
-    const struct gensio_ll_ops *ops;
-};
+struct gensio_ll;
 
 typedef void (*gensio_ll_open_done)(void *cb_data, int err, void *open_data);
 typedef void (*gensio_ll_close_done)(void *cb_data, void *close_data);
 
-struct gensio_ll_callbacks {
-    unsigned int (*read_callback)(void *cb_data, int readerr,
-				  unsigned char *buf,
-				  unsigned int buflen);
-    void (*write_callback)(void *cb_data);
-    void (*urgent_callback)(void *cb_data);
-};
+#define GENSIO_LL_CB_READ		1
+#define GENSIO_LL_CB_WRITE_READY	2
+#define GENSIO_LL_CB_URGENT		3
 
-struct gensio_ll_ops {
-    void (*set_callbacks)(struct gensio_ll *ll,
-			  const struct gensio_ll_callbacks *cbs,
-			  void *cb_data);
+typedef int (*gensio_ll_cb)(void *cb_data, int op, int val,
+			    void *buf, unsigned int buflen,
+			    void *data);
 
-    int (*write)(struct gensio_ll *ll, unsigned int *rcount,
-		 const unsigned char *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct gensio_ll *ll, unsigned int *pos,
-			char *buf, unsigned int buflen);
+/*
+ * Set the callbacks for the ll.
+ *
+ * cbs => func
+ * cb_data => data
+ */
+#define GENSIO_LL_FUNC_SET_CALLBACK		1
+void gensio_ll_set_callback(struct gensio_ll *ll,
+			    gensio_ll_cb cb, void *cb_data);
 
-    int (*get_raddr)(struct gensio_ll *ll, void *addr, unsigned int *addrlen);
+/*
+ * Write data to the ll.
+ *
+ * rcount => count
+ * buf => cbuf
+ * buflen => buflen
+ */
+#define GENSIO_LL_FUNC_WRITE			2
+int gensio_ll_write(struct gensio_ll *ll, unsigned int *rcount,
+		    const unsigned char *buf, unsigned int buflen);
 
-    int (*remote_id)(struct gensio_ll *ll, int *id);
+/*
+ * pos => count
+ * buf => buf
+ * buflen => buflen
+ */
+#define GENSIO_LL_FUNC_RADDR_TO_STR		3
+int gensio_ll_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
+			   char *buf, unsigned int buflen);
 
-    /*
-     * Returns 0 if the open was immediate, EINPROGRESS if it was deferred,
-     * and an errno otherwise.
-     */
-    int (*open)(struct gensio_ll *ll, gensio_ll_open_done done, void *open_data);
+/*
+ * addr => buf
+ * addrlen => count
+ */
+#define GENSIO_LL_FUNC_GET_RADDR		4
+int gensio_ll_get_raddr(struct gensio_ll *ll,
+			void *addr, unsigned int *addrlen);
 
-    /*
-     * Returns 0 if the open was immediate, EINPROGRESS if it was deferred.
-     * No other returns are allowed.
-     */
-    int (*close)(struct gensio_ll *ll, gensio_ll_close_done done,
-		 void *close_data);
+/*
+ * id => data
+ */
+#define GENSIO_LL_FUNC_REMOTE_ID		5
+int gensio_ll_remote_id(struct gensio_ll *ll, int *id);
 
-    void (*set_read_callback_enable)(struct gensio_ll *ll, bool enabled);
+/*
+ * Returns 0 if the open was immediate, EINPROGRESS if it was deferred,
+ * and an errno otherwise.
+ *
+ * done => func
+ * open_data => data
+ */
+#define GENSIO_LL_FUNC_OPEN			6
+int gensio_ll_open(struct gensio_ll *ll,
+		   gensio_ll_open_done done, void *open_data);
 
-    void (*set_write_callback_enable)(struct gensio_ll *ll, bool enabled);
+/*
+ * Returns 0 if the open was immediate, EINPROGRESS if it was deferred.
+ * No other returns are allowed.
+ *
+ * done => func
+ * close_data => data
+ */
+#define GENSIO_LL_FUNC_CLOSE			7
+int gensio_ll_close(struct gensio_ll *ll,
+		    gensio_ll_close_done done, void *close_data);
 
-    void (*free)(struct gensio_ll *ll);
+/*
+ * enabled => val
+ */
+#define GENSIO_LL_FUNC_SET_READ_CALLBACK	8
+void gensio_ll_set_read_callback(struct gensio_ll *ll, bool enabled);
+
+/*
+ * enabled => val
+ */
+#define GENSIO_LL_FUNC_SET_WRITE_CALLBACK	9
+void gensio_ll_set_write_callback(struct gensio_ll *ll, bool enabled);
+
+#define GENSIO_LL_FUNC_FREE			10
+void gensio_ll_free(struct gensio_ll *ll);
+
+typedef int (*gensio_ll_func)(struct gensio_ll *ll, int op, int val,
+			      const void *func, void *data,
+			      unsigned int *count,
+			      void *buf, const void *cbuf,
+			      unsigned int buflen);
+
+struct gensio_ll {
+    gensio_ll_func func;
 };
 
 enum gensio_ll_close_state {
