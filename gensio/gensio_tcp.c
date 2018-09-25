@@ -181,8 +181,7 @@ tcp_raddr_to_str(void *handler_data, unsigned int *epos,
 }
 
 static int
-tcp_get_raddr(void *handler_data,
-	      struct sockaddr *addr, socklen_t *addrlen)
+tcp_get_raddr(void *handler_data, void *addr, unsigned int *addrlen)
 {
     struct tcp_data *tdata = handler_data;
 

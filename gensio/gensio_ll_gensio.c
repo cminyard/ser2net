@@ -70,8 +70,7 @@ child_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
 }
 
 static int
-child_get_raddr(struct gensio_ll *ll,
-		struct sockaddr *addr, socklen_t *addrlen)
+child_get_raddr(struct gensio_ll *ll, void *addr, unsigned int *addrlen)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 

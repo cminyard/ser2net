@@ -368,8 +368,7 @@ int gensio_raddr_to_str(struct gensio *io, unsigned int *pos,
  * Return the remote address for the connection.  addrlen must be
  * set to the size of addr and will be updated to the actual size.
  */
-int gensio_get_raddr(struct gensio *io,
-		     struct sockaddr *addr, socklen_t *addrlen);
+int gensio_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen);
 
 /*
  * Returns an id for the remote end.  For stdio clients this is the
@@ -776,6 +775,6 @@ int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
  * Helper function for dealing with buffers writing to gensio.
  */
 int gensio_buffer_do_write(void *cb_data,
-			   void  *buf, size_t buflen, size_t *written);
+			   void *buf, size_t buflen, size_t *written);
 
 #endif /* GENSIO_H */

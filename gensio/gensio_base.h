@@ -187,8 +187,7 @@ struct gensio_ll_ops {
     int (*raddr_to_str)(struct gensio_ll *ll, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
-    int (*get_raddr)(struct gensio_ll *ll,
-		     struct sockaddr *addr, socklen_t *addrlen);
+    int (*get_raddr)(struct gensio_ll *ll, void *addr, unsigned int *addrlen);
 
     int (*remote_id)(struct gensio_ll *ll, int *id);
 
@@ -226,8 +225,7 @@ struct gensio_fd_ll_ops {
     int (*raddr_to_str)(void *handler_data, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
-    int (*get_raddr)(void *handler_data,
-		     struct sockaddr *addr, socklen_t *addrlen);
+    int (*get_raddr)(void *handler_data, void *addr, unsigned int *addrlen);
 
     int (*remote_id)(void *handler_data, int *id);
 

@@ -591,8 +591,7 @@ gensio_raddr_to_str(struct gensio *io, unsigned int *pos,
 }
 
 int
-gensio_get_raddr(struct gensio *io,
-		 struct sockaddr *addr, socklen_t *addrlen)
+gensio_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen)
 {
     if (!io->funcs->get_raddr)
 	return ENOTSUP;

@@ -396,8 +396,7 @@ udpn_raddr_to_str(struct gensio *io, unsigned int *epos,
 }
 
 static int
-udpn_get_raddr(struct gensio *io,
-	       struct sockaddr *addr, socklen_t *addrlen)
+udpn_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);
 

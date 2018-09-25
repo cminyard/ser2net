@@ -2088,7 +2088,7 @@ find_rotator_port(char *portname, struct gensio *net, unsigned int *netconnum)
 	if (strcmp(port->portname, portname) == 0) {
 	    unsigned int i;
 	    struct sockaddr_storage addr;
-	    socklen_t socklen;
+	    unsigned int socklen;
 	    int err;
 
 	    LOCK(port->lock);
@@ -2097,7 +2097,7 @@ find_rotator_port(char *portname, struct gensio *net, unsigned int *netconnum)
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
 	    socklen = sizeof(addr);
-	    err = gensio_get_raddr(net, (struct sockaddr *) &addr, &socklen);
+	    err = gensio_get_raddr(net, &addr, &socklen);
 	    if (err)
 		goto next;
 	    if (!remaddr_check(port->remaddrs,
@@ -2342,7 +2342,7 @@ handle_port_child_event(struct gensio_acceptor *acceptor, int event, void *data)
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
-    socklen_t socklen;
+    unsigned int socklen;
     struct gensio *net;
 
     if (event == GENSIO_ACC_EVENT_LOG) {
@@ -2366,7 +2366,7 @@ handle_port_child_event(struct gensio_acceptor *acceptor, int event, void *data)
 	goto out;
 
     socklen = sizeof(addr);
-    if (!gensio_get_raddr(net, (struct sockaddr *) &addr, &socklen)) {
+    if (!gensio_get_raddr(net, &addr, &socklen)) {
 	if (!remaddr_check(port->remaddrs,
 			   (struct sockaddr *) &addr, socklen)) {
 	    err = "Accessed denied due to your net address\r\n";

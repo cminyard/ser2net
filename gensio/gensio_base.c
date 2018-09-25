@@ -283,8 +283,7 @@ ll_raddr_to_str(struct basen_data *ndata, unsigned int *pos,
 }
 
 static int
-ll_get_raddr(struct basen_data *ndata,
-	     struct sockaddr *addr, socklen_t *addrlen)
+ll_get_raddr(struct basen_data *ndata, void *addr, unsigned int *addrlen)
 {
     return ndata->ll_ops->get_raddr(ndata->ll, addr, addrlen);
 }
@@ -395,8 +394,7 @@ basen_raddr_to_str(struct gensio *io, unsigned int *pos,
 }
 
 static int
-basen_get_raddr(struct gensio *io,
-		struct sockaddr *addr, socklen_t *addrlen)
+basen_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);
 

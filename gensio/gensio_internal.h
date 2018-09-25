@@ -37,7 +37,7 @@ struct gensio_functions {
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(struct gensio *io,
-		     struct sockaddr *addr, socklen_t *addrlen);
+		     void *addr, unsigned int *addrlen);
 
     int (*remote_id)(struct gensio *io, int *id);
 

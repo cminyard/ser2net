@@ -181,7 +181,7 @@ fd_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
 }
 
 static int
-fd_get_raddr(struct gensio_ll *ll, struct sockaddr *addr, socklen_t *addrlen)
+fd_get_raddr(struct gensio_ll *ll, void *addr, unsigned int *addrlen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);
 
