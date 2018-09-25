@@ -79,7 +79,7 @@ struct udpn_data {
 #define gensio_to_ndata(net) container_of(net, struct udpn_data, net);
 
 struct udpna_data {
-    struct gensio_acceptor *acc;
+    struct gensio_accepter *acc;
     struct udpn_data *udpns;
     unsigned int udpn_count;
 
@@ -500,11 +500,11 @@ udpna_deferred_op(struct gensio_runner *runner, void *cbdata)
     }
 
     if (nadata->in_shutdown && !nadata->in_new_connection) {
-	struct gensio_acceptor *acceptor = nadata->acc;
+	struct gensio_accepter *accepter = nadata->acc;
 
 	if (nadata->shutdown_done) {
 	    udpna_unlock(nadata);
-	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
+	    nadata->shutdown_done(accepter, nadata->shutdown_data);
 	    udpna_lock(nadata);
 	}
 	nadata->in_shutdown = false;
@@ -943,10 +943,10 @@ udpna_readhandler(int fd, void *cbdata)
 	udpn_handle_read_incoming(nadata, ndata);
 
     if (nadata->in_shutdown) {
-	struct gensio_acceptor *acceptor = nadata->acc;
+	struct gensio_accepter *accepter = nadata->acc;
 
 	if (nadata->shutdown_done)
-	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
+	    nadata->shutdown_done(accepter, nadata->shutdown_data);
 	nadata->in_shutdown = false;
     }
     udpna_check_finish_free(nadata);
@@ -964,9 +964,9 @@ udpna_readhandler(int fd, void *cbdata)
 }
 
 static int
-udpna_startup(struct gensio_acceptor *acceptor)
+udpna_startup(struct gensio_accepter *accepter)
 {
-    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     udpna_lock(nadata);
@@ -993,10 +993,10 @@ udpna_startup(struct gensio_acceptor *acceptor)
 }
 
 static int
-udpna_shutdown(struct gensio_acceptor *acceptor,
+udpna_shutdown(struct gensio_accepter *accepter,
 	       gensio_acc_done shutdown_done, void *shutdown_data)
 {
-    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     udpna_lock(nadata);
@@ -1017,9 +1017,9 @@ udpna_shutdown(struct gensio_acceptor *acceptor,
 }
 
 static void
-udpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
+udpna_set_accept_callback_enable(struct gensio_accepter *accepter, bool enabled)
 {
-    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(accepter);
 
     udpna_lock(nadata);
     nadata->enabled = true;
@@ -1027,9 +1027,9 @@ udpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 }
 
 static void
-udpna_free(struct gensio_acceptor *acceptor)
+udpna_free(struct gensio_accepter *accepter)
 {
-    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(accepter);
 
     udpna_lock(nadata);
 
@@ -1042,11 +1042,11 @@ udpna_free(struct gensio_acceptor *acceptor)
 }
 
 int
-udpna_connect(struct gensio_acceptor *acceptor, void *addr,
+udpna_connect(struct gensio_accepter *accepter, void *addr,
 	      gensio_done_err connect_done, void *cb_data,
 	      struct gensio **new_net)
 {
-    struct udpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct udpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     struct udpn_data *ndata;
     struct addrinfo *ai = gensio_dup_addrinfo(nadata->o, addr);
     unsigned int fdi;
@@ -1119,7 +1119,7 @@ udpna_connect(struct gensio_acceptor *acceptor, void *addr,
 }
 
 static int
-gensio_acc_udp_func(struct gensio_acceptor *acc, int func, int val,
+gensio_acc_udp_func(struct gensio_accepter *acc, int func, int val,
 		    void *addr, void *done, void *data,
 		    void *ret)
 {
@@ -1147,10 +1147,10 @@ gensio_acc_udp_func(struct gensio_acceptor *acc, int func, int val,
 }
 
 int
-udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
+udp_gensio_accepter_alloc(struct addrinfo *iai, char *args[],
 			  struct gensio_os_funcs *o,
-			  gensio_acceptor_event cb, void *user_data,
-			  struct gensio_acceptor **acceptor)
+			  gensio_accepter_event cb, void *user_data,
+			  struct gensio_accepter **accepter)
 {
     struct udpna_data *nadata;
     unsigned int max_read_size = GENSIO_DEFAULT_UDP_BUF_SIZE;
@@ -1191,7 +1191,7 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 
     nadata->max_read_size = max_read_size;
 
-    *acceptor = nadata->acc;
+    *accepter = nadata->acc;
     return 0;
 
  out_nomem:
@@ -1200,11 +1200,11 @@ udp_gensio_acceptor_alloc(struct addrinfo *iai, char *args[],
 }
 
 int
-str_to_udp_gensio_acceptor(const char *str, char *args[],
+str_to_udp_gensio_accepter(const char *str, char *args[],
 			   struct gensio_os_funcs *o,
-			   gensio_acceptor_event cb,
+			   gensio_accepter_event cb,
 			   void *user_data,
-			   struct gensio_acceptor **acc)
+			   struct gensio_accepter **acc)
 {
     int err;
     struct addrinfo *ai;
@@ -1213,7 +1213,7 @@ str_to_udp_gensio_acceptor(const char *str, char *args[],
     if (err)
 	return err;
 
-    err = udp_gensio_acceptor_alloc(ai, args, o, cb, user_data, acc);
+    err = udp_gensio_accepter_alloc(ai, args, o, cb, user_data, acc);
     freeaddrinfo(ai);
 
     return err;
@@ -1226,7 +1226,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
 		struct gensio **new_gensio)
 {
     struct udpn_data *ndata = NULL;
-    struct gensio_acceptor *acceptor;
+    struct gensio_accepter *accepter;
     struct udpna_data *nadata = NULL;
     int err;
     int new_fd;
@@ -1259,15 +1259,15 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->o = o;
     ndata->refcount = 1;
 
-    /* Allocate a dummy network acceptor. */
-    err = udp_gensio_acceptor_alloc(NULL, args, o,
-				    NULL, NULL, &acceptor);
+    /* Allocate a dummy network accepter. */
+    err = udp_gensio_accepter_alloc(NULL, args, o,
+				    NULL, NULL, &accepter);
     if (err) {
 	close(new_fd);
 	o->free(o, ndata);
 	return err;
     }
-    nadata = gensio_acc_get_gensio_data(acceptor);
+    nadata = gensio_acc_get_gensio_data(accepter);
 
     nadata->fds = o->zalloc(o, sizeof(*nadata->fds));
     if (!nadata->fds) {

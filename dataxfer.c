@@ -205,14 +205,14 @@ struct port_info
 
     /* Information about the network port. */
     char               *portname;       /* The name given for the port. */
-    struct gensio_acceptor *acceptor;	/* Used to receive new connections. */
+    struct gensio_accepter *accepter;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
     bool has_connect_back;		/* We have connect back addresses. */
     unsigned int num_waiting_connect_backs;
 
-    int wait_acceptor_shutdown;
-    bool acceptor_reinit_on_shutdown;
+    int wait_accepter_shutdown;
+    bool accepter_reinit_on_shutdown;
 
     unsigned int max_connections;	/* Maximum number of TCP connections
 					   we can accept at a time for this
@@ -802,7 +802,7 @@ port_check_connect_backs(port_info_t *port)
 	    int err;
 
 	    tried = true;
-	    err = gensio_acc_connect(port->acceptor, netcon->remote_ai,
+	    err = gensio_acc_connect(port->accepter, netcon->remote_ai,
 				     connect_back_done, netcon, &netcon->net);
 	    if (err) {
 		syslog(LOG_ERR, "Unable to start connect on connect "
@@ -2164,7 +2164,7 @@ typedef struct rotator
 
     char *portname;
 
-    struct gensio_acceptor *acceptor;
+    struct gensio_accepter *accepter;
 
     struct rotator *next;
 } rotator_t;
@@ -2173,9 +2173,9 @@ static rotator_t *rotators = NULL;
 
 /* A connection request has come in on a port. */
 static int
-handle_rot_child_event(struct gensio_acceptor *acceptor, int event, void *data)
+handle_rot_child_event(struct gensio_accepter *accepter, int event, void *data)
 {
-    rotator_t *rot = gensio_acc_get_user_data(acceptor);
+    rotator_t *rot = gensio_acc_get_user_data(accepter);
     int i;
     const char *err;
     struct gensio *net;
@@ -2216,7 +2216,7 @@ handle_rot_child_event(struct gensio_acceptor *acceptor, int event, void *data)
 static waiter_t *rotator_shutdown_wait;
 
 static void
-handle_rot_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
+handle_rot_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 {
     wake_waiter(rotator_shutdown_wait);
 }
@@ -2224,10 +2224,10 @@ handle_rot_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
 static void
 free_rotator(rotator_t *rot)
 {
-    if (rot->acceptor) {
-	gensio_acc_shutdown(rot->acceptor, handle_rot_shutdown_done, NULL);
+    if (rot->accepter) {
+	gensio_acc_shutdown(rot->accepter, handle_rot_shutdown_done, NULL);
 	wait_for_waiter(rotator_shutdown_wait, 1);
-	gensio_acc_free(rot->acceptor);
+	gensio_acc_free(rot->accepter);
     }
     if (rot->portname)
 	free(rot->portname);
@@ -2271,8 +2271,8 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_gensio_acceptor(rot->portname, ser2net_o,
-				handle_rot_child_event, rot, &rot->acceptor);
+    rv = str_to_gensio_accepter(rot->portname, ser2net_o,
+				handle_rot_child_event, rot, &rot->accepter);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
 	goto out;
@@ -2281,7 +2281,7 @@ add_rotator(char *portname, char *ports, int lineno)
     rot->next = rotators;
     rotators = rot;
 
-    rv = gensio_acc_startup(rot->acceptor);
+    rv = gensio_acc_startup(rot->accepter);
     if (rv) {
 	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
 	       strerror(rv));
@@ -2336,9 +2336,9 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 
 /* A connection request has come in on a port. */
 static int
-handle_port_child_event(struct gensio_acceptor *acceptor, int event, void *data)
+handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
 {
-    port_info_t *port = gensio_acc_get_user_data(acceptor);
+    port_info_t *port = gensio_acc_get_user_data(accepter);
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
@@ -2448,7 +2448,7 @@ process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r,
 static int
 startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 {
-    int err = gensio_acc_startup(port->acceptor);
+    int err = gensio_acc_startup(port->accepter);
     struct port_remaddr *r;
 
     if (err && eout) {
@@ -2468,7 +2468,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 	    eout->out(eout, "Unable to enable port device %s: %s",
 		      port->portname, strerror(err));
 	if (err)
-	    gensio_acc_shutdown(port->acceptor, NULL, NULL);
+	    gensio_acc_shutdown(port->accepter, NULL, NULL);
     }
 
     return err;
@@ -2481,25 +2481,25 @@ port_reinit_now(port_info_t *port)
 	net_info_t *netcon;
 
 	port->dev_to_net_state = PORT_UNCONNECTED;
-	gensio_acc_set_accept_callback_enable(port->acceptor, true);
+	gensio_acc_set_accept_callback_enable(port->accepter, true);
 	for_each_connection(port, netcon)
 	    check_port_new_net(port, netcon);
     }
 }
 
-static waiter_t *acceptor_shutdown_wait;
+static waiter_t *accepter_shutdown_wait;
 
 static void
-handle_port_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
+handle_port_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 {
-    port_info_t *port = gensio_acc_get_user_data(acceptor);
+    port_info_t *port = gensio_acc_get_user_data(accepter);
 
     LOCK(port->lock);
-    while (port->wait_acceptor_shutdown--)
-	wake_waiter(acceptor_shutdown_wait);
+    while (port->wait_accepter_shutdown--)
+	wake_waiter(accepter_shutdown_wait);
 
-    if (port->acceptor_reinit_on_shutdown) {
-	port->acceptor_reinit_on_shutdown = false;
+    if (port->accepter_reinit_on_shutdown) {
+	port->accepter_reinit_on_shutdown = false;
 	port_reinit_now(port);
     }
     UNLOCK(port->lock);
@@ -2514,10 +2514,10 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 
     if (state == PORT_DISABLED) {
 	port->enabled = PORT_DISABLED; /* Stop accepts */
-	if (port->wait_acceptor_shutdown || port->acceptor_reinit_on_shutdown)
+	if (port->wait_accepter_shutdown || port->accepter_reinit_on_shutdown)
 	    /* Shutdown is already running. */
 	    return true;
-	return gensio_acc_shutdown(port->acceptor,
+	return gensio_acc_shutdown(port->accepter,
 				  handle_port_shutdown_done, NULL) == 0;
     } else {
 	if (port->enabled == PORT_DISABLED) {
@@ -2538,7 +2538,7 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
 static void
 wait_for_port_shutdown(port_info_t *port, unsigned int *count)
 {
-    port->wait_acceptor_shutdown++;
+    port->wait_accepter_shutdown++;
     (*count)++;
 }
 
@@ -2567,8 +2567,8 @@ free_port(port_info_t *port)
 	freeaddrinfo(r->ai);
 	free(r);
     }
-    if (port->acceptor)
-	gensio_acc_free(port->acceptor);
+    if (port->accepter)
+	gensio_acc_free(port->accepter);
     if (port->dev_to_net.buf)
 	free(port->dev_to_net.buf);
     if (port->net_to_dev.buf)
@@ -2618,17 +2618,17 @@ switchout_port(struct absout *eout, port_info_t *new_port,
 	       port_info_t *curr, port_info_t *prev)
 {
     int new_state = new_port->enabled;
-    struct gensio_acceptor *tmp_acceptor;
+    struct gensio_accepter *tmp_accepter;
     int i;
 
     new_port->enabled = curr->enabled;
 
-    /* Keep the same acceptor structure. */
-    tmp_acceptor = new_port->acceptor;
-    new_port->acceptor = curr->acceptor;
-    curr->acceptor = tmp_acceptor;
-    gensio_acc_set_user_data(curr->acceptor, curr);
-    gensio_acc_set_user_data(new_port->acceptor, new_port);
+    /* Keep the same accepter structure. */
+    tmp_accepter = new_port->accepter;
+    new_port->accepter = curr->accepter;
+    curr->accepter = tmp_accepter;
+    gensio_acc_set_user_data(curr->accepter, curr);
+    gensio_acc_set_user_data(new_port->accepter, new_port);
 
     for (i = 0; i < new_port->max_connections; i++) {
 	if (i >= curr->max_connections)
@@ -2675,7 +2675,7 @@ finish_shutdown_port(port_info_t *port)
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
-    if (gensio_acc_exit_on_close(port->acceptor))
+    if (gensio_acc_exit_on_close(port->accepter))
 	/* This was a zero port (for stdin/stdout), this is only
 	   allowed with one port at a time, and we shut down when it
 	   closes. */
@@ -2733,7 +2733,7 @@ finish_shutdown_port(port_info_t *port)
 		 * complete.  So we mark that we are waiting and do
 		 * the startup later in the callback.
 		 */
-		port->acceptor_reinit_on_shutdown = true;
+		port->accepter_reinit_on_shutdown = true;
 		reinit_now = false;
 		UNLOCK(port->lock);
 	    } else {
@@ -2842,7 +2842,7 @@ start_shutdown_port(port_info_t *port, char *reason)
     port->close_on_output_done = false;
 
     port->io.f->read_handler_enable(&port->io, false);
-    gensio_acc_set_accept_callback_enable(port->acceptor, false);
+    gensio_acc_set_accept_callback_enable(port->accepter, false);
 
     footer_trace(port, "port", reason);
 
@@ -3320,9 +3320,9 @@ portconfig(struct absout *eout,
 	}
     }
 
-    err = str_to_gensio_acceptor(new_port->portname, ser2net_o,
+    err = str_to_gensio_accepter(new_port->portname, ser2net_o,
 				handle_port_child_event, new_port,
-				&new_port->acceptor);
+				&new_port->accepter);
     if (err) {
 	eout->out(eout, "Invalid port name/number");
 	goto errout;
@@ -3330,17 +3330,17 @@ portconfig(struct absout *eout,
 
     if (new_port->enabled == PORT_ON && do_telnet) {
 	char *args[] = { NULL, NULL };
-	struct gensio_acceptor *parent;
+	struct gensio_accepter *parent;
 
 	if (new_port->allow_2217)
 	    args[0] = "rfc2217=true";
-	err = telnet_gensio_acceptor_alloc(new_port->acceptor, args,
+	err = telnet_gensio_accepter_alloc(new_port->accepter, args,
 					   ser2net_o,
 					   handle_port_child_event,
 					   new_port, &parent);
 	if (err)
 	    goto errout;
-	new_port->acceptor = parent;
+	new_port->accepter = parent;
     }
 
     if (buffer_init(&new_port->dev_to_net, NULL, new_port->dev_to_net.maxsize))
@@ -3448,7 +3448,7 @@ portconfig(struct absout *eout,
  out:
     UNLOCK(ports_lock);
 
-    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
+    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
 
     return 0;
 
@@ -3500,7 +3500,7 @@ clear_old_port_config(int curr_config)
     }
     UNLOCK(ports_lock);
 
-    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
+    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
 }
 
 #define REMOTEADDR_COLUMN_WIDTH \
@@ -3842,7 +3842,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
  out_unlock:
     UNLOCK(port->lock);
 
-    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
+    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
 }
 
 /* Start data monitoring on the given port, type may be either "tcp" or
@@ -3961,7 +3961,7 @@ shutdown_ports(void)
 	port = next;
     }
 
-    wait_for_waiter(acceptor_shutdown_wait, shutdown_count);
+    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
 }
 
 int
@@ -3973,8 +3973,8 @@ check_ports_shutdown(void)
 int
 init_dataxfer(void)
 {
-    acceptor_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
-    if (!acceptor_shutdown_wait)
+    accepter_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
+    if (!accepter_shutdown_wait)
 	return ENOMEM;
 
     rotator_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
@@ -3990,5 +3990,5 @@ void
 shutdown_dataxfer(void)
 {
     free_waiter(rotator_shutdown_wait);
-    free_waiter(acceptor_shutdown_wait);
+    free_waiter(accepter_shutdown_wait);
 }

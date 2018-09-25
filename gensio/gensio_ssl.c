@@ -203,11 +203,11 @@ gensio_gensio_acc_ssl_cb(void *acc_data, int op, void *data1, void *data2)
 }
 
 int
-ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
+ssl_gensio_accepter_alloc(struct gensio_accepter *child,
 			  char *args[],
 			  struct gensio_os_funcs *o,
-			  gensio_acceptor_event cb, void *user_data,
-			  struct gensio_acceptor **acceptor)
+			  gensio_accepter_event cb, void *user_data,
+			  struct gensio_accepter **accepter)
 {
     struct sslna_data *nadata;
     const char *keyfile = NULL;
@@ -262,13 +262,13 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
     if (!nadata->CAfilepath)
 	goto out_nomem;
 
-    err = gensio_gensio_acceptor_alloc(child, o, "ssl", cb, user_data,
+    err = gensio_gensio_accepter_alloc(child, o, "ssl", cb, user_data,
 				       gensio_gensio_acc_ssl_cb, nadata,
-				       acceptor);
+				       accepter);
     if (err)
 	goto out_err;
-    gensio_acc_set_is_packet(*acceptor, true);
-    gensio_acc_set_is_reliable(*acceptor, true);
+    gensio_acc_set_is_packet(*accepter, true);
+    gensio_acc_set_is_reliable(*accepter, true);
 
     return 0;
 
@@ -280,18 +280,18 @@ ssl_gensio_acceptor_alloc(struct gensio_acceptor *child,
 }
 
 int
-str_to_ssl_gensio_acceptor(const char *str, char *args[],
+str_to_ssl_gensio_accepter(const char *str, char *args[],
 			   struct gensio_os_funcs *o,
-			   gensio_acceptor_event cb,
+			   gensio_accepter_event cb,
 			   void *user_data,
-			   struct gensio_acceptor **acc)
+			   struct gensio_accepter **acc)
 {
     int err;
-    struct gensio_acceptor *acc2 = NULL;
+    struct gensio_accepter *acc2 = NULL;
 
-    err = str_to_gensio_acceptor(str, o, NULL, NULL, &acc2);
+    err = str_to_gensio_accepter(str, o, NULL, NULL, &acc2);
     if (!err) {
-	err = ssl_gensio_acceptor_alloc(acc2, args, o, cb, user_data, acc);
+	err = ssl_gensio_accepter_alloc(acc2, args, o, cb, user_data, acc);
 	if (err)
 	    gensio_acc_free(acc2);
     }
@@ -310,12 +310,12 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
 }
 
 int
-ssl_gensio_acceptor_alloc(char *args[],
+ssl_gensio_accepter_alloc(char *args[],
 			  struct gensio_os_funcs *o,
-			  struct gensio_acceptor *child,
+			  struct gensio_accepter *child,
 			  unsigned int max_read_size,
-			  gensio_acceptor_event cb, void *user_data,
-			  struct gensio_acceptor **acceptor)
+			  gensio_accepter_event cb, void *user_data,
+			  struct gensio_accepter **accepter)
 {
     return ENOTSUP;
 }

@@ -153,15 +153,15 @@ gensio_getclass(struct gensio *io, const char *name)
     return gen_getclass(io->classes, name);
 }
 
-struct gensio_acceptor {
+struct gensio_accepter {
     struct gensio_os_funcs *o;
 
     void *user_data;
-    gensio_acceptor_event cb;
+    gensio_accepter_event cb;
 
     struct gensio_classobj *classes;
 
-    const struct gensio_acceptor_functions *funcs;
+    const struct gensio_accepter_functions *funcs;
     gensio_acc_func func;
     void *gensio_acc_data;
 
@@ -171,13 +171,13 @@ struct gensio_acceptor {
     bool is_reliable;
 };
 
-struct gensio_acceptor *
+struct gensio_accepter *
 gensio_acc_data_alloc(struct gensio_os_funcs *o,
-		      gensio_acceptor_event cb, void *user_data,
+		      gensio_accepter_event cb, void *user_data,
 		      gensio_acc_func func,
 		      const char *typename, void *gensio_acc_data)
 {
-    struct gensio_acceptor *acc = o->zalloc(o, sizeof(*acc));
+    struct gensio_accepter *acc = o->zalloc(o, sizeof(*acc));
 
     if (!acc)
 	return NULL;
@@ -193,7 +193,7 @@ gensio_acc_data_alloc(struct gensio_os_funcs *o,
 }
 
 void
-gensio_acc_data_free(struct gensio_acceptor *acc)
+gensio_acc_data_free(struct gensio_accepter *acc)
 {
     while (acc->classes) {
 	struct gensio_classobj *c = acc->classes;
@@ -205,32 +205,32 @@ gensio_acc_data_free(struct gensio_acceptor *acc)
 }
 
 void *
-gensio_acc_get_gensio_data(struct gensio_acceptor *acc)
+gensio_acc_get_gensio_data(struct gensio_accepter *acc)
 {
     return acc->gensio_acc_data;
 }
 
 int
-gensio_acc_cb(struct gensio_acceptor *acc, int event, void *data)
+gensio_acc_cb(struct gensio_accepter *acc, int event, void *data)
 {
     return acc->cb(acc, event, data);
 }
 
 int
-gensio_acc_addclass(struct gensio_acceptor *acc,
+gensio_acc_addclass(struct gensio_accepter *acc,
 		    const char *name, void *classdata)
 {
     return gen_addclass(acc->o, &acc->classes, name, classdata);
 }
 
 void *
-gensio_acc_getclass(struct gensio_acceptor *acc, const char *name)
+gensio_acc_getclass(struct gensio_accepter *acc, const char *name)
 {
     return gen_getclass(acc->classes, name);
 }
 
 const char *
-gensio_acc_get_type(struct gensio_acceptor *acc)
+gensio_acc_get_type(struct gensio_accepter *acc)
 {
     return acc->typename;
 }
@@ -711,129 +711,129 @@ gensio_set_is_packet(struct gensio *io, bool is_packet)
 }
 
 void *
-gensio_acc_get_user_data(struct gensio_acceptor *acceptor)
+gensio_acc_get_user_data(struct gensio_accepter *accepter)
 {
-    return acceptor->user_data;
+    return accepter->user_data;
 }
 
 void
-gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
+gensio_acc_set_user_data(struct gensio_accepter *accepter,
 			 void *user_data)
 {
-    acceptor->user_data = user_data;
+    accepter->user_data = user_data;
 }
 
 void
-gensio_acc_set_callback(struct gensio_acceptor *acceptor,
-			gensio_acceptor_event cb,
+gensio_acc_set_callback(struct gensio_accepter *accepter,
+			gensio_accepter_event cb,
 			void *user_data)
 {
-    acceptor->cb = cb;
-    acceptor->user_data = user_data;
+    accepter->cb = cb;
+    accepter->user_data = user_data;
 }
 
 int
-gensio_acc_startup(struct gensio_acceptor *acceptor)
+gensio_acc_startup(struct gensio_accepter *accepter)
 {
-    return acceptor->func(acceptor, GENSIO_ACC_FUNC_STARTUP, 0,
+    return accepter->func(accepter, GENSIO_ACC_FUNC_STARTUP, 0,
 			  NULL, NULL, NULL, NULL);
 }
 
 int
-gensio_acc_shutdown(struct gensio_acceptor *acceptor,
+gensio_acc_shutdown(struct gensio_accepter *accepter,
 		    gensio_acc_done shutdown_done, void *shutdown_data)
 {
-    return acceptor->func(acceptor, GENSIO_ACC_FUNC_SHUTDOWN, 0,
+    return accepter->func(accepter, GENSIO_ACC_FUNC_SHUTDOWN, 0,
 			  0, shutdown_done, shutdown_data, NULL);
 }
 
 void
-gensio_acc_set_accept_callback_enable(struct gensio_acceptor *acceptor,
+gensio_acc_set_accept_callback_enable(struct gensio_accepter *accepter,
 				      bool enabled)
 {
-    acceptor->func(acceptor, GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK, enabled,
+    accepter->func(accepter, GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK, enabled,
 		   NULL, NULL, NULL, NULL);
 }
 
 void
-gensio_acc_free(struct gensio_acceptor *acceptor)
+gensio_acc_free(struct gensio_accepter *accepter)
 {
-    acceptor->func(acceptor, GENSIO_ACC_FUNC_FREE, 0, NULL, NULL, NULL, NULL);
+    accepter->func(accepter, GENSIO_ACC_FUNC_FREE, 0, NULL, NULL, NULL, NULL);
 }
 
 int
-gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
+gensio_acc_connect(struct gensio_accepter *accepter, void *addr,
 		   gensio_done_err connect_done, void *cb_data,
 		   struct gensio **new_io)
 {
-    return acceptor->func(acceptor, GENSIO_ACC_FUNC_FREE, 0,
+    return accepter->func(accepter, GENSIO_ACC_FUNC_FREE, 0,
 			  addr, connect_done, cb_data, new_io);
 }
 
 /* FIXME - this is a cheap hack and needs to be fixed. */
 bool
-gensio_acc_exit_on_close(struct gensio_acceptor *acceptor)
+gensio_acc_exit_on_close(struct gensio_accepter *accepter)
 {
-    return strcmp(acceptor->typename, "stdio") == 0;
+    return strcmp(accepter->typename, "stdio") == 0;
 }
 
 bool
-gensio_acc_is_reliable(struct gensio_acceptor *acceptor)
+gensio_acc_is_reliable(struct gensio_accepter *accepter)
 {
-    return acceptor->is_reliable;
+    return accepter->is_reliable;
 }
 
 bool
-gensio_acc_is_packet(struct gensio_acceptor *acceptor)
+gensio_acc_is_packet(struct gensio_accepter *accepter)
 {
-    return acceptor->is_packet;
+    return accepter->is_packet;
 }
 
 void
-gensio_acc_set_is_reliable(struct gensio_acceptor *acceptor, bool is_reliable)
+gensio_acc_set_is_reliable(struct gensio_accepter *accepter, bool is_reliable)
 {
-     acceptor->is_reliable = is_reliable;
+     accepter->is_reliable = is_reliable;
 }
 
 void
-gensio_acc_set_is_packet(struct gensio_acceptor *acceptor, bool is_packet)
+gensio_acc_set_is_packet(struct gensio_accepter *accepter, bool is_packet)
 {
-    acceptor->is_packet = is_packet;
+    accepter->is_packet = is_packet;
 }
 
-struct registered_gensio_acceptor {
+struct registered_gensio_accepter {
     const char *name;
     str_to_gensio_acc_handler handler;
-    struct registered_gensio_acceptor *next;
+    struct registered_gensio_accepter *next;
 };
 
-struct registered_gensio_acceptor *reg_gensio_accs;
+struct registered_gensio_accepter *reg_gensio_accs;
 struct gensio_lock *reg_gensio_acc_lock;
 
 
 struct gensio_once gensio_acc_str_initialized;
 
 static void
-add_default_gensio_acceptors(void *cb_data)
+add_default_gensio_accepters(void *cb_data)
 {
     struct gensio_os_funcs *o = cb_data;
 
     reg_gensio_acc_lock = o->alloc_lock(o);
-    register_gensio_acceptor(o, "tcp", str_to_tcp_gensio_acceptor);
-    register_gensio_acceptor(o, "udp", str_to_udp_gensio_acceptor);
-    register_gensio_acceptor(o, "stdio", str_to_stdio_gensio_acceptor);
-    register_gensio_acceptor(o, "ssl", str_to_ssl_gensio_acceptor);
-    register_gensio_acceptor(o, "telnet", str_to_telnet_gensio_acceptor);
+    register_gensio_accepter(o, "tcp", str_to_tcp_gensio_accepter);
+    register_gensio_accepter(o, "udp", str_to_udp_gensio_accepter);
+    register_gensio_accepter(o, "stdio", str_to_stdio_gensio_accepter);
+    register_gensio_accepter(o, "ssl", str_to_ssl_gensio_accepter);
+    register_gensio_accepter(o, "telnet", str_to_telnet_gensio_accepter);
 }
 
 int
-register_gensio_acceptor(struct gensio_os_funcs *o,
+register_gensio_accepter(struct gensio_os_funcs *o,
 			 const char *name, str_to_gensio_acc_handler handler)
 {
-    struct registered_gensio_acceptor *n;
+    struct registered_gensio_accepter *n;
 
     o->call_once(o, &gensio_acc_str_initialized,
-		 add_default_gensio_acceptors, o);
+		 add_default_gensio_accepters, o);
 
     n = o->zalloc(o, sizeof(*n));
     if (!n)
@@ -848,10 +848,10 @@ register_gensio_acceptor(struct gensio_os_funcs *o,
     return 0;
 }
 
-int str_to_gensio_acceptor(const char *str,
+int str_to_gensio_accepter(const char *str,
 			   struct gensio_os_funcs *o,
-			   gensio_acceptor_event cb, void *user_data,
-			   struct gensio_acceptor **acceptor)
+			   gensio_accepter_event cb, void *user_data,
+			   struct gensio_accepter **accepter)
 {
     int err;
     struct addrinfo *ai = NULL;
@@ -859,11 +859,11 @@ int str_to_gensio_acceptor(const char *str,
     char *dummy_args[1] = { NULL };
     int argc;
     char **args = NULL;
-    struct registered_gensio_acceptor *r;
+    struct registered_gensio_accepter *r;
     unsigned int len;
 
     o->call_once(o, &gensio_acc_str_initialized,
-		 add_default_gensio_acceptors, o);
+		 add_default_gensio_accepters, o);
 
     while (isspace(*str))
 	str++;
@@ -876,15 +876,15 @@ int str_to_gensio_acceptor(const char *str,
 	str += len;
 	err = gensio_scan_args(&str, &argc, &args);
 	if (!err)
-	    err = r->handler(str, args, o, cb, user_data, acceptor);
+	    err = r->handler(str, args, o, cb, user_data, accepter);
 	if (args)
 	    str_to_argv_free(argc, args);
 	return err;
     }
 
     if (strisallzero(str)) {
-	err = stdio_gensio_acceptor_alloc(dummy_args, o, cb, user_data,
-					  acceptor);
+	err = stdio_gensio_accepter_alloc(dummy_args, o, cb, user_data,
+					  accepter);
     } else {
 	err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
 				     &argc, &args);
@@ -892,11 +892,11 @@ int str_to_gensio_acceptor(const char *str,
 	    if (!is_port_set) {
 		err = EINVAL;
 	    } else if (is_dgram) {
-		err = udp_gensio_acceptor_alloc(ai, args, o, cb,
-						user_data, acceptor);
+		err = udp_gensio_accepter_alloc(ai, args, o, cb,
+						user_data, accepter);
 	    } else {
-		err = tcp_gensio_acceptor_alloc(ai, args, o, cb,
-						user_data, acceptor);
+		err = tcp_gensio_accepter_alloc(ai, args, o, cb,
+						user_data, accepter);
 	    }
 
 	    freeaddrinfo(ai);
@@ -1134,7 +1134,7 @@ gensio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
 }
 
 void
-gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
+gensio_acc_vlog(struct gensio_accepter *acc, enum gensio_log_levels level,
 		char *str, va_list args)
 {
     struct gensio_loginfo info;
@@ -1146,7 +1146,7 @@ gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
 }
 
 void
-gensio_acc_log(struct gensio_acceptor *acc, enum gensio_log_levels level,
+gensio_acc_log(struct gensio_accepter *acc, enum gensio_log_levels level,
 	       char *str, ...)
 {
     va_list args;

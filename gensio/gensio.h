@@ -314,7 +314,7 @@ typedef void (*gensio_done_err)(struct gensio *io, int err, void *open_data);
 
 /*
  * Set the callback data for the net.  This must be done in the
- * new_connection callback for the acceptor before any other operation
+ * new_connection callback for the accepter before any other operation
  * is done on the gensio.  The only exception is that gensio_close() may
  * be called with callbacks not set.  This function may be called
  * again if the gensio is not enabled.
@@ -378,7 +378,7 @@ int gensio_get_raddr(struct gensio *io, void *addr, unsigned int *addrlen);
 int gensio_remote_id(struct gensio *io, int *id);
 
 /*
- * Open the gensio.  gensios recevied from an acceptor are open upon
+ * Open the gensio.  gensios recevied from an accepter are open upon
  * receipt, but client gensios are started closed and need to be opened
  * before use.  If no error is returned, the gensio will be open when
  * the open_done callback is called.
@@ -433,7 +433,7 @@ bool gensio_is_reliable(struct gensio *io);
  */
 bool gensio_is_packet(struct gensio *io);
 
-struct gensio_acceptor;
+struct gensio_accepter;
 
 /*
  * Got a new connection on the event.  data points to the new gensio.
@@ -441,7 +441,7 @@ struct gensio_acceptor;
 #define GENSIO_ACC_EVENT_NEW_CONNECTION	1
 
 /*
- * The gensio acceptor had an issue that wouldn't otherwise be reported
+ * The gensio accepter had an issue that wouldn't otherwise be reported
  * as an error return.  data points to a gensio_loginfo.
  */
 #define GENSIO_ACC_EVENT_LOG		2
@@ -458,90 +458,90 @@ struct gensio_loginfo {
 };
 
 /*
- * Report an event from the acceptor to the user.
+ * Report an event from the accepter to the user.
  *
- *  event - The event that occurred, of the type GENSIO_ACCEPTOR_EVENT_xxx.
+ *  event - The event that occurred, of the type GENSIO_ACC_EVENT_xxx.
  *
  *  data - Specific data for the event, see the event description.
  *
  */
-typedef int (*gensio_acceptor_event)(struct gensio_acceptor *acceptor,
+typedef int (*gensio_accepter_event)(struct gensio_accepter *accepter,
 				     int event,
 				     void *data);
 
 /*
  * Callbacks for functions that don't give an error (close);
  */
-typedef void (*gensio_acc_done)(struct gensio_acceptor *acc, void *open_data);
+typedef void (*gensio_acc_done)(struct gensio_accepter *acc, void *open_data);
 
 /*
  * Return the user data supplied to the allocator.
  */
-void *gensio_acc_get_user_data(struct gensio_acceptor *acceptor);
+void *gensio_acc_get_user_data(struct gensio_accepter *accepter);
 
 /*
- * Set the user data.  May be called if the acceptor is not enabled.
+ * Set the user data.  May be called if the accepter is not enabled.
  */
-void gensio_acc_set_user_data(struct gensio_acceptor *acceptor,
+void gensio_acc_set_user_data(struct gensio_accepter *accepter,
 			      void *user_data);
 
 /*
- * Set the callbacks and user data.  May be called if the acceptor is
+ * Set the callbacks and user data.  May be called if the accepter is
  * not enabled.
  */
-void gensio_acc_set_callback(struct gensio_acceptor *acceptor,
-			     gensio_acceptor_event cb, void *user_data);
+void gensio_acc_set_callback(struct gensio_accepter *accepter,
+			     gensio_accepter_event cb, void *user_data);
 
 /*
- * An acceptor is allocated without opening any sockets.  This
- * actually starts up the acceptor, allocating the sockets and
+ * An accepter is allocated without opening any sockets.  This
+ * actually starts up the accepter, allocating the sockets and
  * such.  It is started with accepts enabled.
  *
  * Returns a standard errno on an error, zero otherwise.
  */
-int gensio_acc_startup(struct gensio_acceptor *acceptor);
+int gensio_acc_startup(struct gensio_accepter *accepter);
 
 /*
  * Closes all sockets and disables everything.  shutdown_complete()
  * will be called if successful after the shutdown is complete, if it
  * is not NULL.
  *
- * Returns a EAGAIN if the acceptor is already shut down, zero
+ * Returns a EAGAIN if the accepter is already shut down, zero
  * otherwise.
  */
-int gensio_acc_shutdown(struct gensio_acceptor *acceptor,
+int gensio_acc_shutdown(struct gensio_accepter *accepter,
 			gensio_acc_done shutdown_done, void *shutdown_data);
 
 /*
  * Enable the accept callback when connections come in.
  */
-void gensio_acc_set_accept_callback_enable(struct gensio_acceptor *acceptor,
+void gensio_acc_set_accept_callback_enable(struct gensio_accepter *accepter,
 					   bool enabled);
 
 /*
- * Free the network acceptor.  If the network acceptor is started
+ * Free the network accepter.  If the network accepter is started
  * up, this shuts it down first and shutdown_complete() is NOT called.
  */
-void gensio_acc_free(struct gensio_acceptor *acceptor);
+void gensio_acc_free(struct gensio_accepter *accepter);
 
 /*
- * Create a new connection from the given gensio acceptor.  For TCP and
+ * Create a new connection from the given gensio accepter.  For TCP and
  * UDP, the addr is an addrinfo returned by getaddrinfo.  Note that
  * with this call, if connect_done is called with an error, the gensio
  * is *not* automatically freed.  You must do that.
  */
-int gensio_acc_connect(struct gensio_acceptor *acceptor, void *addr,
+int gensio_acc_connect(struct gensio_accepter *accepter, void *addr,
 		       gensio_done_err connect_done, void *cb_data,
 		       struct gensio **new_io);
 /*
- * Returns if the acceptor requests exit on close.  A hack for stdio.
+ * Returns if the accepter requests exit on close.  A hack for stdio.
  */
-bool gensio_acc_exit_on_close(struct gensio_acceptor *acceptor);
+bool gensio_acc_exit_on_close(struct gensio_accepter *accepter);
 
 /*
  * Is the genio reliable (won't loose data).
  */
-bool gensio_acc_is_reliable(struct gensio_acceptor *acceptor);
+bool gensio_acc_is_reliable(struct gensio_accepter *accepter);
 
 /*
  * Is the genio packet-oriented.  In a packet-oriented genio, if one
@@ -549,61 +549,61 @@ bool gensio_acc_is_reliable(struct gensio_acceptor *acceptor);
  * will get the same chunk of data as a single unit assuming it's
  * buffer sizes are set properly.
  */
-bool gensio_acc_is_packet(struct gensio_acceptor *acceptor);
+bool gensio_acc_is_packet(struct gensio_accepter *accepter);
 
 /*
- * Convert a string representation of an I/O location into an acceptor.
+ * Convert a string representation of an I/O location into an accepter.
  */
-int str_to_gensio_acceptor(const char *str, struct gensio_os_funcs *o,
-			   gensio_acceptor_event cb, void *user_data,
-			   struct gensio_acceptor **acceptor);
+int str_to_gensio_accepter(const char *str, struct gensio_os_funcs *o,
+			   gensio_accepter_event cb, void *user_data,
+			   struct gensio_accepter **accepter);
 
 /*
- * Handler registered so that str_to_gensio_acceptor can process an
- * acceptor.  This is so users can create their own gensio acceptor
+ * Handler registered so that str_to_gensio_accepter can process an
+ * accepter.  This is so users can create their own gensio accepter
  * types.
  */
 typedef int (*str_to_gensio_acc_handler)(const char *str, char *args[],
 					 struct gensio_os_funcs *o,
-					 gensio_acceptor_event cb,
+					 gensio_accepter_event cb,
 					 void *user_data,
-					 struct gensio_acceptor **new_gensio);
+					 struct gensio_accepter **new_gensio);
 /*
- * Add a gensio acceptor to the set of registered gensio acceptors.
+ * Add a gensio accepter to the set of registered gensio accepters.
  */
-int register_gensio_acceptor(struct gensio_os_funcs *o,
+int register_gensio_accepter(struct gensio_os_funcs *o,
 			     const char *name,
 			     str_to_gensio_acc_handler handler);
 
 /*
- * Allocators for the various gensio acceptor types, compatible with
- * register_gensio_acceptor().
+ * Allocators for the various gensio accepter types, compatible with
+ * register_gensio_accepter().
  */
-int str_to_tcp_gensio_acceptor(const char *str, char *args[],
+int str_to_tcp_gensio_accepter(const char *str, char *args[],
 			       struct gensio_os_funcs *o,
-			       gensio_acceptor_event cb,
+			       gensio_accepter_event cb,
 			       void *user_data,
-			       struct gensio_acceptor **new_acc);
-int str_to_udp_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_accepter **new_acc);
+int str_to_udp_gensio_accepter(const char *str, char *args[],
 			       struct gensio_os_funcs *o,
-			       gensio_acceptor_event cb,
+			       gensio_accepter_event cb,
 			       void *user_data,
-			       struct gensio_acceptor **new_acc);
-int str_to_stdio_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_accepter **new_acc);
+int str_to_stdio_gensio_accepter(const char *str, char *args[],
 				 struct gensio_os_funcs *o,
-				 gensio_acceptor_event cb,
+				 gensio_accepter_event cb,
 				 void *user_data,
-				 struct gensio_acceptor **new_acc);
-int str_to_ssl_gensio_acceptor(const char *str, char *args[],
+				 struct gensio_accepter **new_acc);
+int str_to_ssl_gensio_accepter(const char *str, char *args[],
 			       struct gensio_os_funcs *o,
-			       gensio_acceptor_event cb,
+			       gensio_accepter_event cb,
 			       void *user_data,
-			       struct gensio_acceptor **new_acc);
-int str_to_telnet_gensio_acceptor(const char *str, char *args[],
+			       struct gensio_accepter **new_acc);
+int str_to_telnet_gensio_accepter(const char *str, char *args[],
 				  struct gensio_os_funcs *o,
-				  gensio_acceptor_event cb,
+				  gensio_accepter_event cb,
 				  void *user_data,
-				  struct gensio_acceptor **acc_gensio);
+				  struct gensio_accepter **acc_gensio);
 
 /*
  * Convert a string representation of an I/O location into a client
@@ -660,37 +660,37 @@ int str_to_termios_gensio(const char *str, char *args[],
 
 
 /*
- * Allocators for acceptors for different I/O types.
+ * Allocators for accepters for different I/O types.
  */
-int tcp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
+int tcp_gensio_accepter_alloc(struct addrinfo *ai, char *args[],
 			      struct gensio_os_funcs *o,
-			      gensio_acceptor_event cb,
+			      gensio_accepter_event cb,
 			      void *user_data,
-			      struct gensio_acceptor **acceptor);
+			      struct gensio_accepter **accepter);
 
-int udp_gensio_acceptor_alloc(struct addrinfo *ai, char *args[],
+int udp_gensio_accepter_alloc(struct addrinfo *ai, char *args[],
 			      struct gensio_os_funcs *o,
-			      gensio_acceptor_event cb,
+			      gensio_accepter_event cb,
 			      void *user_data,
-			      struct gensio_acceptor **acceptor);
+			      struct gensio_accepter **accepter);
 
-int stdio_gensio_acceptor_alloc(char *args[],
+int stdio_gensio_accepter_alloc(char *args[],
 				struct gensio_os_funcs *o,
-				gensio_acceptor_event cb,
+				gensio_accepter_event cb,
 				void *user_data,
-				struct gensio_acceptor **acceptor);
+				struct gensio_accepter **accepter);
 
-int ssl_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
+int ssl_gensio_accepter_alloc(struct gensio_accepter *child, char *args[],
 			      struct gensio_os_funcs *o,
-			      gensio_acceptor_event cb,
+			      gensio_accepter_event cb,
 			      void *user_data,
-			      struct gensio_acceptor **acceptor);
+			      struct gensio_accepter **accepter);
 
-int telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
+int telnet_gensio_accepter_alloc(struct gensio_accepter *child, char *args[],
 				 struct gensio_os_funcs *o,
-				 gensio_acceptor_event cb,
+				 gensio_accepter_event cb,
 				 void *user_data,
-				 struct gensio_acceptor **acceptor);
+				 struct gensio_accepter **accepter);
 
 /* Client allocators. */
 

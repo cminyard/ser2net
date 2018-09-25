@@ -49,7 +49,7 @@ struct stdiona_data {
     int old_flags_ostdin;
     int old_flags_ostdout;
 
-    /* For the acceptor only. */
+    /* For the accepter only. */
     bool in_free;
     bool in_shutdown;
     gensio_acc_done shutdown_done;
@@ -97,7 +97,7 @@ struct stdiona_data {
     struct gensio_runner *deferred_op_runner;
 
     struct gensio *io;
-    struct gensio_acceptor *acc;
+    struct gensio_accepter *acc;
 };
 
 static void
@@ -623,7 +623,7 @@ static void
 stdiona_fd_cleared(int fd, void *cbdata)
 {
     struct stdiona_data *nadata = cbdata;
-    struct gensio_acceptor *acceptor = nadata->acc;
+    struct gensio_accepter *accepter = nadata->acc;
 
     stdiona_lock(nadata);
     nadata->oio_count--;
@@ -631,7 +631,7 @@ stdiona_fd_cleared(int fd, void *cbdata)
     fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
 
     if (nadata->shutdown_done)
-	nadata->shutdown_done(acceptor, nadata->shutdown_data);
+	nadata->shutdown_done(accepter, nadata->shutdown_data);
 
     stdiona_lock(nadata);
     nadata->in_shutdown = false;
@@ -644,9 +644,9 @@ stdiona_fd_cleared(int fd, void *cbdata)
 }
 
 static int
-stdiona_startup(struct gensio_acceptor *acceptor)
+stdiona_startup(struct gensio_accepter *accepter)
 {
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     stdiona_lock(nadata);
@@ -715,10 +715,10 @@ stdiona_startup(struct gensio_acceptor *acceptor)
 }
 
 static int
-stdiona_shutdown(struct gensio_acceptor *acceptor,
+stdiona_shutdown(struct gensio_accepter *accepter,
 		 gensio_acc_done shutdown_done, void *shutdown_data)
 {
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     stdiona_lock(nadata);
@@ -738,15 +738,15 @@ stdiona_shutdown(struct gensio_acceptor *acceptor,
 }
 
 static void
-stdiona_set_accept_callback_enable(struct gensio_acceptor *acceptor,
+stdiona_set_accept_callback_enable(struct gensio_accepter *accepter,
 				   bool enabled)
 {
 }
 
 static void
-stdiona_free(struct gensio_acceptor *acceptor)
+stdiona_free(struct gensio_accepter *accepter)
 {
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
 
     stdiona_lock(nadata);
     nadata->in_free = true;
@@ -807,7 +807,7 @@ gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
 }
 
 static int
-gensio_acc_stdio_func(struct gensio_acceptor *acc, int func, int val,
+gensio_acc_stdio_func(struct gensio_accepter *acc, int func, int val,
 		      void *addr, void *done, void *data,
 		      void *ret)
 {
@@ -872,9 +872,9 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 }
 
 int
-stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
-			    gensio_acceptor_event cb, void *user_data,
-			    struct gensio_acceptor **acceptor)
+stdio_gensio_accepter_alloc(char *args[], struct gensio_os_funcs *o,
+			    gensio_accepter_event cb, void *user_data,
+			    struct gensio_accepter **accepter)
 {
     int err;
     struct stdiona_data *nadata = NULL;
@@ -910,18 +910,18 @@ stdio_gensio_acceptor_alloc(char *args[], struct gensio_os_funcs *o,
     }
     gensio_acc_set_is_reliable(nadata->acc, true);
 
-    *acceptor = nadata->acc;
+    *accepter = nadata->acc;
     return 0;
 }
 
 int
-str_to_stdio_gensio_acceptor(const char *str, char *args[],
+str_to_stdio_gensio_accepter(const char *str, char *args[],
 			     struct gensio_os_funcs *o,
-			     gensio_acceptor_event cb,
+			     gensio_accepter_event cb,
 			     void *user_data,
-			     struct gensio_acceptor **acc)
+			     struct gensio_accepter **acc)
 {
-    return stdio_gensio_acceptor_alloc(args, o, cb, user_data, acc);
+    return stdio_gensio_accepter_alloc(args, o, cb, user_data, acc);
 }
 
 int

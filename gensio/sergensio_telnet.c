@@ -1020,10 +1020,10 @@ gensio_gensio_acc_telnet_cb(void *acc_data, int op, void *data1, void *data2)
 }
 
 int
-telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
+telnet_gensio_accepter_alloc(struct gensio_accepter *child, char *args[],
 			     struct gensio_os_funcs *o,
-			     gensio_acceptor_event cb, void *user_data,
-			     struct gensio_acceptor **acceptor)
+			     gensio_accepter_event cb, void *user_data,
+			     struct gensio_accepter **accepter)
 {
     struct stela_data *stela;
     int err;
@@ -1064,13 +1064,13 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
     stela->allow_2217 = allow_2217;
     stela->is_reliable = gensio_acc_is_reliable(child);
 
-    err = gensio_gensio_acceptor_alloc(child, o, "telnet",
+    err = gensio_gensio_accepter_alloc(child, o, "telnet",
 				       cb, user_data,
 				       gensio_gensio_acc_telnet_cb, stela,
-				       acceptor);
+				       accepter);
     if (err)
 	goto out_err;
-    gensio_acc_set_is_reliable(*acceptor, stela->is_reliable);
+    gensio_acc_set_is_reliable(*accepter, stela->is_reliable);
 
     return 0;
 
@@ -1080,18 +1080,18 @@ telnet_gensio_acceptor_alloc(struct gensio_acceptor *child, char *args[],
 }
 
 int
-str_to_telnet_gensio_acceptor(const char *str, char *args[],
+str_to_telnet_gensio_accepter(const char *str, char *args[],
 			      struct gensio_os_funcs *o,
-			      gensio_acceptor_event cb,
+			      gensio_accepter_event cb,
 			      void *user_data,
-			      struct gensio_acceptor **acc)
+			      struct gensio_accepter **acc)
 {
     int err;
-    struct gensio_acceptor *acc2 = NULL;
+    struct gensio_accepter *acc2 = NULL;
 
-    err = str_to_gensio_acceptor(str, o, NULL, NULL, &acc2);
+    err = str_to_gensio_accepter(str, o, NULL, NULL, &acc2);
     if (!err) {
-	err = telnet_gensio_acceptor_alloc(acc2, args, o, cb, user_data, acc);
+	err = telnet_gensio_accepter_alloc(acc2, args, o, cb, user_data, acc);
 	if (err)
 	    gensio_acc_free(acc2);
     }

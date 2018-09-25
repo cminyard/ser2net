@@ -172,7 +172,7 @@ gensio_open_done(struct gensio *io, int err, void *cb_data) {
 
     swig_finish_call(cb, "open_done", args);
 
-    swig_free_ref_check(io_ref, acceptor);
+    swig_free_ref_check(io_ref, accepter);
     deref_swig_cb_val(cb);
     OI_PY_STATE_PUT(gstate);
 }
@@ -193,7 +193,7 @@ gensio_close_done(struct gensio *io, void *cb_data) {
 
     swig_finish_call(cb, "close_done", args);
 
-    swig_free_ref_check(io_ref, acceptor);
+    swig_free_ref_check(io_ref, accepter);
     deref_swig_cb_val(cb);
     OI_PY_STATE_PUT(gstate);
 }
@@ -224,7 +224,7 @@ sgensio_call(struct sergensio *sio, long val, char *func)
 
     swig_finish_call(data->handler_val, func, args);
 
-    swig_free_ref_check(sio_ref, acceptor);
+    swig_free_ref_check(sio_ref, accepter);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
@@ -267,7 +267,7 @@ sgensio_signature(struct sergensio *sio, char *sig, unsigned int len)
 
     swig_finish_call(data->handler_val, "signature", args);
 
-    swig_free_ref_check(sio_ref, acceptor);
+    swig_free_ref_check(sio_ref, accepter);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
@@ -296,7 +296,7 @@ sgensio_sync(struct sergensio *sio)
 
     swig_finish_call(data->handler_val, "sync", args);
 
-    swig_free_ref_check(sio_ref, acceptor);
+    swig_free_ref_check(sio_ref, accepter);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
@@ -327,7 +327,7 @@ sgensio_flowcontrol_state(struct sergensio *sio, bool val)
 
     swig_finish_call(data->handler_val, "flowcontrol_state", args);
 
-    swig_free_ref_check(sio_ref, acceptor);
+    swig_free_ref_check(sio_ref, accepter);
  out_put:
     OI_PY_STATE_PUT(gstate);
 }
@@ -538,7 +538,7 @@ gensio_child_event(struct gensio *io, int event, int readerr,
     }
 
     if (io_ref.val)
-	swig_free_ref_check(io_ref, acceptor);
+	swig_free_ref_check(io_ref, accepter);
  out_put:
     OI_PY_STATE_PUT(gstate);
 
@@ -551,7 +551,7 @@ struct gensio_acc_data {
 };
 
 static void
-gensio_acc_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
+gensio_acc_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 {
     swig_cb_val *cb = cb_data;
     swig_ref acc_ref;
@@ -560,14 +560,14 @@ gensio_acc_shutdown_done(struct gensio_acceptor *acceptor, void *cb_data)
 
     gstate = OI_PY_STATE_GET();
 
-    acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+    acc_ref = swig_make_ref(accepter, gensio_accepter);
     args = PyTuple_New(1);
     Py_INCREF(acc_ref.val);
     PyTuple_SET_ITEM(args, 0, acc_ref.val);
 
     swig_finish_call(cb, "shutdown_done", args);
 
-    swig_free_ref_check(acc_ref, acceptor);
+    swig_free_ref_check(acc_ref, accepter);
     deref_swig_cb_val(cb);
     OI_PY_STATE_PUT(gstate);
 }
@@ -588,9 +588,9 @@ const char *gensio_log_level_to_str(int gloglevel)
 }
 
 static int
-gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
+gensio_acc_child_event(struct gensio_accepter *accepter, int event, void *cdata)
 {
-    struct gensio_acc_data *data = gensio_acc_get_user_data(acceptor);
+    struct gensio_acc_data *data = gensio_acc_get_user_data(accepter);
     swig_ref acc_ref, io_ref;
     PyObject *args, *o;
     OI_PY_STATE gstate;
@@ -603,7 +603,7 @@ gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 
 	gstate = OI_PY_STATE_GET();
 
-	acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+	acc_ref = swig_make_ref(accepter, gensio_accepter);
 	args = PyTuple_New(3);
 	Py_INCREF(acc_ref.val);
 	PyTuple_SET_ITEM(args, 0, acc_ref.val);
@@ -613,9 +613,9 @@ gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 	o = OI_PI_FromString(buf);
 	PyTuple_SET_ITEM(args, 2, o);
 
-	swig_finish_call(data->handler_val, "acceptor_log", args);
+	swig_finish_call(data->handler_val, "accepter_log", args);
 
-	swig_free_ref_check(acc_ref, acceptor);
+	swig_free_ref_check(acc_ref, accepter);
 	OI_PY_STATE_PUT(gstate);
 	return 0;
     }
@@ -632,7 +632,7 @@ gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 
 	gstate = OI_PY_STATE_GET();
 
-	acc_ref = swig_make_ref(acceptor, gensio_acceptor);
+	acc_ref = swig_make_ref(accepter, gensio_accepter);
 	io_ref = swig_make_ref(io, gensio);
 	args = PyTuple_New(2);
 	Py_INCREF(acc_ref.val);
@@ -642,8 +642,8 @@ gensio_acc_child_event(struct gensio_acceptor *acceptor, int event, void *cdata)
 
 	swig_finish_call(data->handler_val, "new_connection", args);
 
-	swig_free_ref_check(acc_ref, acceptor);
-	swig_free_ref_check(io_ref, acceptor);
+	swig_free_ref_check(acc_ref, accepter);
+	swig_free_ref_check(io_ref, accepter);
 	OI_PY_STATE_PUT(gstate);
 	return 0;
     }

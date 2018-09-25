@@ -152,28 +152,28 @@ void *gensio_getclass(struct gensio *io, const char *name);
  */
 #define GENSIO_ACC_FUNC_CONNECT			5
 
-typedef int (*gensio_acc_func)(struct gensio_acceptor *acc, int func, int val,
+typedef int (*gensio_acc_func)(struct gensio_accepter *acc, int func, int val,
 			       void *addr, void *done, void *data,
 			       void *ret);
 
-struct gensio_acceptor *gensio_acc_data_alloc(struct gensio_os_funcs *o,
-		      gensio_acceptor_event cb, void *user_data,
+struct gensio_accepter *gensio_acc_data_alloc(struct gensio_os_funcs *o,
+		      gensio_accepter_event cb, void *user_data,
 		      gensio_acc_func func,
 		      const char *typename, void *gensio_acc_data);
-void gensio_acc_data_free(struct gensio_acceptor *acc);
-void *gensio_acc_get_gensio_data(struct gensio_acceptor *acc);
-int gensio_acc_cb(struct gensio_acceptor *acc, int event, void *data);
-int gensio_acc_addclass(struct gensio_acceptor *acc,
+void gensio_acc_data_free(struct gensio_accepter *acc);
+void *gensio_acc_get_gensio_data(struct gensio_accepter *acc);
+int gensio_acc_cb(struct gensio_accepter *acc, int event, void *data);
+int gensio_acc_addclass(struct gensio_accepter *acc,
 			const char *name, void *classdata);
-void *gensio_acc_getclass(struct gensio_acceptor *acc, const char *name);
-const char *gensio_acc_get_type(struct gensio_acceptor *acc);
+void *gensio_acc_getclass(struct gensio_accepter *acc, const char *name);
+const char *gensio_acc_get_type(struct gensio_accepter *acc);
 
-void gensio_acc_set_is_packet(struct gensio_acceptor *io, bool is_packet);
-void gensio_acc_set_is_reliable(struct gensio_acceptor *io, bool is_reliable);
+void gensio_acc_set_is_packet(struct gensio_accepter *io, bool is_packet);
+void gensio_acc_set_is_reliable(struct gensio_accepter *io, bool is_reliable);
 
-void gensio_acc_vlog(struct gensio_acceptor *acc, enum gensio_log_levels level,
+void gensio_acc_vlog(struct gensio_accepter *acc, enum gensio_log_levels level,
 		     char *str, va_list args);
-void gensio_acc_log(struct gensio_acceptor *acc, enum gensio_log_levels level,
+void gensio_acc_log(struct gensio_accepter *acc, enum gensio_log_levels level,
 		    char *str, ...);
 
 struct opensocks

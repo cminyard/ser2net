@@ -287,7 +287,7 @@ str_to_tcp_gensio(const char *str, char *args[],
 }
 
 struct tcpna_data {
-    struct gensio_acceptor *acc;
+    struct gensio_accepter *acc;
 
     struct gensio_os_funcs *o;
 
@@ -451,7 +451,7 @@ static void
 tcpna_fd_cleared(int fd, void *cbdata)
 {
     struct tcpna_data *nadata = cbdata;
-    struct gensio_acceptor *acceptor = nadata->acc;
+    struct gensio_accepter *accepter = nadata->acc;
     unsigned int num_left;
 
     close(fd);
@@ -462,7 +462,7 @@ tcpna_fd_cleared(int fd, void *cbdata)
 
     if (num_left == 0) {
 	if (nadata->shutdown_done)
-	    nadata->shutdown_done(acceptor, nadata->shutdown_data);
+	    nadata->shutdown_done(accepter, nadata->shutdown_data);
 	tcpna_lock(nadata);
 	nadata->in_shutdown = false;
 	tcpna_deref_and_unlock(nadata);
@@ -479,9 +479,9 @@ tcpna_set_fd_enables(struct tcpna_data *nadata, bool enable)
 }
 
 static int
-tcpna_startup(struct gensio_acceptor *acceptor)
+tcpna_startup(struct gensio_accepter *accepter)
 {
-    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     tcpna_lock(nadata);
@@ -527,10 +527,10 @@ _tcpna_shutdown(struct tcpna_data *nadata,
 }
 
 static int
-tcpna_shutdown(struct gensio_acceptor *acceptor,
+tcpna_shutdown(struct gensio_accepter *accepter,
 	       gensio_acc_done shutdown_done, void *shutdown_data)
 {
-    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     int rv = 0;
 
     tcpna_lock(nadata);
@@ -544,9 +544,9 @@ tcpna_shutdown(struct gensio_acceptor *acceptor,
 }
 
 static void
-tcpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
+tcpna_set_accept_callback_enable(struct gensio_accepter *accepter, bool enabled)
 {
-    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(accepter);
 
     tcpna_lock(nadata);
     if (nadata->enabled != enabled) {
@@ -557,9 +557,9 @@ tcpna_set_accept_callback_enable(struct gensio_acceptor *acceptor, bool enabled)
 }
 
 static void
-tcpna_free(struct gensio_acceptor *acceptor)
+tcpna_free(struct gensio_accepter *accepter)
 {
-    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(accepter);
 
     tcpna_lock(nadata);
     if (nadata->setup)
@@ -568,11 +568,11 @@ tcpna_free(struct gensio_acceptor *acceptor)
 }
 
 int
-tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
+tcpna_connect(struct gensio_accepter *accepter, void *addr,
 	      gensio_done_err connect_done, void *cb_data,
 	      struct gensio **new_net)
 {
-    struct tcpna_data *nadata = gensio_acc_get_gensio_data(acceptor);
+    struct tcpna_data *nadata = gensio_acc_get_gensio_data(accepter);
     struct gensio *net;
     int err;
     char *args[2] = { NULL, NULL };
@@ -592,7 +592,7 @@ tcpna_connect(struct gensio_acceptor *acceptor, void *addr,
 }
 
 static int
-gensio_acc_tcp_func(struct gensio_acceptor *acc, int func, int val,
+gensio_acc_tcp_func(struct gensio_accepter *acc, int func, int val,
 		    void *addr, void *done, void *data,
 		    void *ret)
 {
@@ -620,11 +620,11 @@ gensio_acc_tcp_func(struct gensio_acceptor *acc, int func, int val,
 }
 
 int
-tcp_gensio_acceptor_alloc(struct addrinfo *iai,
+tcp_gensio_accepter_alloc(struct addrinfo *iai,
 			  char *args[],
 			  struct gensio_os_funcs *o,
-			  gensio_acceptor_event cb, void *user_data,
-			  struct gensio_acceptor **acceptor)
+			  gensio_accepter_event cb, void *user_data,
+			  struct gensio_accepter **accepter)
 {
     struct tcpna_data *nadata;
     unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
@@ -659,7 +659,7 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
 
     nadata->max_read_size = max_read_size;
 
-    *acceptor = nadata->acc;
+    *accepter = nadata->acc;
     return 0;
 
  out_nomem:
@@ -668,11 +668,11 @@ tcp_gensio_acceptor_alloc(struct addrinfo *iai,
 }
 
 int
-str_to_tcp_gensio_acceptor(const char *str, char *args[],
+str_to_tcp_gensio_accepter(const char *str, char *args[],
 			   struct gensio_os_funcs *o,
-			   gensio_acceptor_event cb,
+			   gensio_accepter_event cb,
 			   void *user_data,
-			   struct gensio_acceptor **acc)
+			   struct gensio_accepter **acc)
 {
     int err;
     struct addrinfo *ai;
@@ -681,7 +681,7 @@ str_to_tcp_gensio_acceptor(const char *str, char *args[],
     if (err)
 	return err;
 
-    err = tcp_gensio_acceptor_alloc(ai, args, o, cb, user_data, acc);
+    err = tcp_gensio_accepter_alloc(ai, args, o, cb, user_data, acc);
     freeaddrinfo(ai);
 
     return err;

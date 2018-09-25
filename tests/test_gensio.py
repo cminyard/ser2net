@@ -28,7 +28,7 @@ class TestAccept:
             self.name = iostr
         self.io1 = io1
         self.waiter = gensio.waiter(o)
-        self.acc = gensio.gensio_acceptor(o, iostr, self);
+        self.acc = gensio.gensio_accepter(o, iostr, self);
         self.acc.startup()
         io1.open_s()
         if (io1_dummy_write):
@@ -49,7 +49,7 @@ class TestAccept:
         self.io2 = io
         self.waiter.wake()
 
-    def acceptor_log(self, acc, level, logstr):
+    def accepter_log(self, acc, level, logstr):
         print("***%s LOG: %s: %s" % (level, self.name, logstr))
 
     def wait(self):

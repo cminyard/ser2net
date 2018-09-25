@@ -57,12 +57,12 @@
 typedef int (*gensio_gensio_acc_cb)(void *acc_data, int op,
 				    void *data1, void *data2);
 
-int gensio_gensio_acceptor_alloc(struct gensio_acceptor *child,
+int gensio_gensio_accepter_alloc(struct gensio_accepter *child,
 				 struct gensio_os_funcs *o,
 				 const char *typename,
-				 gensio_acceptor_event cb, void *user_data,
+				 gensio_accepter_event cb, void *user_data,
 				 gensio_gensio_acc_cb acc_cb,
 				 void *acc_data,
-				 struct gensio_acceptor **acceptor);
+				 struct gensio_accepter **accepter);
 
 #endif /* GENSIO_ACC_GENSIO_H */

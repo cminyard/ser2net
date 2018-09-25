@@ -308,7 +308,7 @@ struct gensio_os_funcs *alloc_gensio_selector(void)
 %nodefaultctor gensio_os_funcs;
 struct gensio { };
 struct sergensio { };
-struct gensio_acceptor { };
+struct gensio_accepter { };
 struct gensio_os_funcs { };
 struct waiter { };
 
@@ -732,11 +732,11 @@ struct waiter { };
     }
 }
 
-%extend gensio_acceptor {
-    gensio_acceptor(struct gensio_os_funcs *o, char *str, swig_cb *handler) {
+%extend gensio_accepter {
+    gensio_accepter(struct gensio_os_funcs *o, char *str, swig_cb *handler) {
 	struct os_funcs_data *odata = o->other_data;
 	struct gensio_acc_data *data;
-	struct gensio_acceptor *acc = NULL;
+	struct gensio_accepter *acc = NULL;
 	int rv;
 
 	data = malloc(sizeof(*data));
@@ -746,11 +746,11 @@ struct waiter { };
 	data->o = o;
 	data->handler_val = ref_swig_cb(handler, new_connection);
 
-	rv = str_to_gensio_acceptor(str, o, gensio_acc_child_event, data, &acc);
+	rv = str_to_gensio_accepter(str, o, gensio_acc_child_event, data, &acc);
 	if (rv) {
 	    deref_swig_cb_val(data->handler_val);
 	    free(data);
-	    err_handle("gensio_acceptor constructor", rv);
+	    err_handle("gensio_accepter constructor", rv);
 	} else {
 	    odata->refcount++;
 	}
@@ -758,7 +758,7 @@ struct waiter { };
 	return acc;
     }
 
-    ~gensio_acceptor()
+    ~gensio_accepter()
     {
 	struct gensio_acc_data *data = gensio_acc_get_user_data(self);
 

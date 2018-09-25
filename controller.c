@@ -47,7 +47,7 @@ static char *progname = "ser2net-control";
 /* This file holds the code that runs the control port. */
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
-static struct gensio_acceptor *controller_acceptor;
+static struct gensio_accepter *controller_accepter;
 static waiter_t *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -700,7 +700,7 @@ controller_io_event(struct gensio *net, int event, int err,
 
 /* A connection request has come in for the control port. */
 static int
-controller_acc_child_event(struct gensio_acceptor *acceptor, int event,
+controller_acc_child_event(struct gensio_accepter *accepter, int event,
 			   void *data)
 {
     controller_info_t *cntlr;
@@ -767,7 +767,7 @@ errout:
 }
 
 static void
-controller_shutdown_done(struct gensio_acceptor *net, void *cb_data)
+controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
 {
     wake_waiter(accept_waiter);
 }
@@ -793,9 +793,9 @@ controller_init(char *controller_port)
 	}
     }
 
-    rv = str_to_gensio_acceptor(controller_port, ser2net_o,
+    rv = str_to_gensio_accepter(controller_port, ser2net_o,
 				controller_acc_child_event, NULL,
-				&controller_acceptor);
+				&controller_accepter);
     if (rv) {
 	if (rv == EINVAL)
 	    return CONTROLLER_INVALID_TCP_SPEC;
@@ -805,7 +805,7 @@ controller_init(char *controller_port)
 	    return -1;
     }
 
-    rv = gensio_acc_startup(controller_acceptor);
+    rv = gensio_acc_startup(controller_accepter);
     if (rv)
 	return CONTROLLER_CANT_OPEN_PORT;
 
@@ -815,12 +815,12 @@ controller_init(char *controller_port)
 void
 controller_shutdown(void)
 {
-    if (controller_acceptor) {
-	gensio_acc_shutdown(controller_acceptor, controller_shutdown_done,
+    if (controller_accepter) {
+	gensio_acc_shutdown(controller_accepter, controller_shutdown_done,
 			    NULL);
 	wait_for_waiter(accept_waiter, 1);
-	gensio_acc_free(controller_acceptor);
-	controller_acceptor = NULL;
+	gensio_acc_free(controller_accepter);
+	controller_accepter = NULL;
     }
 }
 
