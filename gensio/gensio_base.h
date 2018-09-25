@@ -184,7 +184,7 @@ struct gensio_ll_ops {
     int (*write)(struct gensio_ll *ll, unsigned int *rcount,
 		 const unsigned char *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct gensio_ll *ll, int *pos,
+    int (*raddr_to_str)(struct gensio_ll *ll, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(struct gensio_ll *ll,
@@ -223,7 +223,7 @@ struct gensio_fd_ll_ops {
 		    int (**retry_open)(void *handler_data, int *fd),
 		    int *fd);
 
-    int (*raddr_to_str)(void *handler_data, int *pos,
+    int (*raddr_to_str)(void *handler_data, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(void *handler_data,

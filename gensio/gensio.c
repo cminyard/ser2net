@@ -584,7 +584,7 @@ gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
 }
 
 int
-gensio_raddr_to_str(struct gensio *io, int *pos,
+gensio_raddr_to_str(struct gensio *io, unsigned int *pos,
 		    char *buf, unsigned int buflen)
 {
     return io->funcs->raddr_to_str(io, pos, buf, buflen);

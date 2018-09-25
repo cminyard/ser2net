@@ -146,7 +146,7 @@ tcp_sub_open(void *handler_data,
 }
 
 static int
-tcp_raddr_to_str(void *handler_data, int *epos,
+tcp_raddr_to_str(void *handler_data, unsigned int *epos,
 		 char *buf, unsigned int buflen)
 {
     struct tcp_data *tdata = handler_data;

@@ -276,7 +276,7 @@ ll_write(struct basen_data *ndata, unsigned int *rcount,
 }
 
 static int
-ll_raddr_to_str(struct basen_data *ndata, int *pos,
+ll_raddr_to_str(struct basen_data *ndata, unsigned int *pos,
 		char *buf, unsigned int buflen)
 {
     return ndata->ll_ops->raddr_to_str(ndata->ll, pos, buf, buflen);
@@ -386,7 +386,7 @@ basen_write(struct gensio *io, unsigned int *rcount, unsigned long channel,
 }
 
 static int
-basen_raddr_to_str(struct gensio *io, int *pos,
+basen_raddr_to_str(struct gensio *io, unsigned int *pos,
 		  char *buf, unsigned int buflen)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);

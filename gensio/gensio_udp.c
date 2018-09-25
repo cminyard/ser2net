@@ -362,12 +362,13 @@ udpn_write(struct gensio *io, unsigned int *count, unsigned long channel,
 }
 
 static int
-udpn_raddr_to_str(struct gensio *io, int *epos,
+udpn_raddr_to_str(struct gensio *io, unsigned int *epos,
 		  char *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);
     char portstr[NI_MAXSERV];
-    int err, pos = 0;
+    int err;
+    unsigned int pos = 0;
 
     if (epos)
 	pos = *epos;

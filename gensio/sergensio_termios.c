@@ -804,7 +804,7 @@ sterm_sub_open(void *handler_data,
 }
 
 static int
-sterm_raddr_to_str(void *handler_data, int *epos,
+sterm_raddr_to_str(void *handler_data, unsigned int *epos,
 		   char *buf, unsigned int buflen)
 {
     struct sterm_data *sdata = handler_data;

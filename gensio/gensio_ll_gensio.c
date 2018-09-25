@@ -61,7 +61,7 @@ child_write(struct gensio_ll *ll, unsigned int *rcount,
 }
 
 static int
-child_raddr_to_str(struct gensio_ll *ll, int *pos,
+child_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
 		   char *buf, unsigned int buflen)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);

@@ -666,7 +666,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
 {
     char buf[1024];
     trace_info_t tr = { 1, 1, NULL, -1 };
-    int len = 0;
+    unsigned int len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
     len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");

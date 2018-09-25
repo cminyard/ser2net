@@ -172,7 +172,7 @@ fd_write(struct gensio_ll *ll, unsigned int *rcount,
 }
 
 static int
-fd_raddr_to_str(struct gensio_ll *ll, int *pos,
+fd_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
 		char *buf, unsigned int buflen)
 {
     struct fd_ll *fdll = ll_to_fd(ll);

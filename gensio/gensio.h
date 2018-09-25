@@ -351,7 +351,7 @@ int gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
  * NIL char after the last byte of the string, where you would
  * want to put any new data into the string.
  */
-int gensio_raddr_to_str(struct gensio *io, int *pos,
+int gensio_raddr_to_str(struct gensio *io, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
 /*

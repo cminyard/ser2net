@@ -33,7 +33,7 @@ struct gensio_functions {
     int (*write)(struct gensio *io, unsigned int *count, unsigned long channel,
 		 const void *buf, unsigned int buflen);
 
-    int (*raddr_to_str)(struct gensio *io, int *pos,
+    int (*raddr_to_str)(struct gensio *io, unsigned int *pos,
 			char *buf, unsigned int buflen);
 
     int (*get_raddr)(struct gensio *io,

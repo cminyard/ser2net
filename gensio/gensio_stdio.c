@@ -140,10 +140,10 @@ stdion_write(struct gensio *io, unsigned int *count, unsigned long channel,
 }
 
 static int
-stdion_raddr_to_str(struct gensio *io, int *epos,
+stdion_raddr_to_str(struct gensio *io, unsigned int *epos,
 		    char *buf, unsigned int buflen)
 {
-    int pos = 0;
+    unsigned int pos = 0;
 
     if (epos)
 	pos = *epos;
