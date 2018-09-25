@@ -32,7 +32,7 @@
 #include <utils/locking.h>
 
 #include <gensio/gensio.h>
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 #include <gensio/gensio_ll_fd.h>
 
 struct tcp_data {

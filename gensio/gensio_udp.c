@@ -30,7 +30,7 @@
 #include <assert.h>
 
 #include <gensio/gensio.h>
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 
 /*
  * Maximum UDP packet size, this avoids partial packet reads.  Probably

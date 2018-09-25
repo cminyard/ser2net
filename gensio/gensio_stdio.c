@@ -31,7 +31,7 @@
 #include <utils/utils.h>
 
 #include <gensio/gensio.h>
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 
 struct stdiona_data {
     struct gensio_lock *lock;

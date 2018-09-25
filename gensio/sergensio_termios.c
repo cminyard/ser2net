@@ -30,7 +30,7 @@
 #include <utils/utils.h>
 #include <utils/uucplock.h>
 
-#include <gensio/sergensio_internal.h>
+#include <gensio/sergensio_class.h>
 #include <gensio/gensio_ll_fd.h>
 
 enum termio_op {
@@ -667,20 +667,53 @@ sterm_flush(struct sergensio *sio, unsigned int val)
     return 0;
 }
 
-static const struct sergensio_functions sterm_funcs = {
-    .baud = sterm_baud,
-    .datasize = sterm_datasize,
-    .parity = sterm_parity,
-    .stopbits = sterm_stopbits,
-    .flowcontrol = sterm_flowcontrol,
-    .iflowcontrol = sterm_iflowcontrol,
-    .sbreak = sterm_sbreak,
-    .dtr = sterm_dtr,
-    .rts = sterm_rts,
-    .modemstate = sterm_modemstate,
-    .flowcontrol_state = sterm_flowcontrol_state,
-    .flush = sterm_flush
-};
+static int
+sergensio_sterm_func(struct sergensio *sio, int op, int val, char *buf,
+		     void *done, void *cb_data)
+{
+    switch (op) {
+    case SERGENSIO_FUNC_BAUD:
+	return sterm_baud(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_DATASIZE:
+	return sterm_datasize(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_PARITY:
+	return sterm_parity(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_STOPBITS:
+	return sterm_stopbits(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_FLOWCONTROL:
+	return sterm_flowcontrol(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_IFLOWCONTROL:
+	return sterm_iflowcontrol(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_SBREAK:
+	return sterm_sbreak(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_DTR:
+	return sterm_dtr(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_RTS:
+	return sterm_rts(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_MODEMSTATE:
+	return sterm_modemstate(sio, val);
+
+    case SERGENSIO_FUNC_FLOWCONTROL_STATE:
+	return sterm_flowcontrol_state(sio, val);
+
+    case SERGENSIO_FUNC_FLUSH:
+	return sterm_flush(sio, val);
+
+    case SERGENSIO_FUNC_SIGNATURE:
+    case SERGENSIO_FUNC_LINESTATE:
+    default:
+	return ENOTSUP;
+    }
+}
 
 static void
 sterm_timer_stopped(struct gensio_timer *timer, void *cb_data)
@@ -949,7 +982,7 @@ termios_gensio_alloc(const char *devname, char *args[],
 	goto out_nomem;
     }
 
-    sdata->sio = sergensio_data_alloc(o, io, &sterm_funcs, sdata);
+    sdata->sio = sergensio_data_alloc(o, io, sergensio_sterm_func, sdata);
     if (!sdata->sio) {
 	gensio_free(io);
 	goto out_nomem;

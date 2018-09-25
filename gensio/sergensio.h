@@ -40,6 +40,12 @@ struct sergensio;
 struct gensio *sergensio_to_gensio(struct sergensio *sio);
 struct sergensio *gensio_to_sergensio(struct gensio *io);
 
+typedef void (*sergensio_done)(struct sergensio *sio, int err,
+			       unsigned int val, void *cb_data);
+
+typedef void (*sergensio_done_sig)(struct sergensio *sio, int err, char *sig,
+				   unsigned int len, void *cb_data);
+
 /*
  * The following functions set various serial parameters.  The done()
  * callback is called if the function does not return an error,
@@ -55,72 +61,52 @@ struct sergensio *gensio_to_sergensio(struct gensio *io);
  * ignored.
  */
 
-int sergensio_baud(struct sergensio *sio, int baud,
-		   void (*done)(struct sergensio *sio, int err,
-				int baud, void *cb_data),
-		   void *cb_data);
+int sergensio_baud(struct sergensio *sio, unsigned int baud,
+		   sergensio_done done, void *cb_data);
 
-int sergensio_datasize(struct sergensio *sio, int datasize,
-		       void (*done)(struct sergensio *sio, int err,
-				    int datasize, void *cb_data),
-		       void *cb_data);
+int sergensio_datasize(struct sergensio *sio, unsigned int datasize,
+		       sergensio_done done, void *cb_data);
 
 #define SERGENSIO_PARITY_NONE	1
 #define SERGENSIO_PARITY_ODD	2
 #define SERGENSIO_PARITY_EVEN	3
 #define SERGENSIO_PARITY_MARK	4
 #define SERGENSIO_PARITY_SPACE	5
-int sergensio_parity(struct sergensio *sio, int parity,
-		     void (*done)(struct sergensio *sio, int err,
-				  int parity, void *cb_data),
-		     void *cb_data);
+int sergensio_parity(struct sergensio *sio, unsigned int parity,
+		     sergensio_done done, void *cb_data);
 
-int sergensio_stopbits(struct sergensio *sio, int stopbits,
-		       void (*done)(struct sergensio *sio, int err,
-				    int stopbits, void *cb_data),
-		       void *cb_data);
+int sergensio_stopbits(struct sergensio *sio, unsigned int stopbits,
+		       sergensio_done done, void *cb_data);
 
 #define SERGENSIO_FLOWCONTROL_NONE	1
 #define SERGENSIO_FLOWCONTROL_XON_XOFF	2
 #define SERGENSIO_FLOWCONTROL_RTS_CTS	3
-int sergensio_flowcontrol(struct sergensio *sio, int flowcontrol,
-			  void (*done)(struct sergensio *sio, int err,
-				       int flowcontrol, void *cb_data),
-			  void *cb_data);
+int sergensio_flowcontrol(struct sergensio *sio, unsigned int flowcontrol,
+			  sergensio_done done, void *cb_data);
 
 #define SERGENSIO_FLOWCONTROL_DCD	4
 #define SERGENSIO_FLOWCONTROL_DTR	5
 #define SERGENSIO_FLOWCONTROL_DSR	6
-int sergensio_iflowcontrol(struct sergensio *sio, int iflowcontrol,
-			   void (*done)(struct sergensio *sio, int err,
-					int iflowcontrol, void *cb_data),
-			   void *cb_data);
+int sergensio_iflowcontrol(struct sergensio *sio, unsigned int iflowcontrol,
+			   sergensio_done done, void *cb_data);
 
 #define SERGENSIO_BREAK_ON	1
 #define SERGENSIO_BREAK_OFF	2
-int sergensio_sbreak(struct sergensio *sio, int breakv,
-		     void (*done)(struct sergensio *sio, int err, int breakv,
-				  void *cb_data),
-		     void *cb_data);
+int sergensio_sbreak(struct sergensio *sio, unsigned int breakv,
+		     sergensio_done done, void *cb_data);
 
 #define SERGENSIO_DTR_ON		1
 #define SERGENSIO_DTR_OFF	2
-int sergensio_dtr(struct sergensio *sio, int dtr,
-		  void (*done)(struct sergensio *sio, int err, int dtr,
-			       void *cb_data),
-		  void *cb_data);
+int sergensio_dtr(struct sergensio *sio, unsigned int dtr,
+		  sergensio_done done, void *cb_data);
 
 #define SERGENSIO_RTS_ON		1
 #define SERGENSIO_RTS_OFF	2
-int sergensio_rts(struct sergensio *sio, int rts,
-		  void (*done)(struct sergensio *sio, int err, int rts,
-			       void *cb_data),
-		  void *cb_data);
+int sergensio_rts(struct sergensio *sio, unsigned int rts,
+		  sergensio_done done, void *cb_data);
 
 int sergensio_signature(struct sergensio *sio, char *sig, unsigned int len,
-			void (*done)(struct sergensio *sio, int err, char *sig,
-				     unsigned int sig_len, void *cb_data),
-			void *cb_data);
+			sergensio_done_sig done, void *cb_data);
 
 /*
  * For linestate and modemstate, on a client this sets the mask, on

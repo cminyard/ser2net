@@ -23,7 +23,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 #include <gensio/gensio_acc_gensio.h>
 #include <gensio/gensio_ll_gensio.h>
 

@@ -23,7 +23,7 @@
 #include <utils/telnet.h>
 #include <utils/utils.h>
 
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 #include <gensio/gensio_filter_telnet.h>
 
 enum telnet_write_state {

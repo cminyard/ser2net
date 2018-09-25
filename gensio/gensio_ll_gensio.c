@@ -18,7 +18,7 @@
  */
 
 #include <errno.h>
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 #include <gensio/gensio_ll_gensio.h>
 
 #include <assert.h>

@@ -176,6 +176,21 @@ void gensio_acc_vlog(struct gensio_accepter *acc, enum gensio_log_levels level,
 void gensio_acc_log(struct gensio_accepter *acc, enum gensio_log_levels level,
 		    char *str, ...);
 
+/*
+ * Handler registered so that str_to_gensio can process a gensio.
+ * This is so users can create their own gensio types.
+ */
+typedef int (*str_to_gensio_handler)(const char *str, char *args[],
+				     struct gensio_os_funcs *o,
+				     gensio_event cb, void *user_data,
+				     struct gensio **new_gensio);
+
+/*
+ * Add a gensio to the set of registered gensios.
+ */
+int register_gensio(struct gensio_os_funcs *o,
+		    const char *name, str_to_gensio_handler handler);
+
 struct opensocks
 {
     int fd;
@@ -202,6 +217,14 @@ struct opensocks *gensio_open_socket(struct gensio_os_funcs *o,
 
 /* Returns a NULL if the fd is ok, a non-NULL error string if not */
 const char *gensio_check_tcpd_ok(int new_fd);
+
+/*
+ * Take a string in the form [ipv4|ipv6,][hostname,]port and convert
+ * it to an addrinfo structure.  If this returns success, the user
+ * must free rai with freeaddrinfo().  If is_dgram is true, allocate
+ * a datagram socket, otherwise a stream socket.
+ */
+int gensio_scan_netaddr(const char *str, bool is_dgram, struct addrinfo **rai);
 
 /*
  * There are no provided routines to duplicate addrinfo structures,

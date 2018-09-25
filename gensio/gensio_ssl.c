@@ -19,7 +19,7 @@
 
 #include <errno.h>
 
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 
 #ifdef HAVE_OPENSSL
 

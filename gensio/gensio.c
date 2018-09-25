@@ -28,7 +28,7 @@
 #include <utils/utils.h>
 
 #include <gensio/gensio.h>
-#include <gensio/gensio_internal.h>
+#include <gensio/gensio_class.h>
 
 struct gensio_classobj {
     const char *name;

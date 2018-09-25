@@ -615,21 +615,6 @@ int str_to_gensio(const char *str,
 		  struct gensio **gensio);
 
 /*
- * Handler registered so that str_to_gensio can process a gensio.
- * This is so users can create their own gensio types.
- */
-typedef int (*str_to_gensio_handler)(const char *str, char *args[],
-				     struct gensio_os_funcs *o,
-				     gensio_event cb, void *user_data,
-				     struct gensio **new_gensio);
-
-/*
- * Add a gensio to the set of registered gensios.
- */
-int register_gensio(struct gensio_os_funcs *o,
-		    const char *name, str_to_gensio_handler handler);
-
-/*
  * Allocators for the various gensio types, compatible with
  * register_gensio().
  */
@@ -736,14 +721,6 @@ int telnet_gensio_alloc(struct gensio *child, char *args[],
 			struct gensio **sio);
 
 /*
- * Take a string in the form [ipv4|ipv6,][hostname,]port and convert
- * it to an addrinfo structure.  If this returns success, the user
- * must free rai with freeaddrinfo().  If is_dgram is true, allocate
- * a datagram socket, otherwise a stream socket.
- */
-int gensio_scan_netaddr(const char *str, bool is_dgram, struct addrinfo **rai);
-
-/*
  * Compare two sockaddr structure and return TRUE if they are equal
  * and FALSE if not.  Only works for AF_INET4 and AF_INET6.
  * If compare_ports is false, then the port comparison is ignored.
@@ -772,7 +749,7 @@ int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 		      bool *is_port_set);
 
 /*
- * Helper function for dealing with buffers writing to gensio.
+ * Helper function for dealing with buffers writing to a gensio.
  */
 int gensio_buffer_do_write(void *cb_data,
 			   void *buf, size_t buflen, size_t *written);

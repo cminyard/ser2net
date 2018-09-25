@@ -26,7 +26,7 @@
 #include <utils/utils.h>
 #include <utils/telnet.h>
 
-#include <gensio/sergensio_internal.h>
+#include <gensio/sergensio_class.h>
 #include <gensio/gensio_ll_gensio.h>
 #include <gensio/gensio_filter_telnet.h>
 #include <gensio/gensio_acc_gensio.h>
@@ -360,22 +360,57 @@ stel_flush(struct sergensio *sio, unsigned int val)
     return stel_send(sio, 12, val);
 }
 
-static const struct sergensio_functions stel_funcs = {
-    .baud = stel_baud,
-    .datasize = stel_datasize,
-    .parity = stel_parity,
-    .stopbits = stel_stopbits,
-    .flowcontrol = stel_flowcontrol,
-    .iflowcontrol = stel_iflowcontrol,
-    .sbreak = stel_sbreak,
-    .dtr = stel_dtr,
-    .rts = stel_rts,
-    .modemstate = stel_modemstate,
-    .linestate = stel_linestate,
-    .flowcontrol_state = stel_flowcontrol_state,
-    .flush = stel_flush,
-    .signature = stel_signature
-};
+static int
+sergensio_stel_func(struct sergensio *sio, int op, int val, char *buf,
+		    void *done, void *cb_data)
+{
+    switch (op) {
+    case SERGENSIO_FUNC_BAUD:
+	return stel_baud(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_DATASIZE:
+	return stel_datasize(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_PARITY:
+	return stel_parity(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_STOPBITS:
+	return stel_stopbits(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_FLOWCONTROL:
+	return stel_flowcontrol(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_IFLOWCONTROL:
+	return stel_iflowcontrol(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_SBREAK:
+	return stel_sbreak(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_DTR:
+	return stel_dtr(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_RTS:
+	return stel_rts(sio, val, done, cb_data);
+
+    case SERGENSIO_FUNC_MODEMSTATE:
+	return stel_modemstate(sio, val);
+
+    case SERGENSIO_FUNC_LINESTATE:
+	return stel_linestate(sio, val);
+
+    case SERGENSIO_FUNC_FLOWCONTROL_STATE:
+	return stel_flowcontrol_state(sio, val);
+
+    case SERGENSIO_FUNC_FLUSH:
+	return stel_flush(sio, val);
+
+    case SERGENSIO_FUNC_SIGNATURE:
+	return stel_signature(sio, buf, val, done, cb_data);
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 static int
 stel_com_port_will_do(void *handler_data, unsigned char cmd)
@@ -641,7 +676,7 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
     gensio_set_is_reliable(io, gensio_is_reliable(child));
     gensio_free(child); /* Lose the ref we acquired. */
 
-    sdata->sio = sergensio_data_alloc(o, io, &stel_funcs, sdata);
+    sdata->sio = sergensio_data_alloc(o, io, sergensio_stel_func, sdata);
     if (!sdata->sio) {
 	gensio_free(io);
 	goto out_nomem;
@@ -980,7 +1015,7 @@ stela_finish_parent(void *acc_data, void *finish_data, struct gensio *io)
     struct stela_data *stela = acc_data;
     struct stel_data *sdata = finish_data;
 
-    sdata->sio = sergensio_data_alloc(sdata->o, io, &stel_funcs, sdata);
+    sdata->sio = sergensio_data_alloc(sdata->o, io, sergensio_stel_func, sdata);
     if (!sdata->sio)
 	return ENOMEM;
 
