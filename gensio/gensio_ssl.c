@@ -55,7 +55,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
 
     ll = gensio_gensio_ll_alloc(o, child);
     if (!ll) {
-	filter->ops->free(filter);
+	gensio_filter_free(filter);
 	return ENOMEM;
     }
     gensio_ref(child);
@@ -63,7 +63,7 @@ ssl_gensio_alloc(struct gensio *child, char *args[],
     io = base_gensio_alloc(o, ll, filter, "ssl", cb, user_data);
     if (!io) {
 	ll->ops->free(ll);
-	filter->ops->free(filter);
+	gensio_filter_free(filter);
 	return ENOMEM;
     }
     gensio_set_is_packet(io, true);

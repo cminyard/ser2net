@@ -54,8 +54,8 @@ struct telnet_filter {
     const struct gensio_telnet_filter_callbacks *telnet_cbs;
     void *handler_data;
 
-    const struct gensio_filter_callbacks *filter_cbs;
-    void *cb_data;
+    gensio_filter_cb filter_cb;
+    void *filter_cb_data;
 
     /*
      * To avoid problems with splitting TN_IACs, we do not split up
@@ -95,13 +95,12 @@ telnet_unlock(struct telnet_filter *tfilter)
 
 static void
 telnet_set_callbacks(struct gensio_filter *filter,
-		     const struct gensio_filter_callbacks *cbs,
-		     void *cb_data)
+		     gensio_filter_cb cb, void *cb_data)
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
-    tfilter->filter_cbs = cbs;
-    tfilter->cb_data = cb_data;
+    tfilter->filter_cb = cb;
+    tfilter->filter_cb_data = cb_data;
 }
 
 static bool
@@ -357,8 +356,9 @@ telnet_output_ready(void *cb_data)
 {
     struct telnet_filter *tfilter = cb_data;
 
-    if (tfilter->setup_done && tfilter->filter_cbs)
-	tfilter->filter_cbs->output_ready(tfilter->cb_data);
+    if (tfilter->setup_done && tfilter->filter_cb)
+	tfilter->filter_cb(tfilter->filter_cb_data,
+			   GENSIO_FILTER_CB_OUTPUT_READY, NULL);
 }
 
 static void
@@ -436,22 +436,64 @@ telnet_free(struct gensio_filter *filter)
     tfilter->o->free(tfilter->o, tfilter);
 }
 
-const static struct gensio_filter_ops telnet_filter_ops = {
-    .set_callbacks = telnet_set_callbacks,
-    .ul_read_pending = telnet_ul_read_pending,
-    .ll_write_pending = telnet_ll_write_pending,
-    .ll_read_needed = telnet_ll_read_needed,
-    .check_open_done = telnet_check_open_done,
-    .try_connect = telnet_try_connect,
-    .try_disconnect = telnet_try_disconnect,
-    .ul_write = telnet_ul_write,
-    .ll_write = telnet_ll_write,
-    .ll_urgent = telnet_ll_urgent,
-    .timeout = telnet_filter_timeout,
-    .setup = telnet_setup,
-    .cleanup = telnet_filter_cleanup,
-    .free = telnet_free
-};
+static int gensio_telnet_filter_func(struct gensio_filter *filter, int op,
+				  const void *func, void *data,
+				  unsigned int *count,
+				  void *buf, const void *cbuf,
+				  unsigned int buflen)
+{
+    switch (op) {
+    case GENSIO_FILTER_FUNC_SET_CALLBACK:
+	telnet_set_callbacks(filter, func, data);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_UL_READ_PENDING:
+	return telnet_ul_read_pending(filter);
+
+    case GENSIO_FILTER_FUNC_UL_WRITE_PENDING:
+	return telnet_ll_write_pending(filter);
+
+    case GENSIO_FILTER_FUNC_LL_READ_NEEDED:
+	return telnet_ll_read_needed(filter);
+
+    case GENSIO_FILTER_FUNC_CHECK_OPEN_DONE:
+	return telnet_check_open_done(filter);
+
+    case GENSIO_FILTER_FUNC_TRY_CONNECT:
+	return telnet_try_connect(filter, data);
+
+    case GENSIO_FILTER_FUNC_TRY_DISCONNECT:
+	return telnet_try_disconnect(filter, data);
+
+    case GENSIO_FILTER_FUNC_UL_WRITE:
+	return telnet_ul_write(filter, func, data, count, cbuf, buflen);
+
+    case GENSIO_FILTER_FUNC_LL_WRITE:
+	return telnet_ll_write(filter, func, data, count, buf, buflen);
+
+    case GENSIO_FILTER_FUNC_LL_URGENT:
+	telnet_ll_urgent(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_SETUP:
+	return telnet_setup(filter);
+
+    case GENSIO_FILTER_FUNC_CLEANUP:
+	telnet_filter_cleanup(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_FREE:
+	telnet_free(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_TIMEOUT:
+	telnet_filter_timeout(filter);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 static void telnet_filter_send_option(struct gensio_filter *filter,
 				      const unsigned char *buf,
@@ -469,7 +511,8 @@ static void telnet_filter_start_timer(struct gensio_filter *filter,
 {
     struct telnet_filter *tfilter = filter_to_telnet(filter);
 
-    tfilter->filter_cbs->start_timer(tfilter->cb_data, timeout);
+    tfilter->filter_cb(tfilter->filter_cb_data,
+		       GENSIO_FILTER_CB_START_TIMER, timeout);
 }
 
 const struct gensio_telnet_filter_rops telnet_filter_rops = {
@@ -518,7 +561,7 @@ gensio_telnet_filter_raw_alloc(struct gensio_os_funcs *o,
 	goto out_nomem;
 
     *rops = &telnet_filter_rops;
-    tfilter->filter.ops = &telnet_filter_ops;
+    tfilter->filter.func = gensio_telnet_filter_func;
     tfilter->telnet_cbs = cbs;
     tfilter->handler_data = handler_data;
 

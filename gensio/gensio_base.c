@@ -44,7 +44,6 @@ struct basen_data {
 
     struct gensio_os_funcs *o;
     struct gensio_filter *filter;
-    const struct gensio_filter_ops *filter_ops;
     struct gensio_ll *ll;
     const struct gensio_ll_ops *ll_ops;
 
@@ -115,7 +114,7 @@ basen_finish_free(struct basen_data *ndata)
     if (ndata->deferred_op_runner)
 	ndata->o->free_runner(ndata->deferred_op_runner);
     if (ndata->filter)
-	ndata->filter_ops->free(ndata->filter);
+	gensio_filter_free(ndata->filter);
     if (ndata->ll)
 	ndata->ll_ops->free(ndata->ll);
     if (ndata->io)
@@ -173,7 +172,7 @@ static bool
 filter_ul_read_pending(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ul_read_pending(ndata->filter);
+	return gensio_filter_ul_read_pending(ndata->filter);
     return false;
 }
 
@@ -181,7 +180,7 @@ static bool
 filter_ll_write_pending(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ll_write_pending(ndata->filter);
+	return gensio_filter_ll_write_pending(ndata->filter);
     return false;
 }
 
@@ -189,7 +188,7 @@ static bool
 filter_ll_read_needed(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ll_read_needed(ndata->filter);
+	return gensio_filter_ll_read_needed(ndata->filter);
     return false;
 }
 
@@ -198,7 +197,7 @@ static int
 filter_check_open_done(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->check_open_done(ndata->filter);
+	return gensio_filter_check_open_done(ndata->filter);
     return 0;
 }
 
@@ -206,7 +205,7 @@ static int
 filter_try_connect(struct basen_data *ndata, struct timeval *timeout)
 {
     if (ndata->filter)
-	return ndata->filter_ops->try_connect(ndata->filter, timeout);
+	return gensio_filter_try_connect(ndata->filter, timeout);
     return 0;
 }
 
@@ -214,7 +213,7 @@ static int
 filter_try_disconnect(struct basen_data *ndata, struct timeval *timeout)
 {
     if (ndata->filter)
-	return ndata->filter_ops->try_disconnect(ndata->filter, timeout);
+	return gensio_filter_try_disconnect(ndata->filter, timeout);
     return 0;
 }
 
@@ -224,8 +223,8 @@ filter_ul_write(struct basen_data *ndata, gensio_ul_filter_data_handler handler,
 		const unsigned char *buf, unsigned int buflen)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ul_write(ndata->filter, handler,
-					   ndata, rcount, buf, buflen);
+	return gensio_filter_ul_write(ndata->filter, handler,
+				      ndata, rcount, buf, buflen);
     return handler(ndata, rcount, buf, buflen);
 }	     
 
@@ -235,8 +234,8 @@ filter_ll_write(struct basen_data *ndata, gensio_ll_filter_data_handler handler,
 		unsigned char *buf, unsigned int buflen)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ll_write(ndata->filter, handler,
-					   ndata, rcount, buf, buflen);
+	return gensio_filter_ll_write(ndata->filter, handler,
+				      ndata, rcount, buf, buflen);
     return handler(ndata, rcount, buf, buflen);
 }	     
 
@@ -244,7 +243,7 @@ static void
 filter_ll_urgent(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->ll_urgent(ndata->filter);
+	gensio_filter_ll_urgent(ndata->filter);
     gensio_cb(ndata->io, GENSIO_EVENT_URGENT, 0, NULL, 0, 0, NULL);
 }
 
@@ -252,7 +251,7 @@ static int
 filter_setup(struct basen_data *ndata)
 {
     if (ndata->filter)
-	return ndata->filter_ops->setup(ndata->filter);
+	return gensio_filter_setup(ndata->filter);
     return 0;
 }
 
@@ -260,7 +259,7 @@ static void
 filter_cleanup(struct basen_data *ndata)
 {
     if (ndata->filter)
-	ndata->filter_ops->cleanup(ndata->filter);
+	gensio_filter_cleanup(ndata->filter);
 }
 
 
@@ -747,11 +746,9 @@ basen_timeout(struct gensio_timer *timer, void *cb_data)
 	break;
 
     case BASEN_OPEN:
-	if (ndata->filter_ops->timeout) {
-	    basen_unlock(ndata);
-	    ndata->filter_ops->timeout(ndata->filter);
-	    basen_lock(ndata);
-	}
+	basen_unlock(ndata);
+	gensio_filter_timeout(ndata->filter);
+	basen_lock(ndata);
 	break;
 
     default:
@@ -998,10 +995,22 @@ basen_start_timer(void *cb_data, struct timeval *timeout)
     basen_unlock(ndata);
 }
 
-static const struct gensio_filter_callbacks basen_filter_cbs = {
-    .output_ready = basen_output_ready,
-    .start_timer = basen_start_timer
-};
+static int
+gensio_base_filter_cb(void *cb_data, int op, void *data)
+{
+    switch (op) {
+    case GENSIO_FILTER_CB_OUTPUT_READY:
+	basen_output_ready(cb_data);
+	return 0;
+
+    case GENSIO_FILTER_CB_START_TIMER:
+	basen_start_timer(cb_data, data);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
+}
 
 static struct gensio *
 gensio_i_alloc(struct gensio_os_funcs *o,
@@ -1036,10 +1045,8 @@ gensio_i_alloc(struct gensio_os_funcs *o,
     ndata->ll = ll;
     ndata->ll_ops = ll->ops;
     ndata->filter = filter;
-    if (filter) {
-	ndata->filter_ops = filter->ops;
-	filter->ops->set_callbacks(filter, &basen_filter_cbs, ndata);
-    }
+    if (filter)
+	gensio_filter_set_callback(filter, gensio_base_filter_cb, ndata);
     ndata->io = gensio_data_alloc(o, cb, user_data, gensio_base_func, typename,
 				  ndata);
     if (!ndata->io)
@@ -1087,4 +1094,112 @@ base_gensio_server_alloc(struct gensio_os_funcs *o,
 {
     return gensio_i_alloc(o, ll, filter, typename, false,
 			  open_done, open_data, NULL, NULL);
+}
+
+void
+gensio_filter_set_callback(struct gensio_filter *filter,
+			   gensio_filter_cb cb, void *cb_data)
+{
+    filter->func(filter, GENSIO_FILTER_FUNC_SET_CALLBACK,
+		 cb, cb_data,
+		 NULL, NULL, NULL, 0);
+}
+
+bool
+gensio_filter_ul_read_pending(struct gensio_filter *filter)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_UL_READ_PENDING,
+			NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+bool
+gensio_filter_ll_write_pending(struct gensio_filter *filter)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_UL_WRITE_PENDING,
+			NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+bool
+gensio_filter_ll_read_needed(struct gensio_filter *filter)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_LL_READ_NEEDED,
+			NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+int
+gensio_filter_check_open_done(struct gensio_filter *filter)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_CHECK_OPEN_DONE,
+			NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+int
+gensio_filter_try_connect(struct gensio_filter *filter,
+			  struct timeval *timeout)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_TRY_CONNECT,
+			NULL, timeout, NULL, NULL, NULL, 0);
+}
+
+int
+gensio_filter_try_disconnect(struct gensio_filter *filter,
+			     struct timeval *timeout)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_TRY_DISCONNECT,
+			NULL, timeout, NULL, NULL, NULL, 0);
+}
+
+int
+gensio_filter_ul_write(struct gensio_filter *filter,
+		       gensio_ul_filter_data_handler handler, void *cb_data,
+		       unsigned int *rcount,
+		       const unsigned char *buf, unsigned int buflen)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_UL_WRITE,
+			handler, cb_data, rcount, NULL, buf, buflen);
+}
+
+int
+gensio_filter_ll_write(struct gensio_filter *filter,
+		       gensio_ll_filter_data_handler handler, void *cb_data,
+		       unsigned int *rcount,
+		       unsigned char *buf, unsigned int buflen)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_LL_WRITE,
+			handler, cb_data, rcount, buf, NULL, buflen);
+}
+
+void
+gensio_filter_ll_urgent(struct gensio_filter *filter)
+{
+    filter->func(filter, GENSIO_FILTER_FUNC_LL_URGENT,
+		 NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+void
+gensio_filter_timeout(struct gensio_filter *filter)
+{
+    filter->func(filter, GENSIO_FILTER_FUNC_TIMEOUT,
+		 NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+int
+gensio_filter_setup(struct gensio_filter *filter)
+{
+    return filter->func(filter, GENSIO_FILTER_FUNC_SETUP,
+			NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+void
+gensio_filter_cleanup(struct gensio_filter *filter)
+{
+    filter->func(filter, GENSIO_FILTER_FUNC_CLEANUP,
+		 NULL, NULL, NULL, NULL, NULL, 0);
+}
+
+void
+gensio_filter_free(struct gensio_filter *filter)
+{
+    filter->func(filter, GENSIO_FILTER_FUNC_FREE,
+		 NULL, NULL, NULL, NULL, NULL, 0);
 }

@@ -360,7 +360,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 
     ll = gensio_gensio_ll_alloc(o, io);
     if (!ll) {
-	filter->ops->free(filter);
+	gensio_filter_free(filter);
 	goto out_nomem;
     }
 
@@ -377,7 +377,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
 		basena_unlock(nadata);
 		gensio_free(io);
 		ll->ops->free(ll);
-		filter->ops->free(filter);
+		gensio_filter_free(filter);
 		goto out_err;
 	    }
 	}
@@ -385,7 +385,7 @@ basena_child_event(struct gensio_acceptor *acceptor, int event,
     } else {
 	basena_unlock(nadata);
 	ll->ops->free(ll);
-	filter->ops->free(filter);
+	gensio_filter_free(filter);
 	goto out_nomem;
     }
     return 0;

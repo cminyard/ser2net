@@ -94,8 +94,7 @@ ssl_unlock(struct ssl_filter *sfilter)
 
 static void
 ssl_set_callbacks(struct gensio_filter *filter,
-		  const struct gensio_filter_callbacks *cbs,
-		  void *cb_data)
+		  gensio_filter_cb cb, void *cb_data)
 {
     /* We don't currently use callbacks. */
 }
@@ -417,21 +416,61 @@ ssl_free(struct gensio_filter *filter)
     sfilter->o->free(sfilter->o, sfilter);
 }
 
-const static struct gensio_filter_ops ssl_filter_ops = {
-    .set_callbacks = ssl_set_callbacks,
-    .ul_read_pending = ssl_ul_read_pending,
-    .ll_write_pending = ssl_ll_write_pending,
-    .ll_read_needed = ssl_ll_read_needed,
-    .check_open_done = ssl_check_open_done,
-    .try_connect = ssl_try_connect,
-    .try_disconnect = ssl_try_disconnect,
-    .ul_write = ssl_ul_write,
-    .ll_write = ssl_ll_write,
-    .ll_urgent = ssl_ll_urgent,
-    .setup = ssl_setup,
-    .cleanup = ssl_cleanup,
-    .free = ssl_free
-};
+static int gensio_ssl_filter_func(struct gensio_filter *filter, int op,
+				  const void *func, void *data,
+				  unsigned int *count,
+				  void *buf, const void *cbuf,
+				  unsigned int buflen)
+{
+    switch (op) {
+    case GENSIO_FILTER_FUNC_SET_CALLBACK:
+	ssl_set_callbacks(filter, func, data);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_UL_READ_PENDING:
+	return ssl_ul_read_pending(filter);
+
+    case GENSIO_FILTER_FUNC_UL_WRITE_PENDING:
+	return ssl_ll_write_pending(filter);
+
+    case GENSIO_FILTER_FUNC_LL_READ_NEEDED:
+	return ssl_ll_read_needed(filter);
+
+    case GENSIO_FILTER_FUNC_CHECK_OPEN_DONE:
+	return ssl_check_open_done(filter);
+
+    case GENSIO_FILTER_FUNC_TRY_CONNECT:
+	return ssl_try_connect(filter, data);
+
+    case GENSIO_FILTER_FUNC_TRY_DISCONNECT:
+	return ssl_try_disconnect(filter, data);
+
+    case GENSIO_FILTER_FUNC_UL_WRITE:
+	return ssl_ul_write(filter, func, data, count, cbuf, buflen);
+
+    case GENSIO_FILTER_FUNC_LL_WRITE:
+	return ssl_ll_write(filter, func, data, count, buf, buflen);
+
+    case GENSIO_FILTER_FUNC_LL_URGENT:
+	ssl_ll_urgent(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_SETUP:
+	return ssl_setup(filter);
+
+    case GENSIO_FILTER_FUNC_CLEANUP:
+	ssl_cleanup(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_FREE:
+	ssl_free(filter);
+	return 0;
+
+    case GENSIO_FILTER_FUNC_TIMEOUT:
+    default:
+	return ENOTSUP;
+    }
+}
 
 struct gensio_filter *
 gensio_ssl_filter_raw_alloc(struct gensio_os_funcs *o,
@@ -464,7 +503,7 @@ gensio_ssl_filter_raw_alloc(struct gensio_os_funcs *o,
     if (!sfilter->read_data)
 	goto out_nomem;
 
-    sfilter->filter.ops = &ssl_filter_ops;
+    sfilter->filter.func = gensio_ssl_filter_func;
     return &sfilter->filter;
 
  out_nomem:

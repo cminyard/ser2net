@@ -25,9 +25,7 @@
 
 #include <gensio/gensio.h>
 
-struct gensio_filter {
-    const struct gensio_filter_ops *ops;
-};
+struct gensio_filter;
 
 typedef int (*gensio_ul_filter_data_handler)(void *cb_data,
 					     unsigned int *rcount,
@@ -39,82 +37,155 @@ typedef int (*gensio_ll_filter_data_handler)(void *cb_data,
 					     unsigned char *buf,
 					     unsigned int buflen);
 
-struct gensio_filter_callbacks {
-    /*
-     * The filter has some asynchronously generated data that it needs
-     * to send, tell the gensio base to recalculate its enables.
-     */
-    void (*output_ready)(void *cb_data);
+/*
+ * The filter has some asynchronously generated data that it needs
+ * to send, tell the gensio base to recalculate its enables.
+ */
+#define GENSIO_FILTER_CB_OUTPUT_READY	1
 
-    void (*start_timer)(void *cb_data, struct timeval *timeout);
-};
+/*
+ * Tell gensio base to start it's timer and call the timeout
+ * at the appropriate interval.
+ * timeout => data
+ */
+#define GENSIO_FILTER_CB_START_TIMER	2
 
-struct gensio_filter_ops {
-    void (*set_callbacks)(struct gensio_filter *filter,
-			  const struct gensio_filter_callbacks *cbs,
-			  void *cb_data);
+typedef int (*gensio_filter_cb)(void *cb_data, int func, void *data);
 
-    /* Is there data ready to be read from the top of the filter? */
-    bool (*ul_read_pending)(struct gensio_filter *filter);
 
-    /* Is there data ready to be written out of the bottom of the filter? */
-    bool (*ll_write_pending)(struct gensio_filter *filter);
+/*
+ * Set the callback function for the filter.
+ *
+ *  const struct gensio_filter_callbacks *cbs => func
+ *  void *cb_data => data
+ */
+#define GENSIO_FILTER_FUNC_SET_CALLBACK		1
+void gensio_filter_set_callback(struct gensio_filter *filter,
+				gensio_filter_cb cb, void *cb_data);
 
-    /* Is the filter expecting that data should come in the bottom? */
-    bool (*ll_read_needed)(struct gensio_filter *filter);
+/*
+ * Is there data ready to be read from the top of the filter? 
+ */
+#define GENSIO_FILTER_FUNC_UL_READ_PENDING	2
+bool gensio_filter_ul_read_pending(struct gensio_filter *filter);
 
-    /*
-     * Provides a way to verify keys and such after the open is complete.
-     * Returning an error will abort the connection before the open is
-     * returned.
-     */
-    int (*check_open_done)(struct gensio_filter *filter);
+/*
+ * Is there data ready to be written out of the bottom of the filter?
+ */
+#define GENSIO_FILTER_FUNC_UL_WRITE_PENDING	3
+bool gensio_filter_ll_write_pending(struct gensio_filter *filter);
 
-    /*
-     * Attempt to start a connection on the filter.  Returns 0 on
-     * immediate success.  Returns EINPROGRESS if the connect attempt
-     * should be retried when any I/O occurs.  Returns EAGAIN if the
-     * connect attempt should be retried after any I/O or when the
-     * timeout occurs.
-     */
-    int (*try_connect)(struct gensio_filter *filter, struct timeval *timeout);
+/*
+ * Is the filter expecting that data should come in the bottom?
+ */
+#define GENSIO_FILTER_FUNC_LL_READ_NEEDED	4
+bool gensio_filter_ll_read_needed(struct gensio_filter *filter);
 
-    /*
-     * Attempt to disconnect the filter.  Returns 0 on immediate
-     * success.  Returns EINPROGRESS if the connect attempt should be
-     * retried.  Returns EAGAIN if the connect attempt should be
-     * retried after any I/O or when the timeout occurs.
-     */
-    int (*try_disconnect)(struct gensio_filter *filter, struct timeval *timeout);
+/*
+ * Provides a way to verify keys and such after the open is complete.
+ * Returning an error will abort the connection before the open is
+ * returned.
+ */
+#define GENSIO_FILTER_FUNC_CHECK_OPEN_DONE	5
+int gensio_filter_check_open_done(struct gensio_filter *filter);
 
-    /*
-     * Write data into the top of the filter.  If no data is provided
-     * (buf is NULL) then this will just attempt to write any pending
-     * data out of the bottom of the filter into the handler.
-     */
-    int (*ul_write)(struct gensio_filter *filter,
-		    gensio_ul_filter_data_handler handler, void *cb_data,
-		    unsigned int *rcount,
-		    const unsigned char *buf, unsigned int buflen);
+/*
+ * Attempt to start a connection on the filter.  Returns 0 on
+ * immediate success.  Returns EINPROGRESS if the connect attempt
+ * should be retried when any I/O occurs.  Returns EAGAIN if the
+ * connect attempt should be retried after any I/O or when the
+ * timeout occurs.
+ *
+ * struct timeval *timeout => data
+ */
+#define GENSIO_FILTER_FUNC_TRY_CONNECT		6
+int gensio_filter_try_connect(struct gensio_filter *filter,
+			      struct timeval *timeout);
 
-    /*
-     * Write data into the bottom of the filter.  If no data is
-     * provided (buf is NULL) then this will just attempt to write any
-     * pending data out of the top of the filter into the handler.
-     */
-    int (*ll_write)(struct gensio_filter *filter,
-		    gensio_ll_filter_data_handler handler, void *cb_data,
-		    unsigned int *rcount,
-		    unsigned char *buf, unsigned int buflen);
+/*
+ * Attempt to disconnect the filter.  Returns 0 on immediate
+ * success.  Returns EINPROGRESS if the connect attempt should be
+ * retried.  Returns EAGAIN if the connect attempt should be
+ * retried after any I/O or when the timeout occurs.
+ *
+ * struct timeval *timeout => data
+ */
+#define GENSIO_FILTER_FUNC_TRY_DISCONNECT	7
+int gensio_filter_try_disconnect(struct gensio_filter *filter,
+				 struct timeval *timeout);
 
-    /* Handle urgent data. */
-    void (*ll_urgent)(struct gensio_filter *filter);
+/*
+ * Write data into the top of the filter.  If no data is provided
+ * (buf is NULL) then this will just attempt to write any pending
+ * data out of the bottom of the filter into the handler.
+ *
+ * gensio_ul_filter_data_handler handler => func
+ * void *cb_data => data
+ * unsigned int *rcount => count
+ * const unsigned char *buf => cbuf
+ * unsigned int buflen => buflen
+ */
+#define GENSIO_FILTER_FUNC_UL_WRITE		8
+int gensio_filter_ul_write(struct gensio_filter *filter,
+			   gensio_ul_filter_data_handler handler, void *cb_data,
+			   unsigned int *rcount,
+			   const unsigned char *buf, unsigned int buflen);
 
-    void (*timeout)(struct gensio_filter *filter);
+/*
+ * Write data into the bottom of the filter.  If no data is
+ * provided (buf is NULL) then this will just attempt to write any
+ * pending data out of the top of the filter into the handler.
+ *
+ * gensio_ul_filter_data_handler handler => func
+ * void *cb_data => data
+ * unsigned int *rcount => count
+ * unsigned char *buf => buf
+ * unsigned int buflen => buflen
+ */
+#define GENSIO_FILTER_FUNC_LL_WRITE		9
+int gensio_filter_ll_write(struct gensio_filter *filter,
+			   gensio_ll_filter_data_handler handler, void *cb_data,
+			   unsigned int *rcount,
+			   unsigned char *buf, unsigned int buflen);
 
-    int (*setup)(struct gensio_filter *filter);
-    void (*cleanup)(struct gensio_filter *filter);
-    void (*free)(struct gensio_filter *filter);
+/*
+ * Report urgent data indication came in.
+ */
+#define GENSIO_FILTER_FUNC_LL_URGENT		10
+void gensio_filter_ll_urgent(struct gensio_filter *filter);
+
+/*
+ * Report a timeout for a timer the base started.
+ */
+#define GENSIO_FILTER_FUNC_TIMEOUT		11
+void gensio_filter_timeout(struct gensio_filter *filter);
+
+/*
+ * Allocate data and configure the filter.
+ */
+#define GENSIO_FILTER_FUNC_SETUP		12
+int gensio_filter_setup(struct gensio_filter *filter);
+
+/*
+ * Reset all internal data.
+ */
+#define GENSIO_FILTER_FUNC_CLEANUP		13
+void gensio_filter_cleanup(struct gensio_filter *filter);
+
+/*
+ * Free the filter.
+ */
+#define GENSIO_FILTER_FUNC_FREE			14
+void gensio_filter_free(struct gensio_filter *filter);
+
+typedef int (*gensio_filter_func)(struct gensio_filter *filter, int op,
+				  const void *func, void *data,
+				  unsigned int *count,
+				  void *buf, const void *cbuf,
+				  unsigned int buflen);
+
+struct gensio_filter {
+    gensio_filter_func func;
 };
 
 /* FIXME - make args const */

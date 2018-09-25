@@ -632,7 +632,7 @@ telnet_gensio_alloc(struct gensio *child, char *args[],
 
     io = base_gensio_alloc(o, ll, filter, "telnet", cb, user_data);
     if (!io) {
-	filter->ops->free(filter);
+	gensio_filter_free(filter);
 	ll->ops->free(ll);
 	goto out_nomem;
     }
