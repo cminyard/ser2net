@@ -20,8 +20,6 @@
 #ifndef _SER2NET_BUFFER_H
 #define _SER2NET_BUFFER_H
 
-#include <sys/socket.h>
-
 struct sbuf {
     unsigned char *buf;
     unsigned int maxsize;
@@ -29,8 +27,8 @@ struct sbuf {
     unsigned int pos;
 };
 
-typedef int (*buffer_do_write)(void *cbdata, void *buf, size_t buflen,
-			       size_t *written);
+typedef int (*buffer_do_write)(void *cbdata, void *buf, unsigned int buflen,
+			       unsigned int *written);
 
 int buffer_write(buffer_do_write do_write, void *cb_data,
 		 struct sbuf *buf, int *buferr);

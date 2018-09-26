@@ -25,10 +25,10 @@
 
 static int
 do_write(buffer_do_write tdo_write, void *cb_data,
-	 void  *buf, size_t buflen, size_t *written)
+	 void  *buf, unsigned int buflen, unsigned int *written)
 {
     int err = 0;
-    size_t write_count;
+    unsigned int write_count;
 
  retry:
     err = tdo_write(cb_data, buf, buflen, &write_count);
@@ -50,7 +50,7 @@ buffer_write(buffer_do_write tdo_write, void *cb_data,
 	     struct sbuf *buf, int *buferr)
 {
     int err;
-    size_t write_count;
+    unsigned int write_count;
     int towrite1;
     int towrite2 = 0;
 

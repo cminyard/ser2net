@@ -945,7 +945,8 @@ handle_dev_fd_read(struct devio *io)
 }
 
 static int
-io_do_write(void *cb_data, void  *buf, size_t buflen, size_t *written)
+io_do_write(void *cb_data, void  *buf, unsigned int buflen,
+	    unsigned int *written)
 {
     struct devio *io = cb_data;
     ssize_t write_count;
