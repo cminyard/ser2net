@@ -1,5 +1,5 @@
 /*
-v *  gensio - A library for abstracting stream I/O
+ *  gensio - A library for abstracting stream I/O
  *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -17,8 +17,8 @@ v *  gensio - A library for abstracting stream I/O
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef SERGENSIO_INTERNAL_H
-#define SERGENSIO_INTERNAL_H
+#ifndef SERGENSIO_CLASS_H
+#define SERGENSIO_CLASS_H
 
 #include <stddef.h>
 #include <gensio/gensio_class.h>
@@ -51,4 +51,4 @@ void sergensio_data_free(struct sergensio *sio);
 
 void *sergensio_get_gensio_data(struct sergensio *sio);
 
-#endif /* SERGENSIO_INTERNAL_H */
+#endif /* SERGENSIO_CLASS_H */

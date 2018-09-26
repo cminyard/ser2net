@@ -20,8 +20,8 @@
 #include <malloc.h>
 #include <string.h>
 #include <errno.h>
+#include <pthread.h>
 
-#include <utils/locking.h>
 #include <utils/utils.h>
 #include <utils/waiter.h>
 
@@ -50,7 +50,7 @@ gensio_sel_free(struct gensio_os_funcs *f, void *data)
 
 struct gensio_lock {
     struct gensio_os_funcs *f;
-    DEFINE_LOCK(, lock);
+    pthread_mutex_t lock;
 };
 
 static struct gensio_lock *
@@ -60,7 +60,7 @@ gensio_sel_alloc_lock(struct gensio_os_funcs *f)
 
     if (lock) {
 	lock->f = f;
-	INIT_LOCK(lock->lock);
+	pthread_mutex_init(&lock->lock, NULL);
     }
 
     return lock;
@@ -75,13 +75,13 @@ gensio_sel_free_lock(struct gensio_lock *lock)
 static void
 gensio_sel_lock(struct gensio_lock *lock)
 {
-    LOCK(lock->lock);
+    pthread_mutex_lock(&lock->lock);
 }
 
 static void
 gensio_sel_unlock(struct gensio_lock *lock)
 {
-    UNLOCK(lock->lock);
+    pthread_mutex_unlock(&lock->lock);
 }
 
 static int
@@ -163,7 +163,7 @@ struct gensio_timer {
     void (*handler)(struct gensio_timer *t, void *cb_data);
     void *cb_data;
     sel_timer_t *sel_timer;
-    DEFINE_LOCK(, lock);
+    pthread_mutex_t lock;
 
     void (*done_handler)(struct gensio_timer *t, void *cb_data);
     void *done_cb_data;
@@ -194,7 +194,7 @@ gensio_sel_alloc_timer(struct gensio_os_funcs *f,
     timer->f = f;
     timer->handler = handler;
     timer->cb_data = cb_data;
-    INIT_LOCK(timer->lock);
+    pthread_mutex_init(&timer->lock, NULL);
 
     rv = sel_alloc_timer(d->sel, gensio_timeout_handler, timer,
 			 &timer->sel_timer);
@@ -237,10 +237,10 @@ gensio_stop_timer_done(struct selector_s *sel,
     void (*done_handler)(struct gensio_timer *t, void *cb_data);
     void *done_cb_data;
 
-    LOCK(timer->lock);
+    pthread_mutex_lock(&timer->lock);
     done_handler = timer->done_handler;
     done_cb_data = timer->done_cb_data;
-    UNLOCK(timer->lock);
+    pthread_mutex_unlock(&timer->lock);
     done_handler(timer, done_cb_data);
 }
 
@@ -252,14 +252,14 @@ gensio_sel_stop_timer_with_done(struct gensio_timer *timer,
 {
     int rv;
 
-    LOCK(timer->lock);
+    pthread_mutex_lock(&timer->lock);
     rv = sel_stop_timer_with_done(timer->sel_timer, gensio_stop_timer_done,
 				  timer);
     if (!rv) {
 	timer->done_handler = done_handler;
 	timer->done_cb_data = cb_data;
     }
-    UNLOCK(timer->lock);
+    pthread_mutex_unlock(&timer->lock);
     return rv;
 }
 
@@ -431,7 +431,7 @@ gensio_sel_free_funcs(struct gensio_os_funcs *f)
     free(f);
 }
 
-DEFINE_LOCK_INIT(static, once_lock);
+static pthread_mutex_t once_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void
 gensio_sel_call_once(struct gensio_os_funcs *f, struct gensio_once *once,
@@ -439,13 +439,13 @@ gensio_sel_call_once(struct gensio_os_funcs *f, struct gensio_once *once,
 {
     if (once->called)
 	return;
-    LOCK(once_lock);
+    pthread_mutex_lock(&once_lock);
     if (!once->called) {
 	once->called = true;
-	UNLOCK(once_lock);
+	pthread_mutex_unlock(&once_lock);
 	func(cb_data);
     } else {
-	UNLOCK(once_lock);
+	pthread_mutex_unlock(&once_lock);
     }
 }
 

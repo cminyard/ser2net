@@ -17,8 +17,8 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef GENSIO_INTERNAL_H
-#define GENSIO_INTERNAL_H
+#ifndef GENSIO_CLASS_H
+#define GENSIO_CLASS_H
 
 #include <stddef.h>
 #include <gensio/gensio.h>
@@ -241,4 +241,4 @@ int gensio_check_keyuint(const char *str, const char *key, unsigned int *value);
 
 int gensio_scan_args(const char **rstr, int *argc, char ***args);
 
-#endif /* GENSIO_INTERNAL_H */
+#endif /* GENSIO_CLASS_H */

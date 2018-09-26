@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include <utils/locking.h>
 #include <utils/utils.h>
 
 #include <gensio/gensio.h>
