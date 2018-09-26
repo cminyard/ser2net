@@ -19,7 +19,7 @@
 
 #include "uucplock.h"
 
-bool uucp_locking_enabled = true;
+bool gensio_uucp_locking_enabled = true;
 
 #ifdef USE_UUCP_LOCKING
 
@@ -72,7 +72,7 @@ uucp_rm_lock(char *devname)
 {
     char *lck_file;
 
-    if (!uucp_locking_enabled) return;
+    if (!gensio_uucp_locking_enabled) return;
 
     lck_file = malloc(uucp_fname_lock_size(devname));
     if (lck_file == NULL) {
@@ -107,7 +107,7 @@ uucp_mk_lock(char *devname)
     struct stat stt;
     int pid = -1;
 
-    if (!uucp_locking_enabled)
+    if (!gensio_uucp_locking_enabled)
 	return 0;
 
     if (stat(uucp_lck_dir, &stt) == 0) { /* is lock file directory present? */

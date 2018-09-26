@@ -36,7 +36,6 @@
 
 #include <utils/utils.h>
 #include <utils/selector.h>
-#include <utils/uucplock.h>
 
 #include <gensio/gensio_selector.h>
 
@@ -607,7 +606,7 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'u':
-	    uucp_locking_enabled = 0;
+	    gensio_uucp_locking_enabled = 0;
 	    break;
 
 	case 'v':

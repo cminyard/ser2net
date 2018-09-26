@@ -19,7 +19,7 @@
 
 #include <stdbool.h>
 
-extern bool uucp_locking_enabled;
+extern bool gensio_uucp_locking_enabled;
 
 void uucp_rm_lock(char *devname);
 

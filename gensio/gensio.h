@@ -834,4 +834,9 @@ int gensio_get_default(struct gensio_os_funcs *o,
 		       enum gensio_default_type type,
 		       const char **strval, int *intval);
 
+/*
+ * This allows a global to disable uucp locking for everything.
+ */
+extern bool gensio_uucp_locking_enabled;
+
 #endif /* GENSIO_H */

@@ -29,10 +29,10 @@
 #include <sys/ioctl.h>
 
 #include <utils/utils.h>
-#include <utils/uucplock.h>
 
 #include <gensio/sergensio_class.h>
 #include <gensio/gensio_ll_fd.h>
+#include <gensio/uucplock.h>
 
 static struct baud_rates_s {
     int real_rate;
