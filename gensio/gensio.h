@@ -133,9 +133,16 @@ struct gensio_os_funcs {
 
     /*
      * Start the timer running.  Returns EBUSY if the timer is already
-     * running.
+     * running.  This is a relative timeout.
      */
     int (*start_timer)(struct gensio_timer *timer, struct timeval *timeout);
+
+    /*
+     * Start the timer running.  Returns EBUSY if the timer is already
+     * running.  This is an absolute timeout based on the monotonic
+     * time returned by get_monotonic_time.
+     */
+    int (*start_timer_abs)(struct gensio_timer *timer, struct timeval *timeout);
 
     /*
      * Stop the timer.  Returns ETIMEDOUT if the timer is not running.

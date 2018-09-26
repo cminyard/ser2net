@@ -234,6 +234,12 @@ gensio_sel_start_timer(struct gensio_timer *timer, struct timeval *timeout)
 }
 
 static int
+gensio_sel_start_timer_abs(struct gensio_timer *timer, struct timeval *timeout)
+{
+    return sel_start_timer(timer->sel_timer, timeout);
+}
+
+static int
 gensio_sel_stop_timer(struct gensio_timer *timer)
 {
     return sel_stop_timer(timer->sel_timer);
@@ -504,6 +510,7 @@ gensio_selector_alloc(struct selector_s *sel, int wake_sig)
     o->alloc_timer = gensio_sel_alloc_timer;
     o->free_timer = gensio_sel_free_timer;
     o->start_timer = gensio_sel_start_timer;
+    o->start_timer_abs = gensio_sel_start_timer_abs;
     o->stop_timer = gensio_sel_stop_timer;
     o->stop_timer_with_done = gensio_sel_stop_timer_with_done;
     o->alloc_runner = gensio_sel_alloc_runner;
