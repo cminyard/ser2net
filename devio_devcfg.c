@@ -54,7 +54,7 @@ struct devcfg_data {
     void (*shutdown_done)(struct devio *);
 
     /* Used to make sure the shutdown isn't stuck. */
-    sel_timer_t *shutdown_timer;
+    struct gensio_timer *shutdown_timer;
     unsigned int shutdown_retries;
 
     /* Holds whether break is on or not. */
@@ -434,15 +434,13 @@ devcfg_check_drained(struct devio *io)
 	return;
     }
 
-    sel_get_monotonic_time(&timeout);
-    add_usec_to_timeval(&timeout, 10000);
-    sel_start_timer(d->shutdown_timer, &timeout);
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10000;
+    so->start_timer(d->shutdown_timer, &timeout);
 }
 
 void
-shutdown_timeout(struct selector_s *sel,
-		 sel_timer_t *timer,
-		 void        *cb_data)
+shutdown_timeout(struct gensio_timer *timer, void *cb_data)
 {
     struct devio *io = cb_data;
     
@@ -532,7 +530,7 @@ static int devcfg_setup(struct devio *io, const char *name, const char **errstr,
     }
 #endif
 
-    rv = sel_set_fd_handlers(ser2net_sel, d->devfd, io,
+    rv = so->set_fd_handlers(so, d->devfd, io,
 			     io->read_disabled ? NULL : do_read,
 			     do_write, do_except, devfd_fd_cleared);
     if (rv) {
@@ -555,7 +553,7 @@ static void devcfg_shutdown(struct devio *io,
 	 * take to send the pending data based upon baud and count.
 	 */
 	d->shutdown_retries = 200; /* 2 seconds. */
-	sel_clear_fd_handlers(ser2net_sel, d->devfd);
+	so->clear_fd_handlers(so, d->devfd);
     } else {
 	shutdown_done(io);
     }
@@ -579,27 +577,21 @@ static void devcfg_read_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
-    sel_set_fd_read_handler(ser2net_sel, d->devfd,
-			    enabled ? SEL_FD_HANDLER_ENABLED :
-			    SEL_FD_HANDLER_DISABLED);
+    so->set_read_handler(so, d->devfd, enabled);
 }
 
 static void devcfg_write_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
-    sel_set_fd_write_handler(ser2net_sel, d->devfd,
-			     enabled ? SEL_FD_HANDLER_ENABLED :
-			     SEL_FD_HANDLER_DISABLED);
+    so->set_write_handler(so, d->devfd, enabled);
 }
 
 static void devcfg_except_handler_enable(struct devio *io, int enabled)
 {
     struct devcfg_data *d = io->my_data;
 
-    sel_set_fd_except_handler(ser2net_sel, d->devfd,
-			      enabled ? SEL_FD_HANDLER_ENABLED :
-			      SEL_FD_HANDLER_DISABLED);
+    so->set_except_handler(so, d->devfd, enabled);
 }
 
 static int devcfg_send_break(struct devio *io)
@@ -959,7 +951,7 @@ static void devcfg_free(struct devio *io)
     if (d->devfd != -1)
 	close(d->devfd);
     io->my_data = NULL;
-    sel_free_timer(d->shutdown_timer);
+    so->free_timer(d->shutdown_timer);
     free(d);
 }
 
@@ -1017,14 +1009,14 @@ devcfg_init(struct devio *io, struct absout *eout, const char *instr,
     memset(d, 0, sizeof(*d));
     d->devfd = -1;
 
-    if (sel_alloc_timer(ser2net_sel, shutdown_timeout, io,
-			&d->shutdown_timer)) {
+    d->shutdown_timer = so->alloc_timer(so, shutdown_timeout, io);
+    if (!d->shutdown_timer) {
 	free(d);
 	return -1;
     }
 
     if (devconfig(d, eout, instr, otherconfig, data) == -1) {
-	sel_free_timer(d->shutdown_timer);
+	so->free_timer(d->shutdown_timer);
 	free(d);
 	return -1;
     }

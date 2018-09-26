@@ -112,7 +112,7 @@ struct net_info {
 					   seconds) before the timeout
 					   goes off. */
 
-    sel_runner_t *runshutdown;		/* Used to run things at the
+    struct gensio_runner *runshutdown;	/* Used to run things at the
 					   base context.  This way we
 					   don't have to worry that we
 					   are running inside a
@@ -150,11 +150,11 @@ struct port_info
 					   wait without any I/O before
 					   we shut the port down. */
 
-    sel_timer_t *timer;			/* Used to timeout when the no
+    struct gensio_timer *timer;		/* Used to timeout when the no
 					   I/O has been seen for a
 					   certain period of time. */
 
-    sel_timer_t *send_timer;		/* Used to delay a bit when
+    struct gensio_timer *send_timer;	/* Used to delay a bit when
 					   waiting for characters to
 					   batch up as many characters
 					   as possible. */
@@ -171,7 +171,7 @@ struct port_info
      */
     unsigned int shutdown_timeout_count;
 
-    sel_runner_t *runshutdown;		/* Used to run things at the
+    struct gensio_runner *runshutdown;	/* Used to run things at the
 					   base context.  This way we
 					   don't have to worry that we
 					   are running inside a
@@ -721,9 +721,7 @@ start_net_send(port_info_t *port)
 }
 
 void
-send_timeout(struct selector_s  *sel,
-	     sel_timer_t *timer,
-	     void        *data)
+send_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
 
@@ -921,9 +919,9 @@ handle_dev_fd_read(struct devio *io)
 	struct timeval then;
 	int delay;
 
-	sel_get_monotonic_time(&then);
+	so->get_monotonic_time(so, &then);
 	if (port->send_timer_running) {
-	    sel_stop_timer(port->send_timer);
+	    so->stop_timer(port->send_timer);
 	} else {
 	    port->send_time = then;
 	    add_usec_to_timeval(&port->send_time, port->chardelay_max);
@@ -936,7 +934,7 @@ handle_dev_fd_read(struct devio *io)
 	    goto send_it;
 	}
 	add_usec_to_timeval(&then, delay);
-	sel_start_timer(port->send_timer, &then);
+	so->start_timer_abs(port->send_timer, &then);
 	port->send_timer_running = true;
     }
  out_unlock:
@@ -1996,7 +1994,7 @@ static int
 port_dev_enable(port_info_t *port, net_info_t *netcon,
 		bool is_reconfig, const char **errstr)
 {
-    struct timeval then;
+    struct timeval timeout;
 
     if (port->io.f->setup(&port->io, port->portname, errstr,
 			  &port->bps, &port->bpc) == -1)
@@ -2029,9 +2027,9 @@ port_dev_enable(port_info_t *port, net_info_t *netcon,
 
     setup_trace(port);
 
-    sel_get_monotonic_time(&then);
-    then.tv_sec += 1;
-    sel_start_timer(port->timer, &then);
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    so->start_timer(port->timer, &timeout);
 
     return 0;
 }
@@ -2556,7 +2554,7 @@ free_port(port_info_t *port)
 		gensio_free(netcon->new_net);
 	    }
 	    if (netcon->runshutdown)
-		sel_free_runner(netcon->runshutdown);
+		so->free_runner(netcon->runshutdown);
 	}
     }
 
@@ -2574,11 +2572,11 @@ free_port(port_info_t *port)
     if (port->net_to_dev.buf)
 	free(port->net_to_dev.buf);
     if (port->timer)
-	sel_free_timer(port->timer);
+	so->free_timer(port->timer);
     if (port->send_timer)
-	sel_free_timer(port->send_timer);
+	so->free_timer(port->send_timer);
     if (port->runshutdown)
-	sel_free_runner(port->runshutdown);
+	so->free_runner(port->runshutdown);
     if (port->io.f)
 	port->io.f->free(&port->io);
     if (port->trace_read.filename)
@@ -2752,7 +2750,8 @@ finish_shutdown_port(port_info_t *port)
     }
 }
 
-static void call_finish_shutdown_port(sel_runner_t *runner, void *cb_data)
+static void call_finish_shutdown_port(struct gensio_runner *runner,
+				      void *cb_data)
 {
     port_info_t *port = cb_data;
 
@@ -2764,7 +2763,7 @@ io_shutdown_done(struct devio *io)
 {
     port_info_t *port = io->user_data;
 
-    sel_run(port->runshutdown, call_finish_shutdown_port, port);
+    so->run(port->runshutdown);
 }
 
 static void
@@ -2773,11 +2772,11 @@ shutdown_port_io(port_info_t *port)
     if (port->io.f)
 	port->io.f->shutdown(&port->io, io_shutdown_done);
     else
-	sel_run(port->runshutdown, call_finish_shutdown_port, port);
+	so->run(port->runshutdown);
 }
 
 static void
-timer_shutdown_done(struct selector_s *sel, sel_timer_t *timer, void *cb_data)
+timer_shutdown_done(struct gensio_timer *timer, void *cb_data)
 {
     shutdown_port_io(cb_data);
 }
@@ -2809,7 +2808,7 @@ handle_dev_fd_close_write(port_info_t *port)
 closeit:
     if (port->shutdown_timeout_count) {
 	port->shutdown_timeout_count = 0;
-	if (sel_stop_timer_with_done(port->timer, timer_shutdown_done, port))
+	if (so->stop_timer_with_done(port->timer, timer_shutdown_done, port))
 	    shutdown_port_io(port);
     }
 }
@@ -2909,7 +2908,7 @@ handle_net_fd_closed(struct gensio *net, void *cb_data)
     netcon_finish_shutdown(netcon);
 }
 
-static void shutdown_netcon_clear(sel_runner_t *runner, void *cb_data)
+static void shutdown_netcon_clear(struct gensio_runner *runner, void *cb_data)
 {
     net_info_t *netcon = cb_data;
 
@@ -2932,7 +2931,7 @@ shutdown_one_netcon(net_info_t *netcon, char *reason)
 
     netcon->closing = true;
     /* shutdown_netcon_clear() may clain the port lock, run it elsewhere. */
-    sel_run(netcon->runshutdown, shutdown_netcon_clear, netcon);
+    so->run(netcon->runshutdown);
 }
 
 static void
@@ -2955,12 +2954,10 @@ shutdown_port(port_info_t *port, char *reason)
 }
 
 void
-got_timeout(struct selector_s *sel,
-	    sel_timer_t *timer,
-	    void        *data)
+got_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    struct timeval then;
+    struct timeval timeout;
     net_info_t *netcon;
 
     so->lock(port->lock);
@@ -3017,9 +3014,9 @@ got_timeout(struct selector_s *sel,
     }
 
  out:
-    sel_get_monotonic_time(&then);
-    then.tv_sec += 1;
-    sel_start_timer(port->timer, &then);
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    so->start_timer(port->timer, &timeout);
     so->unlock(port->lock);
 }
 
@@ -3237,25 +3234,22 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    if (sel_alloc_timer(ser2net_sel,
-			got_timeout, new_port,
-			&new_port->timer))
-    {
+    new_port->timer = so->alloc_timer(so, got_timeout, new_port);
+    if (!new_port->timer) {
 	eout->out(eout, "Could not allocate timer data");
 	goto errout;
     }
 
-    if (sel_alloc_timer(ser2net_sel,
-			send_timeout, new_port,
-			&new_port->send_timer))
-    {
+    new_port->send_timer = so->alloc_timer(so, send_timeout, new_port);
+    if (!new_port->send_timer) {
 	eout->out(eout, "Could not allocate timer data");
 	goto errout;
     }
 
-    if (sel_alloc_runner(ser2net_sel, &new_port->runshutdown)) {
+    new_port->runshutdown = so->alloc_runner(so, call_finish_shutdown_port,
+					     new_port);
+    if (!new_port->runshutdown)
 	goto errout;
-    }
 
     new_port->io.devname = find_str(devname, &str_type, NULL);
     if (new_port->io.devname) {
@@ -3385,7 +3379,9 @@ portconfig(struct absout *eout,
     memset(new_port->netcons, 0,
 	   sizeof(*(new_port->netcons)) * new_port->max_connections);
     for_each_connection(new_port, netcon) {
-	if (sel_alloc_runner(ser2net_sel, &netcon->runshutdown)) {
+	netcon->runshutdown = so->alloc_runner(so, shutdown_netcon_clear,
+					       netcon);
+	if (!netcon->runshutdown) {
 	    eout->out(eout, "Could not allocate a netcon shutdown handler");
 	    goto errout;
 	}
