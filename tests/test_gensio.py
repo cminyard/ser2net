@@ -53,7 +53,7 @@ class TestAccept:
         print("***%s LOG: %s: %s" % (level, self.name, logstr))
 
     def wait(self):
-        self.waiter.wait()
+        self.waiter.wait(1)
 
 def do_test(io1, io2):
     utils.test_dataxfer(io1, io2, "This is a test string!")

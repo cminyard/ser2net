@@ -116,7 +116,7 @@ sertest_cleanup(struct sertest_context *c)
 	    /* Already closed, just free it. */
 	    gensio_free(le->io);
 	} else {
-	    my_o->wait(le->waiter, NULL);
+	    my_o->wait(le->waiter, 1, NULL);
 	    gensio_free(le->io);
 	}
 	finish_free_gensio(le);
@@ -319,7 +319,7 @@ close_gensio(struct sertest_context *c,
     if (err) {
 	abspr(c->out, "Error closing gensio\n");
     } else {
-	err = my_o->wait(le->waiter, &timeout);
+	err = my_o->wait(le->waiter, 1, &timeout);
 	if (err) {
 	    abspr(c->out, "Timeout out waiting for close\n");
 	    err = -1;
@@ -360,7 +360,7 @@ write_gensio(struct sertest_context *c,
     le->to_write = (unsigned char *) argv[2];
     le->to_write_len = lengths[2];
     gensio_set_write_callback_enable(le->io, true);
-    err = my_o->wait(le->waiter, &timeout);
+    err = my_o->wait(le->waiter, 1, &timeout);
     if (err) {
 	abspr(c->out, "Timed out writing gensio\n");
 	gensio_set_write_callback_enable(le->io, true);
@@ -403,7 +403,7 @@ check_read_gensio(struct sertest_context *c,
     le->cmp_read_len = lengths[2];
     le->curr_read_byte = 0;
     gensio_set_read_callback_enable(le->io, true);
-    err = my_o->wait(le->waiter, &timeout);
+    err = my_o->wait(le->waiter, 1, &timeout);
     if (err) {
 	gensio_set_read_callback_enable(le->io, false);
 	abspr(c->out, "Timeout waiting for read data\n");
@@ -427,7 +427,7 @@ flush_read_gensio(struct sertest_context *c,
 
     le->flush_read = true;
     gensio_set_read_callback_enable(le->io, true);
-    my_o->wait(le->waiter, &timeout);
+    my_o->wait(le->waiter, 1, &timeout);
     gensio_set_read_callback_enable(le->io, false);
     le->flush_read = false;
 
@@ -494,7 +494,7 @@ xfer_data_gensio(struct sertest_context *c,
 
     last_read = le2->cmp_read_len;
     while (!le2->read_err && !le->write_err && le2->cmp_read_len > 0) {
-	my_o->wait(waiter, &timeout);
+	my_o->wait(waiter, 1, &timeout);
 	sel_get_monotonic_time(&now);
 	if (cmp_timeval(&now, &test_time) >= 0) {
 	    if (last_read == le2->cmp_read_len) {
@@ -515,9 +515,9 @@ xfer_data_gensio(struct sertest_context *c,
 
     /* Clear these out to avoid abort on exit. */
     if (!le2->cmp_read)
-	my_o->wait(le2->waiter, NULL);
+	my_o->wait(le2->waiter, 1, NULL);
     if (!le->to_write)
-	my_o->wait(le->waiter, NULL);
+	my_o->wait(le->waiter, 1, NULL);
     le2->cmp_read = NULL;
     le->to_write = NULL;
 
@@ -684,7 +684,7 @@ cleanup_term(struct gensio_os_funcs *o)
     rl_callback_handler_remove();
     printf("\b\b  \b\b");
     o->clear_fd_handlers(o, 0);
-    o->wait(waiter, NULL);
+    o->wait(waiter, 1, NULL);
     o->free_waiter(waiter);
     waiter = NULL;
 }

@@ -27,7 +27,7 @@
 extern char *rfc2217_signature;
 
 extern struct selector_s *ser2net_sel;
-extern struct gensio_os_funcs *ser2net_o;
+extern struct gensio_os_funcs *so;
 
 extern int ser2net_debug;
 extern int ser2net_debug_level;

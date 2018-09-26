@@ -27,7 +27,6 @@
 #include <utils/selector.h>
 #include <utils/utils.h>
 #include <utils/locking.h>
-#include <utils/waiter.h>
 
 #include <gensio/gensio.h>
 
@@ -47,7 +46,7 @@ static char *progname = "ser2net-control";
 
 DEFINE_LOCK_INIT(static, cntlr_lock)
 static struct gensio_accepter *controller_accepter;
-static waiter_t *accept_waiter;
+static struct gensio_waiter *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
 					   do we allow at a time. */
@@ -91,7 +90,7 @@ typedef struct controller_info {
     void *shutdown_complete_cb_data;
 } controller_info_t;
 
-static waiter_t *controller_shutdown_waiter;
+static struct gensio_waiter *controller_shutdown_waiter;
 
 /* List of current control connections. */
 controller_info_t *controllers = NULL;
@@ -688,7 +687,7 @@ errout:
 static void
 controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
 {
-    wake_waiter(accept_waiter);
+    so->wake(accept_waiter);
 }
 
 /* Set up the controller port to accept connections. */
@@ -698,21 +697,20 @@ controller_init(char *controller_port)
     int rv;
 
     if (!controller_shutdown_waiter) {
-	controller_shutdown_waiter = alloc_waiter(ser2net_sel,
-						  ser2net_wake_sig);
+	controller_shutdown_waiter = so->alloc_waiter(so);
 	if (!controller_shutdown_waiter)
 	    return ENOMEM;
     }
 
     if (!accept_waiter) {
-	accept_waiter = alloc_waiter(ser2net_sel, ser2net_wake_sig);
+	accept_waiter = so->alloc_waiter(so);
 	if (!accept_waiter) {
 	    syslog(LOG_ERR, "Unable to allocate controller accept waiter");
 	    return CONTROLLER_CANT_OPEN_PORT;
 	}
     }
 
-    rv = str_to_gensio_accepter(controller_port, ser2net_o,
+    rv = str_to_gensio_accepter(controller_port, so,
 				controller_acc_child_event, NULL,
 				&controller_accepter);
     if (rv) {
@@ -737,7 +735,7 @@ controller_shutdown(void)
     if (controller_accepter) {
 	gensio_acc_shutdown(controller_accepter, controller_shutdown_done,
 			    NULL);
-	wait_for_waiter(accept_waiter, 1);
+	so->wait(accept_waiter, 1, NULL);
 	gensio_acc_free(controller_accepter);
 	controller_accepter = NULL;
     }
@@ -746,9 +744,9 @@ controller_shutdown(void)
 static void
 shutdown_controller_done(void *cb_data)
 {
-    waiter_t *waiter = cb_data;
+    struct gensio_waiter *waiter = cb_data;
 
-    wake_waiter(waiter);
+    so->wake(waiter);
 }
 
 void
@@ -759,11 +757,11 @@ free_controllers(void)
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
 	LOCK(controllers->lock);
 	shutdown_controller(controllers); /* Releases the lock. */
-	wait_for_waiter(controller_shutdown_waiter, 1);
+	so->wait(controller_shutdown_waiter, 1, NULL);
     }
     controller_shutdown();
     if (controller_shutdown_waiter)
-	free_waiter(controller_shutdown_waiter);
+	so->free_waiter(controller_shutdown_waiter);
     if (accept_waiter)
-	free_waiter(accept_waiter);
+	so->free_waiter(accept_waiter);
 }

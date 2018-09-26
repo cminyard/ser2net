@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <limits.h>
 #include "waiter.h"
-#include "utils.h"
 
 #ifdef USE_PTHREADS
 

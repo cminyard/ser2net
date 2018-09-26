@@ -20,10 +20,19 @@
 #include <malloc.h>
 #include <string.h>
 #include <errno.h>
+
+#ifdef USE_PTHREADS
 #include <pthread.h>
+#else
+#define pthread_mutex_t int
+#define pthread_mutex_lock(l) do { } while (0)
+#define pthread_mutex_unlock(l) do { } while (0)
+#define pthread_mutex_init(l, n) do { } while (0)
+#define pthread_mutex_destroy(l, n) do { } while (0)
+#endif
 
 #include <utils/utils.h>
-#include <utils/waiter.h>
+#include "waiter.h"
 
 #include <gensio/gensio_selector.h>
 
@@ -69,6 +78,7 @@ gensio_sel_alloc_lock(struct gensio_os_funcs *f)
 static void
 gensio_sel_free_lock(struct gensio_lock *lock)
 {
+    pthread_mutex_destroy(&lock->lock);
     lock->f->free(lock->f, lock);
 }
 
@@ -351,16 +361,18 @@ gensio_sel_free_waiter(struct gensio_waiter *waiter)
 }
 
 static int
-gensio_sel_wait(struct gensio_waiter *waiter, struct timeval *timeout)
+gensio_sel_wait(struct gensio_waiter *waiter, unsigned int count,
+		struct timeval *timeout)
 {
-    return wait_for_waiter_timeout(waiter->sel_waiter, 1, timeout);
+    return wait_for_waiter_timeout(waiter->sel_waiter, count, timeout);
 }
 
 
 static int
-gensio_sel_wait_intr(struct gensio_waiter *waiter, struct timeval *timeout)
+gensio_sel_wait_intr(struct gensio_waiter *waiter, unsigned int count,
+		     struct timeval *timeout)
 {
-    return wait_for_waiter_timeout_intr(waiter->sel_waiter, 1, timeout);
+    return wait_for_waiter_timeout_intr(waiter->sel_waiter, count, timeout);
 }
 
 static void

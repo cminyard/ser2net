@@ -637,7 +637,7 @@ gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
 	return ENOMEM;
     err = gensio_open(io, gensio_open_s_done, &data);
     if (!err) {
-	o->wait(data.waiter, NULL);
+	o->wait(data.waiter, 1, NULL);
 	err = data.err;
     }
     o->free_waiter(data.waiter);

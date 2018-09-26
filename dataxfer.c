@@ -37,7 +37,6 @@
 #include <utils/utils.h>
 #include <utils/locking.h>
 #include <utils/buffer.h>
-#include <utils/waiter.h>
 
 #include "ser2net.h"
 #include "devio.h"
@@ -2214,12 +2213,12 @@ handle_rot_child_event(struct gensio_accepter *accepter, int event, void *data)
     return 0;
 }
 
-static waiter_t *rotator_shutdown_wait;
+static struct gensio_waiter *rotator_shutdown_wait;
 
 static void
 handle_rot_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 {
-    wake_waiter(rotator_shutdown_wait);
+    so->wake(rotator_shutdown_wait);
 }
 
 static void
@@ -2227,7 +2226,7 @@ free_rotator(rotator_t *rot)
 {
     if (rot->accepter) {
 	gensio_acc_shutdown(rot->accepter, handle_rot_shutdown_done, NULL);
-	wait_for_waiter(rotator_shutdown_wait, 1);
+	so->wait(rotator_shutdown_wait, 1, NULL);
 	gensio_acc_free(rot->accepter);
     }
     if (rot->portname)
@@ -2272,7 +2271,7 @@ add_rotator(char *portname, char *ports, int lineno)
     if (rv)
 	goto out;
 
-    rv = str_to_gensio_accepter(rot->portname, ser2net_o,
+    rv = str_to_gensio_accepter(rot->portname, so,
 				handle_rot_child_event, rot, &rot->accepter);
     if (rv) {
 	syslog(LOG_ERR, "port was invalid on line %d", lineno);
@@ -2488,7 +2487,7 @@ port_reinit_now(port_info_t *port)
     }
 }
 
-static waiter_t *accepter_shutdown_wait;
+static struct gensio_waiter *accepter_shutdown_wait;
 
 static void
 handle_port_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
@@ -2497,7 +2496,7 @@ handle_port_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 
     LOCK(port->lock);
     while (port->wait_accepter_shutdown--)
-	wake_waiter(accepter_shutdown_wait);
+	so->wake(accepter_shutdown_wait);
 
     if (port->accepter_reinit_on_shutdown) {
 	port->accepter_reinit_on_shutdown = false;
@@ -3321,7 +3320,7 @@ portconfig(struct absout *eout,
 	}
     }
 
-    err = str_to_gensio_accepter(new_port->portname, ser2net_o,
+    err = str_to_gensio_accepter(new_port->portname, so,
 				handle_port_child_event, new_port,
 				&new_port->accepter);
     if (err) {
@@ -3336,7 +3335,7 @@ portconfig(struct absout *eout,
 	if (new_port->allow_2217)
 	    args[0] = "rfc2217=true";
 	err = telnet_gensio_accepter_alloc(new_port->accepter, args,
-					   ser2net_o,
+					   so,
 					   handle_port_child_event,
 					   new_port, &parent);
 	if (err)
@@ -3449,7 +3448,7 @@ portconfig(struct absout *eout,
  out:
     UNLOCK(ports_lock);
 
-    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
+    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 
     return 0;
 
@@ -3501,7 +3500,7 @@ clear_old_port_config(int curr_config)
     }
     UNLOCK(ports_lock);
 
-    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
+    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 }
 
 #define REMOTEADDR_COLUMN_WIDTH \
@@ -3843,7 +3842,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
  out_unlock:
     UNLOCK(port->lock);
 
-    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
+    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 }
 
 /* Start data monitoring on the given port, type may be either "tcp" or
@@ -3962,7 +3961,7 @@ shutdown_ports(void)
 	port = next;
     }
 
-    wait_for_waiter(accepter_shutdown_wait, shutdown_count);
+    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 }
 
 int
@@ -3974,13 +3973,13 @@ check_ports_shutdown(void)
 int
 init_dataxfer(void)
 {
-    accepter_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
+    accepter_shutdown_wait = so->alloc_waiter(so);
     if (!accepter_shutdown_wait)
 	return ENOMEM;
 
-    rotator_shutdown_wait = alloc_waiter(ser2net_sel, ser2net_wake_sig);
+    rotator_shutdown_wait = so->alloc_waiter(so);
     if (!rotator_shutdown_wait) {
-	free_waiter(rotator_shutdown_wait);
+	so->free_waiter(rotator_shutdown_wait);
 	return ENOMEM;
     }
 
@@ -3990,6 +3989,6 @@ init_dataxfer(void)
 void
 shutdown_dataxfer(void)
 {
-    free_waiter(rotator_shutdown_wait);
-    free_waiter(accepter_shutdown_wait);
+    so->free_waiter(rotator_shutdown_wait);
+    so->free_waiter(accepter_shutdown_wait);
 }

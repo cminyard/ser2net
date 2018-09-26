@@ -247,7 +247,7 @@ sergensio_baud_b(struct sergensio_b *sbio, int *baud)
     data.o = sbio->o;
     err = sergensio_baud(sbio->sio, *baud, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -271,7 +271,7 @@ sergensio_datasize_b(struct sergensio_b *sbio, int *datasize)
     data.o = sbio->o;
     err = sergensio_datasize(sbio->sio, *datasize, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -295,7 +295,7 @@ sergensio_parity_b(struct sergensio_b *sbio, int *parity)
     data.o = sbio->o;
     err = sergensio_parity(sbio->sio, *parity, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -319,7 +319,7 @@ sergensio_stopbits_b(struct sergensio_b *sbio, int *stopbits)
     data.o = sbio->o;
     err = sergensio_stopbits(sbio->sio, *stopbits, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -344,7 +344,7 @@ sergensio_flowcontrol_b(struct sergensio_b *sbio, int *flowcontrol)
     err = sergensio_flowcontrol(sbio->sio, *flowcontrol,
 				sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -369,7 +369,7 @@ sergensio_iflowcontrol_b(struct sergensio_b *sbio, int *iflowcontrol)
     err = sergensio_iflowcontrol(sbio->sio, *iflowcontrol, sergensio_op_done,
 				 &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -393,7 +393,7 @@ sergensio_sbreak_b(struct sergensio_b *sbio, int *breakv)
     data.o = sbio->o;
     err = sergensio_sbreak(sbio->sio, *breakv, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -417,7 +417,7 @@ sergensio_dtr_b(struct sergensio_b *sbio, int *dtr)
     data.o = sbio->o;
     err = sergensio_dtr(sbio->sio, *dtr, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;
@@ -441,7 +441,7 @@ sergensio_rts_b(struct sergensio_b *sbio, int *rts)
     data.o = sbio->o;
     err = sergensio_rts(sbio->sio, *rts, sergensio_op_done, &data);
     if (!err)
-	sbio->o->wait(data.waiter, NULL);
+	sbio->o->wait(data.waiter, 1, NULL);
     sbio->o->free_waiter(data.waiter);
     if (!err)
 	err = data.err;

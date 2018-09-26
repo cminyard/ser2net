@@ -94,10 +94,10 @@ class HandleData:
         return
 
     def wait(self):
-        self.waiter.wait()
+        self.waiter.wait(1)
 
     def wait_timeout(self, timeout):
-        return self.waiter.wait_timeout(timeout)
+        return self.waiter.wait_timeout(1, timeout)
 
 
     # Everything below here is internal handling functions.

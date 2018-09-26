@@ -194,19 +194,23 @@ struct gensio_os_funcs {
     void (*free_waiter)(struct gensio_waiter *waiter);
 
     /*
-     * Wait for a wakeup for up to the amount of time (relative) given
-     * in timeout.  If timeout is NULL wait forever.  This return
-     * ETIMEDOUT on a timeout.  It can return other errors.
+     * Wait for count wakeups for up to the amount of time (relative)
+     * given in timeout.  If timeout is NULL wait forever.  This
+     * returns ETIMEDOUT on a timeout.  It can return other errors.
      * The timeout is updated to the remaining time.
+     * Note that if you get a timeout, none of the wakeups will be
+     * "used" by this call.
      */
-    int (*wait)(struct gensio_waiter *waiter, struct timeval *timeout);
+    int (*wait)(struct gensio_waiter *waiter, unsigned int count,
+		struct timeval *timeout);
 
     /*
      * Like wait, but return if a signal is received by the thread.
      * This is useful if you want to handle SIGINT or something like
      * that.
      */
-    int (*wait_intr)(struct gensio_waiter *waiter, struct timeval *timeout);
+    int (*wait_intr)(struct gensio_waiter *waiter, unsigned int count,
+		     struct timeval *timeout);
 
     /* Wake the given waiter. */
     void (*wake)(struct gensio_waiter *waiter);

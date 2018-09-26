@@ -24,8 +24,6 @@
 #include <termios.h>
 #include <sgtty.h>
 
-#include <utils/waiter.h>
-
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
 #include <gensio/gensio_selector.h>
@@ -128,14 +126,15 @@ wake_curr_waiter(void)
 #include "gensio_python.h"
 
 static int
-gensio_do_wait(struct waiter *waiter, struct timeval *timeout)
+gensio_do_wait(struct waiter *waiter, unsigned int count,
+	       struct timeval *timeout)
 {
     int err;
     struct waiter *prev_waiter = save_waiter(waiter);
 
     do {
 	GENSIO_SWIG_C_BLOCK_ENTRY
-	err = waiter->o->wait_intr(waiter->waiter, timeout);
+	    err = waiter->o->wait_intr(waiter->waiter, count, timeout);
 	GENSIO_SWIG_C_BLOCK_EXIT
 	if (check_for_err()) {
 	    if (prev_waiter)
@@ -825,14 +824,14 @@ struct waiter { };
 	free(self);
     }
 
-    int wait_timeout(int timeout) {
+    int wait_timeout(unsigned int count, int timeout) {
 	struct timeval tv = { timeout / 1000, timeout % 1000 };
 
-	return gensio_do_wait(self, &tv);
+	return gensio_do_wait(self, count, &tv);
     }
 
-    void wait() {
-	gensio_do_wait(self, NULL);
+    void wait(unsigned int count) {
+	gensio_do_wait(self, count, NULL);
     }
 
     void wake() {

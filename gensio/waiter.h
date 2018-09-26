@@ -22,7 +22,7 @@
 #ifndef WAITER_H
 #define WAITER_H
 
-#include "selector.h"
+#include <utils/selector.h>
 
 typedef struct waiter_s waiter_t;
 
