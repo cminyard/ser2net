@@ -26,7 +26,6 @@
 
 #include <utils/selector.h>
 #include <utils/utils.h>
-#include <utils/locking.h>
 
 #include <gensio/gensio.h>
 
@@ -44,7 +43,7 @@ static char *progname = "ser2net-control";
 
 /* This file holds the code that runs the control port. */
 
-DEFINE_LOCK_INIT(static, cntlr_lock)
+static struct gensio_lock *cntlr_lock;
 static struct gensio_accepter *controller_accepter;
 static struct gensio_waiter *accept_waiter;
 
@@ -59,7 +58,7 @@ char *prompt = "-> ";
 
 /* This data structure is kept for each control connection. */
 typedef struct controller_info {
-    DEFINE_LOCK(, lock)
+    struct gensio_lock *lock;
     int in_shutdown;
 
     struct gensio *net;
@@ -107,7 +106,7 @@ controller_close_done(struct gensio *net, void *cb_data)
 
     gensio_free(net);
 
-    FREE_LOCK(cntlr->lock);
+    so->free_lock(cntlr->lock);
 
     if (cntlr->outbuf != NULL) {
 	free(cntlr->outbuf);
@@ -116,7 +115,7 @@ controller_close_done(struct gensio *net, void *cb_data)
 
     /* Remove it from the linked list. */
     prev = NULL;
-    LOCK(cntlr_lock);
+    so->lock(cntlr_lock);
     curr = controllers;
     while (curr != NULL) {
 	if (cntlr == curr) {
@@ -132,7 +131,7 @@ controller_close_done(struct gensio *net, void *cb_data)
 	prev = curr;
 	curr = curr->next;
     }
-    UNLOCK(cntlr_lock);
+    so->unlock(cntlr_lock);
 
     shutdown_complete = cntlr->shutdown_complete;
     shutdown_complete_cb_data = cntlr->shutdown_complete_cb_data;
@@ -149,7 +148,7 @@ static void
 shutdown_controller(controller_info_t *cntlr)
 {
     if (cntlr->in_shutdown) {
-	UNLOCK(cntlr->lock);
+	so->unlock(cntlr->lock);
 	return;
     }
 
@@ -159,7 +158,7 @@ shutdown_controller(controller_info_t *cntlr)
     }
 
     cntlr->in_shutdown = 1;
-    UNLOCK(cntlr->lock);
+    so->unlock(cntlr->lock);
 
     gensio_close(cntlr->net, controller_close_done, NULL);
 }
@@ -492,7 +491,7 @@ controller_read(struct gensio *net, int err,
     int read_start;
     int i;
 
-    LOCK(cntlr->lock);
+    so->lock(cntlr->lock);
     if (cntlr->in_shutdown)
 	goto out_unlock;
 
@@ -555,7 +554,7 @@ controller_read(struct gensio *net, int err,
 	}
     }
  out_unlock:
-    UNLOCK(cntlr->lock);
+    so->unlock(cntlr->lock);
  out:
     return buflen;
 
@@ -575,7 +574,7 @@ controller_write_ready(struct gensio *net)
     int err;
     unsigned int write_count;
 
-    LOCK(cntlr->lock);
+    so->lock(cntlr->lock);
     if (cntlr->in_shutdown)
 	goto out;
 
@@ -583,7 +582,7 @@ controller_write_ready(struct gensio *net)
 		       &(cntlr->outbuf[cntlr->outbuf_pos]),
 		       cntlr->outbuf_count);
     if (err == EAGAIN) {
-	/* This again was due to O_NONBLOCK, just ignore it. */
+	/* This again was due to O_NONBso->lock, just ignore it. */
     } else if (err == EPIPE) {
 	goto out_fail;
     } else if (err) {
@@ -604,7 +603,7 @@ controller_write_ready(struct gensio *net)
 	gensio_set_write_callback_enable(net, false);
     }
  out:
-    UNLOCK(cntlr->lock);
+    so->unlock(cntlr->lock);
     return;
 
  out_fail:
@@ -642,7 +641,7 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
 	return ENOTSUP;
 
     net = data;
-    LOCK(cntlr_lock);
+    so->lock(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\r\n";
 	goto errout;
@@ -655,9 +654,12 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
 	memset(cntlr, 0, sizeof(*cntlr));
     }
 
-    /* From here on, errors must go to errout. */
-
-    INIT_LOCK(cntlr->lock);
+    cntlr->lock = so->alloc_lock(so);
+    if (!cntlr->lock) {
+	free(cntlr);
+	err = "Out of memory allocating lock";
+	goto errout;
+    }
 
     cntlr->net = net;
 
@@ -673,11 +675,11 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
     controllers = cntlr;
     num_controller_ports++;
 
-    UNLOCK(cntlr_lock);
+    so->unlock(cntlr_lock);
     return 0;
 
 errout:
-    UNLOCK(cntlr_lock);
+    so->unlock(cntlr_lock);
     /* We have a problem so refuse this one. */
     gensio_write(net, NULL, 0, err, strlen(err));
     gensio_free(net);
@@ -695,6 +697,12 @@ int
 controller_init(char *controller_port)
 {
     int rv;
+
+    if (!cntlr_lock) {
+	cntlr_lock = so->alloc_lock(so);
+	if (!cntlr_lock)
+	    return ENOMEM;
+    }
 
     if (!controller_shutdown_waiter) {
 	controller_shutdown_waiter = so->alloc_waiter(so);
@@ -755,7 +763,7 @@ free_controllers(void)
     while (controllers) {
 	controllers->shutdown_complete = shutdown_controller_done;
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
-	LOCK(controllers->lock);
+	so->lock(controllers->lock);
 	shutdown_controller(controllers); /* Releases the lock. */
 	so->wait(controller_shutdown_waiter, 1, NULL);
     }

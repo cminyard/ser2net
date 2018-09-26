@@ -36,7 +36,6 @@
 
 #include <utils/utils.h>
 #include <utils/selector.h>
-#include <utils/locking.h>
 #include <utils/uucplock.h>
 
 #include <gensio/gensio_selector.h>
@@ -56,6 +55,7 @@ int ser2net_debug = 0;
 int ser2net_debug_level = 0;
 volatile int in_shutdown = 0;
 #ifdef USE_PTHREADS
+#include <pthread.h>
 int num_threads = 1;
 struct thread_info {
     pthread_t id;
@@ -193,25 +193,25 @@ sigint_handler(int sig)
     sig_wake_selector();
 }
 
-#if USE_PTHREADS
-DEFINE_LOCK_INIT(static, config_lock)
+static struct gensio_lock *config_lock;
 static int in_config_read = 0;
 
-DEFINE_LOCK_INIT(static, maint_lock)
+static struct gensio_lock *maint_lock;
 
+#if USE_PTHREADS
 int ser2net_wake_sig = SIGUSR1;
 void (*finish_shutdown)(void);
 
 void
 start_maint_op(void)
 {
-    LOCK(maint_lock);
+    so->lock(maint_lock);
 }
 
 void
 end_maint_op(void)
 {
-    UNLOCK(maint_lock);
+    so->unlock(maint_lock);
 }
 
 static void *
@@ -221,9 +221,9 @@ config_reread_thread(void *dummy)
     start_maint_op();
     reread_config_file();
     end_maint_op();
-    LOCK(config_lock);
+    so->lock(config_lock);
     in_config_read = 0;
-    UNLOCK(config_lock);
+    so->unlock(config_lock);
     return NULL;
 }
 
@@ -233,22 +233,22 @@ thread_reread_config_file(void)
     int rv;
     pthread_t thread;
 
-    LOCK(config_lock);
+    so->lock(config_lock);
     if (in_config_read) {
-	UNLOCK(config_lock);
+	so->unlock(config_lock);
 	return;
     }
     in_config_read = 1;
-    UNLOCK(config_lock);
+    so->unlock(config_lock);
 
     rv = pthread_create(&thread, NULL, config_reread_thread, NULL);
     if (rv) {
 	syslog(LOG_ERR,
 	       "Unable to start thread to reread config file: %s",
 	       strerror(rv));
-	LOCK(config_lock);
+	so->lock(config_lock);
 	in_config_read = 0;
-	UNLOCK(config_lock);
+	so->unlock(config_lock);
     }
 }
 
@@ -668,6 +668,18 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
+    config_lock = so->alloc_lock(so);
+    if (!config_lock) {
+	fprintf(stderr, "Could not alloc ser2net config lock\n");
+	exit(1);
+    }
+
+    maint_lock = so->alloc_lock(so);
+    if (!maint_lock) {
+	fprintf(stderr, "Could not alloc ser2net maint lock\n");
+	exit(1);
+    }
+
     setup_signals();
 
     err = init_dataxfer();
@@ -759,6 +771,8 @@ main(int argc, char *argv[])
 
     op_loop(NULL);
 
+    so->free_lock(maint_lock);
+    so->free_lock(config_lock);
     so->free_funcs(so);
     sel_free_selector(ser2net_sel);
 
