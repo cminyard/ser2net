@@ -656,7 +656,7 @@ handle_new_default(const char *name, const char *str)
 
 /*
  * This rather complicated variable is used to scan the string for
- * ":off", ":telnet", ":raw:", or ":rawlp:".  It's a basic state
+ * ":off", ":on", ":telnet", ":raw:", or ":rawlp:".  It's a basic state
  * machine where if a character in the first string "c" matches the
  * current character, you go to the state machine index in the
  * corresponding location giving by the character in string "next".
@@ -683,7 +683,7 @@ static struct {
     { "w",   "\x09" },		/* 0x09 */
     { ":l",  "\x00\x0a" },	/* 0x09 */
     { "p",   "\x0d" },		/* 0x0a */
-    { "f",   "\x0c" },		/* 0x0b */
+    { "fn",  "\x0c\x0d" },	/* 0x0b */
     { "f",   "\x0d" },		/* 0x0c */
     { ":",   "\x00" }		/* 0x0d */
 };
