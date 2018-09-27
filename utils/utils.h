@@ -101,18 +101,6 @@ const char *get_baud_rate_str(int baud_rate);
 void get_rate_from_baud_rate(int baud_rate, int *val);
 
 /*
- * Convert a Cisco version RFC2217 baud rate to an integer baud rate.
- * Returns 0 if unsuccessful.
- */
-int cisco_baud_to_baud(int cisco_val);
-
-/*
- * Convert an integer baud rate to a Cisco version RFC2217 baud rate.
- * Returns 0 if unsuccessful.
- */
-int baud_to_cisco_baud(int val);
-
-/*
  * Convert string parameter into a termios setting.  Valid values
  * are 1STOPBIT, 2STOPBITS, 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS,
  */

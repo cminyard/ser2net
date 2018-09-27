@@ -62,6 +62,59 @@ struct stel_data {
     struct stel_req *reqs;
 };
 
+static struct cisco_baud_rates_s {
+    int real_rate;
+    int cisco_ios_val;
+} cisco_baud_rates[] = {
+    { 300, 3 },
+    { 600 , 4},
+    { 1200, 5 },
+    { 2400, 6 },
+    { 4800, 7 },
+    { 9600, 8 },
+    { 19200, 10 },
+    { 38400, 12 },
+    { 57600, 13 },
+    { 115200, 14 },
+    { 230400, 15 },
+};
+#define CISCO_BAUD_RATES_LEN \
+    ((sizeof(cisco_baud_rates) / sizeof(struct cisco_baud_rates_s)))
+
+/*
+ * Convert a Cisco version RFC2217 baud rate to an integer baud rate.
+ * Returns 0 if unsuccessful.
+ */
+static int
+cisco_baud_to_baud(int cisco_val)
+{
+    unsigned int i;
+
+    for (i = 0; i < CISCO_BAUD_RATES_LEN; i++) {
+	if (cisco_val == cisco_baud_rates[i].cisco_ios_val)
+	    return cisco_baud_rates[i].real_rate;
+    }
+
+    return 0;
+}
+
+/*
+ * Convert an integer baud rate to a Cisco version RFC2217 baud rate.
+ * Returns 0 if unsuccessful.
+ */
+static int
+baud_to_cisco_baud(int val)
+{
+    unsigned int i;
+
+    for (i = 0; i < CISCO_BAUD_RATES_LEN; i++) {
+	if (val == cisco_baud_rates[i].real_rate)
+	    return cisco_baud_rates[i].cisco_ios_val;
+    }
+
+    return 0;
+}
+
 static void
 stel_lock(struct stel_data *sdata)
 {
