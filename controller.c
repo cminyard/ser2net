@@ -291,13 +291,6 @@ static char *help_str =
 "setporttimeout <tcp port> <timeout> - Set the amount of time in seconds\r\n"
 "       before the port connection will be shut down if no activity\r\n"
 "       has been seen on the port.\r\n"
-"setportconfig <tcp port> <config> - Set the port configuration as in\r\n"
-"       the device configuration in the ser2net.conf file.  Valid options\r\n"
-"       are: 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, \r\n"
-"       EVEN, ODD, NONE, 1STOPBIT, 2STOPBITS, 7DATABITS, 8DATABITS, \r\n"
-"       LOCAL (ignore modem control), [-]RTSCTS, [-]XONXOFF.\r\n"
-"       Note that these will not change until the port is disconnected\r\n"
-"       and connected again.\r\n"
 "setportcontrol <tcp port> <controls>\r\n"
 "       Dynamically modify the characteristics of the port.  These are\r\n"
 "       immedaite and won't live between connections.  Valid controls are\r\n"
@@ -418,23 +411,6 @@ process_input_line(controller_info_t *cntlr)
 	}
 	start_maint_op();
 	setportenable(cntlr, tok, str);
-	end_maint_op();
-    } else if (strcmp(tok, "setportconfig") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    char *err = "No port given\r\n";
-	    controller_outs(cntlr, err);
-	    goto out;
-	}
-
-	str = strtok_r(NULL, "", &strtok_data);
-	if (str == NULL) {
-	    char *err = "No device config\r\n";
-	    controller_outs(cntlr, err);
-	    goto out;
-	}
-	start_maint_op();
-	setportdevcfg(cntlr, tok, str);
 	end_maint_op();
     } else if (strcmp(tok, "setportcontrol") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);

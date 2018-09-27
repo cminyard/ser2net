@@ -71,13 +71,6 @@ void setporttimeout(struct controller_info *cntlr,
 		    char *portspec,
 		    char *timeout);
 
-/* Set the serial port's configuration.  The parameters are all
-   strings that the routine will convert to integers.  Error output
-   will be generated on invalid data. */
-void setportdevcfg(struct controller_info *cntlr,
-		   char *portspec,
-		   char *devcfg);
-
 /* Modify the DTR and RTS lines for the port. */
 void setportcontrol(struct controller_info *cntlr,
 		    char *portspec,
