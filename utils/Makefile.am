@@ -1,12 +1,12 @@
 
 noinst_LIBRARIES = libutils.a
 
-noinst_HEADERS = selector.h utils.h heap.h buffer.h uucplock.h
+noinst_HEADERS = selector.h utils.h heap.h uucplock.h
 
 noinst_lib_LTLIBRARIES = libser2net_utils.la
 noinst_libdir = $(shell readlink -f $(top_builddir)/dummy_install)
 
-MY_SOURCES = utils.c selector.c buffer.c uucplock.c
+MY_SOURCES = utils.c selector.c uucplock.c
 
 libser2net_utils_la_SOURCES = $(MY_SOURCES)
 

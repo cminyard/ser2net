@@ -18,7 +18,7 @@ EXTRA_DIST = gensio_python.i
 nodist__gensio_la_SOURCES = gensio_wrap.c
 _gensio_la_LIBADD = \
 	$(top_builddir)/utils/utils.lo $(top_builddir)/utils/selector.lo \
-	$(top_builddir)/gensio/telnet.lo $(top_builddir)/utils/buffer.lo \
+	$(top_builddir)/gensio/telnet.lo $(top_builddir)/gensio/buffer.lo \
 	$(top_builddir)/gensio/waiter.lo $(top_builddir)/utils/uucplock.lo \
 	$(top_builddir)/gensio/gensio.lo $(top_builddir)/gensio/gensio_tcp.lo \
 	$(top_builddir)/gensio/waiter.lo \

@@ -2,7 +2,7 @@
 #ifndef _SER2NET_TELNET_H
 #define _SER2NET_TELNET_H
 
-#include <utils/buffer.h>
+#include <gensio/buffer.h>
 
 /* Telnet commands */
 #define TN_SE   240
