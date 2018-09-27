@@ -361,6 +361,18 @@ stel_flush(struct sergensio *sio, unsigned int val)
 }
 
 static int
+stel_send_break(struct sergensio *sio)
+{
+    struct stel_data *sdata = sergensio_get_gensio_data(sio);
+    unsigned char buf[2];
+
+    buf[0] = TN_IAC;
+    buf[1] = TN_BREAK;
+    sdata->rops->send_cmd(sdata->filter, buf, 2);
+    return 0;
+}
+
+static int
 sergensio_stel_func(struct sergensio *sio, int op, int val, char *buf,
 		    void *done, void *cb_data)
 {
@@ -406,6 +418,9 @@ sergensio_stel_func(struct sergensio *sio, int op, int val, char *buf,
 
     case SERGENSIO_FUNC_SIGNATURE:
 	return stel_signature(sio, buf, val, done, cb_data);
+
+    case SERGENSIO_FUNC_SEND_BREAK:
+	return stel_send_break(sio);
 
     default:
 	return ENOTSUP;
@@ -918,6 +933,16 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 }
 
 static void
+stela_got_cmd(void *handler_data, unsigned char cmd)
+{
+    struct stel_data *sdata = handler_data;
+    struct gensio *io = sergensio_to_gensio(sdata->sio);
+
+    if (cmd == TN_BREAK)
+	gensio_cb(io, GENSIO_EVENT_SER_SEND_BREAK, 0, NULL, 0, 0, NULL);
+}
+
+static void
 stela_cb_got_sync(void *handler_data)
 {
     struct stel_data *sdata = handler_data;
@@ -962,6 +987,7 @@ stela_timeout(void *handler_data)
 
 struct gensio_telnet_filter_callbacks sergensio_telnet_server_filter_cbs = {
     .got_sync = stela_cb_got_sync,
+    .got_cmd = stela_got_cmd,
     .com_port_will_do = stela_cb_com_port_will_do,
     .com_port_cmd = stela_cb_com_port_cmd,
     .timeout = stela_timeout,

@@ -668,6 +668,15 @@ sterm_flush(struct sergensio *sio, unsigned int val)
 }
 
 static int
+sterm_send_break(struct sergensio *sio)
+{
+    struct sterm_data *sdata = sergensio_get_gensio_data(sio);
+
+    tcsendbreak(sdata->fd, 0);
+    return 0;
+}
+
+static int
 sergensio_sterm_func(struct sergensio *sio, int op, int val, char *buf,
 		     void *done, void *cb_data)
 {
@@ -707,6 +716,9 @@ sergensio_sterm_func(struct sergensio *sio, int op, int val, char *buf,
 
     case SERGENSIO_FUNC_FLUSH:
 	return sterm_flush(sio, val);
+
+    case SERGENSIO_FUNC_SEND_BREAK:
+	return sterm_send_break(sio);
 
     case SERGENSIO_FUNC_SIGNATURE:
     case SERGENSIO_FUNC_LINESTATE:

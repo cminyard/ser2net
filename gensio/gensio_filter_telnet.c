@@ -506,6 +506,17 @@ static void telnet_filter_send_option(struct gensio_filter *filter,
     telnet_unlock(tfilter);
 }
 
+static void telnet_filter_send_cmd(struct gensio_filter *filter,
+				   const unsigned char *buf,
+				   unsigned int len)
+{
+    struct telnet_filter *tfilter = filter_to_telnet(filter);
+
+    telnet_lock(tfilter);
+    telnet_cmd_send(&tfilter->tn_data, buf, len);
+    telnet_unlock(tfilter);
+}
+
 static void telnet_filter_start_timer(struct gensio_filter *filter,
 				      struct timeval *timeout)
 {
@@ -517,6 +528,7 @@ static void telnet_filter_start_timer(struct gensio_filter *filter,
 
 const struct gensio_telnet_filter_rops telnet_filter_rops = {
     .send_option = telnet_filter_send_option,
+    .send_cmd = telnet_filter_send_cmd,
     .start_timer = telnet_filter_start_timer
 };
 

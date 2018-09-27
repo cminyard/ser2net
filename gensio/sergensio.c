@@ -176,6 +176,12 @@ sergensio_flush(struct sergensio *sio, unsigned int val)
     return sio->func(sio, SERGENSIO_FUNC_FLUSH, val, NULL, NULL, NULL);
 }
 
+int
+sergensio_send_break(struct sergensio *sio)
+{
+    return sio->func(sio, SERGENSIO_FUNC_SEND_BREAK, 0, NULL, NULL, NULL);
+}
+
 bool
 sergensio_is_client(struct sergensio *sio)
 {

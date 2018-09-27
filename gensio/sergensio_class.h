@@ -38,6 +38,7 @@
 #define SERGENSIO_FUNC_FLOWCONTROL_STATE	12
 #define SERGENSIO_FUNC_FLUSH			13
 #define SERGENSIO_FUNC_SIGNATURE		14
+#define SERGENSIO_FUNC_SEND_BREAK		15
 
 typedef int (*sergensio_func)(struct sergensio *sio, int op, int val, char *buf,
 			      void *done, void *cb_data);

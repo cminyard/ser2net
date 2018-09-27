@@ -35,6 +35,8 @@ struct gensio_telnet_filter_callbacks {
 struct gensio_telnet_filter_rops {
     void (*send_option)(struct gensio_filter *filter,
 			const unsigned char *buf, unsigned int len);
+    void (*send_cmd)(struct gensio_filter *filter,
+		     const unsigned char *buf, unsigned int len);
     void (*start_timer)(struct gensio_filter *filter, struct timeval *timeout);
 };
 

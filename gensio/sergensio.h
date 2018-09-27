@@ -139,13 +139,17 @@ int sergensio_modemstate(struct sergensio *sio, unsigned int modemstate);
 int sergensio_flowcontrol_state(struct sergensio *sio, bool val);
 
 /*
- *
+ * Tell the remote end to flush its buffers.
  */
 #define SERGIO_FLUSH_RCV_BUFFER		1
 #define SERGIO_FLUSH_XMIT_BUFFER	2
 #define SERGIO_FLUSH_RCV_XMIT_BUFFERS	3
 int sergensio_flush(struct sergensio *sio, unsigned int val);
 
+/*
+ * Tell the remote end to send a break.
+ */
+int sergensio_send_break(struct sergensio *sio);
 
 /*
  * Return the user data supplied in the alloc function.
@@ -230,6 +234,9 @@ int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 #define GENSIO_EVENT_SER_SBREAK		(SERGENIO_EVENT_BASE + 13)
 #define GENSIO_EVENT_SER_DTR		(SERGENIO_EVENT_BASE + 14)
 #define GENSIO_EVENT_SER_RTS		(SERGENIO_EVENT_BASE + 15)
+
+/* Got a request from the other end to send a break. */
+#define GENSIO_EVENT_SER_SEND_BREAK	(SERGENIO_EVENT_BASE + 16)
 
 bool sergensio_is_client(struct sergensio *sio);
 
