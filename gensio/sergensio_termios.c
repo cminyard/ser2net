@@ -64,6 +64,8 @@ struct sterm_data {
 
     int fd;
 
+    bool write_only;		/* No termios, no read. */
+
     struct termios default_termios;
 
     bool deferred_op_pending;
@@ -163,6 +165,9 @@ termios_set_get(struct sterm_data *sdata, int val, enum termio_op op,
     struct termios termio;
     struct termio_op_q *qe = NULL;
     int err = 0;
+
+    if (sdata->write_only)
+	return ENOTSUP;
 
     if (done) {
 	qe = sdata->o->zalloc(sdata->o, sizeof(*qe));
@@ -680,6 +685,11 @@ static int
 sergensio_sterm_func(struct sergensio *sio, int op, int val, char *buf,
 		     void *done, void *cb_data)
 {
+    struct sterm_data *sdata = sergensio_get_gensio_data(sio);
+
+    if (sdata->write_only)
+	return ENOTSUP;
+
     switch (op) {
     case SERGENSIO_FUNC_BAUD:
 	return sterm_baud(sio, val, done, cb_data);
@@ -801,6 +811,7 @@ sterm_sub_open(void *handler_data,
 {
     struct sterm_data *sdata = handler_data;
     int err;
+    int options;
 
     err = uucp_mk_lock(sdata->devname);
     if (err > 0) {
@@ -814,13 +825,19 @@ sterm_sub_open(void *handler_data,
 
     sdata->timer_stopped = false;
 
-    sdata->fd = open(sdata->devname, O_NONBLOCK | O_NOCTTY | O_RDWR);
+    options = O_NONBLOCK | O_NOCTTY;
+    if (sdata->write_only)
+	options |= O_WRONLY;
+    else
+	options |= O_RDWR;
+    sdata->fd = open(sdata->devname, options);
     if (sdata->fd == -1) {
 	err = errno;
 	goto out_uucp;
     }
 
-    if (tcsetattr(sdata->fd, TCSANOW, &sdata->default_termios) == -1) {
+    if (!sdata->write_only &&
+		tcsetattr(sdata->fd, TCSANOW, &sdata->default_termios) == -1) {
 	err = errno;
 	goto out_uucp;
     }
@@ -832,7 +849,8 @@ sterm_sub_open(void *handler_data,
     sdata->sent_first_modemstate = false;
     sterm_unlock(sdata);
 
-    sterm_modemstate(sdata->sio, 255);
+    if (!sdata->write_only)
+	sterm_modemstate(sdata->sio, 255);
 
     *fd = sdata->fd;
 
@@ -853,14 +871,105 @@ sterm_raddr_to_str(void *handler_data, unsigned int *epos,
 		   char *buf, unsigned int buflen)
 {
     struct sterm_data *sdata = handler_data;
-
     int pos = 0;
 
     if (epos)
 	pos = *epos;
 
-    pos += snprintf(buf + pos, buflen - pos, "termios,%s", sdata->devname);
+    pos += snprintf(buf + pos, buflen - pos, "%s", sdata->devname);
 
+    if (!sdata->write_only) {
+	struct termios itermio, *termio;
+	speed_t speed;
+	int stopbits;
+	int databits;
+	int parity_enabled;
+	int parity;
+	int xon;
+	int xoff;
+	int xany;
+	int flow_rtscts;
+	int clocal;
+	int hangup_when_done;
+	char str[4];
+
+	if (sdata->fd == -1) {
+	    termio = &sdata->default_termios;
+	} else {
+	    if (tcgetattr(sdata->fd, &itermio) == -1)
+		goto out;
+	    termio = &itermio;
+	}
+
+	speed = cfgetospeed(termio);
+	stopbits = termio->c_cflag & CSTOPB;
+	databits = termio->c_cflag & CSIZE;
+	parity_enabled = termio->c_cflag & PARENB;
+	parity = termio->c_cflag & PARODD;
+	xon = termio->c_iflag & IXON;
+	xoff = termio->c_iflag & IXOFF;
+	xany = termio->c_iflag & IXANY;
+	flow_rtscts = termio->c_cflag & CRTSCTS;
+	clocal = termio->c_cflag & CLOCAL;
+	hangup_when_done = termio->c_cflag & HUPCL;
+
+	if (parity_enabled && parity)
+	    str[0] = 'O';
+	else if (parity_enabled)
+	    str[0] = 'E';
+	else
+	    str[0] = 'N';
+
+	switch (databits) {
+	case CS5: str[1] = '5'; break;
+	case CS6: str[1] = '6'; break;
+	case CS7: str[1] = '7'; break;
+	case CS8: str[1] = '8'; break;
+	default: str[1] = '?';
+	}
+
+	if (stopbits)
+	    str[2] = '2';
+	else
+	    str[2] = '1';
+
+	str[3] = '\0';
+
+	pos += snprintf(buf + pos, buflen - pos,
+			",%s%s", get_baud_rate_str(speed), str);
+
+	if (xon && xoff && xany)
+	    pos += snprintf(buf + pos, buflen - pos, ",%s", "XONXOFF");
+
+	if (flow_rtscts)
+	    pos += snprintf(buf + pos, buflen - pos, ",%s", "RTSCTS");
+
+	if (clocal)
+	    pos += snprintf(buf + pos, buflen - pos, ",%s", "CLOCAL");
+
+	if (hangup_when_done)
+	    pos += snprintf(buf + pos, buflen - pos, ",%s", "HANGUP_WHEN_DONE");
+
+    }
+    if (!sdata->write_only && sdata->fd != -1) {
+	int status = 0;
+
+	ioctl(sdata->fd, TIOCMGET, &status);
+
+	if (status & TIOCM_RTS)
+	    pos += snprintf(buf + pos, buflen - pos, " %s", "RTSHI");
+	else
+	    pos += snprintf(buf + pos, buflen - pos, " %s", "RTSLO");
+
+	if (status & TIOCM_DTR)
+	    pos += snprintf(buf + pos, buflen - pos, " %s", "DTRHI");
+	else
+	    pos += snprintf(buf + pos, buflen - pos, " %s", "DTRLO");
+    } else {
+	pos += snprintf(buf + pos, buflen - pos, " %s", "offline");
+    }
+
+ out:
     if (epos)
 	*epos = pos;
 
@@ -915,6 +1024,10 @@ sergensio_process_parms(struct sterm_data *sdata)
 	return err;
 
     for (i = 0; i < argc; i++) {
+	if (strcmp(argv[i], "WRONLY") == 0) {
+	    sdata->write_only = true;
+	    continue;
+	}
 	err = process_termios_parm(&sdata->default_termios, argv[i]);
 	if (err)
 	    break;
