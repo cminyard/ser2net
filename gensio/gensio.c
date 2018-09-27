@@ -543,21 +543,6 @@ sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
     return true;
 }
 
-int
-gensio_buffer_do_write(void *cb_data, void  *buf, size_t buflen,
-		       size_t *written)
-{
-    struct gensio *io = cb_data;
-    int err = 0;
-    unsigned int count;
-
-    err = gensio_write(io, &count, 0, buf, buflen);
-    if (!err)
-	*written = count;
-
-    return err;
-}
-
 void
 gensio_set_callback(struct gensio *io, gensio_event cb, void *user_data)
 {

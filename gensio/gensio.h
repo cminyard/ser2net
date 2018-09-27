@@ -759,10 +759,4 @@ bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
 int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 		      bool *is_port_set);
 
-/*
- * Helper function for dealing with buffers writing to a gensio.
- */
-int gensio_buffer_do_write(void *cb_data,
-			   void *buf, size_t buflen, size_t *written);
-
 #endif /* GENSIO_H */
