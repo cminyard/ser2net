@@ -29,8 +29,10 @@
 #include <syslog.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <gensio/gensio.h>
 
 #include "utils/utils.h"
+#include "ser2net.h"
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "led.h"
@@ -452,135 +454,126 @@ struct enum_val shared_serial_alert_enums[] = {
 };
 #endif
 
-enum default_type { DEFAULT_INT, DEFAULT_BOOL, DEFAULT_ENUM, DEFAULT_STR };
-
 struct default_data
 {
     const char *name;
-    enum default_type type;
+    enum gensio_default_type type;
     int min;
     int max;
-    struct enum_val *enums;
-    union {
-	int intval;
-	char *strval;
-    } val;
-    union {
+    struct {
 	int intval;
 	const char *strval;
     } def;
-    const char *altname;
+    struct gensio_enum_val *enums;
 };
 
 struct default_data defaults[] = {
+#if 0 /* In gensio now. */
     /* serial device only */
-    { "stopbits",	DEFAULT_INT,	.min = 1, .max = 2, .def.intval = 1 },
-    { "databits",	DEFAULT_INT,	.min = 5, .max = 8, .def.intval = 8 },
-    { "parity",		DEFAULT_ENUM,	.enums = parity_enums,
-					.def.intval = PARITY_NONE },
-    { "xonxoff",	DEFAULT_BOOL,	.def.intval = 0 },
-    { "rtscts",		DEFAULT_BOOL,	.def.intval = 0 },
-    { "local",		DEFAULT_BOOL,	.def.intval = 0 },
-    { "hangup_when_done", DEFAULT_BOOL,	.def.intval = 0 },
+    { "stopbits",	GENSIO_DEFAULT_INT,	.min = 1, .max = 2 },
+    { "databits",	GENSIO_DEFAULT_INT,	.min = 5, .max = 8,
+						.def.intval = 8 },
+    { "parity",		GENSIO_DEFAULT_ENUM,	.enums = parity_enums,
+						.def.intval = 'N' },
+    { "xonxoff",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "rtscts",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "local",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "hangup_when_done", GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
     /* Serial port and SOL */
-    { "speed",		DEFAULT_ENUM,	.enums = speed_enums,
+    { "speed",		GENSIO_DEFAULT_ENUM,	.enums = speed_enums,
 					.def.intval = 9600 },
-    { "nobreak",	DEFAULT_BOOL,	.def.intval = 0 },
+    { "nobreak",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+#endif
     /* All port types */
-    { "remctl",		DEFAULT_BOOL,	.def.intval = 0 },
-    { "telnet_brk_on_sync",DEFAULT_BOOL,.def.intval = 0 },
-    { "kickolduser",	DEFAULT_BOOL,	.def.intval = 0 },
-    { "chardelay",	DEFAULT_BOOL,	.def.intval = 1 },
-    { "chardelay-scale",DEFAULT_INT,	.min = 1, .max = 1000,
+    { "remctl",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "telnet_brk_on_sync",GENSIO_DEFAULT_BOOL,.def.intval = 0 },
+    { "kickolduser",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "chardelay",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
+    { "chardelay-scale",GENSIO_DEFAULT_INT,	.min = 1, .max = 1000,
 					.def.intval = 20 },
-    { "chardelay-min",	DEFAULT_INT,	.min = 1, .max = 100000,
+    { "chardelay-min",	GENSIO_DEFAULT_INT,	.min = 1, .max = 100000,
 					.def.intval = 1000 },
-    { "chardelay-max",	DEFAULT_INT,	.min = 1, .max = 1000000,
+    { "chardelay-max",	GENSIO_DEFAULT_INT,	.min = 1, .max = 1000000,
 					.def.intval = 20000 },
-    { "dev-to-net-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
-					.def.intval = PORT_BUFSIZE,
-					.altname = "dev-to-tcp-bufsize" },
-    { "net-to-dev-bufsize", DEFAULT_INT,.min = 1, .max = 65536,
-					.def.intval = PORT_BUFSIZE,
-					.altname = "tcp-to-dev-bufsize" },
-    { "max-connections", DEFAULT_INT,	.min=1, .max=65536,
+    { "dev-to-net-bufsize", GENSIO_DEFAULT_INT,.min = 1, .max = 65536,
+					.def.intval = PORT_BUFSIZE },
+    { "net-to-dev-bufsize", GENSIO_DEFAULT_INT,.min = 1, .max = 65536,
+					.def.intval = PORT_BUFSIZE },
+    { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
+#if 0 /* In gensio now. */
 #ifdef HAVE_OPENIPMI
     /* SOL only */
-    { "authenticated",	DEFAULT_BOOL,	.def.intval = 1 },
-    { "encrypted",	DEFAULT_BOOL,	.def.intval = 1 },
-    { "ack-timeout",	DEFAULT_INT,	.min = 1, .max = INT_MAX,
+    { "authenticated",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
+    { "encrypted",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
+    { "ack-timeout",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
 					.def.intval = 1000000 },
-    { "ack-retries",	DEFAULT_INT,	.min = 1, .max = INT_MAX,
+    { "ack-retries",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
 					.def.intval = 10 },
-    { "shared-serial-alert", DEFAULT_ENUM, .enums = shared_serial_alert_enums,
+    { "shared-serial-alert", GENSIO_DEFAULT_ENUM, .enums = shared_serial_alert_enums,
 				   .def.intval = ipmi_sol_serial_alerts_fail },
-    { "deassert_CTS_DCD_DSR_on_connect", DEFAULT_BOOL, .def.intval = 0 },
+    { "deassert_CTS_DCD_DSR_on_connect", GENSIO_DEFAULT_BOOL, .def.intval = 0 },
 #endif
-    { "remaddr",	DEFAULT_STR,	.def.strval = "" },
+#endif
+    { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = "" },
     { NULL }
 };
 
 
-static void
+static int
 setup_defaults(void)
 {
-    int i;
+    unsigned int i;
+    int err;
+    static bool defaults_added = false;
 
-    for (i = 0; defaults[i].name; i++) {
-	if (defaults[i].type == DEFAULT_STR) {
-	    if (defaults[i].val.strval) {
-		free(defaults[i].val.strval);
-		defaults[i].val.strval = NULL;
-	    }
-	} else {
-	    defaults[i].val.intval = defaults[i].def.intval;
+    if (defaults_added) {
+	gensio_reset_defaults(so);
+    } else {
+	for (i = 0; defaults[i].name; i++) {
+	    err = gensio_add_default(so, defaults[i].name,
+				     defaults[i].type, defaults[i].def.strval,
+				     defaults[i].def.intval, defaults[i].min,
+				     defaults[i].max, defaults[i].enums);
+	    if (err)
+		return err;
 	}
     }
-}
-
-static int cmp_default_name(struct default_data *def, const char *name)
-{
-    return (strcmp(def->name, name) == 0 ||
-	    (def->altname && strcmp(def->altname, name) == 0));
+    return 0;
 }
 
 int
 find_default_int(const char *name)
 {
-    int i;
+    int err, val;
 
-    for (i = 0; defaults[i].name; i++) {
-	if (cmp_default_name(&defaults[i], name) &&
-			defaults[i].type != DEFAULT_STR)
-	    return defaults[i].val.intval;
-    }
-    abort();
+    err = gensio_get_default(so, "ser2net", name, true, GENSIO_DEFAULT_INT,
+			     NULL, &val);
+    if (err)
+	abort();
+
+    return val;
 }
 
 char *
 find_default_str(const char *name)
 {
-    int i;
+    int err;
+    const char *val;
 
-    for (i = 0; defaults[i].name; i++) {
-	if (cmp_default_name(&defaults[i], name) &&
-			defaults[i].type == DEFAULT_STR) {
-	    const char *s = defaults[i].val.strval;
-	    if (!s)
-		s = defaults[i].def.strval;
-	    return strdup(s);
-	}
-    }
-    abort();
+    err = gensio_get_default(so, "ser2net", name, true, GENSIO_DEFAULT_STR,
+			     &val, NULL);
+    if (err)
+	abort();
+
+    return strdup(val);
 }
 
 static void
-handle_new_default(const char *name, const char *str)
+handle_new_default(const char *name, char *str)
 {
-    int i, val, len;
-    char *end, *sval;
-    const char *s;
+    int err;
+    char *s;
 
     while (isspace(*str))
 	str++;
@@ -591,67 +584,12 @@ handle_new_default(const char *name, const char *str)
 	syslog(LOG_ERR, "No default value on %d", lineno);
 	return;
     }
-    len = s - str;
+    *s = '\0';
 
-    for (i = 0; defaults[i].name; i++) {
-	if (!cmp_default_name(&defaults[i], name))
-	    continue;
-
-	switch (defaults[i].type) {
-	case DEFAULT_INT:
-	    val = strtoul(str, &end, 10);
-	    if (end != s) {
-		syslog(LOG_ERR, "Invalid integer value on %d", lineno);
-		return;
-	    }
-	    if (val < defaults[i].min || val > defaults[i].max) {
-		syslog(LOG_ERR, "Integer value out of range on %d, "
-		       "min is %d, max is %d",
-		       lineno, defaults[i].min, defaults[i].max);
-		return;
-	    }
-	    defaults[i].val.intval = val;
-	    break;
-
-	case DEFAULT_BOOL:
-	    val = strtoul(str, &end, 10);
-	    if (end == s)
-		defaults[i].val.intval = !!val;
-	    else if (len == 4 && ((strncmp(str, "true", 4) == 0) ||
-				  (strncmp(str, "TRUE", 4) == 0)))
-		defaults[i].val.intval = 1;
-	    else if (len == 5 && ((strncmp(str, "false", 5) == 0) ||
-				  (strncmp(str, "FALSE", 5) == 0)))
-		defaults[i].val.intval = 0;
-	    else
-		syslog(LOG_ERR, "Invalid integer value on %d", lineno);
-	    break;
-
-	case DEFAULT_ENUM:
-	    val = lookup_enum(defaults[i].enums, str, len);
-	    if (val == -1) {
-		syslog(LOG_ERR, "Invalid enumeration value on %d", lineno);
-		return;
-	    }
-	    defaults[i].val.intval = val;
-	    break;
-
-	case DEFAULT_STR:
-	    sval = strdup(str);
-	    if (!sval) {
-		syslog(LOG_ERR, "Out of memory processing default string on"
-		       " line %d", lineno);
-		return;
-	    }
-	    if (defaults[i].val.strval)
-		free(defaults[i].val.strval);
-	    defaults[i].val.strval = sval;
-	    break;
-	}
-	return;
-    }
-
-    syslog(LOG_ERR, "unknown default name '%s' on %d", name, lineno);
+    err = gensio_set_default(so, "ser2net", name, str, 0);
+    if (err)
+	syslog(LOG_ERR, "error setting default value on line %d for %s: %s",
+	       lineno, name, strerror(err));
 }
 
 /*
@@ -924,10 +862,13 @@ handle_config_line(char *inbuf, int len)
     return 0;
 }
 
-void
+int
 readconfig_init(void)
 {
-    setup_defaults();
+    int err = setup_defaults();
+
+    if (err)
+	return err;
     free_longstrs();
     free_tracefiles();
 #if HAVE_DECL_TIOCSRS485
@@ -937,6 +878,7 @@ readconfig_init(void)
 
     config_num++;
     free_rotators();
+    return 0;
 }
 
 /* Read the specified configuration file and call the routine to

@@ -36,10 +36,8 @@
 #include <gensio/sergensio.h>
 
 #include <utils/utils.h>
-#include <utils/buffer.h>
 
 #include "ser2net.h"
-#include "devio.h"
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "led.h"
@@ -56,19 +54,20 @@ static char *progname = "ser2net";
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_UNCONNECTED		0 /* The TCP port is not connected
                                              to anything right now. */
-#define PORT_WAITING_INPUT		1 /* Waiting for input from the
+#define PORT_OPENING			1 /* The device is being set up
+					     but it not yet ready. */
+#define PORT_WAITING_INPUT		2 /* Waiting for input from the
 					     input side. */
-#define PORT_WAITING_OUTPUT_CLEAR	2 /* Waiting for output to clear
+#define PORT_WAITING_OUTPUT_CLEAR	3 /* Waiting for output to clear
 					     so I can send data. */
-#define PORT_CLOSING			3 /* Waiting for output close
+#define PORT_CLOSING			4 /* Waiting for output close
 					     string to be sent. */
 char *state_str[] = { "unconnected", "waiting input", "waiting output",
 		      "closing" };
 
 #define PORT_DISABLED		0 /* The port is not open. */
 #define PORT_ON			1 /* Port is open. */
-#define PORT_RAWLP		2 /* Port is open for output only. */
-char *enabled_str[] = { "off", "raw", "rawlp" };
+char *enabled_str[] = { "off", "on" };
 
 typedef struct trace_info_s
 {
@@ -80,6 +79,52 @@ typedef struct trace_info_s
 
 typedef struct port_info port_info_t;
 typedef struct net_info net_info_t;
+
+struct gbuf {
+    unsigned char *buf;
+    unsigned int maxsize;
+    unsigned int cursize;
+    unsigned int pos;
+};
+
+static unsigned int
+gbuf_room_left(struct gbuf *buf) {
+    return buf->maxsize - buf->cursize;
+}
+
+static void
+gbuf_append(struct gbuf *buf, unsigned char *data, unsigned int len)
+{
+    memcpy(buf->buf + buf->pos, data, len);
+    buf->cursize += len;
+    buf->pos += len;
+}
+
+static unsigned int
+gbuf_cursize(struct gbuf *buf)
+{
+    return buf->cursize;
+}
+
+static void
+gbuf_reset(struct gbuf *buf)
+{
+    buf->cursize = 0;
+    buf->pos = 0;
+}
+
+static int
+gbuf_init(struct gbuf *buf, unsigned int size)
+{
+    buf->buf = malloc(size);
+    if (!buf->buf)
+	return ENOMEM;
+
+    buf->maxsize = size;
+    buf->cursize = 0;
+    buf->pos = 0;
+    return 0;
+}
 
 struct net_info {
     port_info_t	   *port;		/* My port. */
@@ -102,7 +147,7 @@ struct net_info {
     unsigned int bytes_sent;		/* Number of bytes written to the
 					   network port. */
 
-    struct sbuf *banner;		/* Outgoing banner */
+    struct gbuf *banner;		/* Outgoing banner */
 
     unsigned int write_pos;		/* Our current position in the
 					   output buffer where we need
@@ -122,6 +167,7 @@ struct net_info {
     unsigned char linestate_mask;
     unsigned char modemstate_mask;
     bool modemstate_sent;	/* Has a modemstate been sent? */
+    bool linestate_sent;	/* Has a linestate been sent? */
 
     /*
      * If a user gets kicked, store the information for the new user
@@ -135,16 +181,12 @@ struct port_info
 {
     struct gensio_lock *lock;
     int            enabled;		/* If PORT_DISABLED, the port
-					   is disabled and the TCP
-					   accept port is not
+					   is disabled and the
+					   accepter is not
 					   operational.  If PORT_ON,
 					   the port is enabled and
 					   will not do any telnet
-					   negotiations.  If
-					   PORT_RAWLP, the port is enabled
-					   only for output without any
-					   termios setting - it allows
-					   to redirect /dev/lpX devices */
+					   negotiations. */
 
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
@@ -186,6 +228,8 @@ struct port_info
 
     int bps;				/* Bits per second rate. */
     int bpc;				/* Bits per character. */
+    int stopbits;
+    int paritybits;
 
     bool enable_chardelay;
 
@@ -228,12 +272,12 @@ struct port_info
 						   data from the network port
                                                    to the device. */
 
-    struct sbuf    net_to_dev;			/* Buffer for network
+    struct gbuf    net_to_dev;			/* Buffer for network
 						   to dev transfers. */
     struct controller_info *net_monitor; /* If non-null, send any input
 					    received from the network port
 					    to this controller port. */
-    struct sbuf *devstr;		 /* Outgoing string */
+    struct gbuf *devstr;		 /* Outgoing string */
 
     /* Information use when transferring information from the terminal
        device to the network port. */
@@ -241,9 +285,8 @@ struct port_info
 						   data from the device to
                                                    the network port. */
 
-    struct sbuf    dev_to_net;			/* Buffer struct for
-						   device to network
-						   transfers. */
+    struct gbuf dev_to_net;
+
     struct controller_info *dev_monitor; /* If non-null, send any input
 					    received from the device
 					    to this controller port. */
@@ -263,6 +306,7 @@ struct port_info
 
     /* For RFC 2217 */
     unsigned char last_modemstate;
+    unsigned char last_linestate;
 
     /* Allow RFC 2217 mode */
     bool allow_2217;
@@ -315,12 +359,13 @@ struct port_info
     trace_info_t *tw;
     trace_info_t *tb;
 
-    struct devio io; /* For handling I/O operation to the device */
+    char *devname;
+    struct gensio *io; /* For handling I/O operation to the device */
     void (*dev_write_handler)(port_info_t *);
 
     /*
      * devname as specified on the line, not the substituted version.  Only
-     *non-null if devname was substituted.
+     * non-null if devname was substituted.
      */
     char *orig_devname;
 
@@ -331,7 +376,7 @@ struct port_info
     struct led_s *led_rx;
 };
 
-static int setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig);
+static void setup_port(port_info_t *port, net_info_t *netcon);
 
 /*
  * This infrastructure allows a list of addresses to be kept.  This is
@@ -440,22 +485,6 @@ port_info_t *ports = NULL; /* Linked list of ports. */
 
 static void shutdown_one_netcon(net_info_t *netcon, char *reason);
 static void shutdown_port(port_info_t *port, char *reason);
-
-/*
- * Generic output function for using a controller output for
- * abstract I/O.
- */
-static int
-cntrl_absout(struct absout *o, const char *str, ...)
-{
-    va_list ap;
-    int rv;
-
-    va_start(ap, str);
-    rv = controller_voutputf(o->data, str, ap);
-    va_end(ap);
-    return rv;
-}
 
 /*
  * Like above but does a new line at the end of the output, generally
@@ -710,7 +739,7 @@ start_net_send(port_info_t *port)
     if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR)
 	return;
 
-    port->io.f->read_handler_enable(&port->io, 0);
+    gensio_set_read_callback_enable(port->io, false);
     for_each_connection(port, netcon) {
 	if (!netcon->net)
 	    continue;
@@ -733,7 +762,7 @@ send_timeout(struct gensio_timer *timer, void *data)
     }
 
     port->send_timer_running = false;
-    if (port->dev_to_net.cursize > 0)
+    if (port->dev_to_net.cursize)
 	start_net_send(port);
     so->unlock(port->lock);
 }
@@ -771,7 +800,7 @@ connect_back_done(struct gensio *net, int err, void *cb_data)
 	netcon->net = NULL;
 	gensio_free(net);
     } else {
-	setup_port(port, netcon, false);
+	setup_port(port, netcon);
     }
     assert(port->num_waiting_connect_backs > 0);
     port->num_waiting_connect_backs--;
@@ -780,7 +809,7 @@ connect_back_done(struct gensio *net, int err, void *cb_data)
 	    /* No connections could be made. */
 	    port->nocon_read_enable_time_left = 10;
 	else
-	    port->io.f->read_handler_enable(&port->io, 1);
+	    gensio_set_read_callback_enable(port->io, true);
     }
     so->unlock(port->lock);
 }
@@ -792,7 +821,7 @@ port_check_connect_backs(port_info_t *port)
     bool tried = false;
 
     if (!port->has_connect_back)
-	return false;
+	return 0;
 
     for_each_connection(port, netcon) {
 	if (netcon->connect_back && !netcon->net) {
@@ -816,77 +845,63 @@ port_check_connect_backs(port_info_t *port)
 	 * connects, but failed.  Shut down the read enable for a while.
 	 */
 	port->nocon_read_enable_time_left = 10;
-	port->io.f->read_handler_enable(&port->io, 0);
+	gensio_set_read_callback_enable(port->io, false);
     } else if (port->num_waiting_connect_backs) {
-	port->io.f->read_handler_enable(&port->io, 0);
+	gensio_set_read_callback_enable(port->io, false);
     }
 
     return port->num_waiting_connect_backs;
 }
 
 /* Data is ready to read on the serial port. */
-static void
-handle_dev_fd_read(struct devio *io)
+static int
+handle_dev_read(port_info_t *port, int err, unsigned char *buf,
+		unsigned int buflen)
 {
-    port_info_t *port = (port_info_t *) io->user_data;
-    int count;
-    int curend;
+    unsigned int count = 0;
     bool send_now = false;
-    unsigned int readcount, oreadcount;
-    const unsigned char *readbuf;
     int nr_handlers;
 
     so->lock(port->lock);
     if (port->dev_to_net_state != PORT_WAITING_INPUT)
 	goto out_unlock;
+
+    if (err) {
+	if (port->dev_to_net.cursize) {
+	    /* Let the output drain before shutdown. */
+	    count = 0;
+	    send_now = true;
+	    goto do_send;
+	}
+
+	/* Got an error on the read, shut down the port. */
+	syslog(LOG_ERR, "dev read error for device %s: %m", port->portname);
+	shutdown_port(port, "dev read error");
+    }
+
     nr_handlers = port_check_connect_backs(port);
     if (nr_handlers > 0)
 	goto out_unlock;
 
-    curend = port->dev_to_net.cursize;
-    oreadcount = port->dev_to_net.maxsize - curend;
-    readcount = oreadcount;
-    count = port->io.f->read(&port->io, port->dev_to_net.buf + curend,
-			     readcount);
-    readbuf = port->dev_to_net.buf + curend;
+    if (gbuf_room_left(&port->dev_to_net) < buflen)
+	buflen = gbuf_room_left(&port->dev_to_net);
+    count = buflen;
 
-    if (count <= 0) {
-	if (curend != 0) {
-	    /* We still have data to send. */
-	    send_now = true;
-	    count = 0;
-	    goto do_send;
-	}
-
-	if (count < 0) {
-	    if (errno == EAGAIN || errno == EWOULDBLOCK)
-		/* Nothing to read, just return. */
-		goto out_unlock;
-
-	    /* Got an error on the read, shut down the port. */
-	    syslog(LOG_ERR, "dev read error for device %s: %m", port->portname);
-	    shutdown_port(port, "dev read error");
-	} else if (count == 0) {
-	    /* The port got closed somehow, shut it down. */
-	    shutdown_port(port, "closed port");
-	}
+    if (count == 0) {
+	gensio_set_read_callback_enable(port->io, false);
 	goto out_unlock;
     }
 
-    if (port->dev_monitor != NULL && count > 0)
-	controller_write(port->dev_monitor, (char *) readbuf, count);
-
- do_send:
     if (port->closeon) {
 	int i;
 
 	for (i = 0; i < count; i++) {
-	    if (readbuf[i] == port->closeon[port->closeon_pos]) {
+	    if (buf[i] == port->closeon[port->closeon_pos]) {
 		port->closeon_pos++;
 		if (port->closeon_pos >= port->closeon_len) {
 		    port->close_on_output_done = true;
 		    /* Ignore everything after the closeon string */
-		    count = i - curend + 1;
+		    count = i + 1;
 		    break;
 		}
 	    } else {
@@ -897,21 +912,25 @@ handle_dev_fd_read(struct devio *io)
 
     if (port->tr)
 	/* Do read tracing, ignore errors. */
-	do_trace(port, port->tr, readbuf, count, SERIAL);
+	do_trace(port, port->tr, buf, count, SERIAL);
     if (port->tb)
 	/* Do both tracing, ignore errors. */
-	do_trace(port, port->tb, readbuf, count, SERIAL);
+	do_trace(port, port->tb, buf, count, SERIAL);
 
     if (port->led_rx)
 	led_flash(port->led_rx);
 
+    if (port->dev_monitor != NULL)
+	controller_write(port->dev_monitor, (char *) buf, count);
+
+ do_send:
     if (nr_handlers < 0) /* Nobody to handle the data. */
 	goto out_unlock;
 
+    gbuf_append(&port->dev_to_net, buf, count);
     port->dev_bytes_received += count;
-    port->dev_to_net.cursize += count;
 
-    if (send_now || port->dev_to_net.cursize == port->dev_to_net.maxsize ||
+    if (send_now || gbuf_room_left(&port->dev_to_net) == 0 ||
 		port->chardelay == 0) {
     send_it:
 	start_net_send(port);
@@ -939,45 +958,141 @@ handle_dev_fd_read(struct devio *io)
     }
  out_unlock:
     so->unlock(port->lock);
+    return count;
+}
+
+static void
+handle_dev_write_ready(port_info_t *port)
+{
+    so->lock(port->lock);
+    port->dev_write_handler(port);
+    so->unlock(port->lock);
+}
+
+/* Handle an exception from the serial port. */
+static void
+handle_dev_except(port_info_t *port)
+{
+    so->lock(port->lock);
+    syslog(LOG_ERR, "Select exception on device for port %s",
+	   port->portname);
+    shutdown_port(port, "fd exception");
+    so->unlock(port->lock);
 }
 
 static int
-io_do_write(void *cb_data, void  *buf, unsigned int buflen,
-	    unsigned int *written)
+handle_dev_event(struct gensio *io, int event, int err,
+		 unsigned char *buf, unsigned int *buflen,
+		 unsigned long channel, void *auxdata)
 {
-    struct devio *io = cb_data;
-    ssize_t write_count;
-    int err = 0;
+    port_info_t *port = gensio_get_user_data(io);
+    net_info_t *netcon;
 
-    write_count = io->f->write(io, buf, buflen);
-    if (write_count == -1)
-	err = errno;
-    else
-	*written = write_count;
+    switch (event) {
+    case GENSIO_EVENT_READ:
+	*buflen = handle_dev_read(port, err, buf, *buflen);
+	return 0;
 
-    return err;
+    case GENSIO_EVENT_WRITE_READY:
+	handle_dev_write_ready(port);
+	return 0;
+
+    case GENSIO_EVENT_URGENT:
+	handle_dev_except(port);
+	return 0;
+
+    case GENSIO_EVENT_SER_MODEMSTATE:
+	so->lock(port->lock);
+	port->last_modemstate = *((unsigned int *) buf);
+	for_each_connection(port, netcon) {
+	    struct sergensio *sio;
+
+	    if (!netcon->net)
+		continue;
+	    sio = gensio_to_sergensio(netcon->net);
+	    if (!sio)
+		continue;
+
+	    /*
+	     * The 0xf below is non-standard, but the spec makes no
+	     * sense in this case.  From what I can tell, the
+	     * modemstate top 4 bits is the settings, and the bottom 4
+	     * bits is telling you what changed.  So you don't want to
+	     * report a value unless something changed, and only if it
+	     * was in the modemstate mask.
+	     */
+	    if (port->last_modemstate & netcon->modemstate_mask & 0xf)
+		sergensio_modemstate(sio, (port->last_modemstate &
+					   netcon->modemstate_mask));
+	}
+	so->unlock(port->lock);
+	return 0;
+
+    case GENSIO_EVENT_SER_LINESTATE:
+	so->lock(port->lock);
+	port->last_linestate = *((unsigned int *) buf);
+	for_each_connection(port, netcon) {
+	    struct sergensio *sio;
+
+	    if (!netcon->net)
+		continue;
+	    sio = gensio_to_sergensio(netcon->net);
+	    if (!sio)
+		continue;
+
+	    if (port->last_linestate & netcon->linestate_mask)
+		sergensio_linestate(sio, (port->last_linestate &
+					  netcon->linestate_mask));
+	}
+	so->unlock(port->lock);
+	return 0;
+
+    default:
+	return ENOTSUP;
+    }
+}
+
+static int
+gbuf_write(port_info_t *port, struct gbuf *buf)
+{
+    int err;
+    unsigned int written;
+
+    err = gensio_write(port->io, &written, 0, buf->buf + buf->pos,
+		       buf->cursize - buf->pos);
+    if (err)
+	return err;
+
+    buf->pos += written;
+    port->dev_bytes_sent += written;
+    if (buf->pos >= buf->cursize) {
+	buf->pos = 0;
+	buf->cursize = 0;
+    }
+
+    return 0;
 }
 
 /* The serial port has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-dev_fd_write(port_info_t *port, struct sbuf *buf)
+dev_fd_write(port_info_t *port, struct gbuf *buf)
 {
-    int reterr, buferr;
+    int err;
 
-    reterr = buffer_write(io_do_write, &port->io, buf, &buferr);
-    if (reterr == -1) {
+    err = gbuf_write(port, buf);
+    if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, strerror(buferr));
+	       port->portname, strerror(err));
 	shutdown_port(port, "dev write error");
 	return;
     }
 
-    if (buffer_cursize(buf) == 0) {
+    if (gbuf_cursize(buf) == 0) {
 	/* We are done writing, turn the reader back on. */
 	enable_all_net_read(port);
-	port->io.f->write_handler_enable(&port->io, 0);
+	gensio_set_write_callback_enable(port->io, false);
 	port->net_to_dev_state = PORT_WAITING_INPUT;
     }
 }
@@ -988,35 +1103,12 @@ handle_dev_fd_normal_write(port_info_t *port)
     dev_fd_write(port, &port->net_to_dev);
 }
 
-static void
-handle_dev_fd_write(struct devio *io)
-{
-    port_info_t *port = (port_info_t *) io->user_data;
-
-    so->lock(port->lock);
-    port->dev_write_handler(port);
-    so->unlock(port->lock);
-}
-
-/* Handle an exception from the serial port. */
-static void
-handle_dev_fd_except(struct devio *io)
-{
-    port_info_t *port = (port_info_t *) io->user_data;
-
-    so->lock(port->lock);
-    syslog(LOG_ERR, "Select exception on device for port %s",
-	   port->portname);
-    shutdown_port(port, "fd exception");
-    so->unlock(port->lock);
-}
-
 /* Output the devstr buffer */
 static void
 handle_dev_fd_devstr_write(port_info_t *port)
 {
     dev_fd_write(port, port->devstr);
-    if (buffer_cursize(port->devstr) == 0) {
+    if (gbuf_cursize(port->devstr) == 0) {
 	port->dev_write_handler = handle_dev_fd_normal_write;
 	free(port->devstr->buf);
 	free(port->devstr);
@@ -1036,7 +1128,7 @@ handle_net_fd_read(struct gensio *net, int readerr,
     port_info_t *port = netcon->port;
     unsigned int rv = 0;
     char *reason;
-    int count;
+    int err;
 
     so->lock(port->lock);
     if (port->net_to_dev_state == PORT_WAITING_OUTPUT_CLEAR)
@@ -1086,40 +1178,23 @@ handle_net_fd_read(struct gensio *net, int readerr,
     if (port->devstr)
 	goto stop_read_start_write;
 
- retry_write:
-    count = port->io.f->write(&port->io, buffer_curptr(&port->net_to_dev),
-			      port->net_to_dev.cursize);
-    if (count == -1) {
-	if (errno == EINTR) {
-	    /* EINTR means we were interrupted, just retry. */
-	    goto retry_write;
-	}
-
-	if (errno == EAGAIN || errno == EWOULDBLOCK) {
-	    /* This was due to O_NONBso->lock, we need to shut off the reader
-	       and start the writer monitor.  Just ignore it, code later
-	       will enable the write handler. */
-	} else {
-	    /* Some other bad error. */
-	    syslog(LOG_ERR, "The dev write for port %s had error: %m",
-		   port->portname);
-	    shutdown_port(port, "dev write error");
-	    goto out_unlock;
-	}
+    err = gbuf_write(port, &port->net_to_dev);
+    if (err) {
+	syslog(LOG_ERR, "The dev write for port %s had error: %m",
+	       port->portname);
+	shutdown_port(port, "dev write error");
+	goto out_unlock;
     } else {
 	if (port->led_tx)
 	    led_flash(port->led_tx);
-	port->dev_bytes_sent += count;
-	port->net_to_dev.cursize -= count;
-	port->net_to_dev.pos += count;
     }
 
-    if (port->net_to_dev.cursize != 0) {
+    if (gbuf_cursize(&port->net_to_dev)) {
 	/* We didn't write all the data, shut off the reader and
 	   start the write monitor. */
     stop_read_start_write:
 	disable_all_net_read(port);
-	port->io.f->write_handler_enable(&port->io, 1);
+	gensio_set_write_callback_enable(port->io, true);
 	port->net_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
     }
 
@@ -1136,12 +1211,6 @@ handle_net_fd_read(struct gensio *net, int readerr,
     goto out_unlock;
 }
 
-void io_enable_read_handler(port_info_t *port)
-{
-    port->io.f->read_handler_enable(&port->io,
-				    port->enabled != PORT_RAWLP);
-}
-
 /*
  * Write some network data from a buffer.  Returns -1 on something
  * causing the netcon to shut down, 0 if the write was incomplete, and
@@ -1149,7 +1218,7 @@ void io_enable_read_handler(port_info_t *port)
  */
 static int
 net_fd_write(port_info_t *port, net_info_t *netcon,
-	     struct sbuf *buf, unsigned int *pos)
+	     struct gbuf *buf, unsigned int *pos)
 {
     int reterr, to_send;
     unsigned int count = 0;
@@ -1187,9 +1256,10 @@ finish_dev_to_net_write(port_info_t *port)
 	return false;
 
     port->dev_to_net.cursize = 0;
+    port->dev_to_net.pos = 0;
 
     /* We are done writing on this port, turn the reader back on. */
-    io_enable_read_handler(port);
+    gensio_set_read_callback_enable(port->io, true);
     port->dev_to_net_state = PORT_WAITING_INPUT;
 
     return true;
@@ -1241,153 +1311,235 @@ handle_net_fd_write_ready(struct gensio *net)
     so->unlock(port->lock);
 }
 
+enum s2n_ser_ops {
+    S2N_BAUD = 0,
+    S2N_DATASIZE,
+    S2N_PARITY,
+    S2N_STOPBITS,
+    S2N_FLOWCONTROL,
+    S2N_IFLOWCONTROL,
+    S2N_BREAK,
+    S2N_DTR,
+    S2N_RTS
+};
+
+static void
+sergensio_val_set(struct sergensio *sio, int err,
+		  unsigned int val, void *cb_data)
+{
+    port_info_t *port = sergensio_get_user_data(sio);
+    enum s2n_ser_ops op = (long) cb_data;
+    net_info_t *netcon;
+
+    so->lock(port->lock);
+    for_each_connection(port, netcon) {
+	struct sergensio *rsio;
+
+	if (!netcon->net)
+	    continue;
+	rsio = gensio_to_sergensio(sergensio_to_gensio(sio));
+	if (!rsio)
+	    continue;
+
+	switch (op) {
+	case S2N_BAUD:
+	    port->bps = val;
+	    sergensio_baud(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_DATASIZE:
+	    port->bpc = val;
+	    sergensio_datasize(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_PARITY:
+	    if (val == SERGENSIO_PARITY_NONE)
+		port->paritybits = 0;
+	    else
+		port->paritybits = 1;
+	    sergensio_parity(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_STOPBITS:
+	    port->stopbits = val;
+	    sergensio_stopbits(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_FLOWCONTROL:
+	    sergensio_flowcontrol(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_IFLOWCONTROL:
+	    sergensio_iflowcontrol(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_BREAK:
+	    sergensio_sbreak(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_DTR:
+	    sergensio_dtr(rsio, val, NULL, NULL);
+	    break;
+
+	case S2N_RTS:
+	    sergensio_rts(rsio, val, NULL, NULL);
+	    break;
+	}
+    }
+}
+
 static void
 s2n_modemstate(struct sergensio *sio, unsigned int modemstate)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
+    net_info_t *netcon = sergensio_get_user_data(sio);
     port_info_t *port = netcon->port;
 
     netcon->modemstate_mask = modemstate;
-    port->io.f->get_modem_state(&port->io, &port->last_modemstate);
-    sergensio_modemstate(sio, port->last_modemstate);
+    sergensio_modemstate(sio, port->last_modemstate & netcon->modemstate_mask);
 }
 
 static void
 s2n_linestate(struct sergensio *sio, unsigned int linestate)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    port_info_t *port = netcon->port;
 
     netcon->linestate_mask = linestate;
+    sergensio_linestate(sio, port->last_linestate & netcon->linestate_mask);
 }
 
 static void
 s2n_flowcontrol_state(struct sergensio *sio, bool val)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->flowcontrol_state(&port->io, val);
+    if (!rsio)
+	return;
+    sergensio_flowcontrol_state(rsio, val);
 }
 
 static void
 s2n_flush(struct sergensio *sio, int val)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    /* FIXME - don't need a pointer here. */
-    port->io.f->flush(&port->io, &val);
+    if (!rsio)
+	return;
+    sergensio_flush(rsio, val);
 }
 
 static void
 s2n_baud(struct sergensio *sio, int baud)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->baud_rate(&port->io, &baud);
-    sergensio_baud(sio, baud, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_baud(rsio, baud,
+		   sergensio_val_set, (void *) (long) S2N_BAUD);
 }
 
 static void
 s2n_datasize(struct sergensio *sio, int datasize)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->data_size(&port->io, &datasize, &port->bps);
-    sergensio_datasize(sio, datasize, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_datasize(rsio, datasize,
+		       sergensio_val_set, (void *) (long) S2N_DATASIZE);
 }
 
 static void
 s2n_parity(struct sergensio *sio, int parity)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->parity(&port->io, &parity, &port->bps);
-    sergensio_parity(sio, parity, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_parity(rsio, parity,
+		     sergensio_val_set, (void *) (long) S2N_PARITY);
 }
 
 static void
 s2n_stopbits(struct sergensio *sio, int stopbits)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->stop_size(&port->io, &stopbits, &port->bps);
-    sergensio_stopbits(sio, stopbits, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_stopbits(rsio, stopbits,
+		       sergensio_val_set, (void *) (long) S2N_STOPBITS);
 }
 
 static void
 s2n_flowcontrol(struct sergensio *sio, int flowcontrol)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    if (port->io.f->flowcontrol)
-	port->io.f->flowcontrol(&port->io, &flowcontrol);
-    else
-	flowcontrol = SERGENSIO_FLOWCONTROL_NONE;
-    sergensio_flowcontrol(sio, flowcontrol, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_flowcontrol(rsio, flowcontrol,
+			  sergensio_val_set, (void *) (long) S2N_FLOWCONTROL);
+}
+
+static void
+s2n_iflowcontrol(struct sergensio *sio, int iflowcontrol)
+{
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
+
+    if (!rsio)
+	return;
+    sergensio_iflowcontrol(rsio, iflowcontrol,
+			   sergensio_val_set, (void *) (long) S2N_IFLOWCONTROL);
 }
 
 static void
 s2n_sbreak(struct sergensio *sio, int breakv)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    if (port->io.f->sbreak)
-	port->io.f->sbreak(&port->io, &breakv);
-    else
-	breakv = SERGENSIO_BREAK_OFF;
-    sergensio_sbreak(sio, breakv, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_sbreak(rsio, breakv,
+		     sergensio_val_set, (void *) (long) S2N_BREAK);
 }
 
 static void
 s2n_dtr(struct sergensio *sio, int dtr)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    if (port->io.f->dtr)
-	port->io.f->dtr(&port->io, &dtr);
-    else
-	dtr = SERGENSIO_DTR_OFF;
-    sergensio_dtr(sio, dtr, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_dtr(rsio, dtr, sergensio_val_set, (void *) (long) S2N_DTR);
 }
 
 static void
 s2n_rts(struct sergensio *sio, int rts)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    if (port->io.f->dtr)
-	port->io.f->rts(&port->io, &rts);
-    else
-	rts = SERGENSIO_RTS_OFF;
-    sergensio_rts(sio, rts, NULL, NULL);
+    if (!rsio)
+	return;
+    sergensio_rts(rsio, rts, sergensio_val_set, (void *) (long) S2N_RTS);
 }
 
 static void
 s2n_signature(struct sergensio *sio, char *sig, unsigned int sig_len)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
+    net_info_t *netcon = sergensio_get_user_data(sio);
     port_info_t *port = netcon->port;
 
     sig = port->signaturestr;
@@ -1401,11 +1553,12 @@ s2n_signature(struct sergensio *sio, char *sig, unsigned int sig_len)
 static void
 s2n_sync(struct sergensio *sio)
 {
-    struct gensio *io = sergensio_to_gensio(sio);
-    net_info_t *netcon = gensio_get_user_data(io);
-    port_info_t *port = netcon->port;
+    net_info_t *netcon = sergensio_get_user_data(sio);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
-    port->io.f->send_break(&port->io);
+    if (!rsio)
+	return;
+    sergensio_send_break(rsio);
 }
 
 static int
@@ -1466,6 +1619,10 @@ handle_net_event(struct gensio *net, int event, int err,
 	s2n_flowcontrol(gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
+    case GENSIO_EVENT_SER_IFLOWCONTROL:
+	s2n_iflowcontrol(gensio_to_sergensio(net), *((int *) buf));
+	return 0;
+
     case GENSIO_EVENT_SER_SBREAK:
 	s2n_sbreak(gensio_to_sergensio(net), *((int *) buf));
 	return 0;
@@ -1478,9 +1635,9 @@ handle_net_event(struct gensio *net, int event, int err,
 	s2n_rts(gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
+    default:
+	return ENOTSUP;
     }
-
-    return ENOTSUP;
 }
 
 static void handle_net_fd_closed(struct gensio *net, void *cb_data);
@@ -1494,7 +1651,7 @@ is_device_already_inuse(port_info_t *check_port)
 
     while (port != NULL) {
 	if (port != check_port) {
-	    if ((strcmp(port->io.devname, check_port->io.devname) == 0)
+	    if ((strcmp(port->devname, check_port->devname) == 0)
 		&& (port->net_to_dev_state != PORT_UNCONNECTED))
 	    {
 		return 1;
@@ -1556,7 +1713,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		if (*s == 'o' && port->orig_devname)
 		    s2 = port->orig_devname;
 		else
-		    s2 = port->io.devname;
+		    s2 = port->devname;
 
 		if (isfilename) {
 		    /* Can't have '/' in a filename. */
@@ -1586,9 +1743,16 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    serparms:
 		/* ser2net serial parms. */
 		{
-		    char str[15];
-		    port->io.f->serparm_to_str(&port->io, str, sizeof(str));
-		    for (t = str; *t; t++)
+		    char str[1024];
+		    int err;
+
+		    err = gensio_raddr_to_str(port->io, NULL, str, sizeof(str));
+		    if (err)
+			break;
+		    t = strchr(str, ',');
+		    if (!t)
+			break;
+		    for (; *t && *t != ' '; t++)
 			op(data, *t);
 		}
 		break;
@@ -1878,11 +2042,11 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
     return bufop.str;
 }
 
-static struct sbuf *
+static struct gbuf *
 process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
 {
-    const char *bstr;
-    struct sbuf *buf;
+    char *bstr;
+    struct gbuf *buf;
     unsigned int len;
     struct timeval tv;
 
@@ -1901,8 +2065,11 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
 	syslog(LOG_ERR, "Error processing string: %s", port->portname);
 	return NULL;
     }
-    buffer_init(buf, (unsigned char *) bstr, len);
+    buf->buf = (unsigned char *) bstr;
+    buf->maxsize = len;
+    buf->pos = 0;
     buf->cursize = len;
+
     return buf;
 }
 
@@ -1978,6 +2145,8 @@ setup_trace(port_info_t *port)
 static void
 recalc_port_chardelay(port_info_t *port)
 {
+    int bpc = port->bpc + port->stopbits + port->paritybits + 1;
+
     /* delay is (((1 / bps) * bpc) * scale) seconds */
     if (!port->enable_chardelay) {
 	port->chardelay = 0;
@@ -1985,83 +2154,14 @@ recalc_port_chardelay(port_info_t *port)
     }
 
     /* We are working in microseconds here. */
-    port->chardelay = (port->bpc * 100000 * port->chardelay_scale) / port->bps;
+    port->chardelay = (bpc * 100000 * port->chardelay_scale) / port->bps;
     if (port->chardelay < port->chardelay_min)
 	port->chardelay = port->chardelay_min;
 }
 
-static int
-port_dev_enable(port_info_t *port, net_info_t *netcon,
-		bool is_reconfig, const char **errstr)
+static void
+finish_setup_net(port_info_t *port, net_info_t *netcon)
 {
-    struct timeval timeout;
-
-    if (port->io.f->setup(&port->io, port->portname, errstr,
-			  &port->bps, &port->bpc) == -1)
-	    return -1;
-
-    recalc_port_chardelay(port);
-
-    if (!is_reconfig) {
-	if (port->devstr) {
-	    free(port->devstr->buf);
-	    free(port->devstr);
-	}
-	port->devstr = process_str_to_buf(port, netcon, port->openstr);
-    }
-    if (port->devstr)
-	port->dev_write_handler = handle_dev_fd_devstr_write;
-    else
-	port->dev_write_handler = handle_dev_fd_normal_write;
-
-    port->io.read_handler = (port->enabled == PORT_RAWLP
-			     ? NULL
-			     : handle_dev_fd_read);
-    port->io.write_handler = handle_dev_fd_write;
-    port->io.except_handler = handle_dev_fd_except;
-    port->io.f->except_handler_enable(&port->io, 1);
-    if (port->devstr)
-	port->io.f->write_handler_enable(&port->io, 1);
-    io_enable_read_handler(port);
-    port->dev_to_net_state = PORT_WAITING_INPUT;
-
-    setup_trace(port);
-
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-    so->start_timer(port->timer, &timeout);
-
-    return 0;
-}
-
-/* Called to set up a new connection's file descriptor. */
-static int
-setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
-{
-    int err;
-
-    if (!is_reconfig) {
-	if (netcon->banner) {
-	    free(netcon->banner->buf);
-	    free(netcon->banner);
-	}
-	netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
-    }
-
-    if (num_connected_net(port) == 1 && !port->has_connect_back) {
-	/* We are first, set things up on the device. */
-	const char *errstr = NULL;
-
-	err = port_dev_enable(port, netcon, is_reconfig, &errstr);
-	if (err) {
-	    if (errstr)
-		gensio_write(netcon->net, NULL, 0, errstr, strlen(errstr));
-	    gensio_free(netcon->net);
-	    netcon->net = NULL;
-	    return -1;
-	}
-    }
-
     gensio_set_callback(netcon->net, handle_net_event, netcon);
 
     gensio_set_read_callback_enable(netcon->net, true);
@@ -2072,8 +2172,154 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     header_trace(port, netcon);
 
     reset_timer(netcon);
+}
 
+static void
+extract_bps_bpc(port_info_t *port)
+{
+    int err;
+    char buf[1024], *s, *speed;
+
+    err = gensio_raddr_to_str(port->io, NULL, buf, sizeof(buf));
+    if (err)
+	goto out_broken;
+
+    s = strchr(buf, ',');
+    if (!s)
+	goto out_broken;
+
+    speed = s;
+    while (isdigit(*s))
+	s++;
+    if (s == speed)
+	goto out_broken;
+    port->bps = strtoul(speed, NULL, 10);
+
+    if (*s == 'N')
+	port->paritybits = 0;
+    else
+	port->paritybits = 1;
+    if (*s)
+	s++;
+
+    if (isdigit(*s))
+	port->bpc = *s = '0';
+    else
+	port->bpc = 8;
+    if (*s)
+	s++;
+
+    if (*s == '2')
+	port->stopbits = 2;
+    else
+	port->stopbits = 1;
+    return;
+
+ out_broken:
+    port->bps = 9600;
+    port->paritybits = 0;
+    port->stopbits = 1;
+    port->bpc = 8;
+}
+
+static void
+port_dev_open_done(struct gensio *io, int err, void *cb_data)
+{
+    port_info_t *port = cb_data;
+    net_info_t *netcon;
+    struct timeval timeout;
+
+    so->lock(port->lock);
+    if (err) {
+	char *errstr = strerror(err);
+
+	for_each_connection(port, netcon) {
+	    if (!netcon->net)
+		continue;
+	    gensio_write(netcon->net, NULL, 0, errstr, strlen(errstr));
+	    gensio_free(netcon->net);
+	    netcon->net = NULL;
+	}
+	port->dev_to_net_state = PORT_UNCONNECTED;
+	goto out_unlock;
+    }
+
+    extract_bps_bpc(port);
+    recalc_port_chardelay(port);
+
+    if (port->devstr) {
+	free(port->devstr->buf);
+	free(port->devstr);
+    }
+    port->devstr = process_str_to_buf(port, NULL, port->openstr);
+    if (port->devstr)
+	port->dev_write_handler = handle_dev_fd_devstr_write;
+    else
+	port->dev_write_handler = handle_dev_fd_normal_write;
+
+    if (port->devstr)
+	gensio_set_write_callback_enable(port->io, true);
+    gensio_set_read_callback_enable(port->io, true);
+    port->dev_to_net_state = PORT_WAITING_INPUT;
+
+    setup_trace(port);
+
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    so->start_timer(port->timer, &timeout);
+
+    for_each_connection(port, netcon) {
+	if (!netcon->net)
+	    continue;
+	finish_setup_net(port, netcon);
+    }
+ out_unlock:
+    so->unlock(port->lock);
+}
+
+static int
+port_dev_enable(port_info_t *port)
+{
+    int err;
+
+    err = gensio_open(port->io, port_dev_open_done, port);
+    if (err)
+	return err;
+
+    port->dev_to_net_state = PORT_OPENING;
     return 0;
+}
+
+/* Called when a new user is added to the port. */
+static void
+setup_port(port_info_t *port, net_info_t *netcon)
+{
+    int err;
+
+    if (netcon->banner) {
+	free(netcon->banner->buf);
+	free(netcon->banner);
+    }
+    netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
+
+    if (port->dev_to_net_state == PORT_OPENING)
+	/* Nothing to do, after the port is open it will finish. */
+	return;
+
+    if (num_connected_net(port) == 1 && !port->has_connect_back) {
+	/* We are first, set things up on the device. */
+	err = port_dev_enable(port);
+	if (err) {
+	    const char *errstr = strerror(err);
+
+	    gensio_write(netcon->net, NULL, 0, errstr, strlen(errstr));
+	    gensio_free(netcon->net);
+	    netcon->net = NULL;
+	}
+	return;
+    }
+
+    finish_setup_net(port, netcon);
 }
 
 /* Returns with the port locked, if non-NULL. */
@@ -2126,7 +2372,7 @@ handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon)
     netcon->net = net;
 
     /* XXX log netcon->remote */
-    setup_port(port, netcon, false);
+    setup_port(port, netcon);
 }
 
 int gensio_log_level_to_syslog(int gloglevel)
@@ -2459,9 +2705,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 	process_remaddr(eout, port, r, is_reconfig);
 
     if (port->has_connect_back) {
-	const char *errstr;
-
-	err = port_dev_enable(port, NULL, false, &errstr);
+	err = port_dev_enable(port);
 	if (err && eout)
 	    eout->out(eout, "Unable to enable port device %s: %s",
 		      port->portname, strerror(err));
@@ -2520,13 +2764,8 @@ change_port_state(struct absout *eout, port_info_t *port, int state,
     } else {
 	if (port->enabled == PORT_DISABLED) {
 	    int rv = startup_port(eout, port, is_reconfig);
-	    if (!rv) {
-		if (state == PORT_RAWLP)
-		    port->io.read_disabled = 1;
-		else
-		    port->io.read_disabled = 0;
+	    if (!rv)
 		port->enabled = state;
-	    }
 	}
     }
 
@@ -2577,16 +2816,16 @@ free_port(port_info_t *port)
 	so->free_timer(port->send_timer);
     if (port->runshutdown)
 	so->free_runner(port->runshutdown);
-    if (port->io.f)
-	port->io.f->free(&port->io);
+    if (port->io)
+	gensio_free(port->io);
     if (port->trace_read.filename)
 	free(port->trace_read.filename);
     if (port->trace_write.filename)
 	free(port->trace_write.filename);
     if (port->trace_both.filename)
 	free(port->trace_both.filename);
-    if (port->io.devname)
-	free(port->io.devname);
+    if (port->devname)
+	free(port->devname);
     if (port->portname)
 	free(port->portname);
     if (port->new_config)
@@ -2663,13 +2902,13 @@ finish_shutdown_port(port_info_t *port)
     so->unlock(port->lock);
 
     port->net_to_dev_state = PORT_UNCONNECTED;
-    buffer_reset(&port->net_to_dev);
+    gbuf_reset(&port->net_to_dev);
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
 	port->devstr = NULL;
     }
-    buffer_reset(&port->dev_to_net);
+    gbuf_reset(&port->dev_to_net);
     port->dev_bytes_received = 0;
     port->dev_bytes_sent = 0;
 
@@ -2759,9 +2998,9 @@ static void call_finish_shutdown_port(struct gensio_runner *runner,
 }
 
 static void
-io_shutdown_done(struct devio *io)
+io_shutdown_done(struct gensio *io, void *cb_data)
 {
-    port_info_t *port = io->user_data;
+    port_info_t *port = cb_data;
 
     so->run(port->runshutdown);
 }
@@ -2769,9 +3008,12 @@ io_shutdown_done(struct devio *io)
 static void
 shutdown_port_io(port_info_t *port)
 {
-    if (port->io.f)
-	port->io.f->shutdown(&port->io, io_shutdown_done);
-    else
+    int err = 1;
+
+    if (port->io)
+	err = gensio_close(port->io, io_shutdown_done, port);
+
+    if (err)
 	so->run(port->runshutdown);
 }
 
@@ -2785,24 +3027,23 @@ timer_shutdown_done(struct gensio_timer *timer, void *cb_data)
 static void
 handle_dev_fd_close_write(port_info_t *port)
 {
-    int reterr, buferr;
+    int err;
 
-    if (buffer_cursize(&port->net_to_dev) != 0)
-	reterr = buffer_write(io_do_write, &port->io, &port->net_to_dev,
-			      &buferr);
+    if (gbuf_cursize(&port->net_to_dev) != 0)
+	err = gbuf_write(port, &port->net_to_dev);
     else if (port->devstr)
-	reterr = buffer_write(io_do_write, &port->io, port->devstr, &buferr);
+	err = gbuf_write(port, port->devstr);
     else
 	goto closeit;
 
-    if (reterr == -1) {
+    if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, strerror(buferr));
+	       port->portname, strerror(err));
 	goto closeit;
     }
 
-    if (buffer_cursize(&port->net_to_dev) ||
-		(port->devstr && buffer_cursize(port->devstr)))
+    if (gbuf_cursize(&port->net_to_dev) ||
+		(port->devstr && gbuf_cursize(port->devstr)))
 	return;
 
 closeit:
@@ -2822,10 +3063,9 @@ start_shutdown_port_io(port_info_t *port)
     }
     port->devstr = process_str_to_buf(port, NULL, port->closestr);
     if (port->net_to_dev_state != PORT_UNCONNECTED) {
-	port->io.f->read_handler_enable(&port->io, 0);
-	port->io.f->except_handler_enable(&port->io, 0);
+	gensio_set_read_callback_enable(port->io, false);
 	port->dev_write_handler = handle_dev_fd_close_write;
-	port->io.f->write_handler_enable(&port->io, 1);
+	gensio_set_write_callback_enable(port->io, true);
     } else {
 	shutdown_port_io(port);
     }
@@ -2840,7 +3080,7 @@ start_shutdown_port(port_info_t *port, char *reason)
 
     port->close_on_output_done = false;
 
-    port->io.f->read_handler_enable(&port->io, false);
+    gensio_set_read_callback_enable(port->io, false);
     gensio_acc_set_accept_callback_enable(port->accepter, false);
 
     footer_trace(port, "port", reason);
@@ -2980,7 +3220,7 @@ got_timeout(struct gensio_timer *timer, void *data)
     if (port->nocon_read_enable_time_left) {
 	port->nocon_read_enable_time_left--;
 	if (port->nocon_read_enable_time_left == 0)
-	    port->io.f->read_handler_enable(&port->io, 1);
+	    gensio_set_read_callback_enable(port->io, true);
 	goto out;
     }
 
@@ -2991,25 +3231,6 @@ got_timeout(struct gensio_timer *timer, void *data)
 	    netcon->timeout_left--;
 	    if (netcon->timeout_left < 0)
 		shutdown_one_netcon(netcon, "timeout");
-	}
-    }
-
-    if (port->io.f->get_modem_state(&port->io, &port->last_modemstate) != -1) {
-	/*
-	 * The 0xf below is non-standard, but the spec makes no sense in
-	 * this case.  From what I can tell, the modemstate top 4 bits is
-	 * the settings, and the bottom 4 bits is telling you what
-	 * changed.  So you don't want to report a value unless something
-	 * changed, and only if it was in the modemstate mask.
-	 */
-	for_each_connection(port, netcon) {
-	    struct sergensio *sio;
-	    if (!netcon->net)
-		continue;
-	    if (port->last_modemstate & netcon->modemstate_mask & 0xf) {
-		sio = gensio_to_sergensio(netcon->net);
-		sergensio_modemstate(sio, port->last_modemstate);
-	    }
 	}
     }
 
@@ -3067,16 +3288,67 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
 }
 
 static int
-myconfig(void *data, struct absout *eout, const char *pos)
+strdupcat(char **str, const char *cat)
 {
-    port_info_t *port = data;
+    char *s = malloc(strlen(*str) + strlen(cat) + 2);
+
+    if (!s)
+	return ENOMEM;
+    strcpy(s, *str);
+    strcat(s, ",");
+    strcat(s, cat);
+    free(*str);
+    *str = s;
+    return 0;
+}
+
+static const char *termios_parms[] = {
+    "XONXOFF",
+    "-XONXOFF",
+    "RTSCTS",
+    "-RTSCTS",
+    "LOCAL",
+    "-LOCAL",
+    "HANGUP_WHEN_DONE",
+    "-HANGUP_WHEN_DONE",
+    "NOBREAK",
+    "-NOBREAK",
+    NULL
+};
+
+static bool
+matchstr(const char *parms[], const char *c)
+{
+    unsigned int i;
+
+    for (i = 0; parms[i]; i++) {
+	if (strcmp(parms[i], c) == 0)
+	    return true;
+    }
+    return false;
+}
+
+static int
+myconfig(port_info_t *port, struct absout *eout, const char *pos)
+{
     enum str_type stype;
     char *s;
     const char *val;
     unsigned int len;
     int rv, ival;
 
-    if (strcmp(pos, "remctl") == 0) {
+    /*
+     * This is a hack for backwards compatibility, if we see a config
+     * item meant for the device, we stick it onto the device name.
+     */
+    if (isdigit(pos[0]) || matchstr(termios_parms, pos)) {
+	int err = strdupcat(&port->devname, pos);
+
+	if (err) {
+	    eout->out(eout, "Out of memory appending to devname");
+	    return -1;
+	}
+    } else if (strcmp(pos, "remctl") == 0) {
 	port->allow_2217 = true;
     } else if (strcmp(pos, "-remctl") == 0) {
 	port->allow_2217 = false;
@@ -3204,6 +3476,29 @@ myconfig(void *data, struct absout *eout, const char *pos)
     return 0;
 }
 
+static int
+myconfigs(port_info_t *port, struct absout *eout, const char *istr)
+{
+    char *pos, *str, *strtok_data;
+    int rv = 0;
+
+    str = strdup(istr);
+    if (!str) {
+	eout->out(eout, "Out of memory handling config");
+	return -1;
+    }
+
+    for (pos = strtok_r(str, " \t", &strtok_data); pos != NULL;
+		pos = strtok_r(NULL, " \t", &strtok_data)) {
+	rv = myconfig(port, eout, pos);
+	if (rv)
+	    break;
+    }
+
+    free(str);
+    return rv;
+}
+
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
@@ -3220,6 +3515,7 @@ portconfig(struct absout *eout,
     int err;
     unsigned int shutdown_count = 0;
     bool do_telnet = false;
+    bool write_only = false;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -3251,11 +3547,11 @@ portconfig(struct absout *eout,
     if (!new_port->runshutdown)
 	goto errout;
 
-    new_port->io.devname = find_str(devname, &str_type, NULL);
-    if (new_port->io.devname) {
+    new_port->devname = find_str(devname, &str_type, NULL);
+    if (new_port->devname) {
 	if (str_type != DEVNAME) {
-	    free(new_port->io.devname);
-	    new_port->io.devname = NULL;
+	    free(new_port->devname);
+	    new_port->devname = NULL;
 	} else {
 	    new_port->orig_devname = strdup(devname);
 	    if (!new_port->orig_devname) {
@@ -3264,9 +3560,9 @@ portconfig(struct absout *eout,
 	    }
 	}
     }
-    if (!new_port->io.devname)
-	new_port->io.devname = strdup(devname);
-    if (!new_port->io.devname) {
+    if (!new_port->devname)
+	new_port->devname = strdup(devname);
+    if (!new_port->devname) {
 	eout->out(eout, "unable to allocate device name");
 	goto errout;
     }
@@ -3280,11 +3576,14 @@ portconfig(struct absout *eout,
 	    goto errout;
     }
 
-    if (strcmp(state, "raw") == 0) {
+    if (strcmp(state, "on") == 0) {
+	new_port->enabled = PORT_ON;
+    } else if (strcmp(state, "raw") == 0) {
 	new_port->enabled = PORT_ON;
     } else if (strcmp(state, "rawlp") == 0) {
-	new_port->enabled = PORT_RAWLP;
-	new_port->io.read_disabled = 1;
+	/* FIXME - remove this someday. */
+	new_port->enabled = PORT_ON;
+	write_only = true;
     } else if (strcmp(state, "telnet") == 0) {
 	/* FIXME - remove this someday. */
 	new_port->enabled = PORT_ON;
@@ -3302,27 +3601,33 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    new_port->io.user_data = new_port;
+    /* FIXME - RS485 support */
 
-    if (strncmp(new_port->io.devname, "sol.", 4) == 0) {
-	if (solcfg_init(&new_port->io, eout, devcfg, myconfig,
-			new_port) == -1) {
-	    eout->out(eout, "device configuration invalid");
+    err = myconfigs(new_port, eout, devcfg);
+    if (err)
+	goto errout;
+
+    if (write_only) {
+	err = strdupcat(&new_port->devname, "wronly");
+	if (err) {
+	    eout->out(eout, "Out of memory appending to devname");
 	    goto errout;
 	}
-    } else {
-	if (devcfg_init(&new_port->io, eout, devcfg, myconfig,
-			new_port) == -1) {
-	    eout->out(eout, "device configuration invalid");
-	    goto errout;
-	}
+    }
+
+    err = str_to_gensio(new_port->devname, so, handle_dev_event, new_port,
+			&new_port->io);
+    if (err) {
+	eout->out(eout, "device configuration %s invalid: %s",
+		  new_port->devname, strerror(err));
+	goto errout;
     }
 
     err = str_to_gensio_accepter(new_port->portname, so,
 				handle_port_child_event, new_port,
 				&new_port->accepter);
     if (err) {
-	eout->out(eout, "Invalid port name/number");
+	eout->out(eout, "Invalid port name/number: %s", strerror(err));
 	goto errout;
     }
 
@@ -3341,13 +3646,13 @@ portconfig(struct absout *eout,
 	new_port->accepter = parent;
     }
 
-    if (buffer_init(&new_port->dev_to_net, NULL, new_port->dev_to_net.maxsize))
+    if (gbuf_init(&new_port->dev_to_net, new_port->dev_to_net.maxsize))
     {
 	eout->out(eout, "Could not allocate dev to net buffer");
 	goto errout;
     }
 
-    if (buffer_init(&new_port->net_to_dev, NULL, new_port->net_to_dev.maxsize))
+    if (gbuf_init(&new_port->net_to_dev, new_port->net_to_dev.maxsize))
     {
 	eout->out(eout, "Could not allocate net to dev buffer");
 	goto errout;
@@ -3511,9 +3816,8 @@ static void
 showshortport(struct controller_info *cntlr, port_info_t *port)
 {
     char buffer[NI_MAXHOST + NI_MAXSERV + 2];
-    int  count;
-    int  need_space = 0;
-    struct absout out = { .out = cntrl_absout, .data = cntlr };
+    int count;
+    int err;
     net_info_t *netcon = NULL;
     unsigned int bytes_recv = 0, bytes_sent = 0;
 
@@ -3543,7 +3847,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     bytes_recv = netcon->bytes_received;
     bytes_sent = netcon->bytes_sent;
 
-    controller_outputf(cntlr, "%-22s ", port->io.devname);
+    controller_outputf(cntlr, "%-22s ", port->devname);
     controller_outputf(cntlr, "%-14s ", state_str[port->net_to_dev_state]);
     controller_outputf(cntlr, "%-14s ", state_str[port->dev_to_net_state]);
     controller_outputf(cntlr, "%9d ", bytes_recv);
@@ -3551,29 +3855,20 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "%9d ", port->dev_bytes_received);
     controller_outputf(cntlr, "%9d ", port->dev_bytes_sent);
 
-    if (port->enabled != PORT_RAWLP) {
-	port->io.f->show_devcfg(&port->io, &out);
-	need_space = 1;
-    }
+    err = gensio_raddr_to_str(port->io, NULL, buffer, sizeof(buffer));
+    if (!err)
+	controller_outputf(cntlr, "%s", buffer);
 
-    if (port->net_to_dev_state != PORT_UNCONNECTED) {
-	if (need_space) {
-	    controller_outs(cntlr, " ");
-	}
-
-	port->io.f->show_devcontrol(&port->io, &out);
-    }
     controller_outs(cntlr, "\r\n");
-
 }
 
 /* Print information about a port to the control port given in cntlr. */
 static void
 showport(struct controller_info *cntlr, port_info_t *port)
 {
-    char buffer[NI_MAXHOST + NI_MAXSERV + 2];
-    struct absout out = { .out = cntrl_absout, .data = cntlr };
+    char buffer[NI_MAXHOST + NI_MAXSERV + 2], *cfg, *oth = NULL;
     net_info_t *netcon;
+    int err;
 
     controller_outputf(cntlr, "TCP Port %s\r\n", port->portname);
     controller_outputf(cntlr, "  enable state: %s\r\n",
@@ -3594,25 +3889,33 @@ showport(struct controller_info *cntlr, port_info_t *port)
     }
 
     if (port->orig_devname)
-	controller_outputf(cntlr, "  device: %s (%s)\r\n", port->io.devname,
+	controller_outputf(cntlr, "  device: %s (%s)\r\n", port->devname,
 			   port->orig_devname);
     else
-	controller_outputf(cntlr, "  device: %s\r\n", port->io.devname);
+	controller_outputf(cntlr, "  device: %s\r\n", port->devname);
 
-    controller_outputf(cntlr, "  device config: ");
-    if (port->enabled == PORT_RAWLP) {
-	controller_outputf(cntlr, "none\r\n");
-    } else {
-	port->io.f->show_devcfg(&port->io, &out);
-	controller_outputf(cntlr, "\r\n");
-    }
+    err = gensio_raddr_to_str(port->io, NULL, buffer, sizeof(buffer));
+    if (!err) {
+	cfg = strchr(buffer, ',');
+	if (cfg) {
+	    cfg++;
+	    oth = strchr(cfg, ' ');
+	} else {
+	    cfg = "";
+	    oth = strchr(buffer, ' ');
+	}
+	if (oth) {
+	    *oth = '\0';
+	    oth++;
+	} else {
+	    oth = "";
+	}
 
-    controller_outputf(cntlr, "  device controls: ");
-    if (port->net_to_dev_state == PORT_UNCONNECTED) {
-	controller_outputf(cntlr, "not currently connected\r\n");
+	controller_outputf(cntlr, "  device config: %s\r\n", cfg);
+	controller_outputf(cntlr, "  device controls: %s\r\n", oth);
     } else {
-	port->io.f->show_devcontrol(&port->io, &out);
-	controller_outputf(cntlr, "\r\n");
+	controller_outputf(cntlr, "  device config: ?\r\n");
+	controller_outputf(cntlr, "  device controls: ?\r\n");
     }
 
     controller_outputf(cntlr, "  tcp to device state: %s\r\n",
@@ -3764,27 +4067,6 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
     }
 }
 
-/* Configure a port.  The port number and configuration are passed in
-   as strings, this code will get the port and then call the code to
-   configure the device. */
-void
-setportdevcfg(struct controller_info *cntlr, char *portspec, char *devcfg)
-{
-    port_info_t *port;
-    struct absout out = { .out = cntrl_abserrout, .data = cntlr };
-
-    port = find_port_by_num(portspec, false);
-    if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
-    } else {
-	if (port->io.f->reconfig(&port->io, &out, devcfg, myconfig, port) == -1)
-	{
-	    controller_outputf(cntlr, "Invalid device config\r\n");
-	}
-	so->unlock(port->lock);
-    }
-}
-
 /* Modify the controls of a port.  The port number and configuration
    are passed in as strings, this code will get the port and then call
    the code to control the device. */
@@ -3801,10 +4083,28 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
 	controller_outputf(cntlr, "Port is not currently connected: %s\r\n",
 			   portspec);
     } else {
-	if (port->io.f->set_devcontrol(&port->io, controls) == -1) {
-	    controller_outputf(cntlr, "Invalid device controls\r\n");
+	char *pos, *strtok_data;
+	struct sergensio *sio = gensio_to_sergensio(port->io);
+
+	if (!sio)
+	    goto out_unlock;
+	pos = strtok_r(controls, " \t", &strtok_data);
+	while (pos) {
+	    if (strcmp(pos, "RTSHI") == 0)
+		sergensio_rts(sio, SERGENSIO_RTS_ON, NULL, NULL);
+	    else if (strcmp(pos, "RTSLO") == 0)
+		sergensio_rts(sio, SERGENSIO_RTS_OFF, NULL, NULL);
+	    else if (strcmp(pos, "DTRHI") == 0)
+		sergensio_rts(sio, SERGENSIO_DTR_ON, NULL, NULL);
+	    else if (strcmp(pos, "DTRLO") == 0)
+		sergensio_rts(sio, SERGENSIO_DTR_OFF, NULL, NULL);
+	    else
+		controller_outputf(cntlr, "Invalid device control: %s\r\n",
+				   pos);
+	    pos = strtok_r(NULL, " \t", &strtok_data);
 	}
     }
+ out_unlock:
     so->unlock(port->lock);
  out:
     return;
@@ -3827,10 +4127,10 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 
     if (strcmp(enable, "off") == 0) {
 	new_enable = PORT_DISABLED;
+    } else if (strcmp(enable, "on") == 0) {
+	new_enable = PORT_ON;
     } else if (strcmp(enable, "raw") == 0) {
 	new_enable = PORT_ON;
-    } else if (strcmp(enable, "rawlp") == 0) {
-	new_enable = PORT_RAWLP;
     } else {
 	controller_outputf(cntlr, "Invalid enable: %s\r\n", enable);
 	goto out_unlock;

@@ -701,7 +701,14 @@ main(int argc, char *argv[])
     if (ser2net_debug && !detach)
 	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
 
-    readconfig_init();
+    err = readconfig_init();
+    if (err) {
+	fprintf(stderr,
+		"Could not initialize defaults: '%s'\n",
+		strerror(err));
+	exit(1);
+    }
+
     for (i = 0; i < num_config_lines; i++)
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
