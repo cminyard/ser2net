@@ -414,7 +414,6 @@ finish_shutdown_cleanly(void)
     } while(1);
 
     so->free_funcs(so);
-    sol_shutdown(); /* Free's the selector. */
 
     shutdown_dataxfer();
 
@@ -687,14 +686,6 @@ main(int argc, char *argv[])
 	fprintf(stderr,
 		"Could not initialize dataxfer: '%s'\n",
 		strerror(err));
-	exit(1);
-    }
-
-    err = sol_init();
-    if (err) {
-	fprintf(stderr,
-		"Could not initialize IPMI SOL: '%s'\n",
-		strerror(-err));
 	exit(1);
     }
 

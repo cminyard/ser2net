@@ -107,14 +107,6 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 				   const char *item),
 		void *data);
 
-int sol_init(void);
-void sol_shutdown(void);
-
-int solcfg_init(struct devio *io, struct absout *eout, const char *instr,
-		int (*otherconfig)(void *data, struct absout *eout,
-				   const char *item),
-		void *data);
-
 int add_rotator(char *portname, char *ports, int lineno);
 void free_rotators(void);
 
