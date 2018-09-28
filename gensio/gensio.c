@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <limits.h>
 
 #include <utils/utils.h>
 
@@ -976,6 +977,13 @@ str_to_gensio(const char *str,
 	return err;
     }
 
+    if (*str == '/') {
+	char *dummy_args[1] = { NULL };
+
+	err = str_to_termios_gensio(str, dummy_args, o, cb, user_data, gensio);
+	goto out;
+    }
+
     err = scan_network_port_args(str, &ai, &is_dgram, &is_port_set,
 				 &argc, &args);
     if (!err) {
@@ -990,6 +998,7 @@ str_to_gensio(const char *str,
 	freeaddrinfo(ai);
     }
 
+ out:
     if (args)
 	str_to_argv_free(argc, args);
 
@@ -1139,4 +1148,356 @@ gensio_acc_log(struct gensio_accepter *acc, enum gensio_log_levels level,
     va_start(args, str);
     gensio_acc_vlog(acc, level, str, args);
     va_end(args);
+}
+
+struct gensio_once gensio_default_initialized;
+
+static struct gensio_lock *deflock;
+
+union gensio_def_val {
+	char *strval;
+	int intval;
+};
+
+struct gensio_class_def {
+    const char *class;
+    union gensio_def_val val;
+    struct gensio_class_def *next;
+};
+
+struct gensio_def_entry {
+    const char *name;
+    enum gensio_default_type type;
+    int min;
+    int max;
+    union gensio_def_val val;
+    bool val_set;
+    union gensio_def_val def;
+    const struct gensio_enum_val *enums;
+    struct gensio_class_def *classvals;
+    struct gensio_def_entry *next;
+};
+
+static struct gensio_enum_val gensio_parity_enums[] = {
+    { "NONE", 'N' },
+    { "EVEN", 'E' },
+    { "ODD", 'O' },
+    { "none", 'N' },
+    { "even", 'E' },
+    { "odd", 'O' },
+    { "MARK", 'M' },
+    { "SPACE", 'S' },
+    { "mark", 'M' },
+    { "space", 'S' },
+    { NULL }
+};
+
+struct gensio_def_entry builtin_defaults[] = {
+    /* termios */
+    { "stopbits",	GENSIO_DEFAULT_INT,	.min = 1, .max = 2,
+						.def.intval = 1},
+    { "databits",	GENSIO_DEFAULT_INT,	.min = 5, .max = 8,
+						.def.intval = 8 },
+    { "parity",		GENSIO_DEFAULT_ENUM,	.enums = gensio_parity_enums,
+						.def.intval = 'N' },
+    { "xonxoff",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "rtscts",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "local",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "hangup_when_done", GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    /* termios and SOL */
+    { "speed",		GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
+						.def.intval = 9600 },
+    { "nobreak",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    {}
+};
+
+static struct gensio_def_entry *defaults;
+
+static void
+gensio_default_init(void *cb_data)
+{
+    struct gensio_os_funcs *o = cb_data;
+
+    deflock = o->alloc_lock(o);
+    if (!deflock)
+	o->log(o, "Unable to allocate gensio default lock");
+}
+
+static void
+gensio_reset_default(struct gensio_os_funcs *o, struct gensio_def_entry *d)
+{
+    struct gensio_class_def *n, *c = d->classvals;
+
+    for (; c; c = n) {
+	n = c->next;
+	if (c->val.strval)
+	    o->free(o, c->val.strval);
+	o->free(o, c);
+    }
+    d->classvals = NULL;
+
+    if (d->val.strval) {
+	o->free(o, d->val.strval);
+	d->val.strval = NULL;
+    }
+    d->val_set = false;
+}
+
+void
+gensio_reset_defaults(struct gensio_os_funcs *o)
+{
+    struct gensio_def_entry *d;
+    unsigned int i;
+
+    o->call_once(o, &gensio_default_initialized, gensio_default_init, o);
+
+    o->lock(deflock);
+    for (i = 0; builtin_defaults[i].name; i++)
+	gensio_reset_default(o, &builtin_defaults[i]);
+    for (d = defaults; d; d = d->next)
+	gensio_reset_default(o, d);
+    o->unlock(deflock);
+}
+
+static struct gensio_def_entry *
+gensio_lookup_default(const char *name)
+{
+    struct gensio_def_entry *d;
+    unsigned int i;
+
+    for (i = 0; builtin_defaults[i].name; i++) {
+	if (strcmp(builtin_defaults[i].name, name) == 0)
+	    return &builtin_defaults[i];
+    }
+    for (d = defaults; d; d = d->next) {
+	if (strcmp(d->name, name) == 0)
+	    return d;
+    }
+    return NULL;
+}
+
+static struct gensio_class_def *
+gensio_lookup_default_class(struct gensio_def_entry *d, const char *class)
+{
+    struct gensio_class_def *c = d->classvals;
+
+    for (; c; c = c->next) {
+	if (strcmp(c->class, class) == 0)
+	    return c;
+    }
+    return NULL;
+}
+
+int
+gensio_add_default(struct gensio_os_funcs *o,
+		   const char *name,
+		   enum gensio_default_type type,
+		   const char *strval, int intval,
+		   int minval, int maxval,
+		   const struct gensio_enum_val *enums)
+{
+    int err = 0;
+    struct gensio_def_entry *d;
+
+    o->call_once(o, &gensio_default_initialized, gensio_default_init, o);
+
+    o->lock(deflock);
+    d = gensio_lookup_default(name);
+    if (d) {
+	err = EEXIST;
+	goto out_unlock;
+    }
+
+    d = o->zalloc(o, sizeof(*d));
+    if (!d) {
+	err = ENOMEM;
+	goto out_unlock;
+    }
+
+    d->type = type;
+    d->name = name;
+    d->min = minval;
+    d->max = maxval;
+    d->enums = enums;
+    d->def.intval = intval;
+    if (strval) {
+	d->def.strval = strdup(strval);
+	if (!d->def.strval) {
+	    o->free(0, d);
+	    err = ENOMEM;
+	    goto out_unlock;
+	}
+    }
+
+    d->next = defaults;
+    defaults = d;
+
+ out_unlock:
+    o->unlock(deflock);
+    return err;
+}
+
+int
+gensio_set_default(struct gensio_os_funcs *o,
+		   const char *class, const char *name,
+		   const char *strval, int intval)
+{
+    int err = 0;
+    struct gensio_def_entry *d;
+    char *new_strval = NULL, *end;
+    unsigned int i;
+
+    o->call_once(o, &gensio_default_initialized, gensio_default_init, o);
+
+    o->lock(deflock);
+    d = gensio_lookup_default(name);
+    if (!d) {
+	err = ENOENT;
+	goto out_unlock;
+    }
+
+    switch (d->type) {
+    case GENSIO_DEFAULT_ENUM:
+	for (i = 0; d->enums[i].name; i++) {
+	    if (strcmp(d->enums[i].name, strval) == 0)
+		break;
+	}
+	if (!d->enums[i].name) {
+	    err = EINVAL;
+	    goto out_unlock;
+	}
+	intval = d->enums[i].val;
+	break;
+
+    case GENSIO_DEFAULT_BOOL:
+	intval = strtoul(strval, &end, 10);
+	if (end == strval || *end)
+	    intval = !!intval;
+	else if (strcmp(strval, "true") == 0 ||
+		 strcmp(strval, "TRUE") == 0)
+	    intval = 1;
+	else if (strcmp(strval, "false") == 0 ||
+		 strcmp(strval, "FALSE") == 0)
+	    intval = 0;
+	else {
+	    err = EINVAL;
+	    goto out_unlock;
+	}
+	break;
+
+    case GENSIO_DEFAULT_INT:
+	if (strval) {
+	    intval = strtoul(strval, &end, 10);
+	    if (end == strval || *end) {
+		err = EINVAL;
+		goto out_unlock;
+	    }
+	    if (intval < d->min || intval > d->max) {
+		err = ERANGE;
+		goto out_unlock;
+	    }
+	}
+	break;
+
+    case GENSIO_DEFAULT_STR:
+	new_strval = gensio_strdup(o, strval);
+	if (!new_strval) {
+	    err = ENOMEM;
+	    goto out_unlock;
+	}
+	break;
+
+    default:
+	err = EINVAL;
+	goto out_unlock;
+    }
+
+    if (class) {
+	struct gensio_class_def *c = gensio_lookup_default_class(d, class);
+
+	if (!c) {
+	    c = o->zalloc(o, sizeof(*c));
+	    if (!c) {
+		err = ENOMEM;
+		goto out_unlock;
+	    }
+	    c->class = class;
+	    if (c->val.strval)
+		o->free(o, c->val.strval);
+	    c->val.strval = new_strval;
+	    new_strval = NULL;
+	    c->val.intval = intval;
+	}
+    } else {
+	if (d->val.strval)
+	    o->free(o, d->val.strval);
+	d->val.strval = new_strval;
+	new_strval = NULL;
+	d->val.intval = intval;
+	d->val_set = true;
+    }
+
+ out_unlock:
+    if (new_strval)
+	o->free(o, new_strval);
+    o->unlock(deflock);
+    return err;
+}
+
+int
+gensio_get_default(struct gensio_os_funcs *o,
+		   const char *class, const char *name, bool classonly,
+		   enum gensio_default_type type,
+		   const char **strval, int *intval)
+{
+    struct gensio_def_entry *d;
+    struct gensio_class_def *c = NULL;
+    union gensio_def_val *val;
+    int err = 0;
+
+    o->call_once(o, &gensio_default_initialized, gensio_default_init, o);
+
+    o->lock(deflock);
+    d = gensio_lookup_default(name);
+    if (!d) {
+	err = ENOENT;
+	goto out_unlock;
+    }
+
+    if (d->type != type &&
+	    !(d->type == GENSIO_DEFAULT_ENUM && type == GENSIO_DEFAULT_INT) &&
+	    !(d->type == GENSIO_DEFAULT_BOOL && type == GENSIO_DEFAULT_INT)) {
+	err = EINVAL;
+	goto out_unlock;
+    }
+
+    if (class)
+	c = gensio_lookup_default_class(d, class);
+
+    if (c)
+	val = &c->val;
+    else if (d->val_set)
+	val = &d->val;
+    else
+	val = &d->def;
+
+    switch (type) {
+    case GENSIO_DEFAULT_BOOL:
+    case GENSIO_DEFAULT_ENUM:
+    case GENSIO_DEFAULT_INT:
+	*intval = val->intval;
+	break;
+
+    case GENSIO_DEFAULT_STR:
+	*strval = val->strval;
+	break;
+
+    default:
+	abort(); /* Shouldn't happen. */
+    }
+
+ out_unlock:
+    o->unlock(deflock);
+
+    return err;
 }

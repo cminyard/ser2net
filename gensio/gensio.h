@@ -239,6 +239,8 @@ struct gensio_os_funcs {
 		      void (*func)(void *cb_data), void *cb_data);
 
     void (*get_monotonic_time)(struct gensio_os_funcs *f, struct timeval *time);
+
+    void (*log)(struct gensio_os_funcs *f, char *log, ...);
 };
 
 struct gensio;
@@ -758,5 +760,78 @@ bool sockaddr_equal(const struct sockaddr *a1, socklen_t l1,
  */
 int scan_network_port(const char *str, struct addrinfo **ai, bool *is_dgram,
 		      bool *is_port_set);
+
+/*
+ * This allows a global to disable uucp locking for everything.
+ */
+extern bool gensio_uucp_locking_enabled;
+
+/*
+ * Defaults provide a way to set overall or class-based defaults for
+ * gensio values (or you can use it yourself to create your own defaults).
+ *
+ * For default values, each class will use gensio_get_default with
+ * their class (termios, telnet, ssl, etc.).  If a value has been set
+ * for its class, it will use that value.  If a value has been set with
+ * class set to NULL (the "global" defaults") then the value will be
+ * used from there.  Otherwise the code will use it's own internal value.
+ *
+ * The classonly parameter to getdefault means to not look in the global
+ * defaults.
+ *
+ * If you use this for your own default, it is recommended that you use
+ * your own "class" name and set "classonly" to true.
+ *
+ * int and bool are pretty self-explanatory.  Except that if you pass in
+ * a non-NULL strval, the code will attempt to get the value from the
+ * strval and will return NULL if the value is not valid.  If the value
+ * is <minval or >maxval, ERANGE is returned.
+ *
+ * When setting a str, the value is copied.  The return value of the str
+ * is the saved value, you should *not* free it.
+ *
+ * If it's a enum, setting the value you will pass in a string and a
+ * table of possible values in "enum" (terminated with a NULL name).
+ * The code will look up the string you pass in in the enums table,
+ * and set the value to the integer value.  If the string is not in
+ * the enums table, it will return EINVAL.  When you get the value, it
+ * will return the value in intval.
+ *
+ * When getting the value, the type must match what is set in the set
+ * call.  If the name is not found, ENOENT is returned.  If the type
+ * does not match, then EINVAL is returned.  Note that if you save
+ * a value as an enum, you can fetch it as an int.
+ *
+ * Setting the same default again will replace the old value.
+ */
+enum gensio_default_type {
+    GENSIO_DEFAULT_INT,
+    GENSIO_DEFAULT_BOOL,
+    GENSIO_DEFAULT_ENUM,
+    GENSIO_DEFAULT_STR
+};
+
+struct gensio_enum_val {
+    char *name;
+    int val;
+};
+
+int gensio_add_default(struct gensio_os_funcs *o,
+		       const char *name,
+		       enum gensio_default_type type,
+		       const char *strval, int intval,
+		       int minval, int maxval,
+		       const struct gensio_enum_val *enums);
+
+void gensio_reset_defaults(struct gensio_os_funcs *o);
+
+int gensio_set_default(struct gensio_os_funcs *o,
+		       const char *class, const char *name,
+		       const char *strval, int intval);
+
+int gensio_get_default(struct gensio_os_funcs *o,
+		       const char *class, const char *name, bool classonly,
+		       enum gensio_default_type type,
+		       const char **strval, int *intval);
 
 #endif /* GENSIO_H */
