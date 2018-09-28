@@ -60,4 +60,11 @@ int find_default_int(const char *name);
    out of memory.  The returned value must be freed. */
 char *find_default_str(const char *name);
 
+extern struct enum_val speed_enums[];
+
+enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
+		   PARITY_MARK, PARITY_SPACE };
+
+extern struct enum_val parity_enums[];
+
 #endif /* READCONFIG */

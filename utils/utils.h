@@ -81,31 +81,6 @@ struct absout {
 #define abspr(abs, fmt, ...) \
   abs->out(abs, fmt, ##__VA_ARGS__)
 
-/*
- * Given an integer baud rate (300 for 300baud, for instance),
- * return the termios value for the given baud rate.  Returns 1 if
- * successful and 0 if the given integer baud rate is not supported.
- */
-int get_baud_rate(int rate, int *val);
-
-/*
- * Given a termios baud rate value, return a string value for it.
- */
-const char *get_baud_rate_str(int baud_rate);
-
-/*
- * Given the termios value in "baud_rate", return the actual
- * integer baud rate in "val".  If the baud rate is not
- * supported, val is set to zero.
- */
-void get_rate_from_baud_rate(int baud_rate, int *val);
-
-/*
- * Convert string parameter into a termios setting.  Valid values
- * are 1STOPBIT, 2STOPBITS, 5DATABITS, 6DATABITS, 7DATABITS, 8DATABITS,
- */
-int process_termios_parm(struct termios *termio, char *parm);
-
 struct enum_val
 {
     char *str;
@@ -118,46 +93,6 @@ struct enum_val
  * compare the first "len" chars of str.
  */
 int lookup_enum(struct enum_val *enums, const char *str, int len);
-
-/*
- * enum table to convert speed string to termios baud.
- */
-extern struct enum_val speed_enums[];
-
-enum parity_vals { PARITY_NONE, PARITY_EVEN, PARITY_ODD,
-		   PARITY_MARK, PARITY_SPACE };
-
-/*
- * enum table to convert parit string to termios the parity values above.
- */
-extern struct enum_val parity_enums[];
-
-/*
- * Given an integer speed and a string that came after that speed
- * (like N81), set the termios appropriately.  Returns an errno.
- */
-int set_termios_from_speed(struct termios *termctl, int speed,
-			   const char *others);
-
-/*
- * Set the termios datasize from an integer size.
- */
-void set_termios_datasize(struct termios *termctl, int size);
-
-/*
- * Set the termios RTS/CTS from an bool setting.
- */
-void set_termios_rtscts(struct termios *termctl, int enabled);
-
-/*
- * Set the termios xon/xoff from an bool setting.
- */
-void set_termios_xonoff(struct termios *termctl, int enabled);
-
-/*
- * Set the termios parity from an enum.
- */
-void set_termios_parity(struct termios *termctl, enum parity_vals val);
 
 /* Return -1 if tv1 < tv2, 0 if tv1 == tv2, and 1 if tv1 > tv2 */
 int cmp_timeval(struct timeval *tv1, struct timeval *tv2);

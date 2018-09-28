@@ -31,6 +31,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <syslog.h>
+#include <ctype.h>
 
 #include "utils/selector.h"
 #include "utils/utils.h"
@@ -41,6 +42,351 @@
 #include "devio.h"
 
 #include <assert.h>
+
+static struct baud_rates_s {
+    int real_rate;
+    int val;
+    const char *str;
+} baud_rates[] =
+{
+    { 50, B50, "50" },
+    { 75, B75, "75" },
+    { 110, B110, "110" },
+    { 134, B134, "134" },
+    { 150, B150, "150" },
+    { 200, B200, "200" },
+    { 300, B300, "300" },
+    { 600, B600, "600" },
+    { 1200, B1200, "1200" },
+    { 1800, B1800, "1800" },
+    { 2400, B2400, "2400" },
+    { 4800, B4800, "4800" },
+    { 9600, B9600, "9600" },
+    /* We don't support 14400 baud */
+    { 19200, B19200, "19200" },
+    /* We don't support 28800 baud */
+    { 38400, B38400, "38400" },
+    { 57600, B57600, "57600" },
+    { 115200, B115200, "115200" },
+#ifdef B230400
+    { 230400, B230400, "230400" },
+#endif
+#ifdef B460800
+    { 460800, B460800, "460800" },
+#endif
+#ifdef B500000
+    { 500000, B500000, "500000" },
+#endif
+#ifdef B576000
+    { 576000, B576000, "576000" },
+#endif
+#ifdef B921600
+    { 921600, B921600, "921600" },
+#endif
+#ifdef B1000000
+    { 1000000, B1000000, "1000000" },
+#endif
+#ifdef B1152000
+    { 1152000, B1152000, "1152000" },
+#endif
+#ifdef B1500000
+    { 1500000, B1500000, "1500000" },
+#endif
+#ifdef B2000000
+    { 2000000, B2000000, "2000000" },
+#endif
+#ifdef B2500000
+    { 2500000, B2500000, "2500000" },
+#endif
+#ifdef B3000000
+    { 3000000, B3000000, "3000000" },
+#endif
+#ifdef B3500000
+    { 3500000, B3500000, "3500000" },
+#endif
+#ifdef B4000000
+    { 4000000, B4000000, "4000000" },
+#endif
+};
+#define BAUD_RATES_LEN ((sizeof(baud_rates) / sizeof(struct baud_rates_s)))
+
+int
+get_baud_rate(int rate, int *val)
+{
+    unsigned int i;
+    for (i = 0; i < BAUD_RATES_LEN; i++) {
+	if (rate == baud_rates[i].real_rate) {
+	    if (val)
+		*val = baud_rates[i].val;
+	    return 1;
+	}
+    }
+
+    return 0;
+}
+
+const char *
+get_baud_rate_str(int baud_rate)
+{
+    unsigned int i;
+    for (i = 0; i < BAUD_RATES_LEN; i++) {
+	if (baud_rate == baud_rates[i].val)
+	    return baud_rates[i].str;
+    }
+
+    return "unknown speed";
+}
+
+void
+get_rate_from_baud_rate(int baud_rate, int *val)
+{
+    unsigned int i;
+
+    for (i = 0; i < BAUD_RATES_LEN; i++) {
+	if (baud_rate == baud_rates[i].val) {
+	    *val = baud_rates[i].real_rate;
+	    return;
+	}
+    }
+
+    *val = 0;
+}
+
+struct enum_val speed_enums[] = {
+    { "300",	300 },
+    { "600",	600 },
+    { "1200",	1200 },
+    { "2400",	2400 },
+    { "4800",	4800 },
+    { "9600",	9600 },
+    { "19200",	19200 },
+    { "38400",	38400 },
+    { "57600",	57600 },
+    { "115200",	115200 },
+    { "230400",	230400 },
+    { "460800",	460800 },
+    { "500000",	500000 },
+    { "576000",	576000 },
+    { "921600",	921600 },
+    { "1000000",1000000 },
+    { "1152000",1152000 },
+    { "1500000",1500000 },
+    { "2000000",2000000 },
+    { "2500000",2500000 },
+    { "3000000",3000000 },
+    { "3500000",3500000 },
+    { "4000000",4000000 },
+    { NULL },
+};
+
+static int
+speedstr_to_speed(const char *speed, const char **rest)
+{
+    const char *end = speed;
+    unsigned int len;
+    int rv;
+
+    while (*end && isdigit(*end))
+	end++;
+    len = end - speed;
+    if (len < 3)
+	return -1;
+
+    rv = lookup_enum(speed_enums, speed, len);
+    if (rv != -1)
+	*rest = end;
+    return rv;
+}
+
+void
+set_termios_parity(struct termios *termctl, enum parity_vals val)
+{
+    switch (val) {
+    case PARITY_NONE:
+	termctl->c_cflag &= ~(PARENB);
+	break;
+    case PARITY_EVEN:
+    case PARITY_SPACE:
+	termctl->c_cflag |= PARENB;
+	termctl->c_cflag &= ~(PARODD);
+#ifdef CMSPAR
+	if (val == PARITY_SPACE)
+	    termctl->c_cflag |= CMSPAR;
+#endif
+	break;
+    case PARITY_ODD:
+    case PARITY_MARK:
+	termctl->c_cflag |= PARENB | PARODD;
+#ifdef CMSPAR
+	if (val == PARITY_MARK)
+	    termctl->c_cflag |= CMSPAR;
+#endif
+	break;
+    }
+}
+
+void
+set_termios_xonoff(struct termios *termctl, int enabled)
+{
+    if (enabled) {
+	termctl->c_iflag |= (IXON | IXOFF | IXANY);
+	termctl->c_cc[VSTART] = 17;
+	termctl->c_cc[VSTOP] = 19;
+    } else {
+	termctl->c_iflag &= ~(IXON | IXOFF | IXANY);
+    }
+}
+
+void
+set_termios_rtscts(struct termios *termctl, int enabled)
+{
+    if (enabled)
+	termctl->c_cflag |= CRTSCTS;
+    else
+	termctl->c_cflag &= ~CRTSCTS;
+}
+
+void
+set_termios_datasize(struct termios *termctl, int size)
+{
+    termctl->c_cflag &= ~CSIZE;
+    switch (size) {
+    case 5: termctl->c_cflag |= CS5; break;
+    case 6: termctl->c_cflag |= CS6; break;
+    case 7: termctl->c_cflag |= CS7; break;
+    case 8: termctl->c_cflag |= CS8; break;
+    }
+}
+
+int
+set_termios_from_speed(struct termios *termctl, int speed, const char *others)
+{
+    int speed_val;
+
+    if (!get_baud_rate(speed, &speed_val))
+	return -1;
+
+    cfsetospeed(termctl, speed_val);
+    cfsetispeed(termctl, speed_val);
+
+    if (*others) {
+	enum parity_vals val;
+
+	switch (*others) {
+	case 'N': val = PARITY_NONE; break;
+	case 'E': val = PARITY_EVEN; break;
+	case 'O': val = PARITY_ODD; break;
+	case 'M': val = PARITY_MARK; break;
+	case 'S': val = PARITY_SPACE; break;
+	default:
+	    return -1;
+	}
+	set_termios_parity(termctl, val);
+	others++;
+    }
+
+    if (*others) {
+	int val;
+
+	switch (*others) {
+	case '5': val = 5; break;
+	case '6': val = 6; break;
+	case '7': val = 7; break;
+	case '8': val = 8; break;
+	default:
+	    return -1;
+	}
+	set_termios_datasize(termctl, val);
+	others++;
+    }
+
+    if (*others) {
+	switch (*others) {
+	case '1':
+	    termctl->c_cflag &= ~(CSTOPB);
+	    break;
+
+	case '2':
+	    termctl->c_cflag |= CSTOPB;
+	    break;
+
+	default:
+	    return -1;
+	}
+	others++;
+    }
+
+    if (*others)
+	return -1;
+
+    return 0;
+}
+
+struct enum_val parity_enums[] = {
+    { "NONE", PARITY_NONE },
+    { "EVEN", PARITY_EVEN },
+    { "ODD", PARITY_ODD },
+    { "none", PARITY_NONE },
+    { "even", PARITY_EVEN },
+    { "odd", PARITY_ODD },
+    { "MARK", PARITY_MARK },
+    { "SPACE", PARITY_SPACE },
+    { "mark", PARITY_MARK },
+    { "space", PARITY_SPACE },
+    { NULL }
+};
+
+static enum parity_vals
+lookup_parity(const char *str)
+{
+    return lookup_enum(parity_enums, str, -1);
+}
+
+int
+process_termios_parm(struct termios *termio, char *parm)
+{
+    int rv = 0, val;
+    const char *rest = "";
+
+    if ((val = speedstr_to_speed(parm, &rest)) != -1) {
+	if (set_termios_from_speed(termio, val, rest) == -1)
+	    rv = EINVAL;
+    } else if (strcmp(parm, "1STOPBIT") == 0) {
+	termio->c_cflag &= ~(CSTOPB);
+    } else if (strcmp(parm, "2STOPBITS") == 0) {
+	termio->c_cflag |= CSTOPB;
+    } else if (strcmp(parm, "5DATABITS") == 0) {
+	set_termios_datasize(termio, 5);
+    } else if (strcmp(parm, "6DATABITS") == 0) {
+	set_termios_datasize(termio, 6);
+    } else if (strcmp(parm, "7DATABITS") == 0) {
+	set_termios_datasize(termio, 7);
+    } else if (strcmp(parm, "8DATABITS") == 0) {
+	set_termios_datasize(termio, 8);
+    } else if ((val = lookup_parity(parm)) != -1) {
+	set_termios_parity(termio, val);
+    } else if (strcmp(parm, "XONXOFF") == 0) {
+	set_termios_xonoff(termio, 1);
+    } else if (strcmp(parm, "-XONXOFF") == 0) {
+	set_termios_xonoff(termio, 0);
+    } else if (strcmp(parm, "RTSCTS") == 0) {
+	set_termios_rtscts(termio, 1);
+    } else if (strcmp(parm, "-RTSCTS") == 0) {
+	set_termios_rtscts(termio, 0);
+    } else if (strcmp(parm, "LOCAL") == 0) {
+	termio->c_cflag |= CLOCAL;
+    } else if (strcmp(parm, "-LOCAL") == 0) {
+	termio->c_cflag &= ~CLOCAL;
+    } else if (strcmp(parm, "HANGUP_WHEN_DONE") == 0) {
+	termio->c_cflag |= HUPCL;
+    } else if (strcmp(parm, "-HANGUP_WHEN_DONE") == 0) {
+	termio->c_cflag &= ~HUPCL;
+    } else {
+	rv = ENOTSUP;
+    }
+
+    return rv;
+}
 
 struct devcfg_data {
     /* Information about the terminal device. */
