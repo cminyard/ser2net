@@ -3,8 +3,8 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS=-Wall -I$(top_srcdir)
 ser2net_SOURCES = controller.c dataxfer.c readconfig.c \
 	ser2net.c led.c led_sysfs.c devio_devcfg.c devio_sol.c
-ser2net_LDADD = $(top_builddir)/utils/libutils.a \
-		$(top_builddir)/gensio/libgensio.a $(OPENSSL_LIBS)
+ser2net_LDADD = $(top_builddir)/gensio/libgensio.a \
+		$(top_builddir)/utils/libutils.a $(OPENSSL_LIBS)
 noinst_HEADERS = controller.h dataxfer.h readconfig.h \
 	ser2net.h led.h led_sysfs.h devio.h
 man_MANS = ser2net.8
