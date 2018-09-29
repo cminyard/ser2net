@@ -516,6 +516,8 @@ udpna_deferred_op(struct gensio_runner *runner, void *cbdata)
 	udpna_do_free(nadata);
     } else {
 	nadata->deferred_op_pending = false;
+	if (nadata->read_disable_count == 0)
+	    udpna_enable_read(nadata);
 	udpna_unlock(nadata);
     }
 }
