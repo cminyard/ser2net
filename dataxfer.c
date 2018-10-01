@@ -1337,7 +1337,7 @@ sergensio_val_set(struct sergensio *sio, int err,
 
 	if (!netcon->net)
 	    continue;
-	rsio = gensio_to_sergensio(sergensio_to_gensio(sio));
+	rsio = gensio_to_sergensio(netcon->net);
 	if (!rsio)
 	    continue;
 
@@ -1386,6 +1386,7 @@ sergensio_val_set(struct sergensio *sio, int err,
 	    break;
 	}
     }
+    so->unlock(port->lock);
 }
 
 static void
