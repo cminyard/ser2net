@@ -95,12 +95,12 @@ int sergensio_iflowcontrol(struct sergensio *sio, unsigned int iflowcontrol,
 int sergensio_sbreak(struct sergensio *sio, unsigned int breakv,
 		     sergensio_done done, void *cb_data);
 
-#define SERGENSIO_DTR_ON		1
+#define SERGENSIO_DTR_ON	1
 #define SERGENSIO_DTR_OFF	2
 int sergensio_dtr(struct sergensio *sio, unsigned int dtr,
 		  sergensio_done done, void *cb_data);
 
-#define SERGENSIO_RTS_ON		1
+#define SERGENSIO_RTS_ON	1
 #define SERGENSIO_RTS_OFF	2
 int sergensio_rts(struct sergensio *sio, unsigned int rts,
 		  sergensio_done done, void *cb_data);
