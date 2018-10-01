@@ -784,7 +784,7 @@ termios_get_set_dtr(struct termios *termio, int *mctl, int *ival)
 	if (*ival == SERGENSIO_DTR_ON)
 	    *mctl |= TIOCM_DTR;
 	else if (*ival == SERGENSIO_DTR_OFF)
-	    *mctl &= TIOCM_DTR;
+	    *mctl &= ~TIOCM_DTR;
 	else
 	    return EINVAL;
     } else {
@@ -814,7 +814,7 @@ termios_get_set_rts(struct termios *termio, int *mctl, int *ival)
 	if (*ival == SERGENSIO_RTS_ON)
 	    *mctl |= TIOCM_RTS;
 	else if (*ival == SERGENSIO_RTS_OFF)
-	    *mctl &= TIOCM_RTS;
+	    *mctl &= ~TIOCM_RTS;
 	else
 	    return EINVAL;
     } else {
