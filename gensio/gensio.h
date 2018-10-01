@@ -26,6 +26,10 @@
 #ifndef GENSIO_H
 #define GENSIO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <stdarg.h>
 #include <sys/types.h>
@@ -838,5 +842,9 @@ int gensio_get_default(struct gensio_os_funcs *o,
  * This allows a global to disable uucp locking for everything.
  */
 extern bool gensio_uucp_locking_enabled;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* GENSIO_H */

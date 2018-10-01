@@ -25,6 +25,10 @@
 #ifndef SERGENSIO_H
 #define SERGENSIO_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -239,5 +243,9 @@ int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 #define GENSIO_EVENT_SER_SEND_BREAK	(SERGENIO_EVENT_BASE + 16)
 
 bool sergensio_is_client(struct sergensio *sio);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SERGENSIO_H */
