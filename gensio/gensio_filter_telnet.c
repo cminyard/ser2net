@@ -381,8 +381,10 @@ telnet_setup(struct gensio_filter *filter)
 		      tfilter->telnet_init_seq, tfilter->telnet_init_seq_len);
     if (tfilter->is_client)
 	tfilter->rfc2217_set = !tfilter->allow_2217;
-    else
+    else {
 	tfilter->rfc2217_set = true; /* Don't wait for this on the server. */
+	tfilter->setup_done = true;
+    }
     if (!err && !tfilter->rfc2217_set) {
 	tfilter->o->get_monotonic_time(tfilter->o,
 				       &tfilter->rfc2217_end_wait);
