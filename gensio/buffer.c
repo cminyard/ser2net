@@ -46,8 +46,7 @@ do_write(buffer_do_write tdo_write, void *cb_data,
 }
 
 int
-buffer_write(buffer_do_write tdo_write, void *cb_data,
-	     struct sbuf *buf, int *buferr)
+buffer_write(buffer_do_write tdo_write, void *cb_data, struct sbuf *buf)
 {
     int err;
     unsigned int write_count;
@@ -64,10 +63,8 @@ buffer_write(buffer_do_write tdo_write, void *cb_data,
     if (towrite1 > 0) {
 	err = do_write(tdo_write, cb_data,
 		       buf->buf + buf->pos, towrite1, &write_count);
-	if (err) {
-	    *buferr = err;
-	    return -1;
-	}
+	if (err)
+	    return err;
 
 	buf->pos += write_count;
 	buf->cursize -= write_count;
@@ -79,10 +76,8 @@ buffer_write(buffer_do_write tdo_write, void *cb_data,
 	/* We wrapped */
 	buf->pos = 0;
 	err = do_write(tdo_write, cb_data, buf->buf, towrite2, &write_count);
-	if (err) {
-	    *buferr = errno;
-	    return -1;
-	}
+	if (err)
+	    return err;
 	buf->pos += write_count;
 	buf->cursize -= write_count;
     }

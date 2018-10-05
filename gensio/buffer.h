@@ -30,8 +30,7 @@ struct sbuf {
 typedef int (*buffer_do_write)(void *cbdata, void *buf, unsigned int buflen,
 			       unsigned int *written);
 
-int buffer_write(buffer_do_write do_write, void *cb_data,
-		 struct sbuf *buf, int *buferr);
+int buffer_write(buffer_do_write do_write, void *cb_data, struct sbuf *buf);
 
 int buffer_output(struct sbuf *buf, const unsigned char *data,
 		  unsigned int len);
@@ -45,6 +44,13 @@ int buffer_init(struct sbuf *buf, unsigned char *data, unsigned int datalen);
 #define buffer_cursize(buf) ((buf)->cursize)
 
 #define buffer_curptr(bufp) ((bufp)->buf + (bufp)->pos)
+
+#define buffer_advance(bufp, count) \
+    do { \
+	(bufp)->pos += (count);			\
+	while ((bufp)->pos >= (bufp)->maxsize)	\
+	    (bufp)->pos -= (bufp)->maxsize;	\
+    }
 
 #define buffer_reset(buf) \
     do {			\

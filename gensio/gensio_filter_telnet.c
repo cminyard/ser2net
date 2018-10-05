@@ -210,15 +210,15 @@ telnet_ul_write(struct gensio_filter *filter,
     if (tfilter->write_state != TELNET_IN_USER_WRITE &&
 		buffer_cursize(&tfilter->tn_data.out_telnet_cmd)) {
 	struct telnet_buffer_data data = { handler, cb_data };
-	int buferr;
 
-	if (buffer_write(telnet_buffer_do_write, &data,
-			 &tfilter->tn_data.out_telnet_cmd, &buferr))
-	    err = buferr;
-	else if (buffer_cursize(&tfilter->tn_data.out_telnet_cmd))
-	    tfilter->write_state = TELNET_IN_TN_WRITE;
-	else
-	    tfilter->write_state = TELNET_NOT_WRITING;
+	err = buffer_write(telnet_buffer_do_write, &data,
+			   &tfilter->tn_data.out_telnet_cmd);
+	if (!err) {
+	    if (buffer_cursize(&tfilter->tn_data.out_telnet_cmd))
+		tfilter->write_state = TELNET_IN_TN_WRITE;
+	    else
+		tfilter->write_state = TELNET_NOT_WRITING;
+	}
     }
 
     if (tfilter->write_state != TELNET_IN_TN_WRITE &&
