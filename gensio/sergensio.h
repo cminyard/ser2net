@@ -214,13 +214,13 @@ int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 #define GENSIO_EVENT_SER_SIGNATURE	(SERGENIO_EVENT_BASE + 3)
 
 /*
- * The remote end is asking the user to flow control or flush.  buf
- * points to an unsigned integer holding the modem or line state.
+ * The remote end is asking the user to flow control or flush.  Client
+ * or server.
  */
 #define GENSIO_EVENT_SER_FLOW_STATE	(SERGENIO_EVENT_BASE + 4)
 #define GENSIO_EVENT_SER_FLUSH		(SERGENIO_EVENT_BASE + 5)
 
-/* Got a sync from the other end. */
+/* Got a sync from the other end.  Client or server. */
 #define GENSIO_EVENT_SER_SYNC		(SERGENIO_EVENT_BASE + 6)
 
 /*
@@ -239,7 +239,10 @@ int sergensio_rts_b(struct sergensio_b *sbio, int *rts);
 #define GENSIO_EVENT_SER_DTR		(SERGENIO_EVENT_BASE + 14)
 #define GENSIO_EVENT_SER_RTS		(SERGENIO_EVENT_BASE + 15)
 
-/* Got a request from the other end to send a break. */
+/*
+ * Got a request from the other end to send a break.  Client or
+ * server.
+ */
 #define GENSIO_EVENT_SER_SEND_BREAK	(SERGENIO_EVENT_BASE + 16)
 
 bool sergensio_is_client(struct sergensio *sio);
