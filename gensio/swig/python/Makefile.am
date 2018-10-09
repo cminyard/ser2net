@@ -35,6 +35,8 @@ _gensio_la_LIBADD = \
 	$(top_builddir)/gensio/sergensio_termios.lo \
 	$(top_builddir)/gensio/gensio_selector.lo \
 	$(top_builddir)/gensio/swig/termios.lo \
+	$(top_builddir)/gensio/gensio_ll_ipmisol.lo \
+	$(top_builddir)/gensio/sergensio_ipmisol.lo \
 	$(OPENSSL_LIBS)
 _gensio_la_LDFLAGS = -module -avoid-version $(OPENSSL_LDFLAGS)
 

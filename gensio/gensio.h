@@ -659,6 +659,10 @@ int str_to_termios_gensio(const char *str, char *args[],
 			  struct gensio_os_funcs *o,
 			  gensio_event cb, void *user_data,
 			  struct gensio **new_gensio);
+int str_to_ipmisol_gensio(const char *str, char *args[],
+			  struct gensio_os_funcs *o,
+			  gensio_event cb, void *user_data,
+			  struct gensio **new_gensio);
 
 
 /*
@@ -730,12 +734,17 @@ int ssl_gensio_alloc(struct gensio *child, char *args[],
 int termios_gensio_alloc(const char *devname, char *args[],
 			 struct gensio_os_funcs *o,
 			 gensio_event cb, void *user_data,
-			 struct gensio **sio);
+			 struct gensio **io);
 
 int telnet_gensio_alloc(struct gensio *child, char *args[],
 			struct gensio_os_funcs *o,
 			gensio_event cb, void *user_data,
-			struct gensio **sio);
+			struct gensio **io);
+
+int ipmisol_gensio_alloc(const char *devname, char *args[],
+			 struct gensio_os_funcs *o,
+			 gensio_event cb, void *user_data,
+			 struct gensio **io);
 
 /*
  * Compare two sockaddr structure and return TRUE if they are equal

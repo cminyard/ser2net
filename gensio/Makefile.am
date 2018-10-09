@@ -11,7 +11,8 @@ MY_SOURCES = gensio.c gensio_tcp.c gensio_udp.c gensio_stdio.c \
 	gensio_selector.c waiter.c \
 	gensio_ssl.c gensio_base.c gensio_filter_ssl.c \
 	gensio_filter_telnet.c telnet.c buffer.c \
-	gensio_ll_fd.c gensio_ll_gensio.c gensio_acc_gensio.c
+	gensio_ll_fd.c gensio_ll_gensio.c gensio_acc_gensio.c \
+	gensio_ll_ipmisol.c sergensio_ipmisol.c
 
 noinst_lib_LTLIBRARIES = libgensio.la
 noinst_libdir = $(shell readlink -f $(top_builddir)/dummy_install)

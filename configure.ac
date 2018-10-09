@@ -87,9 +87,9 @@ fi
 
 if test "x$HAVE_OPENIPMI" != "xno"; then
    if test "x$use_pthreads" == "xyes"; then
-      LIBS="$LIBS -lOpenIPMI -lOpenIPMIpthread"
+      LIBS="$LIBS -lOpenIPMI -lOpenIPMIpthread -lOpenIPMIutils"
    else
-      LIBS="$LIBS -lOpenIPMI -lOpenIPMIposix"
+      LIBS="$LIBS -lOpenIPMI -lOpenIPMIposix -lOpenIPMIutils"
    fi
    AC_DEFINE(HAVE_OPENIPMI)
 fi

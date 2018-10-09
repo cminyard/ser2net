@@ -921,6 +921,9 @@ add_default_gensios(void *cb_data)
 #endif
     register_gensio(o, "telnet", str_to_telnet_gensio);
     register_gensio(o, "termios", str_to_termios_gensio);
+#ifdef HAVE_OPENIPMI
+    register_gensio(o, "ipmisol", str_to_ipmisol_gensio);
+#endif
 }
 
 int
