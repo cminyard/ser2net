@@ -1444,14 +1444,14 @@ termios_gensio_alloc(const char *devname, char *args[],
     unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
     int i;
 
+    if (!sdata)
+	return ENOMEM;
+
     for (i = 0; args[i]; i++) {
 	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
 	    continue;
 	return EINVAL;
     }
-
-    if (!sdata)
-	return ENOMEM;
 
     sdata->o = o;
 
@@ -1488,22 +1488,27 @@ termios_gensio_alloc(const char *devname, char *args[],
     if (!ll)
 	goto out_nomem;
 
+    /*
+     * After this point, freeing the ll or io will free sdata through
+     * the free callbacks.
+     */
+
     io = base_gensio_alloc(o, ll, NULL, "termios", cb, user_data);
     if (!io) {
 	gensio_ll_free(ll);
-	goto out_nomem;
+	return ENOMEM;
     }
 
     sdata->sio = sergensio_data_alloc(o, io, sergensio_sterm_func, sdata);
     if (!sdata->sio) {
 	gensio_free(io);
-	goto out_nomem;
+	return ENOMEM;
     }
 
     err = gensio_addclass(io, "sergensio", sdata->sio);
     if (err) {
 	gensio_free(io);
-	goto out_err;
+	return err;
     }
 
     *rio = io;
