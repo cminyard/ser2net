@@ -1192,6 +1192,17 @@ static struct gensio_enum_val gensio_parity_enums[] = {
     { NULL }
 };
 
+#ifdef HAVE_OPENIPMI
+#include <OpenIPMI/ipmi_conn.h>
+#include <OpenIPMI/ipmi_sol.h>
+struct gensio_enum_val shared_serial_alert_enums[] = {
+    { "fail",		ipmi_sol_serial_alerts_fail },
+    { "deferred", 	ipmi_sol_serial_alerts_deferred },
+    { "succeed", 	ipmi_sol_serial_alerts_succeed },
+    { NULL }
+};
+#endif
+
 struct gensio_def_entry builtin_defaults[] = {
     /* termios */
     { "stopbits",	GENSIO_DEFAULT_INT,	.min = 1, .max = 2,
@@ -1208,6 +1219,19 @@ struct gensio_def_entry builtin_defaults[] = {
     { "speed",		GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
 						.def.intval = 9600 },
     { "nobreak",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+#ifdef HAVE_OPENIPMI
+    /* SOL only */
+    { "authenticated",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
+    { "encrypted",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
+    { "ack-timeout",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
+						.def.intval = 1000000 },
+    { "ack-retries",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
+						.def.intval = 10 },
+    { "shared-serial-alert", GENSIO_DEFAULT_ENUM,
+				.enums = shared_serial_alert_enums,
+				.def.intval = ipmi_sol_serial_alerts_fail },
+    { "deassert_CTS_DCD_DSR_on_connect", GENSIO_DEFAULT_BOOL, .def.intval = 0 },
+#endif
     {}
 };
 
