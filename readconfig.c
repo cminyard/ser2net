@@ -445,15 +445,6 @@ static struct absout syslog_eout = {
     .data = &lineno
 };
 
-#ifdef HAVE_OPENIPMI
-struct enum_val shared_serial_alert_enums[] = {
-    { "fail",		ipmi_sol_serial_alerts_fail },
-    { "deferred", 	ipmi_sol_serial_alerts_deferred },
-    { "succeed", 	ipmi_sol_serial_alerts_succeed },
-    { NULL }
-};
-#endif
-
 struct default_data
 {
     const char *name;
@@ -468,22 +459,6 @@ struct default_data
 };
 
 struct default_data defaults[] = {
-#if 0 /* In gensio now. */
-    /* serial device only */
-    { "stopbits",	GENSIO_DEFAULT_INT,	.min = 1, .max = 2 },
-    { "databits",	GENSIO_DEFAULT_INT,	.min = 5, .max = 8,
-						.def.intval = 8 },
-    { "parity",		GENSIO_DEFAULT_ENUM,	.enums = parity_enums,
-						.def.intval = 'N' },
-    { "xonxoff",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-    { "rtscts",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-    { "local",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-    { "hangup_when_done", GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-    /* Serial port and SOL */
-    { "speed",		GENSIO_DEFAULT_ENUM,	.enums = speed_enums,
-					.def.intval = 9600 },
-    { "nobreak",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-#endif
     /* All port types */
     { "remctl",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
     { "telnet_brk_on_sync",GENSIO_DEFAULT_BOOL,.def.intval = 0 },
@@ -501,20 +476,6 @@ struct default_data defaults[] = {
 					.def.intval = PORT_BUFSIZE },
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
-#if 0 /* In gensio now. */
-#ifdef HAVE_OPENIPMI
-    /* SOL only */
-    { "authenticated",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
-    { "encrypted",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
-    { "ack-timeout",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
-					.def.intval = 1000000 },
-    { "ack-retries",	GENSIO_DEFAULT_INT,	.min = 1, .max = INT_MAX,
-					.def.intval = 10 },
-    { "shared-serial-alert", GENSIO_DEFAULT_ENUM, .enums = shared_serial_alert_enums,
-				   .def.intval = ipmi_sol_serial_alerts_fail },
-    { "deassert_CTS_DCD_DSR_on_connect", GENSIO_DEFAULT_BOOL, .def.intval = 0 },
-#endif
-#endif
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = "" },
     { NULL }
 };
