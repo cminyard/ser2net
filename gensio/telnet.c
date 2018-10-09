@@ -20,7 +20,7 @@ find_cmd(struct telnet_cmd *array, unsigned char option)
 void
 telnet_cmd_send(telnet_data_t *td, const unsigned char *cmd, int len)
 {
-    if (buffer_output(&td->out_telnet_cmd, cmd, len) == -1) {
+    if (buffer_output(&td->out_telnet_cmd, cmd, len) < len) {
 	/* Out of data, abort the connection.  This really shouldn't
 	   happen.*/
 	td->error = 1;

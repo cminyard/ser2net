@@ -85,19 +85,20 @@ buffer_write(buffer_do_write tdo_write, void *cb_data, struct sbuf *buf)
     return 0;
 }
 
-int
+unsigned int
 buffer_output(struct sbuf *buf, const unsigned char *data, unsigned int len)
 {
     int end;
 
     if (buffer_left(buf) < len)
-	return -1;
+	len = buffer_left(buf);
 
     end = buf->pos + buf->cursize;
     if (end > buf->maxsize)
 	end -= buf->maxsize;
     if (end + len > buf->maxsize) {
 	int availend = buf->maxsize - end;
+
 	memcpy(buf->buf + end, data, availend);
 	buf->cursize += availend;
 	end = 0;
@@ -106,23 +107,25 @@ buffer_output(struct sbuf *buf, const unsigned char *data, unsigned int len)
     }
     memcpy(buf->buf + end, data, len);
     buf->cursize += len;
-    return 0;
+
+    return len;
 }
 
-int
+unsigned int
 buffer_outchar(struct sbuf *buf, unsigned char data)
 {
     int end;
 
     if (buffer_left(buf) < 1)
-	return -1;
+	return 0;
 
     end = buf->pos + buf->cursize;
     if (end >= buf->maxsize)
 	end -= buf->maxsize;
     buf->buf[end] = data;
     buf->cursize += 1;
-    return 0;
+
+    return 1;
 }
 
 int
