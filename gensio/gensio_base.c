@@ -965,7 +965,7 @@ basen_ll_urgent(void *cb_data)
     filter_ll_urgent(ndata);
 }
 
-static int
+static unsigned int
 gensio_ll_base_cb(void *cb_data, int op, int val,
 		  void *buf, unsigned int buflen,
 		  void *data)
@@ -983,7 +983,7 @@ gensio_ll_base_cb(void *cb_data, int op, int val,
 	return 0;
 
     default:
-	return ENOTSUP;
+	return 0;
     }
 };
 
