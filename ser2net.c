@@ -502,6 +502,23 @@ setup_signals(void)
     }
 }
 
+static void
+ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
+		      const char *log, va_list args)
+{
+    int priority = LOG_INFO;
+
+    switch (level) {
+    case GENSIO_LOG_FATAL:   priority = LOG_CRIT; break;
+    case GENSIO_LOG_ERR:     priority = LOG_ERR; break;
+    case GENSIO_LOG_WARNING: priority = LOG_WARNING; break;
+    case GENSIO_LOG_INFO:    priority = LOG_INFO; break;
+    case GENSIO_LOG_DEBUG:   priority = LOG_DEBUG; break;
+    }
+
+    vsyslog(priority, log, args);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -548,6 +565,7 @@ main(int argc, char *argv[])
 
 	case 'l':
 	    ser2net_debug_level++;
+	    gensio_debug_mask |= (1 << (ser2net_debug_level + 2));
 	    break;
 
 	case 'b':
@@ -665,6 +683,7 @@ main(int argc, char *argv[])
 	fprintf(stderr, "Could not alloc ser2net gensio selector\n");
 	exit(1);
     }
+    so->vlog = ser2net_gensio_logger;
 
     config_lock = so->alloc_lock(so);
     if (!config_lock) {
