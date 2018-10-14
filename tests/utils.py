@@ -50,6 +50,7 @@ class HandleData:
         self.waiter = gensio.waiter(o)
         self.to_write = None
         self.to_compare = None
+        self.to_waitfor = None
         self.expecting_modemstate = False
         self.expecting_linestate = False
         self.expected_server_cb = None
@@ -74,6 +75,18 @@ class HandleData:
         """
         self.compared = 0
         self.to_compare = to_compare
+        if (start_reader):
+            self.io.read_cb_enable(True)
+        return
+
+    def set_waitfor(self, waitfor, start_reader = True):
+        """Wait for the given string to come in
+
+        If start_reader is true (default), it enable the read callback.
+        If the data does not compare, an exception is raised.
+        """
+        self.compared = 0
+        self.to_waitfor = waitfor
         if (start_reader):
             self.io.read_cb_enable(True)
         return
@@ -103,10 +116,16 @@ class HandleData:
     # Everything below here is internal handling functions.
 
     def read_callback(self, io, err, buf, flags):
-        if (debug or self.debug) and self.to_compare:
+        if self.to_compare:
+            iolen = len(self.to_compare)
+        elif self.to_waitfor:
+            iolen = len(self.to_waitfor)
+        else:
+            iolen = None
+
+        if (debug or self.debug) and iolen != None:
             print("%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
-                                                        self.compared,
-                                                        len(self.to_compare)))
+                                                        self.compared, iolen))
         if (debug >= 2 or self.debug >= 2):
             s = ""
             for i in buf:
@@ -120,6 +139,18 @@ class HandleData:
             raise HandlerException(self.name + ": read: " + err)
         if (self.ignore_input):
             return len(buf)
+        if (self.to_waitfor):
+            for i in range(0, len(buf)):
+                if buf[i] == self.to_waitfor[self.compared]:
+                    self.compared += 1
+                    if (len(self.to_waitfor) == self.compared):
+                        self.to_waitfor = None
+                        io.read_cb_enable(False)
+                        self.waiter.wake()
+                else:
+                    self.compared = 0
+            return len(buf)
+
         if (not self.to_compare):
             if (debug):
                 print(self.name + ": Got data, but nothing to compare")
