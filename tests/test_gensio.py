@@ -265,9 +265,6 @@ def test_stdio_small():
     utils.test_dataxfer(io, io, rb)
     utils.io_close(io)
 
-test_stdio_basic()
-test_stdio_small()
-
 def do_small_test(io1, io2):
     rb = gensio.get_random_bytes(512)
     print("  testing io1 to io2")
@@ -281,20 +278,32 @@ def test_tcp_small():
                          chunksize = 64)
     ta = TestAccept(o, io1, "tcp,3025", do_small_test)
 
-test_tcp_small()
-
 def test_telnet_small():
     print("Test telnet small")
     io1 = utils.alloc_io(o, "telnet,tcp,localhost,3026", do_open = False,
                          chunksize = 64)
     ta = TestAccept(o, io1, "telnet(rfc2217=true),3026", do_small_test)
 
-test_telnet_small()
+import ipmisimdaemon
+def test_ipmisol_small():
+    print("Test ipmisol small")
+    isim = ipmisimdaemon.IPMISimDaemon(o)
+    io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,9600")
+    io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,115200")
+    utils.test_dataxfer(io1, io2, "This is a test string!")
+    utils.io_close(io1)
+    utils.io_close(io2)
 
-ta_ssl_telnet()
+test_ipmisol_small()
+
+test_stdio_basic()
+test_stdio_small()
 t1()
 t2()
 ta_tcp()
 ta_udp()
 ta_ssl_tcp()
 test_modemstate()
+test_tcp_small()
+test_telnet_small()
+ta_ssl_telnet()
