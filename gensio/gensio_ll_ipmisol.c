@@ -376,40 +376,40 @@ gio_vlog(os_handler_t         *handler,
 {
     struct igensio_info *info = handler->internal_data;
     os_vlog_t log_handler = info->log_handler;
+    enum gensio_log_levels level;
+
+    switch(log_type) {
+    case IPMI_LOG_INFO:
+    default:
+	level = GENSIO_LOG_INFO;
+	break;
+
+    case IPMI_LOG_WARNING:
+    case IPMI_LOG_ERR_INFO:
+	level = GENSIO_LOG_WARNING;
+	break;
+
+    case IPMI_LOG_SEVERE:
+	level = GENSIO_LOG_ERR;
+	break;
+
+    case IPMI_LOG_FATAL:
+	level = GENSIO_LOG_FATAL;
+	break;
+
+    case IPMI_LOG_DEBUG:
+    case IPMI_LOG_DEBUG_START:
+    case IPMI_LOG_DEBUG_CONT:
+    case IPMI_LOG_DEBUG_END:
+	level = GENSIO_LOG_DEBUG;
+	break;
+    }
 
     if (log_handler) {
 	log_handler(handler, format, log_type, ap);
     } else if (info->o->vlog) {
-	enum gensio_log_levels level;
-
-	switch(log_type) {
-	case IPMI_LOG_INFO:
-	default:
-	    level = GENSIO_LOG_INFO;
-	    break;
-
-	case IPMI_LOG_WARNING:
-	case IPMI_LOG_ERR_INFO:
-	    level = GENSIO_LOG_WARNING;
-	    break;
-
-	case IPMI_LOG_SEVERE:
-	    level = GENSIO_LOG_ERR;
-	    break;
-
-	case IPMI_LOG_FATAL:
-	    level = GENSIO_LOG_FATAL;
-	    break;
-
-	case IPMI_LOG_DEBUG:
-	case IPMI_LOG_DEBUG_START:
-	case IPMI_LOG_DEBUG_CONT:
-	case IPMI_LOG_DEBUG_END:
-	    level = GENSIO_LOG_DEBUG;
-	    break;
-	}
 	gensio_vlog(info->o, level, format, ap);
-    } else {
+    } else if (gensio_debug_mask & (1 << level)) {
 	vprintf(format, ap);
 	putc('\n', stdout);
     }
