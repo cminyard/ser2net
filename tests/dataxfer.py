@@ -2,7 +2,8 @@
 import gensio
 import utils
 
-def test_transfer(name, data, config, io1str, io2str, timeout=1000):
+def test_transfer(name, data, config, io1str, io2str, timeout=1000, o=None,
+                  extra_args=""):
     """Test a transfer between two gensio objects
 
     This function takes a name (for reporting), some data to transfer,
@@ -12,8 +13,10 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000):
     print("Transfer %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector()
-    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
+    if not o:
+        o = gensio.alloc_gensio_selector()
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
+                                              extra_args = extra_args)
     try:
         print("  io1 to io2")
         utils.test_dataxfer(io1, io2, data, timeout=timeout)
@@ -27,7 +30,7 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000):
     return
 
 def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
-                     initial_write_io1 = None):
+                     initial_write_io1 = None, o = None):
     """Test that close does not loose data
 
     This function takes a name (for reporting), some data to transfer,
@@ -43,7 +46,8 @@ def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
     print("Write drain %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector()
+    if not o:
+        o = gensio.alloc_gensio_selector()
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         print("  io1 to io2")

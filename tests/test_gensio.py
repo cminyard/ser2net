@@ -289,12 +289,24 @@ def test_ipmisol_small():
     print("Test ipmisol small")
     isim = ipmisimdaemon.IPMISimDaemon(o)
     io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,9600")
-    io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,115200")
+    io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600")
     utils.test_dataxfer(io1, io2, "This is a test string!")
     utils.io_close(io1)
     utils.io_close(io2)
 
 test_ipmisol_small()
+
+def test_ipmisol_large():
+    print("Test ipmisol large")
+    isim = ipmisimdaemon.IPMISimDaemon(o)
+    io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,115200")
+    io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,115200")
+    rb = gensio.get_random_bytes(104857)
+    utils.test_dataxfer(io1, io2, rb, timeout=10000)
+    utils.io_close(io1)
+    utils.io_close(io2)
+
+test_ipmisol_large()
 
 test_stdio_basic()
 test_stdio_small()

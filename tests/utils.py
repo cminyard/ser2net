@@ -560,7 +560,8 @@ def io_close(io, timeout = 1000):
                         ("io_close", io.handler.name))
     return
 
-def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True):
+def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True,
+                    extra_args = ""):
     """Setup a ser2net daemon and two gensio connections
 
     Create a ser2net daemon instance with the given config and two
@@ -575,7 +576,7 @@ def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True):
     """
     io1 = None
     io2 = None
-    ser2net = Ser2netDaemon(o, config)
+    ser2net = Ser2netDaemon(o, config, extra_args = extra_args)
     try:
         if (io1str):
             io1 = alloc_io(o, io1str, do_io1_open)
