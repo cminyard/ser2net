@@ -31,6 +31,8 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
 
+unsigned int gensio_debug_mask;
+
 struct gensio_classobj {
     const char *name;
     void *classdata;
@@ -1131,10 +1133,34 @@ gensio_check_keyuint(const char *str, const char *key, unsigned int *rvalue)
 }
 
 void
+gensio_vlog(struct gensio_os_funcs *o, enum gensio_log_levels level,
+	    const char *str, va_list args)
+{
+    if (!(gensio_debug_mask & (1 << level)))
+	return;
+
+    o->vlog(o, level, str, args);
+}
+
+void
+gensio_log(struct gensio_os_funcs *o, enum gensio_log_levels level,
+	   const char *str, ...)
+{
+    va_list args;
+
+    va_start(args, str);
+    gensio_vlog(o, level, str, args);
+    va_end(args);
+}
+
+void
 gensio_acc_vlog(struct gensio_accepter *acc, enum gensio_log_levels level,
 		char *str, va_list args)
 {
     struct gensio_loginfo info;
+
+    if (!(gensio_debug_mask & (1 << level)))
+	return;
 
     info.level = level;
     info.str = str;
@@ -1247,7 +1273,8 @@ gensio_default_init(void *cb_data)
 
     deflock = o->alloc_lock(o);
     if (!deflock)
-	o->log(o, "Unable to allocate gensio default lock");
+	gensio_log(o, GENSIO_LOG_FATAL,
+		   "Unable to allocate gensio default lock");
 }
 
 static void

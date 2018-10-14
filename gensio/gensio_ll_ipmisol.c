@@ -377,10 +377,42 @@ gio_vlog(os_handler_t         *handler,
     struct igensio_info *info = handler->internal_data;
     os_vlog_t log_handler = info->log_handler;
 
-    if (log_handler)
+    if (log_handler) {
 	log_handler(handler, format, log_type, ap);
-    else
+    } else if (info->o->vlog) {
+	enum gensio_log_levels level;
+
+	switch(log_type) {
+	case IPMI_LOG_INFO:
+	default:
+	    level = GENSIO_LOG_INFO;
+	    break;
+
+	case IPMI_LOG_WARNING:
+	case IPMI_LOG_ERR_INFO:
+	    level = GENSIO_LOG_WARNING;
+	    break;
+
+	case IPMI_LOG_SEVERE:
+	    level = GENSIO_LOG_ERR;
+	    break;
+
+	case IPMI_LOG_FATAL:
+	    level = GENSIO_LOG_FATAL;
+	    break;
+
+	case IPMI_LOG_DEBUG:
+	case IPMI_LOG_DEBUG_START:
+	case IPMI_LOG_DEBUG_CONT:
+	case IPMI_LOG_DEBUG_END:
+	    level = GENSIO_LOG_DEBUG;
+	    break;
+	}
+	gensio_vlog(info->o, level, format, ap);
+    } else {
 	vprintf(format, ap);
+	putc('\n', stdout);
+    }
 }
 
 static void
@@ -1266,8 +1298,9 @@ sol_get_defaults(struct sol_ll *solll)
     case 57600: solll->speed = IPMI_SOL_BIT_RATE_57600; break;
     case 115200: solll->speed = IPMI_SOL_BIT_RATE_115200; break;
     default:
-	o->log(o, "Invalid default speed for SOL %s: %d.  Defaulting to 9600",
-		  solll->devname, speed);
+	gensio_log(o, GENSIO_LOG_WARNING,
+		   "Invalid default speed for SOL %s: %d.  Defaulting to 9600",
+		   solll->devname, speed);
 	solll->speed = IPMI_SOL_BIT_RATE_9600;
 	break;
     }
@@ -1428,7 +1461,8 @@ ipmisol_gensio_ll_alloc(struct gensio_os_funcs *o,
     }
 
     if (curr_arg != argc) {
-	o->log(o, "Extra SOL arguments starting with %s\n", argv[curr_arg]);
+	gensio_log(o, GENSIO_LOG_WARNING,
+		   "Extra SOL arguments starting with %s\n", argv[curr_arg]);
 	err = EINVAL;
 	str_to_argv_free(argc, argv);
 	goto out_err;

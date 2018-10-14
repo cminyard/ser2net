@@ -48,6 +48,20 @@ struct gensio_once {
     bool called;
 };
 
+/*
+ * A bitmask of log levels to tell what to log.  Defaults to fatal an err
+ * only.
+ */
+extern unsigned int gensio_debug_mask;
+
+enum gensio_log_levels {
+    GENSIO_LOG_FATAL,
+    GENSIO_LOG_ERR,
+    GENSIO_LOG_WARNING,
+    GENSIO_LOG_INFO,
+    GENSIO_LOG_DEBUG
+};
+
 struct gensio_os_funcs {
     /* For use by the code doing the os function translation. */
     void *user_data;
@@ -244,8 +258,15 @@ struct gensio_os_funcs {
 
     void (*get_monotonic_time)(struct gensio_os_funcs *f, struct timeval *time);
 
-    void (*log)(struct gensio_os_funcs *f, char *log, ...);
+    void (*vlog)(struct gensio_os_funcs *f, enum gensio_log_levels level,
+		 const char *log, va_list args);
 };
+
+void gensio_vlog(struct gensio_os_funcs *o, enum gensio_log_levels level,
+		 const char *str, va_list args);
+void gensio_log(struct gensio_os_funcs *o, enum gensio_log_levels level,
+		const char *str, ...);
+
 
 struct gensio;
 
@@ -462,12 +483,6 @@ struct gensio_accepter;
  * as an error return.  data points to a gensio_loginfo.
  */
 #define GENSIO_ACC_EVENT_LOG		2
-enum gensio_log_levels {
-    GENSIO_LOG_FATAL,
-    GENSIO_LOG_ERR,
-    GENSIO_LOG_WARNING,
-    GENSIO_LOG_INFO
-};
 struct gensio_loginfo {
     enum gensio_log_levels level;
     char *str;
