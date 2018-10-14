@@ -832,12 +832,12 @@ sol_write(struct gensio_ll *ll, unsigned int *rcount,
 	goto out_unlock;
     }
 
-    if (buflen == 0)
-	goto out_finish;
-
     left = solll->max_write_size - solll->write_outstanding;
     if (left < buflen)
 	buflen = left;
+
+    if (buflen == 0)
+	goto out_finish;
 
     tc = solll->o->zalloc(solll->o, sizeof(*tc));
     if (!tc) {
