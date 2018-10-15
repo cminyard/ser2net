@@ -794,6 +794,8 @@ struct sol_tc {
     struct sol_ll *solll;
 };
 
+static void connection_closed(ipmi_con_t *ipmi, void *cb_data);
+
 static void
 transmit_complete(ipmi_sol_conn_t *conn,
 		  int             err,
@@ -806,12 +808,28 @@ transmit_complete(ipmi_sol_conn_t *conn,
 	err = sol_xlat_ipmi_err(err);
 
     sol_lock(solll);
-    if (err) {
+    if (err && solll->state != SOL_IN_CLOSE) {
 	solll->read_err = err;
 	check_for_read_delivery(solll);
     } else {
 	solll->write_outstanding -= tc->size;
-	check_for_write_ready(solll);
+	if (solll->state == SOL_IN_CLOSE) {
+	    if (solll->write_outstanding == 0) {
+		err = ipmi_sol_close(solll->sol);
+		if (err)
+		    err = solll->ipmi->close_connection_done(solll->ipmi,
+							     connection_closed,
+							     solll);
+		if (err) {
+		    solll->state = SOL_CLOSED;
+		    solll->ipmi = NULL;
+		    if (solll->close_done)
+			solll->close_done(solll->cb_data, solll->open_data);
+		}
+	    }
+	} else {
+	    check_for_write_ready(solll);
+	}
     }
     solll->o->free(solll->o, tc);
     sol_deref_and_unlock(solll);
@@ -918,12 +936,21 @@ static void
 connection_closed(ipmi_con_t *ipmi, void *cb_data)
 {
     struct sol_ll *solll = cb_data;
+    enum sol_state old_state;
 
+    sol_lock(solll);
+    old_state = solll->state;
+    solll->state = SOL_CLOSED;
     solll->ipmi = NULL;
-    if (solll->state == SOL_IN_SOL_OPEN)
-	solll->open_done(solll->cb_data, solll->read_err, solll->open_data);
-    else
-	solll->close_done(solll->cb_data, solll->open_data);
+    sol_unlock(solll);
+
+    if (old_state == SOL_IN_SOL_OPEN) {
+	if (solll->open_done)
+	    solll->open_done(solll->cb_data, solll->read_err, solll->open_data);
+    } else {
+	if (solll->close_done)
+	    solll->close_done(solll->cb_data, solll->open_data);
+    }
 }
 
 static void
@@ -940,7 +967,7 @@ sol_connection_state(ipmi_sol_conn_t *conn, ipmi_sol_state state,
     switch (state) {
     case ipmi_sol_state_closed:
 	if (solll->state == SOL_IN_SOL_OPEN) {
-	    solll->read_err = EBADFD;
+	    solll->read_err = ECONNREFUSED;
 	    if (solll->sol) {
 		ipmi_sol_free(solll->sol);
 		solll->sol = NULL;
@@ -1144,12 +1171,17 @@ static int sol_close(struct gensio_ll *ll, gensio_ll_close_done done,
 	solll->close_done = done;
 	solll->close_data = close_data;
 	solll->state = SOL_IN_CLOSE;
-	if (solll->write_outstanding == 0 && solll->sol)
-	    err = ipmi_sol_close(solll->sol);
-	else
+	if (solll->sol) {
+	    if (solll->write_outstanding == 0)
+		err = ipmi_sol_close(solll->sol);
+	    else
+		err = 0;
+	} else {
 	    err = solll->ipmi->close_connection_done(solll->ipmi,
 						     connection_closed,
 						     solll);
+	}
+
 	if (err)
 	    err = sol_xlat_ipmi_err(err);
 	else
