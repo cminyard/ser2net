@@ -31,7 +31,8 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
 
-unsigned int gensio_debug_mask = GENSIO_LOG_FATAL | GENSIO_LOG_ERR;
+unsigned int gensio_debug_mask = ((1 << GENSIO_LOG_FATAL) |
+				  (1 << GENSIO_LOG_ERR));
 
 struct gensio_classobj {
     const char *name;
