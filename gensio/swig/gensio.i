@@ -315,6 +315,16 @@ struct waiter { };
     ~gensio_os_funcs() {
 	check_os_funcs_free(self);
     }
+
+    void service() {
+	self->service(self, NULL);
+    }
+
+    int service(int timeout) {
+	struct timeval tv = { timeout / 1000, timeout % 1000 };
+
+	return self->service(self, &tv);
+    }
 }
 
 %extend gensio {
