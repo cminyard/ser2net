@@ -565,7 +565,7 @@ main(int argc, char *argv[])
 
 	case 'l':
 	    ser2net_debug_level++;
-	    gensio_debug_mask |= (1 << (ser2net_debug_level + 2));
+	    gensio_log_mask |= (1 << (ser2net_debug_level + 2));
 	    break;
 
 	case 'b':

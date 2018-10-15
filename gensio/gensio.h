@@ -49,10 +49,10 @@ struct gensio_once {
 };
 
 /*
- * A bitmask of log levels to tell what to log.  Defaults to fatal an err
+ * A bitmask of log levels to tell what to log.  Defaults to fatal and err
  * only.
  */
-extern unsigned int gensio_debug_mask;
+extern unsigned int gensio_log_mask;
 
 enum gensio_log_levels {
     GENSIO_LOG_FATAL,

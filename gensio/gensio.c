@@ -31,8 +31,7 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
 
-unsigned int gensio_debug_mask = ((1 << GENSIO_LOG_FATAL) |
-				  (1 << GENSIO_LOG_ERR));
+unsigned int gensio_log_mask = (1 << GENSIO_LOG_FATAL) | (1 << GENSIO_LOG_ERR);
 
 struct gensio_classobj {
     const char *name;
@@ -1137,7 +1136,7 @@ void
 gensio_vlog(struct gensio_os_funcs *o, enum gensio_log_levels level,
 	    const char *str, va_list args)
 {
-    if (!(gensio_debug_mask & (1 << level)))
+    if (!(gensio_log_mask & (1 << level)))
 	return;
 
     o->vlog(o, level, str, args);
@@ -1160,7 +1159,7 @@ gensio_acc_vlog(struct gensio_accepter *acc, enum gensio_log_levels level,
 {
     struct gensio_loginfo info;
 
-    if (!(gensio_debug_mask & (1 << level)))
+    if (!(gensio_log_mask & (1 << level)))
 	return;
 
     info.level = level;
