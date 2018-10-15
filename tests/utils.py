@@ -419,7 +419,7 @@ class Ser2netDaemon:
         self.io.open_s()
 
         self.pid = self.io.remote_id()
-        self.handler.set_compare("Ready\n")
+        self.handler.set_waitfor("Ready\n")
         if (self.handler.wait_timeout(2000)):
             raise Exception("Timeout waiting for ser2net to start")
 
@@ -539,12 +539,10 @@ def test_write_drain(io1, io2, data, timeout = 1000):
     io2.handler.set_compare(data)
     if (io1.handler.wait_timeout(timeout)):
         raise Exception(("%s: %s: " % ("test_dataxfer", io1.handler.name)) +
-
                         ("Timed out waiting for write completion at byte %d" %
                          io1.handler.wrpos))
     if (io2.handler.wait_timeout(timeout)):
         raise Exception(("%s: %s: " % ("test_dataxfer", io2.handler.name)) +
-
                         ("Timed out waiting for read completion at byte %d" %
                          io2.handler.compared))
     return
@@ -615,7 +613,7 @@ def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
     if handle_except and sys.exc_info()[0]:
         g = gensio.waiter(ser2net.o)
         print("Exception occurred, waiting a bit for things to clear.")
-        g.wait_timeout(2000)
+        g.wait_timeout(1, 2000)
     ser2net.terminate()
     return
 
