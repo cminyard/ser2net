@@ -5,8 +5,6 @@ import ipmisimdaemon
 import gensio
 import utils
 
-utils.debug=0
-
 o = gensio.alloc_gensio_selector()
 isim = ipmisimdaemon.IPMISimDaemon(o)
 
@@ -15,7 +13,13 @@ test_transfer("basic ipmisol", "This is a test!",
               "tcp,localhost,3023",
               "termios,/dev/ttyPipeA0,9600N81", o=o)
 
+# Note that ipmi_sim messes with the modem state lines, so adding
+# LOCAL is required on termios.  Also, we had to add a small delay
+# after the opens are complete to give time for ser2net to connect to
+# ipmi_sim and set things up.  Otherwise it would often lose the first
+# couple of characters going from io2 to io1.
 test_write_drain("basic tcp", "This is a write drain test!",
                  "3023:raw:100:ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600\n",
                  "tcp,localhost,3023",
-                 "termios,/dev/ttyPipeA0,9600N81", o=o)
+                 "termios,/dev/ttyPipeA0,9600N81,LOCAL", o=o,
+                 switch_delay = 0.25)
