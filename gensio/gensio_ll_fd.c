@@ -23,6 +23,7 @@
 
 #include <assert.h>
 #include <unistd.h>
+#include <stdio.h>
 
 enum fd_state {
     FD_CLOSED,
@@ -394,7 +395,6 @@ static void
 fd_write_ready(int fd, void *cbdata)
 {
     struct fd_ll *fdll = cbdata;
-
     fd_lock(fdll);
     fdll->o->set_write_handler(fdll->o, fdll->fd, false);
     if (fdll->state == FD_IN_OPEN) {
@@ -444,16 +444,16 @@ fd_finish_cleared(struct fd_ll *fdll)
 	gensio_ll_open_done open_done = fdll->open_done;
 
 	fdll->open_done = NULL;
+	fdll->state = FD_CLOSED;
 	fd_unlock(fdll);
 	open_done(fdll->open_data, fdll->open_err, fdll->open_data);
 	fd_lock(fdll);
-    }
-
-    if (fdll->deferred_op_pending)
+    } else if (fdll->deferred_op_pending) {
 	/* Call it from the deferred_op handler. */
 	fdll->deferred_close = true;
-    else
+    } else {
 	fd_finish_close(fdll);
+    }
 
     fd_deref_and_unlock(fdll);
 }
