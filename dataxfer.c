@@ -3050,6 +3050,7 @@ handle_dev_fd_close_write(port_info_t *port)
 closeit:
     if (port->shutdown_timeout_count) {
 	port->shutdown_timeout_count = 0;
+	gensio_set_write_callback_enable(port->io, false);
 	if (so->stop_timer_with_done(port->timer, timer_shutdown_done, port))
 	    shutdown_port_io(port);
     }
