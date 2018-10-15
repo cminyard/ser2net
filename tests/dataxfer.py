@@ -1,6 +1,7 @@
 
 import gensio
 import utils
+import time
 
 def test_transfer(name, data, config, io1str, io2str, timeout=1000, o=None,
                   extra_args=""):
@@ -30,7 +31,7 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000, o=None,
     return
 
 def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
-                     initial_write_io1 = None, o = None):
+                     initial_write_io1 = None, o = None, switch_delay = 0.0):
     """Test that close does not loose data
 
     This function takes a name (for reporting), some data to transfer,
@@ -58,6 +59,9 @@ def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         print("  io2 to io1")
+        end = time.time() + switch_delay
+        while (time.time() < end):
+            o.service((int) (switch_delay / 5))
         if initial_write_io1:
             io1.handler.set_write_data(initial_write_io1)
             io2.handler.set_compare(initial_write_io1)
