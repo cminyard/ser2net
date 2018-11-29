@@ -23,6 +23,7 @@
 #include <string.h>
 #include <termios.h>
 #include <sgtty.h>
+#include <signal.h>
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
