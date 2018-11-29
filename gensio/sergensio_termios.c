@@ -27,6 +27,9 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <sys/ioctl.h>
+#if HAVE_DECL_TIOCSRS485
+#include <linux/serial.h>
+#endif
 
 #include <utils/utils.h>
 
@@ -357,6 +360,10 @@ struct sterm_data {
     unsigned int modemstate_mask;
     bool handling_modemstate;
     bool sent_first_modemstate;
+
+#if HAVE_DECL_TIOCSRS485
+    struct serial_rs485 rs485;
+#endif
 };
 
 static void termios_process(struct sterm_data *sdata);
@@ -1126,6 +1133,15 @@ sterm_sub_open(void *handler_data,
     if (!sdata->write_only && !sdata->disablebreak)
 	ioctl(sdata->fd, TIOCCBRK);
 
+#if HAVE_DECL_TIOCSRS485
+    if (sdata->rs485.flags & SER_RS485_ENABLED) {
+	if (ioctl(sdata->fd, TIOCSRS485, &sdata->rs485) < 0) {
+	    err = errno;
+	    goto out_uucp;
+	}
+    }
+#endif
+
     sterm_lock(sdata);
     sdata->open = true;
     sdata->sent_first_modemstate = false;
@@ -1339,6 +1355,55 @@ process_termios_parm(struct termios *termio, char *parm)
 }
 
 static int
+process_rs485(struct sterm_data *sdata, char *str)
+{
+#if HAVE_DECL_TIOCSRS485
+    int argc, i;
+    char **argv, *end;
+    int err = str_to_argv(str, &argc, &argv, ":");
+
+    if (err)
+	return err;
+    if (argc < 2)
+	return EINVAL;
+
+    sdata->rs485.delay_rts_before_send = strtoul(argv[0], &end, 10);
+    if (end == argv[0] || *end != '\0')
+	goto out_inval;
+
+    sdata->rs485.delay_rts_after_send = strtoul(argv[1], &end, 10);
+    if (end == argv[1] || *end != '\0')
+	goto out_inval;
+
+    for (i = 2; i < argc; i++) {
+	if (strcmp(argv[i], "rts_on_send") == 0) {
+	    sdata->rs485.flags |= SER_RS485_RTS_ON_SEND;
+	} else if (strcmp(argv[i], "rts_after_send") == 0) {
+	    sdata->rs485.flags |= SER_RS485_RTS_AFTER_SEND;
+	} else if (strcmp(argv[i], "rx_during_tx") == 0) {
+	    sdata->rs485.flags |= SER_RS485_RX_DURING_TX;
+	} else if (strcmp(argv[i], "terminate_bus") == 0) {
+	    sdata->rs485.flags |= SER_RS485_TERMINATE_BUS;
+	} else {
+	    goto out_inval;
+	}
+    }
+
+    sdata->rs485.flags |= SER_RS485_ENABLED;
+
+ out:
+    str_to_argv_free(argc, argv);
+    return err;
+
+ out_inval:
+    err = EINVAL;
+    goto out;
+#else
+    return ENOTSUP;
+#endif
+}
+
+static int
 sergensio_process_parms(struct sterm_data *sdata)
 {
     int argc, i;
@@ -1357,6 +1422,11 @@ sergensio_process_parms(struct sterm_data *sdata)
 	    continue;
 	} else if (strcmp(argv[i], "-NOBREAK") == 0) {
 	    sdata->disablebreak = false;
+	    continue;
+	} else if (strncmp(argv[i], "rs485=", 6) == 0) {
+	    err = process_rs485(sdata, argv[i] + 6);
+	    if (err)
+		break;
 	    continue;
 	}
 	err = process_termios_parm(&sdata->default_termios, argv[i]);
