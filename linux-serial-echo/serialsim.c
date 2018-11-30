@@ -190,6 +190,8 @@ struct serialsim_intf {
 
 	const char *threadname;
 	struct task_struct *thread;
+
+	struct serial_rs485 rs485;
 };
 
 #define circ_sbuf_space(buf) CIRC_SPACE((buf)->head, (buf)->tail, \
@@ -626,6 +628,15 @@ serialsim_set_termios(struct uart_port *port, struct ktermios *termios,
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
+static int serialsim_rs485(struct uart_port *port,
+			   struct serial_rs485 *newrs485)
+{
+	struct serialsim_intf *intf = serialsim_port_to_intf(port);
+
+	intf->rs485 = *newrs485;
+	return 0;
+}
+
 static const char *serialecho_type(struct uart_port *port)
 {
 	return "SerialEcho";
@@ -720,6 +731,20 @@ static int serialpipe_ioctl(struct uart_port *port, unsigned int cmd,
 			rv = -EFAULT;
 		else
 			rv = 0;
+		break;
+	}
+
+	case TIOCSERGREMRS485:
+	{
+		struct serial_rs485 ors485;
+
+		spin_lock_irq(&intf->ointf->port.lock);
+		ors485 = intf->ointf->rs485;
+		spin_unlock_irq(&intf->ointf->port.lock);
+
+		if (copy_to_user((struct serial_rs485 __user *) arg,
+				 &ors485, sizeof(ors485)))
+			rv = -EFAULT;
 		break;
 	}
 
@@ -1068,6 +1093,7 @@ static int __init serialsim_init(void)
 		porta->ops = &serialpipea_ops;
 		spin_lock_init(&porta->lock);
 		porta->attr_group = &serialsim_dev_attr_group;
+		porta->rs485_config = serialsim_rs485;
 		rv = uart_add_one_port(&serialpipea_driver, porta);
 		if (rv) {
 			pr_err("serialsim: Unable to add uart pipe aport %d: %d\n",
@@ -1083,6 +1109,7 @@ static int __init serialsim_init(void)
 		portb->ops = &serialpipeb_ops;
 		portb->attr_group = &serialsim_dev_attr_group;
 		spin_lock_init(&portb->lock);
+		portb->rs485_config = serialsim_rs485;
 		rv = uart_add_one_port(&serialpipeb_driver, portb);
 		if (rv) {
 			pr_err("serialsim: Unable to add uart pipe b port %d: %d\n",

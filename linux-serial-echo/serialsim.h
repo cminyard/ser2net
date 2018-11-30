@@ -22,5 +22,6 @@
 #define TIOCSERGREMNULLMODEM	_IOR('T', 0xe8, int)
 #define TIOCSERGREMMCTRL	_IOR('T', 0xe9, unsigned int)
 #define TIOCSERGREMERR		_IOR('T', 0xea, unsigned int)
+#define TIOCSERGREMRS485	_IOR('T', 0xeb, struct serial_rs485)
 
 #endif
