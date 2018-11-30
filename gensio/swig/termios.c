@@ -159,8 +159,10 @@ remote_rs485(int fd, char **rstr)
 	strdupcat(&str, "rts_after_send");
     if (rs485.flags & SER_RS485_RX_DURING_TX)
 	strdupcat(&str, "rx_during_tx");
+#ifdef SER_RS485_TERMINATE_BUS
     if (rs485.flags & SER_RS485_TERMINATE_BUS)
 	strdupcat(&str, "terminate_bus");
+#endif
 
     if (!str)
 	return ENOMEM;

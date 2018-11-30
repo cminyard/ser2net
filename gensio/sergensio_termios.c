@@ -1382,8 +1382,10 @@ process_rs485(struct sterm_data *sdata, char *str)
 	    sdata->rs485.flags |= SER_RS485_RTS_AFTER_SEND;
 	} else if (strcmp(argv[i], "rx_during_tx") == 0) {
 	    sdata->rs485.flags |= SER_RS485_RX_DURING_TX;
+#ifdef SER_RS485_TERMINATE_BUS
 	} else if (strcmp(argv[i], "terminate_bus") == 0) {
 	    sdata->rs485.flags |= SER_RS485_TERMINATE_BUS;
+#endif
 	} else {
 	    goto out_inval;
 	}
