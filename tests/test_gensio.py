@@ -159,6 +159,29 @@ def ta_ssl_telnet():
     io1 = utils.alloc_io(o, "telnet,tcp,localhost,3027", do_open = False)
     ta = TestAccept(o, io1, "telnet(rfc2217=true),3027", do_telnet_test)
 
+def test_rs485():
+    io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL,rs485=103:495"
+    io2str = "termios,/dev/ttyPipeB0,9600N81"
+
+    print("termios rs485:\n  io1=%s\n  io2=%s" % (io1str, io2str))
+
+    o = gensio.alloc_gensio_selector()
+    io1 = utils.alloc_io(o, io1str)
+    io2 = utils.alloc_io(o, io2str)
+
+    sio2 = io2.cast_to_sergensio()
+    rs485 = sio2.get_remote_rs485()
+    check_rs485 = "103 495 enabled"
+    if rs485 != check_rs485:
+        raise Exception("%s: %s: Modemstate was not '%s', it was '%s'" %
+                        ("test rs485", io1.handler.name, check_rs485, rs485))
+
+    utils.io_close(io1)
+    utils.io_close(io2)
+    print("  Success!")
+
+test_rs485()
+
 def test_modemstate():
     io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL"
     io2str = "termios,/dev/ttyPipeB0,9600N81"

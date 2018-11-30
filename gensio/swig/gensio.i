@@ -172,6 +172,7 @@ void get_random_bytes(char **rbuffer, size_t *rbuffer_len, int size_to_allocate)
 
 /* Defined in another file to avoid string type collisions. */
 extern int remote_termios(struct termios *termios, int fd);
+extern int remote_rs485(int fd, char **rstr);
 extern int set_remote_mctl(unsigned int mctl, int fd);
 extern int set_remote_sererr(unsigned int err, int fd);
 extern int set_remote_null_modem(bool val, int fd);
@@ -658,6 +659,26 @@ struct waiter { };
 
 	if (rv)
 	    err_handle("get_remote_termios", rv);
+    }
+
+    /*
+     * Get remote RS485 config. This is string in the format:
+     *  <delay rts before send> <delay rts after send> [options]
+     * where options is (in the following order):
+     *  enabled, rts_on_send, rts_after_send, rx_during_tx, terminate_bus
+     */
+    char *get_remote_rs485() {
+	struct gensio *io = sergensio_to_gensio(self);
+	int fd, rv;
+	char *str = NULL;
+
+	rv = gensio_remote_id(io, &fd);
+	if (!rv)
+	    rv = remote_rs485(fd, &str);
+
+	if (rv)
+	    err_handle("get_remote_termios", rv);
+	return str;
     }
 
     void set_remote_modem_ctl(unsigned int val) {

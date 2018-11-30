@@ -21,6 +21,10 @@
 #include <asm/termbits.h>
 #include <string.h>
 #include <stdbool.h>
+#include <malloc.h>
+#if HAVE_DECL_TIOCSRS485
+#include <linux/serial.h>
+#endif
 #include <errno.h>
 
 /*
@@ -111,4 +115,59 @@ get_remote_null_modem(int *val, int fd)
     if (ioctl(fd, TIOCSERGREMNULLMODEM, val))
 	return errno;
     return 0;
+}
+
+void
+strdupcat(char **str, const char *cat)
+{
+    char *s;
+
+    if (!*str)
+	return;
+
+    s = malloc(strlen(*str) + strlen(cat) + 2);
+    if (!s) {
+	free(*str);
+	*str = NULL;
+	return;
+    }
+
+    strcpy(s, *str);
+    strcat(s, " ");
+    strcat(s, cat);
+    free(*str);
+    *str = s;
+}
+
+int
+remote_rs485(int fd, char **rstr)
+{
+#if HAVE_DECL_TIOCSRS485
+    struct serial_rs485 rs485;
+    char *str = NULL, tmpstr[20];
+
+    if (ioctl(fd, TIOCSERGREMRS485, &rs485))
+	return errno;
+    snprintf(tmpstr, sizeof(tmpstr), "%d %d",
+	     rs485.delay_rts_before_send, rs485.delay_rts_after_send);
+    str = strdup(tmpstr);
+    if (rs485.flags & SER_RS485_ENABLED)
+	strdupcat(&str, "enabled");
+    if (rs485.flags & SER_RS485_RTS_ON_SEND)
+	strdupcat(&str, "rts_on_send");
+    if (rs485.flags & SER_RS485_RTS_AFTER_SEND)
+	strdupcat(&str, "rts_after_send");
+    if (rs485.flags & SER_RS485_RX_DURING_TX)
+	strdupcat(&str, "rx_during_tx");
+    if (rs485.flags & SER_RS485_TERMINATE_BUS)
+	strdupcat(&str, "terminate_bus");
+
+    if (!str)
+	return ENOMEM;
+
+    *rstr = str;
+    return 0;
+#else
+    return ENOTSUP;
+#endif
 }
