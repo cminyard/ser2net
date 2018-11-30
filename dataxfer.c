@@ -304,6 +304,8 @@ struct port_info
 				     loaded when the current session
 				     is done. */
 
+    char *rs485; /* If not NULL, rs485 was specified. */
+
     /* For RFC 2217 */
     unsigned char last_modemstate;
     unsigned char last_linestate;
@@ -3458,6 +3460,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (rv)
 	    return -1;
 	port->remaddr_set = true;
+    } else if (cmpstrval(pos, "rs485=", &val)) {
+	port->rs485 = find_rs485conf(val);
     } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
@@ -3603,14 +3607,22 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    /* FIXME - RS485 support */
-
     err = myconfigs(new_port, eout, devcfg);
     if (err)
 	goto errout;
 
     if (write_only) {
 	err = strdupcat(&new_port->devname, "wronly");
+	if (err) {
+	    eout->out(eout, "Out of memory appending to devname");
+	    goto errout;
+	}
+    }
+
+    if (new_port->rs485) {
+	err = strdupcat(&new_port->devname, "rs485=");
+	if (!err)
+	    err = strdupcat(&new_port->devname, new_port->rs485);
 	if (err) {
 	    eout->out(eout, "Out of memory appending to devname");
 	    goto errout;

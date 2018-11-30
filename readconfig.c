@@ -252,15 +252,6 @@ struct tracefile_s
     struct tracefile_s *next;
 };
 
-#if HAVE_DECL_TIOCSRS485
-struct rs485conf_s
-{
-    char *name;
-    struct serial_rs485 conf;
-    struct rs485conf_s *next;
-};
-#endif
-
 /* All the tracefiles in the system. */
 struct tracefile_s *tracefiles = NULL;
 
@@ -321,15 +312,20 @@ free_tracefiles(void)
     }
 }
 
-#if HAVE_DECL_TIOCSRS485
+struct rs485conf
+{
+    char *name;
+    char *str;
+    struct rs485conf *next;
+};
+
 /* All the RS485 configs in the system. */
-struct rs485conf_s *rs485confs = NULL;
+struct rs485conf *rs485confs = NULL;
 
 static void
 handle_rs485conf(char *name, char *str)
 {
-    struct rs485conf_s *new_rs485conf;
-    uint8_t rts_on_send, rx_during_tx;
+    struct rs485conf *new_rs485conf;
 
     new_rs485conf = malloc(sizeof(*new_rs485conf));
     if (!new_rs485conf) {
@@ -344,36 +340,10 @@ handle_rs485conf(char *name, char *str)
 	goto out_err;
     }
 
-    if (sscanf(str, "%10u:%10u:%1hhu:%1hhu",
-               &new_rs485conf->conf.delay_rts_before_send,
-               &new_rs485conf->conf.delay_rts_after_send,
-               &rts_on_send,
-               &rx_during_tx) != 4) {
-	syslog(LOG_ERR, "Couldn't parse RS485 config on %d", lineno);
+    new_rs485conf->str = strdup(str);
+    if (!new_rs485conf->str) {
+	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
 	goto out_err;
-    }
-
-    /* check, if flags have values 0 or 1 */
-    if (rts_on_send > 1) {
-	syslog(LOG_ERR, "RTS_ON_SEND parameter can be 0 or 1 on %d", lineno);
-	goto out_err;
-    }
-
-    if (rx_during_tx > 1) {
-	syslog(LOG_ERR, "RX_DURING_TX parameter can be 0 or 1 on %d", lineno);
-	goto out_err;
-    }
-
-    new_rs485conf->conf.flags = SER_RS485_ENABLED;
-
-    if (rts_on_send) {
-        new_rs485conf->conf.flags |= SER_RS485_RTS_ON_SEND;
-    } else {
-        new_rs485conf->conf.flags |= SER_RS485_RTS_AFTER_SEND;
-    }
-
-    if (rx_during_tx) {
-        new_rs485conf->conf.flags |= SER_RS485_RX_DURING_TX;
     }
 
     new_rs485conf->next = rs485confs;
@@ -381,22 +351,25 @@ handle_rs485conf(char *name, char *str)
     return;
 
  out_err:
+    if (new_rs485conf->str)
+	free(new_rs485conf->str);
     if (new_rs485conf->name)
 	free(new_rs485conf->name);
     free(new_rs485conf);
 }
 
-struct serial_rs485 *
+char *
 find_rs485conf(const char *name)
 {
-    struct rs485conf_s *new_rs485conf = rs485confs;
+    struct rs485conf *rs485 = rs485confs;
 
-    while (new_rs485conf) {
-        if (strcmp(name, new_rs485conf->name) == 0)
-            return &new_rs485conf->conf;
-        new_rs485conf = new_rs485conf->next;
+    while (rs485) {
+        if (strcmp(name, rs485->name) == 0)
+            return strdup(rs485->str);
+        rs485 = rs485->next;
     }
-    syslog(LOG_ERR, "RS485 configuration %s not found, it will be ignored", name);
+    syslog(LOG_ERR, "RS485 configuration %s not found, it will be ignored",
+	   name);
     return NULL;
 }
 
@@ -404,16 +377,14 @@ void
 free_rs485confs(void)
 {
     while (rs485confs) {
-	struct rs485conf_s *rs485conf = rs485confs;
+	struct rs485conf *rs485 = rs485confs;
 
-        rs485confs = rs485confs->next;
-        free(rs485conf->name);
-        free(rs485conf);
+        rs485 = rs485->next;
+        free(rs485->str);
+        free(rs485->name);
+        free(rs485);
     }
 }
-#else
-void free_rs485confs(void) { }
-#endif
 
 static int
 startswith(char *str, const char *test, char **strtok_data)
@@ -727,7 +698,6 @@ handle_config_line(char *inbuf, int len)
 	goto out;
     }
 
-#if HAVE_DECL_TIOCSRS485
     if (startswith(inbuf, "RS485CONF", &strtok_data)) {
         char *name = strtok_r(NULL, ":", &strtok_data);
         char *str = strtok_r(NULL, "\n", &strtok_data);
@@ -742,7 +712,6 @@ handle_config_line(char *inbuf, int len)
         handle_rs485conf(name, str);
         goto out;
     }
-#endif
 
     if (startswith(inbuf, "DEFAULT", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
@@ -832,9 +801,7 @@ readconfig_init(void)
 	return err;
     free_longstrs();
     free_tracefiles();
-#if HAVE_DECL_TIOCSRS485
     free_rs485confs();
-#endif
     free_leds();
 
     config_num++;

@@ -51,7 +51,7 @@ void free_rs485confs(void);
 char *find_tracefile(const char *name);
 
 /* Search for RS485 configuration by name. */
-struct serial_rs485 *find_rs485conf(const char *name);
+char *find_rs485conf(const char *name);
 
 /* Return the default int value for the given name. */
 int find_default_int(const char *name);
