@@ -29,6 +29,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <gensio/gensio_class.h>
+#include <string.h>
+
+#include <gensio/gensio_ll_ipmisol.h>
+#include <gensio/sergensio_class.h>
+#include <gensio/buffer.h>
+#include <utils/utils.h>
+
+#ifdef HAVE_OPENIPMI
+
 #include <OpenIPMI/ipmiif.h>
 #include <OpenIPMI/ipmi_smi.h>
 #include <OpenIPMI/ipmi_err.h>
@@ -37,8 +47,6 @@
 
 #include <OpenIPMI/ipmi_sol.h>
 #include <OpenIPMI/ipmi_debug.h>
-
-#include <gensio/gensio_class.h>
 
 struct igensio_info
 {
@@ -538,13 +546,6 @@ gio_alloc(struct gensio_os_funcs *o)
     handler->internal_data = info;
     return handler;
 };
-
-#include <string.h>
-
-#include <gensio/gensio_ll_ipmisol.h>
-#include <gensio/sergensio_class.h>
-#include <gensio/buffer.h>
-#include <utils/utils.h>
 
 enum sol_state {
     SOL_CLOSED,
@@ -1532,3 +1533,20 @@ ipmisol_gensio_ll_alloc(struct gensio_os_funcs *o,
     sol_finish_free(solll);
     return err;
 }
+
+#else
+
+int
+ipmisol_gensio_ll_alloc(struct gensio_os_funcs *o,
+			const char *devname,
+			gensio_ll_ipmisol_cb ser_cbs,
+			void *ser_cbs_data,
+			unsigned int max_read_size,
+			unsigned int max_write_size,
+			gensio_ll_ipmisol_ops *rops,
+			struct gensio_ll **rll)
+{
+    return ENOTSUP;
+}
+
+#endif
