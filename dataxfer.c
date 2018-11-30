@@ -862,7 +862,7 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 {
     unsigned int count = 0;
     bool send_now = false;
-    int nr_handlers;
+    int nr_handlers = 0;
 
     so->lock(port->lock);
     if (port->dev_to_net_state != PORT_WAITING_INPUT)
@@ -2439,7 +2439,7 @@ handle_rot_child_event(struct gensio_accepter *accepter, int event, void *data)
     so->lock(ports_lock);
     i = rot->curr_port;
     do {
-	unsigned int netconnum;
+	unsigned int netconnum = 0;
 	port_info_t *port = find_rotator_port(rot->portv[i], net, &netconnum);
 
 	if (++i >= rot->portc)
