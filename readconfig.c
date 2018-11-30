@@ -37,11 +37,6 @@
 #include "readconfig.h"
 #include "led.h"
 
-#ifdef HAVE_OPENIPMI
-#include <OpenIPMI/ipmi_conn.h>
-#include <OpenIPMI/ipmi_sol.h>
-#endif
-
 #define PORT_BUFSIZE	64	/* Default data transfer buffer size */
 
 extern char *config_port;
