@@ -514,6 +514,14 @@ typedef int (*gensio_accepter_event)(struct gensio_accepter *accepter,
 typedef void (*gensio_acc_done)(struct gensio_accepter *acc, void *open_data);
 
 /*
+ * Return the type string for the gensio accepter (if depth is 0) or
+ * one of its children (depth > 0).  Return NULL if the depth is
+ * greater than the number of children.
+ */
+const char *gensio_acc_get_type(struct gensio_accepter *acc,
+				unsigned int depth);
+    
+/*
  * Return the user data supplied to the allocator.
  */
 void *gensio_acc_get_user_data(struct gensio_accepter *accepter);

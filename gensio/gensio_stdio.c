@@ -902,7 +902,7 @@ stdio_gensio_accepter_alloc(char *args[], struct gensio_os_funcs *o,
     nadata->ostderr = -1;
 
     nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_stdio_func,
-					"stdio", nadata);
+					NULL, "stdio", nadata);
     if (!nadata->acc) {
 	stdiona_finish_free(nadata);
 	return ENOMEM;

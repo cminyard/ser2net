@@ -1186,7 +1186,7 @@ udp_gensio_accepter_alloc(struct addrinfo *iai, char *args[],
 	goto out_nomem;
 
     nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_udp_func,
-					"udp", nadata);
+					NULL, "udp", nadata);
     if (!nadata->acc)
 	goto out_nomem;
     gensio_acc_set_is_packet(nadata->acc, true);

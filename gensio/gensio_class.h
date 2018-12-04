@@ -158,7 +158,7 @@ typedef int (*gensio_acc_func)(struct gensio_accepter *acc, int func, int val,
 
 struct gensio_accepter *gensio_acc_data_alloc(struct gensio_os_funcs *o,
 		      gensio_accepter_event cb, void *user_data,
-		      gensio_acc_func func,
+		      gensio_acc_func func, struct gensio_accepter *child,
 		      const char *typename, void *gensio_acc_data);
 void gensio_acc_data_free(struct gensio_accepter *acc);
 void *gensio_acc_get_gensio_data(struct gensio_accepter *acc);
@@ -166,7 +166,6 @@ int gensio_acc_cb(struct gensio_accepter *acc, int event, void *data);
 int gensio_acc_addclass(struct gensio_accepter *acc,
 			const char *name, void *classdata);
 void *gensio_acc_getclass(struct gensio_accepter *acc, const char *name);
-const char *gensio_acc_get_type(struct gensio_accepter *acc);
 
 void gensio_acc_set_is_packet(struct gensio_accepter *io, bool is_packet);
 void gensio_acc_set_is_reliable(struct gensio_accepter *io, bool is_reliable);

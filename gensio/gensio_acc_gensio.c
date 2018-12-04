@@ -376,7 +376,7 @@ basena_child_event(struct gensio_accepter *accepter, int event,
 
     basena_lock(nadata);
     io = base_gensio_server_alloc(o, ll, filter,
-				  gensio_acc_get_type(nadata->acc),
+				  gensio_acc_get_type(nadata->acc, 0),
 				  basena_finish_server_open, nadata);
     if (io) {
 	basena_in_cb(nadata);
@@ -426,7 +426,7 @@ gensio_gensio_accepter_alloc(struct gensio_accepter *child,
 	goto out_nomem;
 
     nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_base_func,
-					typename, nadata);
+					child, typename, nadata);
     if (!nadata->acc)
 	goto out_nomem;
 

@@ -173,6 +173,8 @@ struct gensio_accepter {
 
     const char *typename;
 
+    struct gensio_accepter *child;
+
     bool is_packet;
     bool is_reliable;
 };
@@ -180,7 +182,7 @@ struct gensio_accepter {
 struct gensio_accepter *
 gensio_acc_data_alloc(struct gensio_os_funcs *o,
 		      gensio_accepter_event cb, void *user_data,
-		      gensio_acc_func func,
+		      gensio_acc_func func, struct gensio_accepter *child,
 		      const char *typename, void *gensio_acc_data)
 {
     struct gensio_accepter *acc = o->zalloc(o, sizeof(*acc));
@@ -193,6 +195,7 @@ gensio_acc_data_alloc(struct gensio_os_funcs *o,
     acc->user_data = user_data;
     acc->func = func;
     acc->typename = typename;
+    acc->child = child;
     acc->gensio_acc_data = gensio_acc_data;
 
     return acc;
@@ -236,9 +239,17 @@ gensio_acc_getclass(struct gensio_accepter *acc, const char *name)
 }
 
 const char *
-gensio_acc_get_type(struct gensio_accepter *acc)
+gensio_acc_get_type(struct gensio_accepter *acc, unsigned int depth)
 {
-    return acc->typename;
+    struct gensio_accepter *c = acc;
+
+    while (depth > 0) {
+	if (!c->child)
+	    return NULL;
+	depth--;
+	c = c->child;
+    }
+    return c->typename;
 }
 
 void
@@ -641,7 +652,7 @@ gensio_get_type(struct gensio *io, unsigned int depth)
     struct gensio *c = io;
 
     while (depth > 0) {
-	if (!c)
+	if (!c->child)
 	    return NULL;
 	depth--;
 	c = c->child;
