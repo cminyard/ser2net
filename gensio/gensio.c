@@ -646,6 +646,55 @@ gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
     return err;
 }
 
+int
+gensio_open_channel(struct gensio *io, const char *args,
+		    gensio_event cb, void *user_data,
+		    gensio_done_err open_done, void *open_data,
+		    struct gensio **new_io)
+{
+    int rv;
+    struct gensio_func_open_channel_data d;
+    int argc;
+
+    rv = str_to_argv_lengths(args, &argc, &d.args, NULL, " \f\n\r\t\v,");
+    if (rv)
+	return rv;
+
+    d.cb = cb;
+    d.user_data = user_data;
+    d.open_done = open_done;
+    d.open_data = open_data;
+    rv = io->func(io, GENSIO_FUNC_OPEN_CHANNEL, NULL, 0, NULL, 0, &d);
+    if (!rv)
+	*new_io = d.new_io;
+    str_to_argv_free(argc, d.args);
+
+    return rv;
+}
+
+int
+gensio_open_channel_s(struct gensio *io, const char *args,
+		      gensio_event cb, void *user_data,
+		      struct gensio_os_funcs *o, struct gensio **new_io)
+{
+    struct gensio_open_s_data data;
+    int err;
+
+    data.o = o;
+    data.err = 0;
+    data.waiter = o->alloc_waiter(o);
+    if (!data.waiter)
+	return ENOMEM;
+    err = gensio_open_channel(io, args, cb, user_data,
+			      gensio_open_s_done, &data, new_io);
+    if (!err) {
+	o->wait(data.waiter, 1, NULL);
+	err = data.err;
+    }
+    o->free_waiter(data.waiter);
+    return err;
+}
+
 const char *
 gensio_get_type(struct gensio *io, unsigned int depth)
 {

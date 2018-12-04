@@ -120,7 +120,8 @@ struct gensio_os_funcs {
 
     /*
      * Like the above, but does not call the cleared_handler function
-     * when done.
+     * when done.  This can only be called if you never enabled the
+     * handlers, it is only for shutdown when an error occurs at startup.
      */
     void (*clear_fd_handlers_norpt)(struct gensio_os_funcs *f, int fd);
 
@@ -300,6 +301,14 @@ struct gensio;
 #define GENSIO_EVENT_URGENT		3
 
 /*
+ * A new channel has been created by the remote end of the connection.
+ * The new channel is in auxdata.  buf may contain a string with
+ * information about the new channel.  If this returns an error, the
+ * channel creation is refused and the channel is closed.
+ */
+#define GENSIO_EVENT_NEW_CHANNEL	4
+
+/*
  * Serial callbacks start here and run to 2000.
  */
 #define SERGENIO_EVENT_BASE	1000
@@ -427,6 +436,31 @@ int gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data);
  * Like gensio_open(), but waits for the open to complete.
  */
 int gensio_open_s(struct gensio *io, struct gensio_os_funcs *o);
+
+/*
+ * Open a channel on the given gensio.  The gensio must one that
+ * supports channels (like SCTP, SSH, or stdio).  The args parm is
+ * specific to the gensio type, and contains information that
+ * describes how to set up the new channel.  The channel open creates
+ * a new gensio object with its own callbacks and user data.
+ *
+ * For stdio, this only opens a channel for stderr input, args can be
+ * "readbuf=<num>" and sets the size of the input buffer.  This is how
+ * you get stderr output from a stdio channel, and it only works for
+ * client-created stdio, not acceptor-created stdio.
+ */
+int gensio_open_channel(struct gensio *io, const char *args,
+			gensio_event cb, void *user_data,
+			gensio_done_err open_done, void *open_data,
+			struct gensio **new_io);
+
+/*
+ * Like gensio_open_channel, but waits for the open to complete and
+ * returns the gensio for the channel.
+ */
+int gensio_open_channel_s(struct gensio *io, const char *args,
+			  gensio_event cb, void *user_data,
+			  struct gensio_os_funcs *o, struct gensio **new_io);
 
 /*
  * Return the type string for the gensio (if depth is 0) or one of its

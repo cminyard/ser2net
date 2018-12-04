@@ -83,6 +83,19 @@
 /* enabled => buflen, return value not used. */
 #define GENSIO_FUNC_SET_WRITE_CALLBACK	10
 
+/*
+ * Following struct in auxdata
+ */
+struct gensio_func_open_channel_data {
+    char **args;
+    gensio_event cb;
+    void *user_data;
+    gensio_done_err open_done;
+    void *open_data;
+    struct gensio *new_io;
+};
+#define GENSIO_FUNC_OPEN_CHANNEL	11
+
 typedef int (*gensio_func)(struct gensio *io, int func, unsigned int *count,
 			   unsigned long channel,
 			   const void *buf, unsigned int buflen,
