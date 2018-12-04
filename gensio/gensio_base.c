@@ -1062,8 +1062,8 @@ gensio_i_alloc(struct gensio_os_funcs *o,
     ndata->filter = filter;
     if (filter)
 	gensio_filter_set_callback(filter, gensio_base_filter_cb, ndata);
-    ndata->io = gensio_data_alloc(o, cb, user_data, gensio_base_func, typename,
-				  ndata);
+    ndata->io = gensio_data_alloc(o, cb, user_data, gensio_base_func,
+				  ll->child, typename, ndata);
     if (!ndata->io)
 	goto out_nomem;
     gensio_set_is_client(ndata->io, is_client);

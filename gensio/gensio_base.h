@@ -291,6 +291,7 @@ typedef int (*gensio_ll_func)(struct gensio_ll *ll, int op, int val,
 
 struct gensio_ll {
     gensio_ll_func func;
+    struct gensio *child;
 };
 
 struct gensio *base_gensio_alloc(struct gensio_os_funcs *o,

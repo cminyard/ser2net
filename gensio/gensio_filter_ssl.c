@@ -25,6 +25,7 @@
 #ifdef HAVE_OPENSSL
 
 #include <assert.h>
+#include <string.h>
 
 #include <openssl/ssl.h>
 #include <openssl/bio.h>

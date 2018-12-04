@@ -80,6 +80,8 @@ struct gensio {
 
     const char *typename;
 
+    struct gensio *child;
+
     bool is_client;
     bool is_packet;
     bool is_reliable;
@@ -88,7 +90,7 @@ struct gensio {
 struct gensio *
 gensio_data_alloc(struct gensio_os_funcs *o,
 		  gensio_event cb, void *user_data,
-		  gensio_func func,
+		  gensio_func func, struct gensio *child,
 		  const char *typename, void *gensio_data)
 {
     struct gensio *io = o->zalloc(o, sizeof(*io));
@@ -102,6 +104,7 @@ gensio_data_alloc(struct gensio_os_funcs *o,
     io->func = func;
     io->typename = typename;
     io->gensio_data = gensio_data;
+    io->child = child;
 
     return io;
 }
@@ -630,6 +633,20 @@ gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
     }
     o->free_waiter(data.waiter);
     return err;
+}
+
+const char *
+gensio_get_type(struct gensio *io, unsigned int depth)
+{
+    struct gensio *c = io;
+
+    while (depth > 0) {
+	if (!c)
+	    return NULL;
+	depth--;
+	c = c->child;
+    }
+    return c->typename;
 }
 
 int

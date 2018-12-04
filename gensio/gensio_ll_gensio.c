@@ -27,7 +27,6 @@
 struct gensio_ll_child {
     struct gensio_ll ll;
     struct gensio_os_funcs *o;
-    struct gensio *child;
     gensio_ll_cb cb;
     void *cb_data;
 
@@ -55,7 +54,7 @@ child_write(struct gensio_ll *ll, unsigned int *rcount,
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_write(cdata->child, rcount, 0, buf, buflen);
+    return gensio_write(cdata->ll.child, rcount, 0, buf, buflen);
 }
 
 static int
@@ -64,7 +63,7 @@ child_raddr_to_str(struct gensio_ll *ll, unsigned int *pos,
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_raddr_to_str(cdata->child, pos, buf, buflen);
+    return gensio_raddr_to_str(cdata->ll.child, pos, buf, buflen);
 }
 
 static int
@@ -72,7 +71,7 @@ child_get_raddr(struct gensio_ll *ll, void *addr, unsigned int *addrlen)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_get_raddr(cdata->child, addr, addrlen);
+    return gensio_get_raddr(cdata->ll.child, addr, addrlen);
 }
 
 static int
@@ -80,7 +79,7 @@ child_remote_id(struct gensio_ll *ll, int *id)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_remote_id(cdata->child, id);
+    return gensio_remote_id(cdata->ll.child, id);
 }
 
 static void
@@ -99,7 +98,7 @@ child_open(struct gensio_ll *ll, gensio_ll_open_done done, void *open_data)
 
     cdata->open_done = done;
     cdata->open_data = open_data;
-    rv = gensio_open(cdata->child, child_open_handler, cdata);
+    rv = gensio_open(cdata->ll.child, child_open_handler, cdata);
     if (rv == 0)
 	rv = EINPROGRESS; /* gensios always call the open handler. */
     return rv;
@@ -121,7 +120,7 @@ child_close(struct gensio_ll *ll, gensio_ll_close_done done, void *close_data)
 
     cdata->close_done = done;
     cdata->close_data = close_data;
-    rv = gensio_close(cdata->child, child_close_handler, cdata);
+    rv = gensio_close(cdata->ll.child, child_close_handler, cdata);
     if (rv == 0)
 	rv = EINPROGRESS; /* Close is always deferred. */
     return rv;
@@ -131,21 +130,21 @@ static void child_set_read_callback_enable(struct gensio_ll *ll, bool enabled)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    gensio_set_read_callback_enable(cdata->child, enabled);
+    gensio_set_read_callback_enable(cdata->ll.child, enabled);
 }
 
 static void child_set_write_callback_enable(struct gensio_ll *ll, bool enabled)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    gensio_set_write_callback_enable(cdata->child, enabled);
+    gensio_set_write_callback_enable(cdata->ll.child, enabled);
 }
 
 static void child_free(struct gensio_ll *ll)
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    gensio_free(cdata->child);
+    gensio_free(cdata->ll.child);
     cdata->o->free(cdata->o, cdata);
 }
 
@@ -233,7 +232,7 @@ gensio_gensio_ll_alloc(struct gensio_os_funcs *o,
 	return NULL;
 
     cdata->o = o;
-    cdata->child = child;
+    cdata->ll.child = child;
     cdata->ll.func = gensio_ll_child_func;
 
     gensio_set_callback(child, child_event, cdata);

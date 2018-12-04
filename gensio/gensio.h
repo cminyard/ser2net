@@ -429,6 +429,13 @@ int gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data);
 int gensio_open_s(struct gensio *io, struct gensio_os_funcs *o);
 
 /*
+ * Return the type string for the gensio (if depth is 0) or one of its
+ * children (depth > 0).  Return NULL if the depth is greater than the
+ * number of children.
+ */
+const char *gensio_get_type(struct gensio *io, unsigned int depth);
+
+/*
  * Close the gensio.  Note that the close operation is not complete
  * until close_done() is called.  This shuts down internal file
  * descriptors and such, but does not free the gensio.

@@ -99,7 +99,7 @@ void gensio_ref(struct gensio *io);
 
 struct gensio *gensio_data_alloc(struct gensio_os_funcs *o,
 				 gensio_event cb, void *user_data,
-				 gensio_func func,
+				 gensio_func func, struct gensio *child,
 				 const char *typename, void *gensio_data);
 void gensio_data_free(struct gensio *io);
 void *gensio_get_gensio_data(struct gensio *io);

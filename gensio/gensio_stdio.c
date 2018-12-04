@@ -891,7 +891,7 @@ stdio_gensio_accepter_alloc(char *args[], struct gensio_os_funcs *o,
 	return err;
 
     nadata->io = gensio_data_alloc(o, NULL, NULL, gensio_stdio_func,
-                                  "stdio", nadata);
+				   NULL, "stdio", nadata);
     if (!nadata->io) {
 	stdiona_finish_free(nadata);
 	return ENOMEM;
@@ -955,8 +955,8 @@ stdio_gensio_alloc(char *const argv[], char *args[],
 	    goto out_nomem;
     }
     nadata->closed = true;
-    nadata->io = gensio_data_alloc(nadata->o, cb, user_data,
-				   gensio_stdio_func, "stdio", nadata);
+    nadata->io = gensio_data_alloc(nadata->o, cb, user_data, gensio_stdio_func,
+				   NULL, "stdio", nadata);
     if (!nadata->io)
 	goto out_nomem;
     gensio_set_is_client(nadata->io, true);

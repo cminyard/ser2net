@@ -910,7 +910,7 @@ udpna_readhandler(int fd, void *cbdata)
     ndata->raddr = (struct sockaddr *) &ndata->remote;
 
     ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, gensio_udp_func,
-				  "udp", ndata);
+				  NULL, "udp", ndata);
     if (!ndata->io) {
 	nadata->o->free(nadata->o, ndata);
 	goto out_nomem;
@@ -1094,7 +1094,7 @@ udpna_connect(struct gensio_accepter *accepter, void *addr,
     ndata->raddrlen = ai->ai_addrlen;
 
     ndata->io = gensio_data_alloc(nadata->o, NULL, NULL, gensio_udp_func,
-				  "udp", ndata);
+				  NULL, "udp", ndata);
     if (!ndata->io) {
 	nadata->o->free_runner(ndata->deferred_op_runner);
 	gensio_free_addrinfo(nadata->o, ai);
@@ -1295,7 +1295,7 @@ udp_gensio_alloc(struct addrinfo *ai, char *args[],
     ndata->raddrlen = ai->ai_addrlen;
 
     ndata->io = gensio_data_alloc(nadata->o, cb, user_data, gensio_udp_func,
-				  "udp", ndata);
+				  NULL, "udp", ndata);
     if (!ndata->io) {
 	close(new_fd);
 	o->free(o, ndata);
