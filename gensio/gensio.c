@@ -39,7 +39,7 @@ struct gensio_classobj {
     struct gensio_classobj *next;
 };
 
-int
+static int
 gen_addclass(struct gensio_os_funcs *o,
 	     struct gensio_classobj **classes,
 	     const char *name, void *classdata)
@@ -56,7 +56,7 @@ gen_addclass(struct gensio_os_funcs *o,
     return 0;
 }
 
-void *
+static void *
 gen_getclass(struct gensio_classobj *classes, const char *name)
 {
     struct gensio_classobj *c;
