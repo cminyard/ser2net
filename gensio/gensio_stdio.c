@@ -17,7 +17,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-/* This code handles stdio network I/O. */
+/* This code handles stdio stream I/O. */
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -32,27 +32,31 @@
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
 
-struct stdiona_data {
-    struct gensio_lock *lock;
+static int gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
+			     unsigned long channel,
+			     const void *buf, unsigned int buflen,
+			     void *auxdata);
 
-    struct gensio_os_funcs *o;
+struct stdiona_data;
+
+struct stdion_channel {
+    struct stdiona_data *nadata;
+
+    int infd;
+    int outfd;
+    bool in_handler_set;
+    bool out_handler_set;
 
     unsigned int refcount;
 
-    int argc;
-    char **argv;
+    struct gensio *io;
 
-    struct gensio_runner *connect_runner;
+    unsigned int max_read_size;
+    unsigned char *read_data;
+    unsigned int data_pending_len;
+    unsigned int data_pos;
 
-    bool enabled;
-    int old_flags_ostdin;
-    int old_flags_ostdout;
-
-    /* For the accepter only. */
-    bool in_free;
-    bool in_shutdown;
-    gensio_acc_done shutdown_done;
-    void *shutdown_data;
+    struct stdiona_data *stdiona;
 
     bool read_enabled;
     bool xmit_enabled;
@@ -65,28 +69,12 @@ struct stdiona_data {
 
     /* For the client only. */
     bool in_close; /* A close is pending the running running. */
+    bool deferred_close;
     bool closed;
     gensio_done close_done;
     void *close_data;
 
-    /*
-     * If non-zero, this is the PID of the other process and we are
-     * in client mode.
-     */
-    int opid;
-
-    /* In client mode, the other end of the stdio pipes from the client. */
-    int ostdin;
-    int ostdout;
-    int ostderr;
-    unsigned int oio_count;
-
-    unsigned int max_read_size;
-    unsigned char *read_data;
-    unsigned int channel;
-
-    unsigned int data_pending_len;
-    unsigned int data_pos;
+    bool in_free;
 
     /*
      * Used to run read callbacks from the selector to avoid running
@@ -94,8 +82,41 @@ struct stdiona_data {
      */
     bool deferred_op_pending;
     struct gensio_runner *deferred_op_runner;
+};
 
-    struct gensio *io;
+struct stdiona_data {
+    struct gensio_lock *lock;
+
+    struct gensio_os_funcs *o;
+
+    unsigned int refcount;
+
+    int argc;
+    char **argv;
+
+    struct gensio_runner *connect_runner;
+    bool in_connect_runner;
+
+    int old_flags_ostdin;
+    int old_flags_ostdout;
+
+    /* For the accepter only. */
+    bool in_free;
+    bool in_shutdown;
+    bool enabled;
+    bool in_startup;
+    gensio_acc_done shutdown_done;
+    void *shutdown_data;
+
+    /*
+     * If non-zero, this is the PID of the other process and we are
+     * in client mode.
+     */
+    int opid;
+
+    struct stdion_channel io; /* stdin, stdout */
+    struct stdion_channel err; /* stderr */
+
     struct gensio_accepter *acc;
 };
 
@@ -111,15 +132,56 @@ stdiona_unlock(struct stdiona_data *nadata)
     nadata->o->unlock(nadata->lock);
 }
 
+static void
+stdiona_finish_free(struct stdiona_data *nadata)
+{
+    if (nadata->argv) {
+	int i;
+
+	for (i = 0; nadata->argv[i]; i++)
+	    nadata->o->free(nadata->o, nadata->argv[i]);
+	nadata->o->free(nadata->o, nadata->argv);
+    }
+    if (nadata->io.deferred_op_runner)
+	nadata->o->free_runner(nadata->io.deferred_op_runner);
+    if (nadata->err.deferred_op_runner)
+	nadata->o->free_runner(nadata->err.deferred_op_runner);
+    if (nadata->connect_runner)
+	nadata->o->free_runner(nadata->connect_runner);
+    if (nadata->io.read_data)
+	nadata->o->free(nadata->o, nadata->io.read_data);
+    if (nadata->err.read_data)
+	nadata->o->free(nadata->o, nadata->err.read_data);
+    if (nadata->lock)
+	nadata->o->free_lock(nadata->lock);
+    if (nadata->io.io)
+	gensio_data_free(nadata->io.io);
+    if (nadata->err.io)
+	gensio_data_free(nadata->err.io);
+    nadata->o->free(nadata->o, nadata);
+}
+
+static void
+stdiona_deref(struct stdiona_data *nadata)
+{
+    assert(nadata->refcount > 0);
+    if (--nadata->refcount == 0) {
+	stdiona_unlock(nadata);
+	stdiona_finish_free(nadata);
+    } else {
+	stdiona_unlock(nadata);
+    }	
+}
+
 static int
 stdion_write(struct gensio *io, unsigned int *count, unsigned long channel,
 	     const void *buf, unsigned int buflen)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
     int rv, err = 0;
 
  retry:
-    rv = write(nadata->ostdin, buf, buflen);
+    rv = write(schan->infd, buf, buflen);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
@@ -141,12 +203,17 @@ static int
 stdion_raddr_to_str(struct gensio *io, unsigned int *epos,
 		    char *buf, unsigned int buflen)
 {
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
     unsigned int pos = 0;
 
     if (epos)
 	pos = *epos;
 
-    strncpy(buf + pos, "stdio", buflen - pos - 1);
+    if (io == nadata->io.io)
+	strncpy(buf + pos, "stdio", buflen - pos - 1);
+    else
+	strncpy(buf + pos, "stderr", buflen - pos - 1);
     /* Fix stupid no-nil issue with strncpy. */
     buf[buflen - 1] = '\0';
     pos += strlen(buf + pos);
@@ -160,7 +227,8 @@ stdion_raddr_to_str(struct gensio *io, unsigned int *epos,
 static int
 stdion_remote_id(struct gensio *io, int *id)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
 
     if (!nadata->argv)
 	return ENOTSUP;
@@ -170,171 +238,153 @@ stdion_remote_id(struct gensio *io, int *id)
 
 /* Must be called with nadata->lock held */
 static void
-stdion_finish_read(struct stdiona_data *nadata, int err)
+stdion_finish_read(struct stdion_channel *schan, int err)
 {
-    struct gensio *io = nadata->io;
+    struct stdiona_data *nadata = schan->nadata;
+    struct gensio *io = schan->io;
     unsigned int count;
 
     if (err) {
 	/* Do this here so the user can modify it. */
 	stdiona_lock(nadata);
-	nadata->read_enabled = false;
+	schan->read_enabled = false;
 	stdiona_unlock(nadata);
     }
 
  retry:
-    count = nadata->data_pending_len;
+    count = schan->data_pending_len;
     gensio_cb(io, GENSIO_EVENT_READ, err,
-	      nadata->read_data + nadata->data_pos, &count,
-	      nadata->channel, NULL);
+	      schan->read_data + schan->data_pos, &count,
+	      0, NULL);
     stdiona_lock(nadata);
-    if (!err && count < nadata->data_pending_len) {
+    if (!err && count < schan->data_pending_len) {
 	/* The user didn't consume all the data. */
-	nadata->data_pending_len -= count;
-	nadata->data_pos += count;
-	if (!nadata->closed && nadata->read_enabled) {
+	schan->data_pending_len -= count;
+	schan->data_pos += count;
+	if (!schan->closed && schan->read_enabled) {
 	    stdiona_unlock(nadata);
 	    goto retry;
 	}
     } else {
-	nadata->data_pending_len = 0;
+	schan->data_pending_len = 0;
     }
 
-    nadata->in_read = false;
+    schan->in_read = false;
 
-    if (nadata->read_enabled) {
-	nadata->o->set_read_handler(nadata->o, nadata->ostdout, true);
-	if (nadata->ostderr != -1)
-	    nadata->o->set_read_handler(nadata->o, nadata->ostderr, true);
-    }
+    if (schan->read_enabled)
+	nadata->o->set_read_handler(nadata->o, schan->outfd, true);
     stdiona_unlock(nadata);
 }
 
 static void
 stdion_deferred_op(struct gensio_runner *runner, void *cbdata)
 {
-    struct stdiona_data *nadata = cbdata;
-    struct gensio *io = nadata->io;
+    struct stdion_channel *schan = cbdata;
+    struct stdiona_data *nadata = schan->nadata;
+    struct gensio *io = schan->io;
 
     stdiona_lock(nadata);
  restart:
-    if (nadata->in_open) {
-	if (nadata->open_done) {
+    if (schan->in_open) {
+	schan->in_open = false;
+	if (schan->open_done) {
 	    stdiona_unlock(nadata);
-	    nadata->open_done(nadata->io, 0, nadata->open_data);
+	    schan->open_done(io, 0, schan->open_data);
 	    stdiona_lock(nadata);
 	}
-	nadata->in_open = false;
-	nadata->o->set_read_handler(nadata->o, nadata->ostdout,
-				    nadata->read_enabled);
-	if (nadata->ostderr != -1)
-	    nadata->o->set_read_handler(nadata->o, nadata->ostderr,
-					nadata->read_enabled);
-	nadata->o->set_write_handler(nadata->o, nadata->ostdout,
-				     nadata->xmit_enabled);
+	nadata->o->set_read_handler(nadata->o, schan->outfd,
+				    schan->read_enabled);
+	if (schan->infd != -1)
+	    nadata->o->set_write_handler(nadata->o, schan->infd,
+					 schan->xmit_enabled);
     }
 
-    if (nadata->deferred_read) {
-	nadata->deferred_read = false;
+    if (schan->deferred_read) {
+	schan->deferred_read = false;
 	stdiona_unlock(nadata);
-	stdion_finish_read(nadata, 0);
+	stdion_finish_read(schan, 0);
 	stdiona_lock(nadata);
     }
 
-    if (nadata->deferred_read)
+    if (schan->deferred_read || schan->in_open)
 	goto restart;
 
-    nadata->deferred_op_pending = false;
+    schan->deferred_op_pending = false;
 
-    if (nadata->in_close) {
-	nadata->in_close = false;
-	nadata->in_open = false;
-	stdiona_unlock(nadata);
-	if (nadata->close_done)
-	    nadata->close_done(io, nadata->close_data);
-	return;
+    if (schan->deferred_close) {
+	schan->in_close = false;
+	schan->deferred_close = false;
+	if (schan->close_done) {
+	    stdiona_unlock(nadata);
+	    schan->close_done(schan->io, schan->close_data);
+	    stdiona_lock(nadata);
+	}
+	if (schan->in_free) {
+	    gensio_data_free(schan->io);
+	    schan->io = NULL;
+	}
     }
-    stdiona_unlock(nadata);
+
+    stdiona_deref(nadata);
 }
 
 static void
-stdion_start_deferred_op(struct stdiona_data *nadata)
+stdion_start_deferred_op(struct stdion_channel *schan)
 {
-    if (!nadata->deferred_op_pending) {
+    if (!schan->deferred_op_pending) {
 	/* Call the read from the selector to avoid lock nesting issues. */
-	nadata->deferred_op_pending = true;
-	nadata->o->run(nadata->deferred_op_runner);
+	schan->deferred_op_pending = true;
+	schan->nadata->o->run(schan->deferred_op_runner);
+	schan->nadata->refcount++;
     }
-}
-
-static void
-stdiona_finish_free(struct stdiona_data *nadata)
-{
-    if (nadata->argv) {
-	int i;
-
-	for (i = 0; nadata->argv[i]; i++)
-	    nadata->o->free(nadata->o, nadata->argv[i]);
-	nadata->o->free(nadata->o, nadata->argv);
-    }
-    if (nadata->deferred_op_runner)
-	nadata->o->free_runner(nadata->deferred_op_runner);
-    if (nadata->connect_runner)
-	nadata->o->free_runner(nadata->connect_runner);
-    if (nadata->read_data)
-	nadata->o->free(nadata->o, nadata->read_data);
-    if (nadata->lock)
-	nadata->o->free_lock(nadata->lock);
-    if (nadata->io)
-	gensio_data_free(nadata->io);
-    nadata->o->free(nadata->o, nadata);
 }
 
 static void
 stdio_client_fd_cleared(int fd, void *cbdata)
 {
-    struct stdiona_data *nadata = cbdata;
+    struct stdion_channel *schan = cbdata;
+    struct stdiona_data *nadata = schan->nadata;
 
     stdiona_lock(nadata);
-    nadata->oio_count--;
-    if (nadata->oio_count == 0) {
-	close(nadata->ostdin);
-	close(nadata->ostdout);
-	close(nadata->ostderr);
-	stdiona_unlock(nadata);
-	if (nadata->close_done)
-	    nadata->close_done(nadata->io, nadata->close_data);
-	stdiona_lock(nadata);
-	nadata->in_close = false;
-	nadata->in_open = false;
-	if (nadata->in_free) {
-	    stdiona_finish_free(nadata);
-	    return;
-	}
+    if (fd == schan->infd)
+	schan->in_handler_set = false;
+    else
+	schan->out_handler_set = false;
+
+    if (!nadata->io.in_handler_set && !nadata->io.out_handler_set &&
+		!nadata->err.out_handler_set) {
+	close(nadata->io.infd);
+	close(nadata->io.outfd);
+	close(nadata->err.outfd);
     }
-    stdiona_unlock(nadata);
+
+    if (!schan->in_handler_set && !schan->out_handler_set && schan->in_close) {
+	schan->deferred_close = true;
+	stdion_start_deferred_op(schan);
+    }
+
+    stdiona_deref(nadata);
 }
 
 static void
 stdion_set_read_callback_enable(struct gensio *io, bool enabled)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
 
     stdiona_lock(nadata);
-    if (nadata->closed)
+    if (schan->closed || !schan->io)
 	goto out_unlock;
-    nadata->read_enabled = enabled;
-    if (nadata->in_read || nadata->in_open ||
-			(nadata->data_pending_len && !enabled)) {
+    schan->read_enabled = enabled;
+    if (schan->in_read || schan->in_open ||
+			(schan->data_pending_len && !enabled)) {
 	/* Nothing to do, let the read handling wake things up. */
-    } else if (nadata->data_pending_len) {
-	nadata->deferred_read = true;
-	nadata->in_read = true;
-	stdion_start_deferred_op(nadata);
+    } else if (schan->data_pending_len) {
+	schan->deferred_read = true;
+	schan->in_read = true;
+	stdion_start_deferred_op(schan);
     } else {
-	nadata->o->set_read_handler(nadata->o, nadata->ostdout, enabled);
-	if (nadata->ostderr != -1)
-	    nadata->o->set_read_handler(nadata->o, nadata->ostderr, enabled);
+	nadata->o->set_read_handler(nadata->o, schan->outfd, enabled);
     }
  out_unlock:
     stdiona_unlock(nadata);
@@ -343,15 +393,16 @@ stdion_set_read_callback_enable(struct gensio *io, bool enabled)
 static void
 stdion_set_write_callback_enable(struct gensio *io, bool enabled)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
 
     stdiona_lock(nadata);
-    if (nadata->closed)
+    if (schan->closed || schan->infd == -1)
 	goto out_unlock;
-    nadata->xmit_enabled = enabled;
-    if (nadata->in_open)
+    schan->xmit_enabled = enabled;
+    if (schan->in_open)
 	goto out_unlock;
-    nadata->o->set_write_handler(nadata->o, nadata->ostdin, enabled);
+    nadata->o->set_write_handler(nadata->o, schan->infd, enabled);
  out_unlock:
     stdiona_unlock(nadata);
 }
@@ -359,27 +410,22 @@ stdion_set_write_callback_enable(struct gensio *io, bool enabled)
 static void
 stdion_read_ready(int fd, void *cbdata)
 {
-    struct stdiona_data *nadata = cbdata;
+    struct stdion_channel *schan = cbdata;
+    struct stdiona_data *nadata = schan->nadata;
     int rv, err = 0;
 
     stdiona_lock(nadata);
-    if (!nadata->read_enabled || nadata->in_read) {
+    if (!schan->read_enabled || schan->in_read) {
 	stdiona_unlock(nadata);
 	return;
     }
-    nadata->o->set_read_handler(nadata->o, nadata->ostdout, false);
-    if (nadata->ostderr != -1)
-	nadata->o->set_read_handler(nadata->o, nadata->ostderr, false);
-    if (fd == nadata->ostderr)
-	nadata->channel = 1;
-    else
-	nadata->channel = 0;
-    nadata->in_read = true;
-    nadata->data_pos = 0;
+    nadata->o->set_read_handler(nadata->o, schan->outfd, false);
+    schan->in_read = true;
+    schan->data_pos = 0;
     stdiona_unlock(nadata);
 
  retry:
-    rv = read(fd, nadata->read_data, nadata->max_read_size);
+    rv = read(fd, schan->read_data, schan->max_read_size);
     if (rv < 0) {
 	if (errno == EINTR)
 	    goto retry;
@@ -390,24 +436,25 @@ stdion_read_ready(int fd, void *cbdata)
     } else if (rv == 0) {
 	err = EPIPE;
     } else {
-	nadata->data_pending_len = rv;
+	schan->data_pending_len = rv;
     }
 
-    stdion_finish_read(nadata, err);
+    stdion_finish_read(schan, err);
 }
 
 static void
 stdion_write_ready(int fd, void *cbdata)
 {
-    struct stdiona_data *nadata = cbdata;
+    struct stdion_channel *schan = cbdata;
 
-    gensio_cb(nadata->io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
+    gensio_cb(schan->io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
 }
 
 static int
 stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
     int err;
     int stdinpipe[2] = {-1, -1};
     int stdoutpipe[2] = {-1, -1};
@@ -415,7 +462,7 @@ stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 
     stdiona_lock(nadata);
 
-    if (!nadata->closed || nadata->in_close) {
+    if (!schan->closed || schan->in_close || nadata->err.io) {
 	err = EBUSY;
 	goto out_unlock;
     }
@@ -438,43 +485,39 @@ stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 	goto out_err;
     }
 
-    nadata->ostdin = stdinpipe[1];
-    nadata->ostdout = stdoutpipe[0];
-    nadata->ostderr = stderrpipe[0];
+    nadata->io.infd = stdinpipe[1];
+    nadata->io.outfd = stdoutpipe[0];
+    nadata->err.infd = -1;
+    nadata->err.outfd = stderrpipe[0];
 
-    if (fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK) == -1) {
+    if (fcntl(nadata->io.infd, F_SETFL, O_NONBLOCK) == -1) {
 	err = errno;
 	goto out_err;
     }
-    if (fcntl(nadata->ostdout, F_SETFL, O_NONBLOCK) == -1) {
+    if (fcntl(nadata->io.outfd, F_SETFL, O_NONBLOCK) == -1) {
 	err = errno;
 	goto out_err;
     }
-    if (fcntl(nadata->ostderr, F_SETFL, O_NONBLOCK) == -1) {
+    if (fcntl(nadata->err.outfd, F_SETFL, O_NONBLOCK) == -1) {
 	err = errno;
 	goto out_err;
     }
 
-    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostdout, nadata,
+    err = nadata->o->set_fd_handlers(nadata->o, nadata->io.outfd, &nadata->io,
 				     stdion_read_ready, NULL, NULL,
 				     stdio_client_fd_cleared);
     if (err)
 	goto out_err;
-    nadata->oio_count++;
+    nadata->io.out_handler_set = true;
+    nadata->refcount++;
 
-    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostderr, nadata,
-				     stdion_read_ready, NULL, NULL,
-				     stdio_client_fd_cleared);
-    if (err)
-	goto out_err;
-    nadata->oio_count++;
-
-    err = nadata->o->set_fd_handlers(nadata->o, nadata->ostdin, nadata,
+    err = nadata->o->set_fd_handlers(nadata->o, nadata->io.infd, &nadata->io,
 				     NULL, stdion_write_ready, NULL,
 				     stdio_client_fd_cleared);
     if (err)
 	goto out_err;
-    nadata->oio_count++;
+    nadata->io.in_handler_set = true;
+    nadata->refcount++;
 
     nadata->opid = fork();
     if (nadata->opid < 0) {
@@ -503,11 +546,12 @@ stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
     close(stdoutpipe[1]);
     close(stderrpipe[1]);
 
-    nadata->closed = false;
-    nadata->in_open = true;
-    nadata->open_done = open_done;
-    nadata->open_data = open_data;
-    stdion_start_deferred_op(nadata);
+    schan->closed = false;
+    schan->in_open = true;
+    schan->open_done = open_done;
+    schan->open_data = open_data;
+    stdion_start_deferred_op(schan);
+    nadata->refcount++;
     stdiona_unlock(nadata);
 
     return 0;
@@ -519,57 +563,129 @@ stdion_open(struct gensio *io, gensio_done_err open_done, void *open_data)
 	close(stdoutpipe[1]);
     if (stderrpipe[1] != -1)
 	close(stderrpipe[1]);
+    if (stderrpipe[0] != -1)
+	close(stderrpipe[0]);
 
-    if (nadata->oio_count) {
-	if (nadata->oio_count > 0)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
-	if (nadata->oio_count > 1)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostderr);
-	if (nadata->oio_count > 2)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
-    } else {
-	if (stdinpipe[1] != -1)
-	    close(stdinpipe[1]);
-	if (stdoutpipe[0] != -1)
-	    close(stdoutpipe[0]);
-	if (stderrpipe[0] != -1)
-	    close(stderrpipe[0]);
-    }
+    if (nadata->io.out_handler_set)
+	nadata->o->clear_fd_handlers_norpt(nadata->o, nadata->io.outfd);
+    nadata->io.out_handler_set = false;
+    if (nadata->io.in_handler_set)
+	nadata->o->clear_fd_handlers_norpt(nadata->o, nadata->io.infd);
+    nadata->io.in_handler_set = false;
+    if (stdinpipe[1] != -1)
+	close(stdinpipe[1]);
+    if (stdoutpipe[0] != -1)
+	close(stdoutpipe[0]);
  out_unlock:
     stdiona_unlock(nadata);
 
     return err;
 }
 
+static int
+stdion_open_channel(struct gensio *io, char *args[],
+		    gensio_event cb, void *user_data,
+		    gensio_done_err open_done, void *open_data,
+		    struct gensio **new_io)
+{
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
+    int rv = 0;
+    unsigned int i, max_read_size = nadata->io.max_read_size;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
+
+    stdiona_lock(nadata);
+    if (io != nadata->io.io) {
+	rv = EINVAL;
+	goto out_err;
+    }
+    if (nadata->err.outfd == -1) {
+	rv = ENOENT;
+	goto out_err;
+    }
+    if (nadata->err.io) {
+	rv = EBUSY;
+	goto out_err;
+    }
+
+    nadata->err.max_read_size = max_read_size;
+    nadata->err.read_data = nadata->o->zalloc(nadata->o, max_read_size);
+    if (!nadata->err.read_data) {
+	rv = ENOMEM;
+	goto out_err;
+    }
+    nadata->err.data_pending_len = 0;
+    nadata->err.data_pos = 0;
+    nadata->err.read_enabled = false;
+    nadata->err.xmit_enabled = false;
+
+    nadata->err.io = gensio_data_alloc(nadata->o, cb, user_data,
+				       gensio_stdio_func,
+				       NULL, "stderr", &nadata->err);
+    if (!nadata->err.io) {
+	nadata->o->free(nadata->o, nadata->err.read_data);
+	nadata->err.read_data = NULL;
+	rv = ENOMEM;
+	goto out_err;
+    }
+
+    rv = nadata->o->set_fd_handlers(nadata->o, nadata->err.outfd, &nadata->err,
+				    stdion_read_ready, NULL, NULL,
+				    stdio_client_fd_cleared);
+    if (!rv) {
+	nadata->err.out_handler_set = true;
+    } else {
+	nadata->o->free(nadata->o, nadata->err.read_data);
+	nadata->err.read_data = NULL;
+    }
+
+    nadata->err.closed = false;
+    nadata->err.in_open = true;
+    nadata->err.open_done = open_done;
+    nadata->err.open_data = open_data;
+    stdion_start_deferred_op(&nadata->err);
+    nadata->refcount++;
+    *new_io = nadata->err.io;
+
+ out_err:
+    stdiona_unlock(nadata);
+
+    return rv;
+}
+
 static void
-__stdion_close(struct stdiona_data *nadata,
+__stdion_close(struct stdion_channel *schan,
 	       gensio_done close_done, void *close_data)
 {
-    nadata->closed = true;
-    nadata->in_close = true;
-    nadata->close_done = close_done;
-    nadata->close_data = close_data;
-    if (nadata->argv) {
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
-	if (nadata->ostderr != -1)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostderr);
-    } else {
-	stdion_start_deferred_op(nadata);
-    }
+    struct stdiona_data *nadata = schan->nadata;
+
+    schan->closed = true;
+    schan->in_close = true;
+    schan->in_open = false; /* In case we get closed before the open is done. */
+    schan->close_done = close_done;
+    schan->close_data = close_data;
+    nadata->o->clear_fd_handlers(nadata->o, schan->outfd);
+    if (schan->infd != -1)
+	nadata->o->clear_fd_handlers(nadata->o, schan->infd);
 }
 
 static int
 stdion_close(struct gensio *io, gensio_done close_done, void *close_data)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
     int err = 0;
 
     stdiona_lock(nadata);
-    if (nadata->closed || nadata->in_close)
+    if (schan->closed || schan->in_close)
 	err = EBUSY;
     else
-	__stdion_close(nadata, close_done, close_data);
+	__stdion_close(schan, close_done, close_data);
     stdiona_unlock(nadata);
 
     return err;
@@ -578,24 +694,25 @@ stdion_close(struct gensio *io, gensio_done close_done, void *close_data)
 static void
 stdion_free(struct gensio *io)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
 
     stdiona_lock(nadata);
-    assert(nadata->refcount > 0);
-    if (--nadata->refcount > 0) {
+    assert(schan->refcount > 0);
+    if (--schan->refcount > 0) {
 	stdiona_unlock(nadata);
 	return;
     }
-	
-    nadata->in_free = true;
-    if (nadata->in_close) {
-	nadata->close_done = NULL;
+    schan->in_free = true;
+    if (schan->in_close) {
+	schan->close_done = NULL;
 	stdiona_unlock(nadata);
-    } else if (nadata->closed) {
-	stdiona_unlock(nadata);
-	stdiona_finish_free(nadata);
+    } else if (schan->closed) {
+	gensio_data_free(schan->io);
+	schan->io = NULL;
+	stdiona_deref(nadata);
     } else {
-	__stdion_close(nadata, NULL, NULL);
+	__stdion_close(schan, NULL, NULL);
 	stdiona_unlock(nadata);
     }
 }
@@ -603,161 +720,11 @@ stdion_free(struct gensio *io)
 static void
 stdion_ref(struct gensio *io)
 {
-    struct stdiona_data *nadata = gensio_get_gensio_data(io);
+    struct stdion_channel *schan = gensio_get_gensio_data(io);
+    struct stdiona_data *nadata = schan->nadata;
 
     stdiona_lock(nadata);
-    nadata->refcount++;
-    stdiona_unlock(nadata);
-}
-
-static void
-stdiona_do_connect(struct gensio_runner *runner, void *cbdata)
-{
-    struct stdiona_data *nadata = cbdata;
-
-    gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION, nadata->io);
-}
-
-static void
-stdiona_fd_cleared(int fd, void *cbdata)
-{
-    struct stdiona_data *nadata = cbdata;
-    struct gensio_accepter *accepter = nadata->acc;
-
-    stdiona_lock(nadata);
-    nadata->oio_count--;
-    fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
-    fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
-
-    if (nadata->shutdown_done)
-	nadata->shutdown_done(accepter, nadata->shutdown_data);
-
-    stdiona_lock(nadata);
-    nadata->in_shutdown = false;
-    if (nadata->in_free) {
-	stdiona_unlock(nadata);
-	stdiona_finish_free(nadata);
-    } else {
-	stdiona_unlock(nadata);
-    }
-}
-
-static int
-stdiona_startup(struct gensio_accepter *accepter)
-{
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
-    int rv = 0;
-
-    stdiona_lock(nadata);
-    if (nadata->in_shutdown) {
-	rv = EAGAIN;
-	goto out_unlock;
-    }
-    if (!nadata->enabled) {
-	rv = fcntl(nadata->ostdin, F_GETFL, 0);
-	if (rv == -1) {
-	    rv = errno;
-	    goto out_unlock;
-	}
-	nadata->old_flags_ostdin = rv;
-
-	rv = fcntl(nadata->ostdout, F_GETFL, 0);
-	if (rv == -1) {
-	    rv = errno;
-	    fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK);
-	    goto out_unlock;
-	}
-	nadata->old_flags_ostdout = rv;
-
-	if (fcntl(nadata->ostdin, F_SETFL, O_NONBLOCK) == -1) {
-	    rv = errno;
-	    goto out_err;
-	}
-
-	if (fcntl(nadata->ostdout, F_SETFL, O_NONBLOCK) == -1) {
-	    rv = errno;
-	    goto out_err;
-	}
-
-	rv = nadata->o->set_fd_handlers(nadata->o, nadata->ostdin,
-					nadata, NULL, stdion_write_ready, NULL,
-					stdiona_fd_cleared);
-	if (rv)
-	    goto out_err;
-	nadata->oio_count++;
-
-	rv = nadata->o->set_fd_handlers(nadata->o, nadata->ostdout,
-					nadata, stdion_read_ready, NULL, NULL,
-					stdiona_fd_cleared);
-	if (rv)
-	    goto out_err;
-	nadata->oio_count++;
-
-	nadata->enabled = true;
-	nadata->o->run(nadata->connect_runner);
-    }
- out_unlock:
-    stdiona_unlock(nadata);
-    return rv;
-
- out_err:
-    if (nadata->oio_count) {
-	if (nadata->oio_count > 1)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
-	if (nadata->oio_count > 2)
-	    nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
-    } else {
-	fcntl(nadata->ostdin, F_SETFL, nadata->old_flags_ostdin);
-	fcntl(nadata->ostdout, F_SETFL, nadata->old_flags_ostdout);
-    }
-    goto out_unlock;
-}
-
-static int
-stdiona_shutdown(struct gensio_accepter *accepter,
-		 gensio_acc_done shutdown_done, void *shutdown_data)
-{
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
-    int rv = 0;
-
-    stdiona_lock(nadata);
-    if (nadata->enabled) {
-	nadata->enabled = false;
-	nadata->in_shutdown = true;
-	nadata->shutdown_done = shutdown_done;
-	nadata->shutdown_data = shutdown_data;
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
-    } else {
-	rv = EAGAIN;
-    }
-    stdiona_unlock(nadata);
-
-    return rv;
-}
-
-static void
-stdiona_set_accept_callback_enable(struct gensio_accepter *accepter,
-				   bool enabled)
-{
-}
-
-static void
-stdiona_free(struct gensio_accepter *accepter)
-{
-    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
-
-    stdiona_lock(nadata);
-    nadata->in_free = true;
-    if (nadata->enabled) {
-	nadata->enabled = false;
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdin);
-	nadata->o->clear_fd_handlers(nadata->o, nadata->ostdout);
-    } else {
-	stdiona_unlock(nadata);
-	stdiona_finish_free(nadata);
-	return;
-    }
+    schan->refcount++;
     stdiona_unlock(nadata);
 }
 
@@ -799,33 +766,14 @@ gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
     case GENSIO_FUNC_REMOTE_ID:
 	return stdion_remote_id(io, auxdata);
 
-    case GENSIO_FUNC_GET_RADDR:
-    default:
-	return ENOTSUP;
+    case GENSIO_FUNC_OPEN_CHANNEL:
+    {
+	struct gensio_func_open_channel_data *d = auxdata;
+	return stdion_open_channel(io, d->args, d->cb, d->user_data,
+				   d->open_done, d->open_data, &d->new_io);
     }
-}
 
-static int
-gensio_acc_stdio_func(struct gensio_accepter *acc, int func, int val,
-		      void *addr, void *done, void *data,
-		      void *ret)
-{
-    switch (func) {
-    case GENSIO_ACC_FUNC_STARTUP:
-	return stdiona_startup(acc);
-
-    case GENSIO_ACC_FUNC_SHUTDOWN:
-	return stdiona_shutdown(acc, done, data);
-
-    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
-	stdiona_set_accept_callback_enable(acc, val);
-	return 0;
-
-    case GENSIO_ACC_FUNC_FREE:
-	stdiona_free(acc);
-	return 0;
-
-    case GENSIO_ACC_FUNC_CONNECT:
+    case GENSIO_FUNC_GET_RADDR:
     default:
 	return ENOTSUP;
     }
@@ -842,18 +790,26 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
 	return ENOMEM;
     nadata->o = o;
     nadata->refcount = 1;
+    nadata->io.refcount = 1;
+    nadata->err.refcount = 1;
+    nadata->io.closed = true;
+    nadata->err.closed = true;
+    nadata->io.nadata = nadata;
+    nadata->err.nadata = nadata;
 
-    nadata->max_read_size = max_read_size;
-    nadata->read_data = o->zalloc(o, max_read_size);
-    if (!nadata->read_data)
+    nadata->io.max_read_size = max_read_size;
+    nadata->io.read_data = o->zalloc(o, max_read_size);
+    if (!nadata->io.read_data)
 	goto out_nomem;
 
-    nadata->deferred_op_runner = o->alloc_runner(o, stdion_deferred_op, nadata);
-    if (!nadata->deferred_op_runner)
+    nadata->io.deferred_op_runner = o->alloc_runner(o, stdion_deferred_op,
+						    &nadata->io);
+    if (!nadata->io.deferred_op_runner)
 	goto out_nomem;
 
-    nadata->connect_runner = o->alloc_runner(o, stdiona_do_connect, nadata);
-    if (!nadata->connect_runner)
+    nadata->err.deferred_op_runner = o->alloc_runner(o, stdion_deferred_op,
+						     &nadata->err);
+    if (!nadata->err.deferred_op_runner)
 	goto out_nomem;
 
     nadata->lock = o->alloc_lock(o);
@@ -868,59 +824,6 @@ stdio_nadata_setup(struct gensio_os_funcs *o, unsigned int max_read_size,
     stdiona_finish_free(nadata);
 
     return ENOMEM;
-}
-
-int
-stdio_gensio_accepter_alloc(char *args[], struct gensio_os_funcs *o,
-			    gensio_accepter_event cb, void *user_data,
-			    struct gensio_accepter **accepter)
-{
-    int err;
-    struct stdiona_data *nadata = NULL;
-    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
-    int i;
-
-    for (i = 0; args[i]; i++) {
-	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
-	    continue;
-	return EINVAL;
-    }
-
-    err = stdio_nadata_setup(o, max_read_size, &nadata);
-    if (err)
-	return err;
-
-    nadata->io = gensio_data_alloc(o, NULL, NULL, gensio_stdio_func,
-				   NULL, "stdio", nadata);
-    if (!nadata->io) {
-	stdiona_finish_free(nadata);
-	return ENOMEM;
-    }
-
-    nadata->ostdin = 1;
-    nadata->ostdout = 0;
-    nadata->ostderr = -1;
-
-    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_stdio_func,
-					NULL, "stdio", nadata);
-    if (!nadata->acc) {
-	stdiona_finish_free(nadata);
-	return ENOMEM;
-    }
-    gensio_acc_set_is_reliable(nadata->acc, true);
-
-    *accepter = nadata->acc;
-    return 0;
-}
-
-int
-str_to_stdio_gensio_accepter(const char *str, char *args[],
-			     struct gensio_os_funcs *o,
-			     gensio_accepter_event cb,
-			     void *user_data,
-			     struct gensio_accepter **acc)
-{
-    return stdio_gensio_accepter_alloc(args, o, cb, user_data, acc);
 }
 
 int
@@ -954,15 +857,15 @@ stdio_gensio_alloc(char *const argv[], char *args[],
 	if (!nadata->argv[i])
 	    goto out_nomem;
     }
-    nadata->closed = true;
-    nadata->io = gensio_data_alloc(nadata->o, cb, user_data, gensio_stdio_func,
-				   NULL, "stdio", nadata);
-    if (!nadata->io)
+    nadata->io.io = gensio_data_alloc(nadata->o, cb, user_data,
+				      gensio_stdio_func, NULL, "stdio",
+				      &nadata->io);
+    if (!nadata->io.io)
 	goto out_nomem;
-    gensio_set_is_client(nadata->io, true);
-    gensio_set_is_reliable(nadata->io, true);
+    gensio_set_is_client(nadata->io.io, true);
+    gensio_set_is_reliable(nadata->io.io, true);
 
-    *new_gensio = nadata->io;
+    *new_gensio = nadata->io.io;
 
     return 0;
 
@@ -986,4 +889,298 @@ str_to_stdio_gensio(const char *str, char *args[],
 	str_to_argv_free(argc, argv);
     }
     return err;
+}
+
+static void
+stdiona_do_connect(struct gensio_runner *runner, void *cbdata)
+{
+    struct stdiona_data *nadata = cbdata;
+
+    stdiona_lock(nadata);
+ retry:
+    if (nadata->in_startup) {
+	nadata->in_startup = false;
+	stdiona_unlock(nadata);
+	gensio_acc_cb(nadata->acc, GENSIO_ACC_EVENT_NEW_CONNECTION,
+		      nadata->io.io);
+	stdiona_lock(nadata);
+    }
+
+    if (nadata->in_shutdown) {
+	nadata->in_shutdown = false;
+	stdiona_unlock(nadata);
+	if (nadata->shutdown_done)
+	    nadata->shutdown_done(nadata->acc, nadata->shutdown_data);
+	stdiona_lock(nadata);
+    }
+
+    if (nadata->in_startup || nadata->in_shutdown)
+	goto retry;
+
+    nadata->in_connect_runner = false;
+    stdiona_deref(nadata); /* unlocks */
+}
+
+/*
+ * fd cleared for a gensio from an acceptor only.
+ */
+static void
+stdiona_fd_cleared(int fd, void *cbdata)
+{
+    struct stdion_channel *schan = cbdata;
+    struct stdiona_data *nadata = schan->nadata;
+
+    stdiona_lock(nadata);
+    if (fd == schan->infd)
+	schan->in_handler_set = false;
+    else
+	schan->out_handler_set = false;
+
+    if (!nadata->io.in_handler_set && !nadata->io.out_handler_set) {
+	/* We came from an acceptor, set stdio back to original values. */
+	fcntl(nadata->io.infd, F_SETFL, nadata->old_flags_ostdin);
+	fcntl(nadata->io.outfd, F_SETFL, nadata->old_flags_ostdout);
+    }
+
+    if (!schan->in_handler_set && !schan->out_handler_set && schan->in_close) {
+	schan->in_close = false;
+	if (schan->close_done) {
+	    gensio_done close_done = schan->close_done;
+	    void *close_data = schan->close_data;
+
+	    stdiona_unlock(nadata);
+	    close_done(schan->io, close_data);
+	    stdiona_lock(nadata);
+	}
+    }
+
+    /* Lose the refcount we got when we added the fd handler. */
+    stdiona_deref(nadata); /* unlocks */
+}
+
+static int
+stdiona_startup(struct gensio_accepter *accepter)
+{
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
+    int rv = 0;
+    bool io_allocated = false, infd_nb_set = false, outfd_nb_set = false;
+
+    stdiona_lock(nadata);
+    if (nadata->in_free) {
+	rv = EBADFD;
+	goto out_unlock;
+    }
+
+    if (nadata->in_shutdown) {
+	rv = EAGAIN;
+	goto out_unlock;
+    }
+
+    if (nadata->io.io) {
+	rv = EBUSY;
+	goto out_unlock;
+    }
+
+    nadata->io.io = gensio_data_alloc(nadata->o, NULL, NULL, gensio_stdio_func,
+				      NULL, "stdio", &nadata->io);
+    if (!nadata->io.io) {
+	rv = ENOMEM;
+	goto out_unlock;
+    }
+    io_allocated = true;
+
+    rv = fcntl(nadata->io.infd, F_GETFL, 0);
+    if (rv == -1) {
+	rv = errno;
+	goto out_unlock;
+    }
+    nadata->old_flags_ostdin = rv;
+
+    rv = fcntl(nadata->io.outfd, F_GETFL, 0);
+    if (rv == -1) {
+	rv = errno;
+	fcntl(nadata->io.infd, F_SETFL, nadata->old_flags_ostdin);
+	goto out_unlock;
+    }
+    nadata->old_flags_ostdout = rv;
+
+    if (fcntl(nadata->io.infd, F_SETFL, O_NONBLOCK) == -1) {
+	rv = errno;
+	goto out_err;
+    }
+    infd_nb_set = true;
+    if (fcntl(nadata->io.outfd, F_SETFL, O_NONBLOCK) == -1) {
+	rv = errno;
+	goto out_err;
+    }
+    outfd_nb_set = true;
+
+    rv = nadata->o->set_fd_handlers(nadata->o, nadata->io.infd,
+				    &nadata->io, NULL, stdion_write_ready, NULL,
+				    stdiona_fd_cleared);
+    if (rv)
+	goto out_err;
+    nadata->io.in_handler_set = true;
+    nadata->refcount++;
+
+    rv = nadata->o->set_fd_handlers(nadata->o, nadata->io.outfd,
+				    &nadata->io, stdion_read_ready, NULL, NULL,
+				    stdiona_fd_cleared);
+    if (rv)
+	goto out_err;
+    nadata->io.out_handler_set = true;
+    nadata->refcount++;
+
+    nadata->io.closed = false;
+    nadata->in_startup = true;
+    nadata->enabled = true;
+    if (!nadata->in_connect_runner) {
+	nadata->refcount++;
+	nadata->in_connect_runner = true;
+	nadata->o->run(nadata->connect_runner);
+    }
+
+ out_unlock:
+    stdiona_unlock(nadata);
+    return rv;
+
+ out_err:
+    if (io_allocated) {
+	gensio_data_free(nadata->io.io);
+	nadata->io.io = NULL;
+    }
+    if (nadata->io.in_handler_set)
+	nadata->o->clear_fd_handlers_norpt(nadata->o, nadata->io.infd);
+    nadata->io.in_handler_set = false;
+    if (nadata->io.out_handler_set)
+	nadata->o->clear_fd_handlers_norpt(nadata->o, nadata->io.outfd);
+    nadata->io.out_handler_set = false;
+    if (infd_nb_set)
+	fcntl(nadata->io.infd, F_SETFL, nadata->old_flags_ostdin);
+    if (outfd_nb_set)
+	fcntl(nadata->io.outfd, F_SETFL, nadata->old_flags_ostdout);
+    goto out_unlock;
+}
+
+static int
+stdiona_shutdown(struct gensio_accepter *accepter,
+		 gensio_acc_done shutdown_done, void *shutdown_data)
+{
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
+    int rv = 0;
+
+    stdiona_lock(nadata);
+    if (nadata->in_free) {
+	rv = EBADFD;
+    } else if (nadata->in_shutdown || !nadata->enabled) {
+	rv = EAGAIN;
+    } else {
+	nadata->in_shutdown = true;
+	nadata->enabled = false;
+	nadata->shutdown_done = shutdown_done;
+	nadata->shutdown_data = shutdown_data;
+	if (!nadata->in_connect_runner) {
+	    nadata->refcount++;
+	    nadata->in_connect_runner = true;
+	    nadata->o->run(nadata->connect_runner);
+	}
+    }
+    stdiona_unlock(nadata);
+
+    return rv;
+}
+
+static void
+stdiona_set_accept_callback_enable(struct gensio_accepter *accepter,
+				   bool enabled)
+{
+}
+
+static void
+stdiona_free(struct gensio_accepter *accepter)
+{
+    struct stdiona_data *nadata = gensio_acc_get_gensio_data(accepter);
+
+    stdiona_lock(nadata);
+    nadata->in_free = true;
+    stdiona_deref(nadata);
+}
+
+static int
+gensio_acc_stdio_func(struct gensio_accepter *acc, int func, int val,
+		      void *addr, void *done, void *data,
+		      void *ret)
+{
+    switch (func) {
+    case GENSIO_ACC_FUNC_STARTUP:
+	return stdiona_startup(acc);
+
+    case GENSIO_ACC_FUNC_SHUTDOWN:
+	return stdiona_shutdown(acc, done, data);
+
+    case GENSIO_ACC_FUNC_SET_ACCEPT_CALLBACK:
+	stdiona_set_accept_callback_enable(acc, val);
+	return 0;
+
+    case GENSIO_ACC_FUNC_FREE:
+	stdiona_free(acc);
+	return 0;
+
+    case GENSIO_ACC_FUNC_CONNECT:
+    default:
+	return ENOTSUP;
+    }
+}
+
+int
+stdio_gensio_accepter_alloc(char *args[], struct gensio_os_funcs *o,
+			    gensio_accepter_event cb, void *user_data,
+			    struct gensio_accepter **accepter)
+{
+    int err;
+    struct stdiona_data *nadata = NULL;
+    unsigned int max_read_size = GENSIO_DEFAULT_BUF_SIZE;
+    int i;
+
+    for (i = 0; args[i]; i++) {
+	if (gensio_check_keyuint(args[i], "readbuf", &max_read_size) > 0)
+	    continue;
+	return EINVAL;
+    }
+
+    err = stdio_nadata_setup(o, max_read_size, &nadata);
+    if (err)
+	return err;
+
+    nadata->connect_runner = o->alloc_runner(o, stdiona_do_connect, nadata);
+    if (!nadata->connect_runner) {
+	stdiona_finish_free(nadata);
+	return ENOMEM;
+    }
+
+    nadata->io.infd = 1;
+    nadata->io.outfd = 0;
+    nadata->err.infd = -1;
+    nadata->err.outfd = -1;
+
+    nadata->acc = gensio_acc_data_alloc(o, cb, user_data, gensio_acc_stdio_func,
+					NULL, "stdio", nadata);
+    if (!nadata->acc) {
+	stdiona_finish_free(nadata);
+	return ENOMEM;
+    }
+    gensio_acc_set_is_reliable(nadata->acc, true);
+
+    *accepter = nadata->acc;
+    return 0;
+}
+
+int
+str_to_stdio_gensio_accepter(const char *str, char *args[],
+			     struct gensio_os_funcs *o,
+			     gensio_accepter_event cb,
+			     void *user_data,
+			     struct gensio_accepter **acc)
+{
+    return stdio_gensio_accepter_alloc(args, o, cb, user_data, acc);
 }
