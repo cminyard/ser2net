@@ -408,6 +408,61 @@ struct waiter { };
 	err_handle("open_s", gensio_open_s(self, data->o));
     }
 
+    %newobject open_channelt;
+    %rename(open_channel) open_channelt;
+    struct gensio *open_channelt(char *args, swig_cb *handler, swig_cb *done) {
+	struct gensio_data *olddata = gensio_get_user_data(self);
+	swig_cb_val *done_val = NULL;
+	void (*open_done)(struct gensio *io, int err, void *cb_data) = NULL;
+	int rv = 0;
+	struct gensio_data *data;
+	struct gensio *io = NULL;
+
+	data = malloc(sizeof(*data));
+	if (!data)
+	    return NULL;
+	data->refcount = 1;
+	data->handler_val = ref_swig_cb(handler, read_callback);
+	data->o = olddata->o;
+
+	if (!nil_swig_cb(done)) {
+	    open_done = gensio_open_done;
+	    done_val = ref_swig_cb(done, open_done);
+	}
+	rv = gensio_open_channel(self, args, gensio_child_event, data,
+				 open_done, done_val, &io);
+	if (rv && done_val)
+	    deref_swig_cb_val(done_val);
+
+	err_handle("open_channel", rv);
+	return io;
+    }
+
+    %newobject open_channel_st;
+    %rename(open_channel_s) open_channel_st;
+    struct gensio *open_channel_st(char *args, swig_cb *handler) {
+	struct gensio_data *olddata = gensio_get_user_data(self);
+	int rv = 0;
+	struct gensio_data *data;
+	struct gensio *io = NULL;
+
+	data = malloc(sizeof(*data));
+	if (!data)
+	    return NULL;
+	data->refcount = 1;
+	if (nil_swig_cb(handler))
+	    data->handler_val = NULL;
+	else
+	    data->handler_val = ref_swig_cb(handler, read_callback);
+	data->o = olddata->o;
+
+	rv = gensio_open_channel_s(self, args, gensio_child_event, data,
+				   data->o, &io);
+
+	err_handle("open_channel", rv);
+	return io;
+    }
+
     %rename(get_type) get_typet;
     const char *get_typet(unsigned int depth) {
 	return gensio_get_type(self, depth);
