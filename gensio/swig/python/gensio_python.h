@@ -394,8 +394,7 @@ sgensio_rts(struct sergensio *sio, int rts)
 
 static int
 gensio_child_event(struct gensio *io, int event, int readerr,
-		   unsigned char *buf, unsigned int *buflen,
-		   unsigned long channel, void *auxdata)
+		   unsigned char *buf, unsigned int *buflen, void *auxdata)
 {
     struct gensio_data *data = gensio_get_user_data(io);
     swig_ref io_ref = { .val = NULL };
@@ -415,7 +414,7 @@ gensio_child_event(struct gensio *io, int event, int readerr,
 
     switch (event) {
     case GENSIO_EVENT_READ:
-	args = PyTuple_New(4);
+	args = PyTuple_New(3);
 
 	io_ref = swig_make_ref(io, gensio);
 	Py_INCREF(io_ref.val);
@@ -431,9 +430,6 @@ gensio_child_event(struct gensio *io, int event, int readerr,
 
 	o = OI_PI_FromStringAndSize((char *) buf, *buflen);
 	PyTuple_SET_ITEM(args, 2, o);
-
-	o = PyInt_FromLong(channel);
-	PyTuple_SET_ITEM(args, 3, o);
 
 	o = swig_finish_call_rv(data->handler_val, "read_callback", args);
 	if (o) {

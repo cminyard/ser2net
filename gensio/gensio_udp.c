@@ -335,7 +335,7 @@ static void udpn_finish_free(struct udpn_data *ndata)
 }
 
 static int
-udpn_write(struct gensio *io, unsigned int *count, unsigned long channel,
+udpn_write(struct gensio *io, unsigned int *count,
 	   const void *buf, unsigned int buflen)
 {
     struct udpn_data *ndata = gensio_get_gensio_data(io);
@@ -461,7 +461,7 @@ udpn_finish_read(struct udpn_data *ndata)
  retry:
     udpna_unlock(nadata);
     count = nadata->data_pending_len;
-    gensio_cb(io, GENSIO_EVENT_READ, 0, nadata->read_data, &count, 0, NULL);
+    gensio_cb(io, GENSIO_EVENT_READ, 0, nadata->read_data, &count, NULL);
     udpna_lock(nadata);
 
     if (ndata->closed)
@@ -727,7 +727,7 @@ udpn_handle_write_incoming(struct udpna_data *nadata, struct udpn_data *ndata)
 
     ndata->in_write = true;
     udpna_unlock(nadata);
-    gensio_cb(io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
+    gensio_cb(io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, NULL);
     udpna_lock(nadata);
     ndata->in_write = false;
 
@@ -766,13 +766,12 @@ udpna_writehandler(int fd, void *cbdata)
 
 static int
 gensio_udp_func(struct gensio *io, int func, unsigned int *count,
-		unsigned long channel,
 		const void *buf, unsigned int buflen,
 		void *auxdata)
 {
     switch (func) {
     case GENSIO_FUNC_WRITE:
-	return udpn_write(io, count, channel, buf, buflen);
+	return udpn_write(io, count, buf, buflen);
 
     case GENSIO_FUNC_RADDR_TO_STR:
 	return udpn_raddr_to_str(io, count, auxdata, buflen);

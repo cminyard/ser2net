@@ -54,7 +54,7 @@ child_write(struct gensio_ll *ll, unsigned int *rcount,
 {
     struct gensio_ll_child *cdata = ll_to_child(ll);
 
-    return gensio_write(cdata->ll.child, rcount, 0, buf, buflen);
+    return gensio_write(cdata->ll.child, rcount, buf, buflen);
 }
 
 static int
@@ -197,8 +197,7 @@ gensio_ll_child_func(struct gensio_ll *ll, int op, int val,
 
 static int
 child_event(struct gensio *io, int event, int err,
-	    unsigned char *buf, unsigned int *buflen,
-	    unsigned long channel, void *auxdata)
+	    unsigned char *buf, unsigned int *buflen, void *auxdata)
 {
     struct gensio_ll_child *cdata = gensio_get_user_data(io);
 

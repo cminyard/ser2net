@@ -497,11 +497,11 @@ struct waiter { };
 
     %rename(write) writet;
     %apply (char *STRING, size_t LENGTH) { (char *str, size_t len) };
-    unsigned int writet(unsigned int channel, char *str, size_t len) {
+    unsigned int writet(char *str, size_t len) {
 	unsigned int wr = 0;
 	int rv;
 
-	rv = gensio_write(self, &wr, channel, str, len);
+	rv = gensio_write(self, &wr, str, len);
 	err_handle("write", rv);
 	return wr;
     }

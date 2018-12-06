@@ -984,8 +984,7 @@ handle_dev_except(port_info_t *port)
 
 static int
 handle_dev_event(struct gensio *io, int event, int err,
-		 unsigned char *buf, unsigned int *buflen,
-		 unsigned long channel, void *auxdata)
+		 unsigned char *buf, unsigned int *buflen, void *auxdata)
 {
     port_info_t *port = gensio_get_user_data(io);
     net_info_t *netcon;
@@ -1060,7 +1059,7 @@ gbuf_write(port_info_t *port, struct gbuf *buf)
     int err;
     unsigned int written;
 
-    err = gensio_write(port->io, &written, 0, buf->buf + buf->pos,
+    err = gensio_write(port->io, &written, buf->buf + buf->pos,
 		       buf->cursize - buf->pos);
     if (err)
 	return err;
@@ -1232,7 +1231,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 
     /* Can't use buffer send operation here, multiple writers can send
        from the buffers. */
-    reterr = gensio_write(netcon->net, &count, 0, buf->buf + *pos, to_send);
+    reterr = gensio_write(netcon->net, &count, buf->buf + *pos, to_send);
     if (reterr == EPIPE) {
 	shutdown_one_netcon(netcon, "EPIPE");
 	return -1;
@@ -1566,8 +1565,7 @@ s2n_sync(struct sergensio *sio)
 
 static int
 handle_net_event(struct gensio *net, int event, int err,
-		 unsigned char *buf, unsigned int *buflen,
-		 unsigned long channel, void *auxdata)
+		 unsigned char *buf, unsigned int *buflen, void *auxdata)
 {
     switch (event) {
     case GENSIO_EVENT_READ:
@@ -2239,7 +2237,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	for_each_connection(port, netcon) {
 	    if (!netcon->net)
 		continue;
-	    gensio_write(netcon->net, NULL, 0, errstr, strlen(errstr));
+	    gensio_write(netcon->net, NULL, errstr, strlen(errstr));
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
 	}
@@ -2315,7 +2313,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	if (err) {
 	    const char *errstr = strerror(err);
 
-	    gensio_write(netcon->net, NULL, 0, errstr, strlen(errstr));
+	    gensio_write(netcon->net, NULL, errstr, strlen(errstr));
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
 	}
@@ -2455,7 +2453,7 @@ handle_rot_child_event(struct gensio_accepter *accepter, int event, void *data)
     so->unlock(ports_lock);
 
     err = "No free port found\r\n";
-    gensio_write(net, NULL, 0, err, strlen(err));
+    gensio_write(net, NULL, err, strlen(err));
     gensio_free(net);
     return 0;
 }
@@ -2548,7 +2546,7 @@ kick_old_user(port_info_t *port, net_info_t *netcon, struct gensio *new_net)
 
     /* If another user is waiting for a kick, kick that user. */
     if (netcon->new_net) {
-	gensio_write(netcon->new_net, NULL, 0, err, strlen(err));
+	gensio_write(netcon->new_net, NULL, err, strlen(err));
 	gensio_free(netcon->new_net);
     }
 
@@ -2570,7 +2568,7 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
 
-	gensio_write(netcon->new_net, NULL, 0, err, strlen(err));
+	gensio_write(netcon->new_net, NULL, err, strlen(err));
 	gensio_free(netcon->new_net);
 	netcon->new_net = NULL;
 	return;
@@ -2653,7 +2651,7 @@ handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
     out_err:
 	so->unlock(port->lock);
 	so->unlock(ports_lock);
-	gensio_write(net, NULL, 0, err, strlen(err));
+	gensio_write(net, NULL, err, strlen(err));
 	gensio_free(net);
 	return 0;
     }
@@ -2792,7 +2790,7 @@ free_port(port_info_t *port)
 	for_each_connection(port, netcon) {
 	    char *err = "Port was deleted\n\r";
 	    if (netcon->new_net) {
-		gensio_write(netcon->new_net, NULL, 0, err, strlen(err));
+		gensio_write(netcon->new_net, NULL, err, strlen(err));
 		gensio_free(netcon->new_net);
 	    }
 	    if (netcon->runshutdown)

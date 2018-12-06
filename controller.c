@@ -267,7 +267,7 @@ void
 controller_write(struct controller_info *cntlr, const char *data,
 		 unsigned int count)
 {
-    gensio_write(cntlr->net, NULL, 0, data, count);
+    gensio_write(cntlr->net, NULL, data, count);
 }
 
 static char *help_str =
@@ -554,7 +554,7 @@ controller_write_ready(struct gensio *net)
     if (cntlr->in_shutdown)
 	goto out;
 
-    err = gensio_write(net, &write_count, 0,
+    err = gensio_write(net, &write_count,
 		       &(cntlr->outbuf[cntlr->outbuf_pos]),
 		       cntlr->outbuf_count);
     if (err == EAGAIN) {
@@ -588,8 +588,7 @@ controller_write_ready(struct gensio *net)
 
 static int
 controller_io_event(struct gensio *net, int event, int err,
-		    unsigned char *buf, unsigned int *buflen,
-		    unsigned long channel, void *auxdata)
+		    unsigned char *buf, unsigned int *buflen, void *auxdata)
 {
     switch (event) {
     case GENSIO_EVENT_READ:
@@ -657,7 +656,7 @@ controller_acc_child_event(struct gensio_accepter *accepter, int event,
 errout:
     so->unlock(cntlr_lock);
     /* We have a problem so refuse this one. */
-    gensio_write(net, NULL, 0, err, strlen(err));
+    gensio_write(net, NULL, err, strlen(err));
     gensio_free(net);
     return 0;
 }

@@ -244,7 +244,7 @@ filter_ll_urgent(struct basen_data *ndata)
 {
     if (ndata->filter)
 	gensio_filter_ll_urgent(ndata->filter);
-    gensio_cb(ndata->io, GENSIO_EVENT_URGENT, 0, NULL, 0, 0, NULL);
+    gensio_cb(ndata->io, GENSIO_EVENT_URGENT, 0, NULL, NULL, NULL);
 }
 
 static int
@@ -357,7 +357,7 @@ basen_write_data_handler(void *cb_data,
 }
 
 static int
-basen_write(struct gensio *io, unsigned int *rcount, unsigned long channel,
+basen_write(struct gensio *io, unsigned int *rcount,
 	    const void *buf, unsigned int buflen)
 {
     struct basen_data *ndata = gensio_get_gensio_data(io);
@@ -420,7 +420,7 @@ basen_read_data_handler(void *cb_data,
  retry:
     if (ndata->state == BASEN_OPEN && ndata->read_enabled) {
 	rval = buflen - count;
-	gensio_cb(ndata->io, GENSIO_EVENT_READ, 0, buf + count, &rval, 0, NULL);
+	gensio_cb(ndata->io, GENSIO_EVENT_READ, 0, buf + count, &rval, NULL);
 	count += rval;
 	if (count < buflen)
 	    goto retry;
@@ -810,13 +810,12 @@ basen_set_write_callback_enable(struct gensio *io, bool enabled)
 
 static int
 gensio_base_func(struct gensio *io, int func, unsigned int *count,
-		unsigned long channel,
 		const void *buf, unsigned int buflen,
 		void *auxdata)
 {
     switch (func) {
     case GENSIO_FUNC_WRITE:
-	return basen_write(io, count, channel, buf, buflen);
+	return basen_write(io, count, buf, buflen);
 
     case GENSIO_FUNC_RADDR_TO_STR:
 	return basen_raddr_to_str(io, count, auxdata, buflen);
@@ -884,7 +883,7 @@ basen_ll_read(void *cb_data, int readerr,
 	    unsigned int len = 0;
 
 	    basen_unlock(ndata);
-	    gensio_cb(io, GENSIO_EVENT_READ, readerr, NULL, &len, 0, NULL);
+	    gensio_cb(io, GENSIO_EVENT_READ, readerr, NULL, &len, NULL);
 	    basen_lock(ndata);
 	} else {
 	    basen_i_close(ndata, NULL, NULL);
@@ -948,7 +947,7 @@ basen_ll_write_ready(void *cb_data)
     if (ndata->state != BASEN_IN_FILTER_OPEN && !filter_ll_write_pending(ndata)
 		&& ndata->xmit_enabled) {
 	basen_unlock(ndata);
-	gensio_cb(ndata->io, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, 0, NULL);
+	gensio_cb(ndata->io, GENSIO_EVENT_WRITE_READY, 0, NULL, 0, NULL);
 	basen_lock(ndata);
     }
 

@@ -62,7 +62,7 @@ iterm_ser_cb(void *handler_data, int op, void *data)
 	return;
     }
 
-    idata->cb(idata->io, op, 0, NULL, NULL, 0, NULL);
+    idata->cb(idata->io, op, 0, NULL, NULL, NULL);
 }
 
 static int

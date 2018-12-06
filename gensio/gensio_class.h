@@ -35,7 +35,6 @@
 
 /*
  * count => count
- * channel => channel
  * buf => buf
  * buflen => buflen
  */
@@ -97,7 +96,6 @@ struct gensio_func_open_channel_data {
 #define GENSIO_FUNC_OPEN_CHANNEL	11
 
 typedef int (*gensio_func)(struct gensio *io, int func, unsigned int *count,
-			   unsigned long channel,
 			   const void *buf, unsigned int buflen,
 			   void *auxdata);
 
@@ -123,8 +121,7 @@ void gensio_set_is_reliable(struct gensio *io, bool is_reliable);
 gensio_event gensio_get_cb(struct gensio *io);
 void gensio_set_cb(struct gensio *io, gensio_event cb, void *user_data);
 int gensio_cb(struct gensio *io, int event, int err,
-	      unsigned char *buf, unsigned int *buflen,
-	      unsigned long channel, void *auxdata);
+	      unsigned char *buf, unsigned int *buflen, void *auxdata);
 
 /*
  * Add and get the classdata for a gensio.

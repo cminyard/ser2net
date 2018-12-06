@@ -540,7 +540,7 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	return;
 
     case 7:
@@ -548,19 +548,19 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	return;
 
     case 8:
 	val = 1;
 	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	return;
 
     case 9:
 	val = 0;
 	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	return;
 
     case 12:
@@ -568,7 +568,7 @@ stel_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_FLUSH, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	return;
 
     default:
@@ -843,7 +843,7 @@ stela_cb_com_port_will_do(void *handler_data, unsigned char cmd)
 
 	    sdata->reported_modemstate = true;
 	    gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	} else {
 	    struct timeval timeout;
 
@@ -886,7 +886,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    val |= option[5];
 	}
 	gensio_cb(io, GENSIO_EVENT_SER_BAUD, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 2:
@@ -894,7 +894,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_DATASIZE, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 3:
@@ -902,7 +902,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_PARITY, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 4:
@@ -910,7 +910,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_STOPBITS, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 5:
@@ -920,40 +920,40 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	case 0: case 1: case 2: case 3:
 	    val = option[2];
 	    gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	    break;
 	case 4: case 5: case 6:
 	    val = option[2] - 4;
 	    gensio_cb(io, GENSIO_EVENT_SER_SBREAK, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	    break;
 	case 7: case 8: case 9:
 	    val = option[2] - 7;
 	    gensio_cb(io, GENSIO_EVENT_SER_DTR, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	    break;
 	case 10: case 11: case 12:
 	    val = option[2] - 10;
 	    gensio_cb(io, GENSIO_EVENT_SER_RTS, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	    break;
 	case 13: case 14: case 15: case 16: case 17: case 18: case 19:
 	    val = option[2] - 13;
 	    gensio_cb(io, GENSIO_EVENT_SER_IFLOWCONTROL, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	}
 	break;
 
     case 8:
 	val = 1;
 	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 9:
 	val = 0;
 	gensio_cb(io, GENSIO_EVENT_SER_FLOWCONTROL, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 10:
@@ -961,7 +961,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_LINESTATE, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     case 11:
@@ -969,7 +969,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 	
     case 12:
@@ -977,7 +977,7 @@ stela_cb_com_port_cmd(void *handler_data, const unsigned char *option,
 	    return;
 	val = option[2];
 	gensio_cb(io, GENSIO_EVENT_SER_FLUSH, 0,
-		  (unsigned char *) &val, &vlen, 0, NULL);
+		  (unsigned char *) &val, &vlen, NULL);
 	break;
 
     default:
@@ -992,7 +992,7 @@ stela_got_cmd(void *handler_data, unsigned char cmd)
     struct gensio *io = sergensio_to_gensio(sdata->sio);
 
     if (cmd == TN_BREAK)
-	gensio_cb(io, GENSIO_EVENT_SER_SEND_BREAK, 0, NULL, 0, 0, NULL);
+	gensio_cb(io, GENSIO_EVENT_SER_SEND_BREAK, 0, NULL, NULL, NULL);
 }
 
 static void
@@ -1001,7 +1001,7 @@ stela_cb_got_sync(void *handler_data)
     struct stel_data *sdata = handler_data;
     struct gensio *io = sergensio_to_gensio(sdata->sio);
 
-    gensio_cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, 0, 0, NULL);
+    gensio_cb(io, GENSIO_EVENT_SER_SYNC, 0, NULL, NULL, NULL);
 }
 
 static void
@@ -1026,7 +1026,7 @@ stela_timeout(void *handler_data)
 	if (gensio_get_cb(io)) {
 	    sdata->reported_modemstate = true;
 	    gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		      (unsigned char *) &val, &vlen, 0, NULL);
+		      (unsigned char *) &val, &vlen, NULL);
 	} else {
 	    struct timeval timeout;
 

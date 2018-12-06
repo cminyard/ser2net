@@ -115,7 +115,7 @@ class HandleData:
 
     # Everything below here is internal handling functions.
 
-    def read_callback(self, io, err, buf, flags):
+    def read_callback(self, io, err, buf):
         if self.to_compare:
             iolen = len(self.to_compare)
         elif self.to_waitfor:
@@ -192,7 +192,7 @@ class HandleData:
             wrdata = self.to_write[self.wrpos:]
         else:
             wrdata = self.to_write[self.wrpos:self.wrpos + self.chunksize]
-        count = io.write(0, wrdata)
+        count = io.write(wrdata)
         if (debug or self.debug):
             print(self.name + ": wrote %d bytes" % count)
 
@@ -448,7 +448,7 @@ class Ser2netDaemon:
         os.kill(self.pid, sig)
         return
 
-    def read_callback(self, io, err, buf, flags):
+    def read_callback(self, io, err, buf):
         print "Error from ser2net: " + buf;
         return len(buf)
 

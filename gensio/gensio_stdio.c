@@ -33,7 +33,6 @@
 #include <gensio/gensio_class.h>
 
 static int gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
-			     unsigned long channel,
 			     const void *buf, unsigned int buflen,
 			     void *auxdata);
 
@@ -174,7 +173,7 @@ stdiona_deref(struct stdiona_data *nadata)
 }
 
 static int
-stdion_write(struct gensio *io, unsigned int *count, unsigned long channel,
+stdion_write(struct gensio *io, unsigned int *count,
 	     const void *buf, unsigned int buflen)
 {
     struct stdion_channel *schan = gensio_get_gensio_data(io);
@@ -254,8 +253,7 @@ stdion_finish_read(struct stdion_channel *schan, int err)
  retry:
     count = schan->data_pending_len;
     gensio_cb(io, GENSIO_EVENT_READ, err,
-	      schan->read_data + schan->data_pos, &count,
-	      0, NULL);
+	      schan->read_data + schan->data_pos, &count, NULL);
     stdiona_lock(nadata);
     if (!err && count < schan->data_pending_len) {
 	/* The user didn't consume all the data. */
@@ -447,7 +445,7 @@ stdion_write_ready(int fd, void *cbdata)
 {
     struct stdion_channel *schan = cbdata;
 
-    gensio_cb(schan->io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, 0, NULL);
+    gensio_cb(schan->io, GENSIO_EVENT_WRITE_READY, 0, NULL, NULL, NULL);
 }
 
 static int
@@ -730,13 +728,12 @@ stdion_ref(struct gensio *io)
 
 static int
 gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
-		  unsigned long channel,
 		  const void *buf, unsigned int buflen,
 		  void *auxdata)
 {
     switch (func) {
     case GENSIO_FUNC_WRITE:
-	return stdion_write(io, count, channel, buf, buflen);
+	return stdion_write(io, count, buf, buflen);
 
     case GENSIO_FUNC_RADDR_TO_STR:
 	return stdion_raddr_to_str(io, count, auxdata, buflen);

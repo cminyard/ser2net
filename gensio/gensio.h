@@ -335,10 +335,6 @@ struct gensio;
  *            lenth, the user should update it with the number of bytes
  *            actually processed.  NULL for events not transferring data.
  *
- *   channel - For gensios that have sub-channels (ssh, websockets, etc)
- *             this gives a channel number.  For stdio, 0 is stdout and
- *             1 is stderr.
- *
  *   auxdata - Depending on the event, other data may be transferred.
  *             this holds a pointer to it.
  *
@@ -347,7 +343,7 @@ struct gensio;
  */
 typedef int (*gensio_event)(struct gensio *io, int event, int err,
 			    unsigned char *buf, unsigned int *buflen,
-			    unsigned long channel, void *auxdata);
+			    void *auxdata);
 
 /*
  * Callbacks for functions that don't give an error (close);
@@ -392,7 +388,7 @@ void gensio_set_user_data(struct gensio *io, void *user_data);
  * Note that count may be set to zero.  This can happen on an
  * EAGAIN type situation.  count may be NULL if you don't care.
  */
-int gensio_write(struct gensio *io, unsigned int *count, unsigned long channel,
+int gensio_write(struct gensio *io, unsigned int *count,
 		 const void *buf, unsigned int buflen);
 
 /*

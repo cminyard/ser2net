@@ -890,7 +890,7 @@ termios_timeout(struct gensio_timer *t, void *cb_data)
 	unsigned int vlen = sizeof(modemstate);
 
 	gensio_cb(io, GENSIO_EVENT_SER_MODEMSTATE, 0,
-		  (unsigned char *) &modemstate, &vlen, 0, NULL);
+		  (unsigned char *) &modemstate, &vlen, NULL);
     }
 
     if (sdata->modemstate_mask) {
