@@ -430,6 +430,16 @@ struct waiter { };
 	err_handle("close", rv);
     }
 
+    %rename(close_s) close_st;
+    void close_st() {
+	struct gensio_data *data = gensio_get_user_data(self);
+	int rv;
+
+	rv = gensio_close_s(self, data->o);
+
+	err_handle("close_s", rv);
+    }
+
     %rename(write) writet;
     %apply (char *STRING, size_t LENGTH) { (char *str, size_t len) };
     unsigned int writet(unsigned int channel, char *str, size_t len) {
