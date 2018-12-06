@@ -418,6 +418,9 @@ class Ser2netDaemon:
         self.io.closeme = True
         self.io.open_s()
 
+        # Open stderr output
+        self.err = self.io.open_channel_s("", self)
+
         self.pid = self.io.remote_id()
         self.handler.set_waitfor("Ready\n")
         if (self.handler.wait_timeout(2000)):
@@ -432,6 +435,7 @@ class Ser2netDaemon:
         # Leave read on so if we enable debug we can see output from the
         # daemon.
         self.io.read_cb_enable(True)
+        self.err.read_cb_enable(True)
         return
 
     def __del__(self):
@@ -443,6 +447,10 @@ class Ser2netDaemon:
         """"Send a signal to ser2net"""
         os.kill(self.pid, sig)
         return
+
+    def read_callback(self, io, err, buf, flags):
+        print "Error from ser2net: " + buf;
+        return len(buf)
 
     def terminate(self):
         """Terminate the running ser2net
@@ -456,6 +464,8 @@ class Ser2netDaemon:
             print("Terminating")
         if self.io.closeme:
             self.handler.close()
+            self.err.close_s()
+
         count = 10
         while (count > 0):
             if (count < 6):
