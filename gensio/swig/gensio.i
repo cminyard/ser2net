@@ -383,6 +383,7 @@ struct waiter { };
 	err_handle("remote_id", gensio_remote_id(self, &remid));
 	return remid;
     }
+
     %rename(open) opent;
     void opent(swig_cb *done) {
 	swig_cb_val *done_val = NULL;
@@ -405,6 +406,11 @@ struct waiter { };
 	struct gensio_data *data = gensio_get_user_data(self);
 
 	err_handle("open_s", gensio_open_s(self, data->o));
+    }
+
+    %rename(get_type) get_typet;
+    const char *get_typet(unsigned int depth) {
+	return gensio_get_type(self, depth);
     }
 
     %rename(close) closet;
