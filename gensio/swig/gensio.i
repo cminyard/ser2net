@@ -135,9 +135,9 @@ gensio_do_wait(struct waiter *waiter, unsigned int count,
 
     do {
 	GENSIO_SWIG_C_BLOCK_ENTRY
-	    err = waiter->o->wait_intr(waiter->waiter, count, timeout);
+	err = waiter->o->wait_intr(waiter->waiter, count, timeout);
 	GENSIO_SWIG_C_BLOCK_EXIT
-	if (check_for_err()) {
+	if (check_for_err(err)) {
 	    if (prev_waiter)
 		prev_waiter->o->wake(prev_waiter->waiter);
 	    break;

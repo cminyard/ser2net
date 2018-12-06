@@ -727,7 +727,15 @@ add_python_result(PyObject *result, PyObject *val)
     return result;
 }
 
-#define check_for_err PyErr_Occurred
+static bool check_for_err(int err)
+{
+    bool rv;
+
+    if (err == EINTR)
+	PyErr_CheckSignals();
+    rv = (bool) PyErr_Occurred();
+    return rv;
+};
 
 static void err_handle(char *name, int rv)
 {
