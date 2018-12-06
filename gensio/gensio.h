@@ -477,6 +477,16 @@ const char *gensio_get_type(struct gensio *io, unsigned int depth);
 int gensio_close(struct gensio *io, gensio_done close_done, void *close_data);
 
 /*
+ * Like gensio_close, but blocks until the operation is complete.
+ *
+ * BE VERY CAREFUL WITH THIS FUNCTION.  Do not call it from a callback
+ * because it waits until all operations on the gensio are done, and
+ * they won't be done until the callback returns.  You will deadlock
+ * if you do this.
+ */
+int gensio_close_s(struct gensio *io, struct gensio_os_funcs *o);
+
+/*
  * Frees data assoicated with the gensio.  If it is open, the gensio is
  * closed.  Note that you should not call gensio_free() after gensio_close()
  * before the done callback is called.  The results are undefined.

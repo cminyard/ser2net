@@ -715,6 +715,36 @@ gensio_close(struct gensio *io, gensio_done close_done, void *close_data)
     return io->func(io, GENSIO_FUNC_CLOSE, NULL, 0, close_done, 0, close_data);
 }
 
+struct gensio_close_s_data {
+    struct gensio_os_funcs *o;
+    struct gensio_waiter *waiter;
+};
+
+static void
+gensio_close_s_done(struct gensio *io, void *cb_data)
+{
+    struct gensio_close_s_data *data = cb_data;
+
+    data->o->wake(data->waiter);
+}
+
+int
+gensio_close_s(struct gensio *io, struct gensio_os_funcs *o)
+{
+    struct gensio_close_s_data data;
+    int err;
+
+    data.o = o;
+    data.waiter = o->alloc_waiter(o);
+    if (!data.waiter)
+	return ENOMEM;
+    err = gensio_close(io, gensio_close_s_done, &data);
+    if (!err)
+	o->wait(data.waiter, 1, NULL);
+    o->free_waiter(data.waiter);
+    return err;
+}
+
 void
 gensio_free(struct gensio *io)
 {
