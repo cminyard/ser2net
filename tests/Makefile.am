@@ -9,9 +9,13 @@ sertest_LDADD = $(top_builddir)/gensio/libgensio.a \
 		$(top_builddir)/utils/libutils.a \
 		-lreadline $(OPENSSL_LIBS)
 
-can_builddir = $(shell readlink -f $(top_builddir))
+utst_builddir = $(shell readlink -f $(top_builddir))
+utst_srcdir = $(shell readlink -f $(top_srcdir))
 
-AM_TESTS_ENVIRONMENT = PYTHONPATH=$(can_builddir)/gensio/swig/python:$(can_builddir)/gensio/swig/python/.libs TESTPATH=$(can_srcdir)/tests SER2NET_EXEC=$(can_builddir)/ser2net
+AM_TESTS_ENVIRONMENT = PYTHONPATH=$(utst_builddir)/gensio/swig/python:$(utst_builddir)/gensio/swig/python/.libs TESTPATH=$(utst_srcdir)/tests SER2NET_EXEC=$(utst_builddir)/ser2net
+
+test_setup:
+	echo $(AM_TESTS_ENVIRONMENT) python $(utst_srcdir)/tests/
 
 TESTS = test_gensio.py \
 	test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
