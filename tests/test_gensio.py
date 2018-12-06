@@ -4,19 +4,21 @@ import gensio
 
 o = gensio.alloc_gensio_selector();
 
-def t1():
+def test_echo_device():
     print("Test echo device")
     io = utils.alloc_io(o, "termios,/dev/ttyEcho0,38400")
     utils.test_dataxfer(io, io, "This is a test string!")
     utils.io_close(io)
+    print("  Success!")
 
-def t2():
+def test_serial_pipe_device():
     print("Test serial pipe device")
     io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,9600")
     io2 = utils.alloc_io(o, "termios,/dev/ttyPipeB0,9600")
     utils.test_dataxfer(io1, io2, "This is a test string!")
     utils.io_close(io1)
     utils.io_close(io2)
+    print("  Success!")
 
 class TestAccept:
     def __init__(self, o, io1, iostr, tester, name = None,
@@ -57,6 +59,7 @@ class TestAccept:
 
 def do_test(io1, io2):
     utils.test_dataxfer(io1, io2, "This is a test string!")
+    print("  Success!")
 
 def ta_tcp():
     print("Test accept tcp")
@@ -151,36 +154,12 @@ def do_telnet_test(io1, io2):
         raise Exception("Timeout waiting for server rts set")
     if io1.handler.wait_timeout(1000):
         raise Exception("Timeout waiting for client rts response")
-
     return
 
 def ta_ssl_telnet():
-    print("Test accept telnet")
+    print("Test accept ssl telnet")
     io1 = utils.alloc_io(o, "telnet,tcp,localhost,3027", do_open = False)
     ta = TestAccept(o, io1, "telnet(rfc2217=true),3027", do_telnet_test)
-
-def test_rs485():
-    io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL,rs485=103:495"
-    io2str = "termios,/dev/ttyPipeB0,9600N81"
-
-    print("termios rs485:\n  io1=%s\n  io2=%s" % (io1str, io2str))
-
-    o = gensio.alloc_gensio_selector()
-    io1 = utils.alloc_io(o, io1str)
-    io2 = utils.alloc_io(o, io2str)
-
-    sio2 = io2.cast_to_sergensio()
-    rs485 = sio2.get_remote_rs485()
-    check_rs485 = "103 495 enabled"
-    if rs485 != check_rs485:
-        raise Exception("%s: %s: Modemstate was not '%s', it was '%s'" %
-                        ("test rs485", io1.handler.name, check_rs485, rs485))
-
-    utils.io_close(io1)
-    utils.io_close(io2)
-    print("  Success!")
-
-test_rs485()
 
 def test_modemstate():
     io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL"
@@ -280,6 +259,19 @@ def test_stdio_basic():
     io = utils.alloc_io(o, "stdio,cat", chunksize = 64)
     utils.test_dataxfer(io, io, "This is a test string!")
     utils.io_close(io)
+    print("  Success!")
+
+def test_stdio_basic_stderr():
+    print("Test stdio basic stderr echo")
+    io = utils.alloc_io(o, "stdio,sh -c 'cat 1>&2'", chunksize = 64)
+    io.handler.ignore_input = True
+    io.read_cb_enable(True)
+    err = io.open_channel_s("", None)
+    utils.HandleData(o, "stderr", chunksize = 64, io = err)
+    utils.test_dataxfer(io, err, "This is a test string!")
+    utils.io_close(io)
+    utils.io_close(err)
+    print("  Success!")
 
 def test_stdio_small():
     print("Test stdio small echo")
@@ -287,6 +279,7 @@ def test_stdio_small():
     io = utils.alloc_io(o, "stdio,cat", chunksize = 64)
     utils.test_dataxfer(io, io, rb)
     utils.io_close(io)
+    print("  Success!")
 
 def do_small_test(io1, io2):
     rb = gensio.get_random_bytes(512)
@@ -294,6 +287,7 @@ def do_small_test(io1, io2):
     utils.test_dataxfer(io1, io2, rb)
     print("  testing io2 to io1")
     utils.test_dataxfer(io2, io1, rb)
+    print("  Success!")
 
 def test_tcp_small():
     print("Test tcp small")
@@ -316,6 +310,7 @@ def test_ipmisol_small():
     utils.test_dataxfer(io1, io2, "This is a test string!")
     utils.io_close(io1)
     utils.io_close(io2)
+    print("  Success!")
 
 test_ipmisol_small()
 
@@ -328,13 +323,34 @@ def test_ipmisol_large():
     utils.test_dataxfer(io1, io2, rb, timeout=10000)
     utils.io_close(io1)
     utils.io_close(io2)
+    print("  Success!")
 
-test_ipmisol_large()
+def test_rs485():
+    io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL,rs485=103:495"
+    io2str = "termios,/dev/ttyPipeB0,9600N81"
 
+    print("termios rs485:\n  io1=%s\n  io2=%s" % (io1str, io2str))
+
+    o = gensio.alloc_gensio_selector()
+    io1 = utils.alloc_io(o, io1str)
+    io2 = utils.alloc_io(o, io2str)
+
+    sio2 = io2.cast_to_sergensio()
+    rs485 = sio2.get_remote_rs485()
+    check_rs485 = "103 495 enabled"
+    if rs485 != check_rs485:
+        raise Exception("%s: %s: Modemstate was not '%s', it was '%s'" %
+                        ("test rs485", io1.handler.name, check_rs485, rs485))
+
+    utils.io_close(io1)
+    utils.io_close(io2)
+    print("  Success!")
+
+test_echo_device()
+test_serial_pipe_device()
 test_stdio_basic()
+test_stdio_basic_stderr()
 test_stdio_small()
-t1()
-t2()
 ta_tcp()
 ta_udp()
 ta_ssl_tcp()
@@ -342,3 +358,5 @@ test_modemstate()
 test_tcp_small()
 test_telnet_small()
 ta_ssl_telnet()
+test_ipmisol_large()
+test_rs485()
