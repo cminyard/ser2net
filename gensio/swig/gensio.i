@@ -403,9 +403,7 @@ struct waiter { };
 
     %rename(open_s) open_st;
     void open_st() {
-	struct gensio_data *data = gensio_get_user_data(self);
-
-	err_handle("open_s", gensio_open_s(self, data->o));
+	err_handle("open_s", gensio_open_s(self));
     }
 
     %newobject open_channelt;
@@ -456,8 +454,7 @@ struct waiter { };
 	    data->handler_val = ref_swig_cb(handler, read_callback);
 	data->o = olddata->o;
 
-	rv = gensio_open_channel_s(self, args, gensio_child_event, data,
-				   data->o, &io);
+	rv = gensio_open_channel_s(self, args, gensio_child_event, data, &io);
 
 	err_handle("open_channel", rv);
 	return io;
@@ -487,12 +484,7 @@ struct waiter { };
 
     %rename(close_s) close_st;
     void close_st() {
-	struct gensio_data *data = gensio_get_user_data(self);
-	int rv;
-
-	rv = gensio_close_s(self, data->o);
-
-	err_handle("close_s", rv);
+	err_handle("close_s", gensio_close_s(self));
     }
 
     %rename(write) writet;

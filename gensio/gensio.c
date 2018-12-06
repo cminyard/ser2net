@@ -626,8 +626,9 @@ gensio_open_s_done(struct gensio *io, int err, void *cb_data)
 }
 
 int
-gensio_open_s(struct gensio *io, struct gensio_os_funcs *o)
+gensio_open_s(struct gensio *io)
 {
+    struct gensio_os_funcs *o = io->o;
     struct gensio_open_s_data data;
     int err;
 
@@ -674,8 +675,9 @@ gensio_open_channel(struct gensio *io, const char *args,
 int
 gensio_open_channel_s(struct gensio *io, const char *args,
 		      gensio_event cb, void *user_data,
-		      struct gensio_os_funcs *o, struct gensio **new_io)
+		      struct gensio **new_io)
 {
+    struct gensio_os_funcs *o = io->o;
     struct gensio_open_s_data data;
     int err;
 
@@ -728,8 +730,9 @@ gensio_close_s_done(struct gensio *io, void *cb_data)
 }
 
 int
-gensio_close_s(struct gensio *io, struct gensio_os_funcs *o)
+gensio_close_s(struct gensio *io)
 {
+    struct gensio_os_funcs *o = io->o;
     struct gensio_close_s_data data;
     int err;
 

@@ -431,7 +431,7 @@ int gensio_open(struct gensio *io, gensio_done_err open_done, void *open_data);
 /*
  * Like gensio_open(), but waits for the open to complete.
  */
-int gensio_open_s(struct gensio *io, struct gensio_os_funcs *o);
+int gensio_open_s(struct gensio *io);
 
 /*
  * Open a channel on the given gensio.  The gensio must one that
@@ -456,7 +456,7 @@ int gensio_open_channel(struct gensio *io, const char *args,
  */
 int gensio_open_channel_s(struct gensio *io, const char *args,
 			  gensio_event cb, void *user_data,
-			  struct gensio_os_funcs *o, struct gensio **new_io);
+			  struct gensio **new_io);
 
 /*
  * Return the type string for the gensio (if depth is 0) or one of its
@@ -480,7 +480,7 @@ int gensio_close(struct gensio *io, gensio_done close_done, void *close_data);
  * they won't be done until the callback returns.  You will deadlock
  * if you do this.
  */
-int gensio_close_s(struct gensio *io, struct gensio_os_funcs *o);
+int gensio_close_s(struct gensio *io);
 
 /*
  * Frees data assoicated with the gensio.  If it is open, the gensio is

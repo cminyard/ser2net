@@ -292,7 +292,7 @@ open_gensio(struct sertest_context *c,
 {
     int err;
 
-    err = gensio_open_s(le->io, c->o);
+    err = gensio_open_s(le->io);
     if (err)
 	abspr(c->out, "Error opening gensio\n");
 
