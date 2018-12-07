@@ -5,9 +5,7 @@ noinst_PROGRAMS = sertest
 
 sertest_SOURCES = sertest.c
 
-sertest_LDADD = $(top_builddir)/gensio/libgensio.a \
-		$(top_builddir)/utils/libutils.a \
-		-lreadline $(OPENSSL_LIBS)
+sertest_LDADD = $(top_builddir)/gensio/libgensio.la -lreadline $(OPENSSL_LIBS)
 
 utst_builddir = $(shell readlink -f $(top_builddir))
 utst_srcdir = $(shell readlink -f $(top_srcdir))
@@ -28,3 +26,6 @@ TESTS = test_gensio.py \
 	test_xfer_large_stdio.py test_xfer_large_tcp.py \
 	test_xfer_large_telnet.py test_xfer_large_ssl_tcp.py \
 	test_xfer_large_telnet.py test_xfer_large_ipmisol.py
+
+EXTRA_DIST = $(TESTS) utils.py dataxfer.py ipmisimdaemon.py termioschk.py \
+	CA.pem cert.pem key.pem

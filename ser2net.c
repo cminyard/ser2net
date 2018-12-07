@@ -34,9 +34,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <utils/utils.h>
-#include <utils/selector.h>
-
+#include <gensio/selector.h>
 #include <gensio/gensio_selector.h>
 
 #include "ser2net.h"
@@ -134,6 +132,73 @@ reread_config_file(void)
     }
  config_port_unchanged:
     return;
+}
+
+void
+write_ignore_fail(int fd, const char *data, size_t count)
+{
+    ssize_t written;
+
+    while ((written = write(fd, data, count)) > 0) {
+	data += written;
+	count -= written;
+    }
+}
+
+void
+add_usec_to_timeval(struct timeval *tv, int usec)
+{
+    tv->tv_usec += usec;
+    while (usec >= 1000000) {
+	usec -= 1000000;
+	tv->tv_sec += 1;
+    }
+}
+
+int
+sub_timeval_us(struct timeval *left, struct timeval *right)
+{
+    struct timeval dest;
+
+    dest.tv_sec = left->tv_sec - right->tv_sec;
+    dest.tv_usec = left->tv_usec - right->tv_usec;
+    while (dest.tv_usec < 0) {
+	dest.tv_usec += 1000000;
+	dest.tv_sec--;
+    }
+
+    return (dest.tv_sec * 1000000) + dest.tv_usec;
+}
+
+/* Scan for a positive integer, and return it.  Return -1 if the
+   integer was invalid. */
+int
+scan_int(const char *str)
+{
+    int rv = 0;
+
+    if (*str == '\0') {
+	return -1;
+    }
+
+    for (;;) {
+	switch (*str) {
+	case '0': case '1': case '2': case '3': case '4':
+	case '5': case '6': case '7': case '8': case '9':
+	    rv = (rv * 10) + ((*str) - '0');
+	    break;
+
+	case '\0':
+	    return rv;
+
+	default:
+	    return -1;
+	}
+
+	str++;
+    }
+
+    return rv;
 }
 
 static void

@@ -1,6 +1,6 @@
 /*
  *  ser2net - A program for allowing telnet connection to serial ports
- *  Copyright (C) 2018  Corey Minyard <minyard@acm.org>
+ *  Copyright (C) 2001  Corey Minyard <minyard@acm.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,29 +17,14 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-/* Utils for waiting and handling a select loop. */
+#ifndef ABSOUT_H
+#define ABSOUT_H
 
-#ifndef WAITER_H
-#define WAITER_H
+struct absout {
+    int (*out)(struct absout *e, const char *str, ...);
+    void *data;
+};
+#define abspr(abs, fmt, ...) \
+  abs->out(abs, fmt, ##__VA_ARGS__)
 
-#include <gensio/selector.h>
-
-typedef struct waiter_s waiter_t;
-
-waiter_t *alloc_waiter(struct selector_s *sel, int wake_sig);
-
-void free_waiter(waiter_t *waiter);
-
-int wait_for_waiter_timeout(waiter_t *waiter, unsigned int count,
-			    struct timeval *timeout);
-
-void wait_for_waiter(waiter_t *waiter, unsigned int count);
-
-int wait_for_waiter_timeout_intr(waiter_t *waiter, unsigned int count,
-				 struct timeval *timeout);
-
-int wait_for_waiter_intr(waiter_t *waiter, unsigned int count);
-
-void wake_waiter(waiter_t *waiter);
-
-#endif /* WAITER_H */
+#endif /* ABSOUT_H */

@@ -28,10 +28,10 @@
 #include <ctype.h>
 #include <sys/ioctl.h>
 
-#include <utils/utils.h>
-
 #include <gensio/sergensio_class.h>
-#include <gensio/gensio_ll_ipmisol.h>
+
+#include "utils.h"
+#include "gensio_ll_ipmisol.h"
 
 struct iterm_data {
     struct sergensio *sio;

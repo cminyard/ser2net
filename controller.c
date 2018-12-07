@@ -24,9 +24,7 @@
 #include <errno.h>
 #include <syslog.h>
 
-#include <utils/selector.h>
-#include <utils/utils.h>
-
+#include <gensio/selector.h>
 #include <gensio/gensio.h>
 
 #include "ser2net.h"

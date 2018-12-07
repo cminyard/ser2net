@@ -30,12 +30,11 @@
 #include <fcntl.h>
 
 #include <gensio/gensio_class.h>
-#include <string.h>
-
-#include <gensio/gensio_ll_ipmisol.h>
 #include <gensio/sergensio_class.h>
-#include <gensio/buffer.h>
-#include <utils/utils.h>
+
+#include "gensio_ll_ipmisol.h"
+#include "buffer.h"
+#include "utils.h"
 
 #ifdef HAVE_OPENIPMI
 

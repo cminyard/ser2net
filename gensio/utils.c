@@ -41,59 +41,6 @@ cmpstrval(const char *s, const char *prefix, const char **val)
     return 1;
 }
 
-int
-strisallzero(const char *str)
-{
-    if (*str == '\0')
-	return 0;
-
-    while (*str == '0')
-	str++;
-    return *str == '\0';
-}
-
-/* Scan for a positive integer, and return it.  Return -1 if the
-   integer was invalid. */
-int
-scan_int(const char *str)
-{
-    int rv = 0;
-
-    if (*str == '\0') {
-	return -1;
-    }
-
-    for (;;) {
-	switch (*str) {
-	case '0': case '1': case '2': case '3': case '4':
-	case '5': case '6': case '7': case '8': case '9':
-	    rv = (rv * 10) + ((*str) - '0');
-	    break;
-
-	case '\0':
-	    return rv;
-
-	default:
-	    return -1;
-	}
-
-	str++;
-    }
-
-    return rv;
-}
-
-void
-write_ignore_fail(int fd, const char *data, size_t count)
-{
-    ssize_t written;
-
-    while ((written = write(fd, data, count)) > 0) {
-	data += written;
-	count -= written;
-    }
-}
-
 void
 str_to_argv_free(int argc, char **argv)
 {
@@ -379,44 +326,4 @@ add_to_timeval(struct timeval *tv1, struct timeval *tv2)
 	tv1->tv_usec += 1000000;
 	tv1->tv_sec -= 1;
     }
-}
-
-void
-sub_from_timeval(struct timeval *tv1, struct timeval *tv2)
-{
-    tv1->tv_sec -= tv2->tv_sec;
-    tv1->tv_usec -= tv2->tv_usec;
-    while (tv1->tv_usec > 1000000) {
-	tv1->tv_usec -= 1000000;
-	tv1->tv_sec += 1;
-    }
-    while (tv1->tv_usec < 0) {
-	tv1->tv_usec += 1000000;
-	tv1->tv_sec -= 1;
-    }
-}
-
-void
-add_usec_to_timeval(struct timeval *tv, int usec)
-{
-    tv->tv_usec += usec;
-    while (usec >= 1000000) {
-	usec -= 1000000;
-	tv->tv_sec += 1;
-    }
-}
-
-int
-sub_timeval_us(struct timeval *left, struct timeval *right)
-{
-    struct timeval dest;
-
-    dest.tv_sec = left->tv_sec - right->tv_sec;
-    dest.tv_usec = left->tv_usec - right->tv_usec;
-    while (dest.tv_usec < 0) {
-	dest.tv_usec += 1000000;
-	dest.tv_sec--;
-    }
-
-    return (dest.tv_sec * 1000000) + dest.tv_usec;
 }

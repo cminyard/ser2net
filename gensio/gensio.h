@@ -302,9 +302,9 @@ struct gensio;
 
 /*
  * A new channel has been created by the remote end of the connection.
- * The new channel is in auxdata.  buf may contain a string with
- * information about the new channel.  If this returns an error, the
- * channel creation is refused and the channel is closed.
+ * The new channel gensio is in auxdata.  buf may contain a string
+ * with information about the new channel.  If this returns an error,
+ * the channel creation is refused and the channel is closed.
  */
 #define GENSIO_EVENT_NEW_CHANNEL	4
 

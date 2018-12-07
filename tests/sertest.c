@@ -29,9 +29,11 @@
 #include <stdarg.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include "gensio/gensio_selector.h"
-#include "utils/utils.h"
-#include "gensio/sergensio.h"
+#include <gensio/gensio_selector.h>
+#include <gensio/sergensio.h>
+
+#include "gensio/utils.h"
+#include "../absout.h"
 
 static bool tokeq(const char *t, const char *m)
 {

@@ -31,10 +31,10 @@
 #define pthread_mutex_destroy(l, n) do { } while (0)
 #endif
 
-#include <utils/utils.h>
-#include "waiter.h"
-
 #include <gensio/gensio_selector.h>
+
+#include "utils.h"
+#include "waiter.h"
 
 struct gensio_data {
     struct selector_s *sel;

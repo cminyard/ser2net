@@ -26,10 +26,10 @@
 #include <ctype.h>
 #include <limits.h>
 
-#include <utils/utils.h>
-
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
+
+#include "utils.h"
 
 unsigned int gensio_log_mask = (1 << GENSIO_LOG_FATAL) | (1 << GENSIO_LOG_ERR);
 
@@ -364,6 +364,17 @@ gensio_scan_args(const char **rstr, int *argc, char ***args)
 	*rstr = str;
 
     return err;
+}
+
+static int
+strisallzero(const char *str)
+{
+    if (*str == '\0')
+	return 0;
+
+    while (*str == '0')
+	str++;
+    return *str == '\0';
 }
 
 /*

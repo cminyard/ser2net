@@ -27,10 +27,10 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include <utils/utils.h>
-
 #include <gensio/gensio.h>
 #include <gensio/gensio_class.h>
+
+#include "utils.h"
 
 static int gensio_stdio_func(struct gensio *io, int func, unsigned int *count,
 			     const void *buf, unsigned int buflen,

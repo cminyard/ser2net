@@ -21,9 +21,9 @@
 #include <string.h>
 #include <errno.h>
 
-#include <utils/utils.h>
-
 #include <gensio/sergensio_class.h>
+
+#include "utils.h"
 
 struct sergensio {
     struct gensio_os_funcs *o;

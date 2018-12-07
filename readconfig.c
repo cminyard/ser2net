@@ -31,7 +31,6 @@
 #include <limits.h>
 #include <gensio/gensio.h>
 
-#include "utils/utils.h"
 #include "ser2net.h"
 #include "dataxfer.h"
 #include "readconfig.h"

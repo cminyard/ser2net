@@ -23,13 +23,13 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <utils/utils.h>
-#include <gensio/telnet.h>
-
 #include <gensio/sergensio_class.h>
 #include <gensio/gensio_ll_gensio.h>
 #include <gensio/gensio_filter_telnet.h>
 #include <gensio/gensio_acc_gensio.h>
+
+#include "utils.h"
+#include "telnet.h"
 
 #define SERCTL_WAIT_TIME 5
 

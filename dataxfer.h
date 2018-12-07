@@ -20,7 +20,6 @@
 #ifndef DATAXFER
 #define DATAXFER
 
-#include "utils/utils.h"
 #include "controller.h"
 
 #ifdef linux

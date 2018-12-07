@@ -20,8 +20,10 @@
 #ifndef SER2NET_H
 #define SER2NET_H
 
-#include <utils/selector.h>
+#include <gensio/selector.h>
 #include <gensio/gensio_selector.h>
+
+#include "absout.h"
 
 /* The default rfc2217 signature if none is provided. */
 extern char *rfc2217_signature;
@@ -39,5 +41,15 @@ void end_maint_op(void);
 
 int init_dataxfer(void);
 void shutdown_dataxfer(void);
+
+/* Write the data completely out, return without comment on error. */
+void write_ignore_fail(int fd, const char *data, size_t count);
+
+void add_usec_to_timeval(struct timeval *tv, int usec);
+int sub_timeval_us(struct timeval *left, struct timeval *right);
+
+/* Scan for a positive integer, and return it.  Return -1 if the
+   integer was invalid.  Spaces are not handled. */
+int scan_int(const char *str);
 
 #endif /* SER2NET_H */

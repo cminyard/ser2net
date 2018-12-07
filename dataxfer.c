@@ -34,8 +34,7 @@
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
-
-#include <utils/utils.h>
+#include <gensio/argvutils.h>
 
 #include "ser2net.h"
 #include "dataxfer.h"
@@ -3241,6 +3240,18 @@ got_timeout(struct gensio_timer *timer, void *data)
     timeout.tv_usec = 0;
     so->start_timer(port->timer, &timeout);
     so->unlock(port->lock);
+}
+
+int
+cmpstrval(const char *s, const char *prefix, const char **val)
+{
+    int len = strlen(prefix);
+
+    if (strncmp(s, prefix, len))
+	return 0;
+    *val = s + len;
+
+    return 1;
 }
 
 static int cmpstrint(const char *s, const char *prefix, int *rval,

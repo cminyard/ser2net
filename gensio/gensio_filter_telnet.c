@@ -20,11 +20,11 @@
 #include <errno.h>
 #include <string.h>
 
-#include <gensio/telnet.h>
-#include <utils/utils.h>
-
 #include <gensio/gensio_class.h>
 #include <gensio/gensio_filter_telnet.h>
+
+#include "telnet.h"
+#include "utils.h"
 
 enum telnet_write_state {
     TELNET_NOT_WRITING,

@@ -20,9 +20,8 @@
 #ifndef GENSIO_SELECTOR_H
 #define GENSIO_SELECTOR_H
 
-#include <utils/selector.h>
-
 #include <gensio/gensio.h>
+#include <gensio/selector.h>
 
 struct gensio_os_funcs *gensio_selector_alloc(struct selector_s *sel,
 					      int wake_sig);
