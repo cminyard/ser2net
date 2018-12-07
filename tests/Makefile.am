@@ -1,22 +1,15 @@
 
 AM_CFLAGS = -I$(top_srcdir)
 
-noinst_PROGRAMS = sertest
-
-sertest_SOURCES = sertest.c
-
-sertest_LDADD = $(top_builddir)/gensio/libgensio.la -lreadline $(OPENSSL_LIBS)
-
 utst_builddir = $(shell readlink -f $(top_builddir))
 utst_srcdir = $(shell readlink -f $(top_srcdir))
 
-AM_TESTS_ENVIRONMENT = PYTHONPATH=$(utst_builddir)/gensio/swig/python:$(utst_builddir)/gensio/swig/python/.libs TESTPATH=$(utst_srcdir)/tests SER2NET_EXEC=$(utst_builddir)/ser2net
+AM_TESTS_ENVIRONMENT = LD_LIBRARY_PATH=$(prefix)/lib TESTPATH=$(utst_srcdir)/tests SER2NET_EXEC=$(utst_builddir)/ser2net
 
 test_setup:
 	echo $(AM_TESTS_ENVIRONMENT) python $(utst_srcdir)/tests/
 
-TESTS = test_gensio.py \
-	test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
+TESTS = test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
 	test_xfer_basic_ssl_tcp.py test_xfer_basic_telnet.py \
 	test_xfer_basic_ipmisol.py \
 	test_tty_base.py test_rfc2217.py \
