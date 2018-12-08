@@ -258,11 +258,12 @@ sigint_handler(int sig)
 }
 
 static struct gensio_lock *config_lock;
-static int in_config_read = 0;
 
 static struct gensio_lock *maint_lock;
 
 #if USE_PTHREADS
+static int in_config_read = 0;
+
 int ser2net_wake_sig = SIGUSR1;
 void (*finish_shutdown)(void);
 

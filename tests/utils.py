@@ -192,7 +192,7 @@ class HandleData:
             wrdata = self.to_write[self.wrpos:]
         else:
             wrdata = self.to_write[self.wrpos:self.wrpos + self.chunksize]
-        count = io.write(wrdata)
+        count = io.write(wrdata, None)
         if (debug or self.debug):
             print(self.name + ": wrote %d bytes" % count)
 

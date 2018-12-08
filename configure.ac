@@ -4,6 +4,21 @@ AC_PROG_CC
 AM_PROG_AR
 AM_PROG_LIBTOOL
 
+use_pthreads=yes
+AC_ARG_WITH(pthreads,
+[  --with-pthreads=yes|no      Use pthreads or not.],
+    if test "x$withval" = "xyes"; then
+      use_pthreads=yes
+    elif test "x$withval" = "xno"; then
+      use_pthreads=no
+    fi,
+)
+
+if test "x$use_pthreads" != "xno"; then
+   LIBS="$LIBS -lpthread"
+   AC_DEFINE(USE_PTHREADS)
+fi
+
 AC_ARG_WITH(sysfs-led-support,
  [  --with-sysfs-led-support   Enable LED support (Linux only)],
  sysfs_led_support_flag="$withval",
