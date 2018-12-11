@@ -406,7 +406,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	is_connect_back = true;
     }
 
-    err = scan_network_port(str, &ai, &is_dgram, &is_port_set);
+    err = gensio_scan_network_port(so, str, &ai, &is_dgram, &is_port_set);
     if (err)
 	return err;
 
@@ -438,7 +438,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
 
  out:
     if (err && ai)
-	freeaddrinfo(ai);
+	gensio_free_addrinfo(so, ai);
 
     return err;
 }
@@ -2801,7 +2801,7 @@ free_port(port_info_t *port)
     while (port->remaddrs) {
 	r = port->remaddrs;
 	port->remaddrs = r->next;
-	freeaddrinfo(r->ai);
+	gensio_free_addrinfo(so, r->ai);
 	free(r);
     }
     if (port->accepter)
