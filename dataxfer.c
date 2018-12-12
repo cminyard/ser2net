@@ -398,7 +398,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
     struct port_remaddr *r, *r2;
     struct addrinfo *ai = NULL;
     bool is_port_set, is_connect_back = false;
-    bool is_dgram;
+    int socktype, protocol;
     int err;
 
     if (*str == '!') {
@@ -406,14 +406,15 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	is_connect_back = true;
     }
 
-    err = gensio_scan_network_port(so, str, &ai, &is_dgram, &is_port_set);
+    err = gensio_scan_network_port(so, str, &ai, &socktype, &protocol,
+				   &is_port_set);
     if (err)
 	return err;
 
+    /* FIXME - We currently ignore the socktype and protocol. */
+
     if (is_connect_back && !is_port_set)
 	return EINVAL;
-
-    /* We don't care about is_dgram, but we want to allow it. */
 
     r = malloc(sizeof(*r));
     if (!r) {
