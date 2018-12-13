@@ -449,8 +449,8 @@ ai_check(struct addrinfo *ai, const struct sockaddr *addr, socklen_t len,
 	 bool is_port_set)
 {
     while (ai) {
-	if (sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
-			   is_port_set))
+	if (gensio_sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
+				  is_port_set))
 	    return true;
 	ai = ai->ai_next;
     }
