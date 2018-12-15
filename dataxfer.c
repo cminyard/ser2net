@@ -699,9 +699,11 @@ header_trace(port_info_t *port, net_info_t *netcon)
     unsigned int len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
-    len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
+    if (sizeof(buf) > len)
+	len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
     gensio_raddr_to_str(netcon->net, &len, buf, sizeof(buf));
-    len += snprintf(buf + len, sizeof(buf) - len, ")\n");
+    if (sizeof(buf) > len)
+	len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
     hf_out(port, buf, len);
 }
@@ -714,7 +716,9 @@ footer_trace(port_info_t *port, char *type, char *reason)
     int len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
-    len += snprintf(buf + len, sizeof(buf), "CLOSE %s (%s)\n", type, reason);
+    if (sizeof(buf) > len)
+	len += snprintf(buf + len, sizeof(buf) - len,
+			"CLOSE %s (%s)\n", type, reason);
 
     hf_out(port, buf, len);
 }
