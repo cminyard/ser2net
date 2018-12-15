@@ -406,7 +406,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	is_connect_back = true;
     }
 
-    err = gensio_scan_network_port(so, str, &ai, &socktype, &protocol,
+    err = gensio_scan_network_port(so, str, false, &ai, &socktype, &protocol,
 				   &is_port_set);
     if (err)
 	return err;
