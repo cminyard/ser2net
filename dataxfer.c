@@ -1247,6 +1247,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	return -1;
     }
     *pos += count;
+    netcon->bytes_sent += count;
 
     if (*pos < buf->cursize)
 	return 0;
