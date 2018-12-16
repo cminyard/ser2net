@@ -19,7 +19,7 @@ TESTS = test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
 	test_xfer_large_stdio.py test_xfer_large_tcp.py \
 	test_xfer_large_telnet.py test_xfer_large_ssl_tcp.py \
 	test_xfer_large_telnet.py test_xfer_large_ipmisol.py \
-	text_xfer_large_sctp.py
+	test_xfer_large_sctp.py
 
 EXTRA_DIST = $(TESTS) utils.py dataxfer.py ipmisimdaemon.py termioschk.py \
 	CA.pem cert.pem key.pem
