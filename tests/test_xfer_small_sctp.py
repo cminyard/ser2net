@@ -1,0 +1,12 @@
+#!/usr/bin/python
+
+import gensio
+from dataxfer import test_transfer
+
+rb = gensio.get_random_bytes(512)
+
+test_transfer("sctp small random", rb,
+              "sctp,3023:raw:100:/dev/ttyPipeA0:9600N81\n",
+              "sctp,localhost,3023",
+              "termios,/dev/ttyPipeB0,9600N81",
+              timeout=5000)
