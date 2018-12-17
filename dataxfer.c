@@ -2286,11 +2286,17 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 static int
 port_dev_enable(port_info_t *port)
 {
-    int err;
+    int err, val = 1;
 
     err = gensio_open(port->io, port_dev_open_done, port);
     if (err)
 	return err;
+
+    err = gensio_control(port->io, GENSIO_CONTROL_DEPTH_ALL,
+			 GENSIO_CONTROL_NODELAY, &val);
+    if (err)
+	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %m",
+	       port->portname);
 
     port->dev_to_net_state = PORT_OPENING;
     return 0;
@@ -2300,7 +2306,13 @@ port_dev_enable(port_info_t *port)
 static void
 setup_port(port_info_t *port, net_info_t *netcon)
 {
-    int err;
+    int err, val = 1;
+
+    err = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_ALL,
+			 GENSIO_CONTROL_NODELAY, &val);
+    if (err)
+	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %m",
+	       port->portname);
 
     if (netcon->banner) {
 	free(netcon->banner->buf);
