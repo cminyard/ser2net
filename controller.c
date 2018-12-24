@@ -586,7 +586,8 @@ controller_write_ready(struct gensio *net)
 
 static int
 controller_io_event(struct gensio *net, int event, int err,
-		    unsigned char *buf, unsigned int *buflen, void *auxdata)
+		    unsigned char *buf, unsigned int *buflen,
+		    const char *const *auxdata)
 {
     switch (event) {
     case GENSIO_EVENT_READ:

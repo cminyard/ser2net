@@ -975,20 +975,10 @@ handle_dev_write_ready(port_info_t *port)
     so->unlock(port->lock);
 }
 
-/* Handle an exception from the serial port. */
-static void
-handle_dev_except(port_info_t *port)
-{
-    so->lock(port->lock);
-    syslog(LOG_ERR, "Select exception on device for port %s",
-	   port->portname);
-    shutdown_port(port, "fd exception");
-    so->unlock(port->lock);
-}
-
 static int
 handle_dev_event(struct gensio *io, int event, int err,
-		 unsigned char *buf, unsigned int *buflen, void *auxdata)
+		 unsigned char *buf, unsigned int *buflen,
+		 const char *const *auxdata)
 {
     port_info_t *port = gensio_get_user_data(io);
     net_info_t *netcon;
@@ -1000,10 +990,6 @@ handle_dev_event(struct gensio *io, int event, int err,
 
     case GENSIO_EVENT_WRITE_READY:
 	handle_dev_write_ready(port);
-	return 0;
-
-    case GENSIO_EVENT_URGENT:
-	handle_dev_except(port);
 	return 0;
 
     case GENSIO_EVENT_SER_MODEMSTATE:
@@ -1570,7 +1556,8 @@ s2n_sync(struct sergensio *sio)
 
 static int
 handle_net_event(struct gensio *net, int event, int err,
-		 unsigned char *buf, unsigned int *buflen, void *auxdata)
+		 unsigned char *buf, unsigned int *buflen,
+		 const char *const *auxdata)
 {
     switch (event) {
     case GENSIO_EVENT_READ:
