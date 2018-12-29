@@ -13,7 +13,7 @@ import time
 import curses.ascii
 import sys
 
-debug = 0
+debug = 2
 
 class HandlerException(Exception):
     """Exception for HandleData errors"""
