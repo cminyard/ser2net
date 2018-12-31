@@ -6,15 +6,15 @@ o = gensio.alloc_gensio_selector();
 
 def test_echo_device():
     print("Test echo device")
-    io = utils.alloc_io(o, "termios,/dev/ttyEcho0,38400")
+    io = utils.alloc_io(o, "serialdev,/dev/ttyEcho0,38400")
     utils.test_dataxfer(io, io, "This is a test string!")
     utils.io_close(io)
     print("  Success!")
 
 def test_serial_pipe_device():
     print("Test serial pipe device")
-    io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,9600")
-    io2 = utils.alloc_io(o, "termios,/dev/ttyPipeB0,9600")
+    io1 = utils.alloc_io(o, "serialdev,/dev/ttyPipeA0,9600")
+    io2 = utils.alloc_io(o, "serialdev,/dev/ttyPipeB0,9600")
     utils.test_dataxfer(io1, io2, "This is a test string!")
     utils.io_close(io1)
     utils.io_close(io2)
@@ -162,10 +162,10 @@ def ta_ssl_telnet():
     ta = TestAccept(o, io1, "telnet(rfc2217=true),3027", do_telnet_test)
 
 def test_modemstate():
-    io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL"
-    io2str = "termios,/dev/ttyPipeB0,9600N81"
+    io1str = "serialdev,/dev/ttyPipeA0,9600N81,LOCAL"
+    io2str = "serialdev,/dev/ttyPipeB0,9600N81"
 
-    print("termios modemstate:\n  io1=%s\n  io2=%s" % (io1str, io2str))
+    print("serialdev modemstate:\n  io1=%s\n  io2=%s" % (io1str, io2str))
 
     o = gensio.alloc_gensio_selector()
     io1 = utils.alloc_io(o, io1str, do_open = False)
@@ -305,7 +305,7 @@ import ipmisimdaemon
 def test_ipmisol_small():
     print("Test ipmisol small")
     isim = ipmisimdaemon.IPMISimDaemon(o)
-    io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,9600")
+    io1 = utils.alloc_io(o, "serialdev,/dev/ttyPipeA0,9600")
     io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600")
     utils.test_dataxfer(io1, io2, "This is a test string!")
     utils.io_close(io1)
@@ -317,7 +317,7 @@ test_ipmisol_small()
 def test_ipmisol_large():
     print("Test ipmisol large")
     isim = ipmisimdaemon.IPMISimDaemon(o)
-    io1 = utils.alloc_io(o, "termios,/dev/ttyPipeA0,115200")
+    io1 = utils.alloc_io(o, "serialdev,/dev/ttyPipeA0,115200")
     io2 = utils.alloc_io(o, "ipmisol,lan -U ipmiusr -P test -p 9001 localhost,115200")
     rb = gensio.get_random_bytes(104857)
     utils.test_dataxfer(io1, io2, rb, timeout=10000)
@@ -326,10 +326,10 @@ def test_ipmisol_large():
     print("  Success!")
 
 def test_rs485():
-    io1str = "termios,/dev/ttyPipeA0,9600N81,LOCAL,rs485=103:495"
-    io2str = "termios,/dev/ttyPipeB0,9600N81"
+    io1str = "serialdev,/dev/ttyPipeA0,9600N81,LOCAL,rs485=103:495"
+    io2str = "serialdev,/dev/ttyPipeB0,9600N81"
 
-    print("termios rs485:\n  io1=%s\n  io2=%s" % (io1str, io2str))
+    print("serialdev rs485:\n  io1=%s\n  io2=%s" % (io1str, io2str))
 
     o = gensio.alloc_gensio_selector()
     io1 = utils.alloc_io(o, io1str)

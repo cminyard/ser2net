@@ -3322,7 +3322,7 @@ strdupcat(char **str, const char *cat)
     return 0;
 }
 
-static const char *termios_parms[] = {
+static const char *serialdev_parms[] = {
     "XONXOFF",
     "-XONXOFF",
     "RTSCTS",
@@ -3361,7 +3361,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
      * This is a hack for backwards compatibility, if we see a config
      * item meant for the device, we stick it onto the device name.
      */
-    if (isdigit(pos[0]) || matchstr(termios_parms, pos)) {
+    if (isdigit(pos[0]) || matchstr(serialdev_parms, pos)) {
 	int err = strdupcat(&port->devname, pos);
 
 	if (err) {

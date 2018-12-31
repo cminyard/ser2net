@@ -11,7 +11,7 @@ isim = ipmisimdaemon.IPMISimDaemon(o)
 test_transfer("basic ipmisol", "This is a test!",
               "3023:raw:100:ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600\n",
               "tcp,localhost,3023",
-              "termios,/dev/ttyPipeA0,9600N81", o=o)
+              "serialdev,/dev/ttyPipeA0,9600N81", o=o)
 
 # Note that ipmi_sim messes with the modem state lines, so adding
 # LOCAL is required on termios.  Also, we had to add a small delay
@@ -21,5 +21,5 @@ test_transfer("basic ipmisol", "This is a test!",
 test_write_drain("basic tcp", "This is a write drain test!",
                  "3023:raw:100:ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600\n",
                  "tcp,localhost,3023",
-                 "termios,/dev/ttyPipeA0,9600N81,LOCAL", o=o,
+                 "serialdev,/dev/ttyPipeA0,9600N81,LOCAL", o=o,
                  switch_delay = 0.25)
