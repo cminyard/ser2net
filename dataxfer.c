@@ -1554,6 +1554,17 @@ s2n_sync(struct sergensio *sio)
     sergensio_send_break(rsio);
 }
 
+static void
+s2n_break(struct gensio *io)
+{
+    net_info_t *netcon = gensio_get_user_data(io);
+    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
+
+    if (!rsio)
+	return;
+    sergensio_send_break(rsio);
+}
+
 static int
 handle_net_event(struct gensio *net, int event, int err,
 		 unsigned char *buf, unsigned int *buflen,
@@ -1566,6 +1577,10 @@ handle_net_event(struct gensio *net, int event, int err,
 
     case GENSIO_EVENT_WRITE_READY:
 	handle_net_fd_write_ready(net);
+	return 0;
+
+    case GENSIO_EVENT_SEND_BREAK:
+	s2n_break(net);
 	return 0;
 
     case GENSIO_EVENT_SER_MODEMSTATE:
