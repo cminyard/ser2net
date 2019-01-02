@@ -4301,12 +4301,17 @@ shutdown_ports(void)
 	if (change_port_state(NULL, port, PORT_DISABLED, false))
 	    wait_for_port_shutdown(port, &shutdown_count);
 	so->unlock(port->lock);
-	shutdown_port(port, "program shutdown");
-	so->unlock(port->lock);
 	port = next;
     }
 
     so->wait(accepter_shutdown_wait, shutdown_count, NULL);
+
+    port = ports;
+    while (port != NULL) {
+	next = port->next;
+	shutdown_port(port, "program shutdown");
+	port = next;
+    }
 }
 
 int
