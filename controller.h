@@ -53,7 +53,7 @@ int controller_voutputf(struct controller_info *cntlr,
 
 /* Write some data directly to the controllers output port. */
 void controller_write(struct controller_info *cntlr,
-		      const char *data, unsigned int count);
+		      const char *data, gensiods count);
 
 /*  output a string  */
 void controller_outs (struct controller_info *cntlr, char *s);

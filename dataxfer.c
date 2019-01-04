@@ -81,25 +81,25 @@ typedef struct net_info net_info_t;
 
 struct gbuf {
     unsigned char *buf;
-    unsigned int maxsize;
-    unsigned int cursize;
-    unsigned int pos;
+    gensiods maxsize;
+    gensiods cursize;
+    gensiods pos;
 };
 
-static unsigned int
+static gensiods
 gbuf_room_left(struct gbuf *buf) {
     return buf->maxsize - buf->cursize;
 }
 
 static void
-gbuf_append(struct gbuf *buf, unsigned char *data, unsigned int len)
+gbuf_append(struct gbuf *buf, unsigned char *data, gensiods len)
 {
     memcpy(buf->buf + buf->pos, data, len);
     buf->cursize += len;
     buf->pos += len;
 }
 
-static unsigned int
+static gensiods
 gbuf_cursize(struct gbuf *buf)
 {
     return buf->cursize;
@@ -113,7 +113,7 @@ gbuf_reset(struct gbuf *buf)
 }
 
 static int
-gbuf_init(struct gbuf *buf, unsigned int size)
+gbuf_init(struct gbuf *buf, gensiods size)
 {
     buf->buf = malloc(size);
     if (!buf->buf)
@@ -141,14 +141,14 @@ struct net_info {
 					   address when data comes in. */
     const char *remote_str;
 
-    unsigned int bytes_received;	/* Number of bytes read from the
+    gensiods bytes_received;		/* Number of bytes read from the
 					   network port. */
-    unsigned int bytes_sent;		/* Number of bytes written to the
+    gensiods bytes_sent;		/* Number of bytes written to the
 					   network port. */
 
     struct gbuf *banner;		/* Outgoing banner */
 
-    unsigned int write_pos;		/* Our current position in the
+    gensiods write_pos;			/* Our current position in the
 					   output buffer where we need
 					   to start writing next. */
 
@@ -261,10 +261,9 @@ struct port_info
 					   port. */
     net_info_t *netcons;
 
-    unsigned int dev_bytes_received;    /* Number of bytes read from the
-					   device. */
-    unsigned int dev_bytes_sent;        /* Number of bytes written to the
-					   device. */
+    gensiods dev_bytes_received;    /* Number of bytes read from the device. */
+    gensiods dev_bytes_sent;        /* Number of bytes written to the device. */
+
     /* Information use when transferring information from the network port
        to the terminal device. */
     int            net_to_dev_state;		/* State of transferring
@@ -335,8 +334,8 @@ struct port_info
      * serial side, or NULL if none.
      */
     char *closeon;
-    unsigned int closeon_pos;
-    unsigned int closeon_len;
+    gensiods closeon_pos;
+    gensiods closeon_len;
 
     /*
      * Close the session when all the output has been written to the
@@ -379,7 +378,7 @@ struct port_info
 
 static void setup_port(port_info_t *port, net_info_t *netcon);
 static int handle_net_event(struct gensio *net, int event, int err,
-			    unsigned char *buf, unsigned int *buflen,
+			    unsigned char *buf, gensiods *buflen,
 			    const char *const *auxdata);
 
 /*
@@ -602,10 +601,10 @@ trace_write_end(char *out, int size, const unsigned char *start, int col)
 
 int
 trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
-	    unsigned int buf_len, const char *prefix)
+	    gensiods buf_len, const char *prefix)
 {
     int rv = 0, w, col = 0, pos, file = t->fd;
-    unsigned int q;
+    gensiods q;
     static char out[1024];
     const unsigned char *start;
 
@@ -648,7 +647,7 @@ trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 
 static void
 do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
-	 unsigned int buf_len, const char *prefix)
+	 gensiods buf_len, const char *prefix)
 {
     int rv;
 
@@ -703,7 +702,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
 {
     char buf[1024];
     trace_info_t tr = { 1, 1, NULL, -1 };
-    unsigned int len = 0;
+    gensiods len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
     if (sizeof(buf) > len)
@@ -880,9 +879,9 @@ port_check_connect_backs(port_info_t *port)
 /* Data is ready to read on the serial port. */
 static int
 handle_dev_read(port_info_t *port, int err, unsigned char *buf,
-		unsigned int buflen)
+		gensiods buflen)
 {
-    unsigned int count = 0;
+    gensiods count = 0;
     bool send_now = false;
     int nr_handlers = 0;
 
@@ -995,7 +994,7 @@ handle_dev_write_ready(port_info_t *port)
 
 static int
 handle_dev_event(struct gensio *io, int event, int err,
-		 unsigned char *buf, unsigned int *buflen,
+		 unsigned char *buf, gensiods *buflen,
 		 const char *const *auxdata)
 {
     port_info_t *port = gensio_get_user_data(io);
@@ -1065,7 +1064,7 @@ static int
 gbuf_write(port_info_t *port, struct gbuf *buf)
 {
     int err;
-    unsigned int written;
+    gensiods written;
 
     err = gensio_write(port->io, &written, buf->buf + buf->pos,
 		       buf->cursize - buf->pos, NULL);
@@ -1129,13 +1128,13 @@ handle_dev_fd_devstr_write(port_info_t *port)
 }
 
 /* Data is ready to read on the network port. */
-static unsigned int
+static gensiods
 handle_net_fd_read(struct gensio *net, int readerr,
-		   unsigned char *buf, unsigned int buflen)
+		   unsigned char *buf, gensiods buflen)
 {
     net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
-    unsigned int rv = 0;
+    gensiods rv = 0;
     char *reason;
     int err;
 
@@ -1227,10 +1226,10 @@ handle_net_fd_read(struct gensio *net, int readerr,
  */
 static int
 net_fd_write(port_info_t *port, net_info_t *netcon,
-	     struct gbuf *buf, unsigned int *pos)
+	     struct gbuf *buf, gensiods *pos)
 {
     int reterr, to_send;
-    unsigned int count = 0;
+    gensiods count = 0;
 
     to_send = buf->cursize - *pos;
     if (to_send <= 0)
@@ -1585,7 +1584,7 @@ s2n_break(struct gensio *io)
 
 static int
 handle_net_event(struct gensio *net, int event, int err,
-		 unsigned char *buf, unsigned int *buflen,
+		 unsigned char *buf, gensiods *buflen,
 		 const char *const *auxdata)
 {
     switch (event) {
@@ -2016,13 +2015,13 @@ process_str(port_info_t *port, net_info_t *netcon,
 static void
 count_op(void *data, char c)
 {
-    unsigned int *idata = data;
+    gensiods *idata = data;
 
     (*idata)++;
 }
 
 struct bufop_data {
-    unsigned int pos;
+    gensiods pos;
     char *str;
 };
 
@@ -2037,9 +2036,9 @@ buffer_op(void *data, char c)
 static char *
 process_str_to_str(port_info_t *port, net_info_t *netcon,
 		   const char *str, struct timeval *tv,
-		   unsigned int *lenrv, int isfilename)
+		   gensiods *lenrv, int isfilename)
 {
-    unsigned int len = 0;
+    gensiods len = 0;
     struct tm now;
     struct bufop_data bufop;
 
@@ -2073,7 +2072,7 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
 {
     char *bstr;
     struct gbuf *buf;
-    unsigned int len;
+    gensiods len;
     struct timeval tv;
 
     if (!str || *str == '\0')
@@ -2373,7 +2372,7 @@ find_rotator_port(const char *portname, struct gensio *net,
 	if (strcmp(port->portname, portname) == 0) {
 	    unsigned int i;
 	    struct sockaddr_storage addr;
-	    unsigned int socklen;
+	    gensiods socklen;
 	    int err;
 
 	    so->lock(port->lock);
@@ -2627,7 +2626,7 @@ handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
-    unsigned int socklen;
+    gensiods socklen;
     struct gensio *net;
 
     if (event == GENSIO_ACC_EVENT_LOG) {
@@ -3931,7 +3930,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
     net_info_t *netcon;
     int err;
 
-    controller_outputf(cntlr, "TCP Port %s\r\n", port->portname);
+    controller_outputf(cntlr, "Port %s\r\n", port->portname);
     controller_outputf(cntlr, "  enable state: %s\r\n",
 		       enabled_str[port->enabled]);
     controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);

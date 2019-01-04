@@ -263,7 +263,7 @@ void controller_outs(struct controller_info *cntlr, char *s)
 /* Write some data directly to the controllers output port. */
 void
 controller_write(struct controller_info *cntlr, const char *data,
-		 unsigned int count)
+		 gensiods count)
 {
     gensio_write(cntlr->net, NULL, data, count, NULL);
 }
@@ -275,7 +275,7 @@ static char *help_str =
 "monitor <type> <tcp port> - display all the input for a given port on\r\n"
 "       the calling control port.  Only one direction may be monitored\r\n"
 "       at a time.  The type field may be 'tcp' or 'term' and specifies\r\n"
-"       whether to monitor data from the TCP port or from the serial port\r\n"
+"       whether to monitor data from the net port or from the serial port\r\n"
 "       Note that data monitoring is best effort, if the controller port\r\n"
 "       cannot keep up the data will be silently dropped.  A controller\r\n"
 "       may only monitor one thing and a port may only be monitored by\r\n"
@@ -457,9 +457,9 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 }
 
 /* Data is ready to read on the TCP port. */
-static unsigned int
+static gensiods
 controller_read(struct gensio *net, int err,
-		unsigned char *buf, unsigned int buflen)
+		unsigned char *buf, gensiods buflen)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
     int read_start;
@@ -546,7 +546,7 @@ controller_write_ready(struct gensio *net)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
     int err;
-    unsigned int write_count;
+    gensiods write_count;
 
     so->lock(cntlr->lock);
     if (cntlr->in_shutdown)
@@ -586,12 +586,12 @@ controller_write_ready(struct gensio *net)
 
 static int
 controller_io_event(struct gensio *net, int event, int err,
-		    unsigned char *buf, unsigned int *buflen,
+		    unsigned char *buf, gensiods *buflen,
 		    const char *const *auxdata)
 {
     switch (event) {
     case GENSIO_EVENT_READ:
-	*buflen =  controller_read(net, err, buf, *buflen);
+	*buflen = controller_read(net, err, buf, *buflen);
 	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
