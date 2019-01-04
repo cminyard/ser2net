@@ -139,7 +139,7 @@ struct net_info {
 					   cannot be changed. */
     bool connect_back;			/* True if we connect to the remote
 					   address when data comes in. */
-    struct addrinfo *remote_ai;
+    const char *remote_str;
 
     unsigned int bytes_received;	/* Number of bytes read from the
 					   network port. */
@@ -378,6 +378,9 @@ struct port_info
 };
 
 static void setup_port(port_info_t *port, net_info_t *netcon);
+static int handle_net_event(struct gensio *net, int event, int err,
+			    unsigned char *buf, unsigned int *buflen,
+			    const char *const *auxdata);
 
 /*
  * This infrastructure allows a list of addresses to be kept.  This is
@@ -385,6 +388,7 @@ static void setup_port(port_info_t *port, net_info_t *netcon);
  */
 struct port_remaddr
 {
+    char *str;
     struct addrinfo *ai;
     bool is_port_set;
     bool is_connect_back;
@@ -404,17 +408,14 @@ remaddr_append(struct port_remaddr **list, const char *str)
     if (*str == '!') {
 	str++;
 	is_connect_back = true;
+    } else {
+	err = gensio_scan_network_port(so, str, false, &ai,
+				       &socktype, &protocol,
+				       &is_port_set, NULL, NULL);
+	if (err)
+	    return err;
+	/* FIXME - We currently ignore the socktype and protocol. */
     }
-
-    err = gensio_scan_network_port(so, str, false, &ai, &socktype, &protocol,
-				   &is_port_set);
-    if (err)
-	return err;
-
-    /* FIXME - We currently ignore the socktype and protocol. */
-
-    if (is_connect_back && !is_port_set)
-	return EINVAL;
 
     r = malloc(sizeof(*r));
     if (!r) {
@@ -423,6 +424,12 @@ remaddr_append(struct port_remaddr **list, const char *str)
     }
     memset(r, 0, sizeof(*r));
 
+    r->str = strdup(str);
+    if (!r->str) {
+	free(r);
+	err = ENOMEM;
+	goto out;
+    }
     r->ai = ai;
     r->is_port_set = is_port_set;
     r->is_connect_back = is_connect_back;
@@ -834,11 +841,22 @@ port_check_connect_backs(port_info_t *port)
 	    int err;
 
 	    tried = true;
-	    err = gensio_acc_connect(port->accepter, netcon->remote_ai,
-				     connect_back_done, netcon, &netcon->net);
+	    err = gensio_acc_str_to_gensio(port->accepter, netcon->remote_str,
+					   handle_net_event, netcon,
+					   &netcon->net);
 	    if (err) {
-		syslog(LOG_ERR, "Unable to start connect on connect "
-		       "back port %s: %s\n", port->portname, strerror(err));
+		syslog(LOG_ERR, "Unable to allocate connect back port %s,"
+		       " addr %s: %s\n", port->portname, netcon->remote_str,
+		       strerror(err));
+		continue;
+	    }
+	    err = gensio_open(netcon->net, connect_back_done, netcon);
+	    if (err) {
+		gensio_free(netcon->net);
+		netcon->net = NULL;
+		syslog(LOG_ERR, "Unable to open connect back port %s,"
+		       " addr %s: %s\n", port->portname, netcon->remote_str,
+		       strerror(err));
 		continue;
 	    }
 	    port->num_waiting_connect_backs++;
@@ -2346,7 +2364,8 @@ setup_port(port_info_t *port, net_info_t *netcon)
 
 /* Returns with the port locked, if non-NULL. */
 static port_info_t *
-find_rotator_port(char *portname, struct gensio *net, unsigned int *netconnum)
+find_rotator_port(const char *portname, struct gensio *net,
+		  unsigned int *netconnum)
 {
     port_info_t *port = ports;
 
@@ -2425,7 +2444,7 @@ typedef struct rotator
 {
     /* Rotators use the ports_lock for mutex. */
     int curr_port;
-    char **portv;
+    const char **portv;
     int portc;
 
     char *portname;
@@ -2623,13 +2642,17 @@ handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
     so->lock(ports_lock); /* For is_device_already_inuse() */
     so->lock(port->lock);
 
-    if (port->enabled == PORT_DISABLED)
-	goto out;
+    if (port->enabled == PORT_DISABLED) {
+	err = "Port disabled\r\n";
+	goto out_err;
+    }
 
     /* We raced, the shutdown should disable the accept read
        until the shutdown is complete. */
-    if (port->dev_to_net_state == PORT_CLOSING)
-	goto out;
+    if (port->dev_to_net_state == PORT_CLOSING) {
+	err = "Port closing\r\n";
+	goto out_err;
+    }
 
     socklen = sizeof(addr);
     if (!gensio_get_raddr(net, &addr, &socklen)) {
@@ -2641,16 +2664,8 @@ handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
     }
 
     for (j = port->max_connections, i = 0; i < port->max_connections; i++) {
-	if (!port->netcons[i].net) {
-	    if (port->netcons[i].remote_fixed) {
-		if (ai_check(port->netcons[i].remote_ai,
-			     (struct sockaddr *) &addr, socklen, true)) {
-		    break;
-		}
-	    } else {
-		break;
-	    }
-	}
+	if (!port->netcons[i].net && !port->netcons[i].remote_fixed)
+	    break;
 	if (!port->netcons[i].remote_fixed)
 	    j = i;
     }
@@ -2700,7 +2715,7 @@ process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r,
             continue;
 
 	netcon->remote_fixed = true;
-	netcon->remote_ai = r->ai;
+	netcon->remote_str = r->str;
 	port->has_connect_back = true;
 	netcon->connect_back = true;
 	return;
@@ -2824,6 +2839,7 @@ free_port(port_info_t *port)
 	r = port->remaddrs;
 	port->remaddrs = r->next;
 	gensio_free_addrinfo(so, r->ai);
+	free(r->str);
 	free(r);
     }
     if (port->accepter)
@@ -3677,7 +3693,7 @@ portconfig(struct absout *eout,
     }
 
     if (new_port->enabled == PORT_ON && do_telnet) {
-	char *args[] = { NULL, NULL };
+	const char *args[] = { NULL, NULL };
 	struct gensio_accepter *parent;
 
 	if (new_port->allow_2217)
