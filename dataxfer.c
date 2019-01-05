@@ -3735,14 +3735,13 @@ portconfig(struct absout *eout,
 	}
     }
 
-    new_port->netcons = malloc(sizeof(*(new_port->netcons)) *
-			       new_port->max_connections);
+    new_port->netcons = malloc(sizeof(net_info_t) * new_port->max_connections);
     if (new_port->netcons == NULL) {
 	eout->out(eout, "Could not allocate a port data structure");
 	goto errout;
     }
     memset(new_port->netcons, 0,
-	   (sizeof(*(new_port->netcons)) * new_port->max_connections));
+	   sizeof(net_info_t) * new_port->max_connections);
     for_each_connection(new_port, netcon) {
 	netcon->runshutdown = so->alloc_runner(so, shutdown_netcon_clear,
 					       netcon);
