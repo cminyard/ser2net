@@ -7,8 +7,7 @@ ser2net_LDADD = -lgensio $(OPENSSL_LIBS)
 noinst_HEADERS = controller.h dataxfer.h readconfig.h \
 	ser2net.h led.h led_sysfs.h absout.h
 man_MANS = ser2net.8
-EXTRA_DIST = $(man_MANS) ser2net.conf ser2net.spec ser2net.init \
-	linux-serial-echo/Makefile
+EXTRA_DIST = $(man_MANS) ser2net.conf ser2net.spec ser2net.init
 
 SUBDIRS = tests
 

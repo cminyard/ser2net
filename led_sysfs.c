@@ -143,6 +143,7 @@ led_sysfs_init(struct led_s *led, char *parameters, int lineno)
 			syslog(LOG_ERR,
 			       "Out of memory handling LED '%s' on line %d.",
 			       led->name, lineno);
+			free(drv_data);
 			return -1;
 		    }
 		}
@@ -160,6 +161,8 @@ led_sysfs_init(struct led_s *led, char *parameters, int lineno)
 	syslog(LOG_ERR,
 	       "LED '%s': parameter 'device' required, but missing on line %d.",
 	       led->name, lineno);
+	if (drv_data->device)
+	    free(drv_data->device);
 	free(drv_data);
 	return -1;
     }

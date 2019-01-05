@@ -400,9 +400,9 @@ remaddr_append(struct port_remaddr **list, const char *str)
 {
     struct port_remaddr *r, *r2;
     struct addrinfo *ai = NULL;
-    bool is_port_set, is_connect_back = false;
+    bool is_port_set = false, is_connect_back = false;
     int socktype, protocol;
-    int err;
+    int err = 0;
 
     if (*str == '!') {
 	str++;
@@ -1282,7 +1282,7 @@ handle_net_fd_write_ready(struct gensio *net)
 {
     net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
-    int rv;
+    int rv = 1;
 
     so->lock(port->lock);
     if (netcon->banner) {
@@ -3742,7 +3742,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
     memset(new_port->netcons, 0,
-	   sizeof(*(new_port->netcons)) * new_port->max_connections);
+	   (sizeof(*(new_port->netcons)) * new_port->max_connections));
     for_each_connection(new_port, netcon) {
 	netcon->runshutdown = so->alloc_runner(so, shutdown_netcon_clear,
 					       netcon);
