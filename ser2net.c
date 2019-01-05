@@ -478,8 +478,6 @@ finish_shutdown_cleanly(void)
 	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
     } while(1);
 
-    so->free_funcs(so);
-
     shutdown_dataxfer();
 
     free_longstrs();
@@ -491,6 +489,8 @@ finish_shutdown_cleanly(void)
 
     if (config_port)
 	free(config_port);
+
+    so->free_funcs(so);
 
     exit(1);
 }
