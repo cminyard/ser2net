@@ -237,7 +237,7 @@ def test_dtr():
     print("serialdev dtr rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector()
+    o = utils.o
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     sio1 = io1.cast_to_sergensio()
     sio2 = io2.cast_to_sergensio()
@@ -287,7 +287,7 @@ def test_rts():
     print("serialdev rts rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector()
+    o = utils.o
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     sio1 = io1.cast_to_sergensio()
     sio2 = io2.cast_to_sergensio()
@@ -337,7 +337,7 @@ def test_modemstate():
     print("serialdev modemstate rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
           (config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector()
+    o = utils.o
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
                                               do_io1_open = False)
     sio1 = io1.cast_to_sergensio()

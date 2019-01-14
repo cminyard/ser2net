@@ -13,7 +13,13 @@ import time
 import curses.ascii
 import sys
 
-debug = 2
+debug = 0
+
+class Logger:
+    def gensio_log(self, level, log):
+        print("***%s log: %s" % (level, log))
+
+o = gensio.alloc_gensio_selector(Logger());
 
 class HandlerException(Exception):
     """Exception for HandleData errors"""

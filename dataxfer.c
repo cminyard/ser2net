@@ -2313,7 +2313,7 @@ port_dev_enable(port_info_t *port)
 	return err;
 
     err = gensio_control(port->io, GENSIO_CONTROL_DEPTH_ALL, false,
-			 GENSIO_CONTROL_NODELAY, auxdata);
+			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
 	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %m",
 	       port->portname);
@@ -2330,7 +2330,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
     char auxdata[2] = "1";
 
     err = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_ALL, false,
-			 GENSIO_CONTROL_NODELAY, auxdata);
+			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
 	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %m",
 	       port->portname);

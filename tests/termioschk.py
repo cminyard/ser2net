@@ -65,7 +65,7 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
     print("termios %s:\n  config=%s  io1=%s\n  io2=%s" %
           (name, config, io1str, io2str))
 
-    o = gensio.alloc_gensio_selector();
+    o = utils.o
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         io1.handler.set_compare("12345")
