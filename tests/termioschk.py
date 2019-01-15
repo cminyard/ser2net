@@ -4,6 +4,7 @@ import copy
 
 import gensio
 import utils
+from remote_termios import *
 
 # This is the termios ser2net sets up when it opens a serial port.
 # Same for sergensio_termios gensio.
@@ -72,13 +73,12 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
         if (io1.handler.wait_timeout(1000)):
             raise Exception("%s: %s: Timed out waiting for banner" %
                             (name, io1.handler.name))
-        sio2 = io2.cast_to_sergensio()
         io1.read_cb_enable(True)
         io2.read_cb_enable(True)
 
         expected_termios = handler.op(io1, io2)
 
-        io2_rem_termios = sio2.get_remote_termios()
+        io2_rem_termios = get_remote_termios(io2)
 
         c = compare_termios(expected_termios, io2_rem_termios)
         if (c != 0):

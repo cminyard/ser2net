@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import termioschk
 import termios
+from remote_termios import *
 
 class basehandler:
     def op(self, io1, io2):
