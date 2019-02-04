@@ -475,7 +475,7 @@ controller_read(struct gensio *net, int err,
     if (err) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for controller port: %s",
-	       strerror(err));
+	       gensio_err_to_str(err));
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out;
     }

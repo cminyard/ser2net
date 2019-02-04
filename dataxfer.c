@@ -418,7 +418,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
 
     r = malloc(sizeof(*r));
     if (!r) {
-	err = ENOMEM;
+	err = GE_NOMEM;
 	goto out;
     }
     memset(r, 0, sizeof(*r));
@@ -426,7 +426,7 @@ remaddr_append(struct port_remaddr **list, const char *str)
     r->str = strdup(str);
     if (!r->str) {
 	free(r);
-	err = ENOMEM;
+	err = GE_NOMEM;
 	goto out;
     }
     r->ai = ai;
@@ -846,7 +846,7 @@ port_check_connect_backs(port_info_t *port)
 	    if (err) {
 		syslog(LOG_ERR, "Unable to allocate connect back port %s,"
 		       " addr %s: %s\n", port->portname, netcon->remote_str,
-		       strerror(err));
+		       gensio_err_to_str(err));
 		continue;
 	    }
 	    err = gensio_open(netcon->net, connect_back_done, netcon);
@@ -855,7 +855,7 @@ port_check_connect_backs(port_info_t *port)
 		netcon->net = NULL;
 		syslog(LOG_ERR, "Unable to open connect back port %s,"
 		       " addr %s: %s\n", port->portname, netcon->remote_str,
-		       strerror(err));
+		       gensio_err_to_str(err));
 		continue;
 	    }
 	    port->num_waiting_connect_backs++;
@@ -1092,7 +1092,7 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
     err = gbuf_write(port, buf);
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, strerror(err));
+	       port->portname, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
 	return;
     }
@@ -1149,7 +1149,7 @@ handle_net_fd_read(struct gensio *net, int readerr,
 	} else {
 	    /* Got an error on the read, shut down the port. */
 	    syslog(LOG_ERR, "read error for port %s: %s", port->portname,
-		   strerror(readerr));
+		   gensio_err_to_str(readerr));
 	    reason = "network read error";
 	}
 	goto out_shutdown;
@@ -2256,7 +2256,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     so->lock(port->lock);
     if (err) {
-	char *errstr = strerror(err);
+	const char *errstr = gensio_err_to_str(err);
 
 	for_each_connection(port, netcon) {
 	    if (!netcon->net)
@@ -2349,7 +2349,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	/* We are first, set things up on the device. */
 	err = port_dev_enable(port);
 	if (err) {
-	    const char *errstr = strerror(err);
+	    const char *errstr = gensio_err_to_str(err);
 
 	    gensio_write(netcon->net, NULL, errstr, strlen(errstr), NULL);
 	    gensio_free(netcon->net);
@@ -2516,7 +2516,7 @@ free_rotator(rotator_t *rot)
     if (rot->portname)
 	free(rot->portname);
     if (rot->portv)
-	str_to_argv_free(rot->portc, rot->portv);
+	gensio_argv_free(so, rot->portv);
     free(rot);
 }
 
@@ -2551,7 +2551,7 @@ add_rotator(char *portname, char *ports, int lineno)
 	return ENOMEM;
     }
 
-    rv = str_to_argv(ports, &rot->portc, &rot->portv, NULL);
+    rv = gensio_str_to_argv(so, ports, &rot->portc, &rot->portv, NULL);
     if (rv)
 	goto out;
 
@@ -2568,7 +2568,7 @@ add_rotator(char *portname, char *ports, int lineno)
     rv = gensio_acc_startup(rot->accepter);
     if (rv) {
 	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
-	       strerror(rv));
+	       gensio_err_to_str(rv));
 	goto out;
     }
 
@@ -2733,7 +2733,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 
     if (err && eout) {
 	eout->out(eout, "Unable to startup network port %s: %s",
-		  port->portname, strerror(err));
+		  port->portname, gensio_err_to_str(err));
 	return err;
     }
 
@@ -2744,7 +2744,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 	err = port_dev_enable(port);
 	if (err && eout)
 	    eout->out(eout, "Unable to enable port device %s: %s",
-		      port->portname, strerror(err));
+		      port->portname, gensio_err_to_str(err));
 	if (err)
 	    gensio_acc_shutdown(port->accepter, NULL, NULL);
     }
@@ -3075,7 +3075,7 @@ handle_dev_fd_close_write(port_info_t *port)
 
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, strerror(err));
+	       port->portname, gensio_err_to_str(err));
 	goto closeit;
     }
 
@@ -3328,7 +3328,7 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
 	err = remaddr_append(&port->remaddrs, remstr);
 	if (err) {
 	    eout->out(eout, "Error adding remote address '%s': %s\n", remstr,
-		      strerror(err));
+		      gensio_err_to_str(err));
 	    break;
 	}
 	remstr = strtok_r(NULL, ";", &strtok_data);
@@ -3679,7 +3679,7 @@ portconfig(struct absout *eout,
 			&new_port->io);
     if (err) {
 	eout->out(eout, "device configuration %s invalid: %s",
-		  new_port->devname, strerror(err));
+		  new_port->devname, gensio_err_to_str(err));
 	goto errout;
     }
 
@@ -3687,7 +3687,7 @@ portconfig(struct absout *eout,
 				handle_port_child_event, new_port,
 				&new_port->accepter);
     if (err) {
-	eout->out(eout, "Invalid port name/number: %s", strerror(err));
+	eout->out(eout, "Invalid port name/number: %s", gensio_err_to_str(err));
 	goto errout;
     }
 

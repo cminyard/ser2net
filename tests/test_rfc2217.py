@@ -41,7 +41,7 @@ try:
 except Exception as E:
     if str(E) != "sergensio:sg_datasize_s: Operation not supported":
         raise
-    print "  Success"
+    print("  Success")
     goterr = True
 if not goterr:
     raise Exception("Did not get error setting telnet rfc2217 when disabled.")
