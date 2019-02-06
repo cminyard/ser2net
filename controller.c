@@ -585,7 +585,7 @@ controller_write_ready(struct gensio *net)
 }
 
 static int
-controller_io_event(struct gensio *net, int event, int err,
+controller_io_event(struct gensio *net, void *user_data, int event, int err,
 		    unsigned char *buf, gensiods *buflen,
 		    const char *const *auxdata)
 {
@@ -604,8 +604,8 @@ controller_io_event(struct gensio *net, int event, int err,
 
 /* A connection request has come in for the control port. */
 static int
-controller_acc_child_event(struct gensio_accepter *accepter, int event,
-			   void *data)
+controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
+			   int event, void *data)
 {
     controller_info_t *cntlr;
     char              *err = NULL;

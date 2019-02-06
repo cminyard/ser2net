@@ -377,7 +377,8 @@ struct port_info
 };
 
 static void setup_port(port_info_t *port, net_info_t *netcon);
-static int handle_net_event(struct gensio *net, int event, int err,
+static int handle_net_event(struct gensio *net, void *user_data,
+			    int event, int err,
 			    unsigned char *buf, gensiods *buflen,
 			    const char *const *auxdata);
 
@@ -993,11 +994,11 @@ handle_dev_write_ready(port_info_t *port)
 }
 
 static int
-handle_dev_event(struct gensio *io, int event, int err,
+handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 		 unsigned char *buf, gensiods *buflen,
 		 const char *const *auxdata)
 {
-    port_info_t *port = gensio_get_user_data(io);
+    port_info_t *port = user_data;
     net_info_t *netcon;
 
     switch (event) {
@@ -1129,10 +1130,9 @@ handle_dev_fd_devstr_write(port_info_t *port)
 
 /* Data is ready to read on the network port. */
 static gensiods
-handle_net_fd_read(struct gensio *net, int readerr,
+handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 		   unsigned char *buf, gensiods buflen)
 {
-    net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
     gensiods rv = 0;
     char *reason;
@@ -1278,9 +1278,8 @@ finish_dev_to_net_write(port_info_t *port)
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
 static void
-handle_net_fd_write_ready(struct gensio *net)
+handle_net_fd_write_ready(net_info_t *netcon, struct gensio *net)
 {
-    net_info_t *netcon = gensio_get_user_data(net);
     port_info_t *port = netcon->port;
     int rv = 1;
 
@@ -1399,9 +1398,9 @@ sergensio_val_set(struct sergensio *sio, int err,
 }
 
 static void
-s2n_modemstate(struct sergensio *sio, unsigned int modemstate)
+s2n_modemstate(net_info_t *netcon, struct sergensio *sio,
+	       unsigned int modemstate)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     port_info_t *port = netcon->port;
 
     netcon->modemstate_mask = modemstate;
@@ -1409,9 +1408,8 @@ s2n_modemstate(struct sergensio *sio, unsigned int modemstate)
 }
 
 static void
-s2n_linestate(struct sergensio *sio, unsigned int linestate)
+s2n_linestate(net_info_t *netcon, struct sergensio *sio, unsigned int linestate)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     port_info_t *port = netcon->port;
 
     netcon->linestate_mask = linestate;
@@ -1419,9 +1417,8 @@ s2n_linestate(struct sergensio *sio, unsigned int linestate)
 }
 
 static void
-s2n_flowcontrol_state(struct sergensio *sio, bool val)
+s2n_flowcontrol_state(net_info_t *netcon, struct sergensio *sio, bool val)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1430,9 +1427,8 @@ s2n_flowcontrol_state(struct sergensio *sio, bool val)
 }
 
 static void
-s2n_flush(struct sergensio *sio, int val)
+s2n_flush(net_info_t *netcon, struct sergensio *sio, int val)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1441,9 +1437,8 @@ s2n_flush(struct sergensio *sio, int val)
 }
 
 static void
-s2n_baud(struct sergensio *sio, int baud)
+s2n_baud(net_info_t *netcon, struct sergensio *sio, int baud)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1453,9 +1448,8 @@ s2n_baud(struct sergensio *sio, int baud)
 }
 
 static void
-s2n_datasize(struct sergensio *sio, int datasize)
+s2n_datasize(net_info_t *netcon, struct sergensio *sio, int datasize)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1465,9 +1459,8 @@ s2n_datasize(struct sergensio *sio, int datasize)
 }
 
 static void
-s2n_parity(struct sergensio *sio, int parity)
+s2n_parity(net_info_t *netcon, struct sergensio *sio, int parity)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1477,9 +1470,8 @@ s2n_parity(struct sergensio *sio, int parity)
 }
 
 static void
-s2n_stopbits(struct sergensio *sio, int stopbits)
+s2n_stopbits(net_info_t *netcon, struct sergensio *sio, int stopbits)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1489,9 +1481,8 @@ s2n_stopbits(struct sergensio *sio, int stopbits)
 }
 
 static void
-s2n_flowcontrol(struct sergensio *sio, int flowcontrol)
+s2n_flowcontrol(net_info_t *netcon, struct sergensio *sio, int flowcontrol)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1501,9 +1492,8 @@ s2n_flowcontrol(struct sergensio *sio, int flowcontrol)
 }
 
 static void
-s2n_iflowcontrol(struct sergensio *sio, int iflowcontrol)
+s2n_iflowcontrol(net_info_t *netcon, struct sergensio *sio, int iflowcontrol)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1513,9 +1503,8 @@ s2n_iflowcontrol(struct sergensio *sio, int iflowcontrol)
 }
 
 static void
-s2n_sbreak(struct sergensio *sio, int breakv)
+s2n_sbreak(net_info_t *netcon, struct sergensio *sio, int breakv)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1525,9 +1514,8 @@ s2n_sbreak(struct sergensio *sio, int breakv)
 }
 
 static void
-s2n_dtr(struct sergensio *sio, int dtr)
+s2n_dtr(net_info_t *netcon, struct sergensio *sio, int dtr)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1536,9 +1524,8 @@ s2n_dtr(struct sergensio *sio, int dtr)
 }
 
 static void
-s2n_rts(struct sergensio *sio, int rts)
+s2n_rts(net_info_t *netcon, struct sergensio *sio, int rts)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1547,9 +1534,9 @@ s2n_rts(struct sergensio *sio, int rts)
 }
 
 static void
-s2n_signature(struct sergensio *sio, char *sig, unsigned int sig_len)
+s2n_signature(net_info_t *netcon, struct sergensio *sio, char *sig,
+	      unsigned int sig_len)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     port_info_t *port = netcon->port;
 
     sig = port->signaturestr;
@@ -1561,9 +1548,8 @@ s2n_signature(struct sergensio *sio, char *sig, unsigned int sig_len)
 }
 
 static void
-s2n_sync(struct sergensio *sio)
+s2n_sync(net_info_t *netcon, struct sergensio *sio)
 {
-    net_info_t *netcon = sergensio_get_user_data(sio);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1572,9 +1558,8 @@ s2n_sync(struct sergensio *sio)
 }
 
 static void
-s2n_break(struct gensio *io)
+s2n_break(net_info_t *netcon, struct gensio *io)
 {
-    net_info_t *netcon = gensio_get_user_data(io);
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
 
     if (!rsio)
@@ -1583,81 +1568,84 @@ s2n_break(struct gensio *io)
 }
 
 static int
-handle_net_event(struct gensio *net, int event, int err,
+handle_net_event(struct gensio *net, void *user_data, int event, int err,
 		 unsigned char *buf, gensiods *buflen,
 		 const char *const *auxdata)
 {
+    net_info_t *netcon = user_data;
+
     switch (event) {
     case GENSIO_EVENT_READ:
-	*buflen = handle_net_fd_read(net, err, buf, *buflen);
+	*buflen = handle_net_fd_read(netcon, net, err, buf, *buflen);
 	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
-	handle_net_fd_write_ready(net);
+	handle_net_fd_write_ready(netcon, net);
 	return 0;
 
     case GENSIO_EVENT_SEND_BREAK:
-	s2n_break(net);
+	s2n_break(netcon, net);
 	return 0;
 
     case GENSIO_EVENT_SER_MODEMSTATE:
-	s2n_modemstate(gensio_to_sergensio(net), *((unsigned int *) buf));
+	s2n_modemstate(netcon, gensio_to_sergensio(net),
+		       *((unsigned int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_LINESTATE:
-	s2n_linestate(gensio_to_sergensio(net), *((unsigned int *) buf));
+	s2n_linestate(netcon, gensio_to_sergensio(net), *((unsigned int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_SIGNATURE:
-	s2n_signature(gensio_to_sergensio(net), (char *) buf, *buflen);
+	s2n_signature(netcon, gensio_to_sergensio(net), (char *) buf, *buflen);
 	return 0;
 
     case GENSIO_EVENT_SER_FLOW_STATE:
-	s2n_flowcontrol_state(gensio_to_sergensio(net), *((int *) buf));
+	s2n_flowcontrol_state(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_FLUSH:
-	s2n_flush(gensio_to_sergensio(net), *((int *) buf));
+	s2n_flush(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_SYNC:
-	s2n_sync(gensio_to_sergensio(net));
+	s2n_sync(netcon, gensio_to_sergensio(net));
 	return 0;
 
     case GENSIO_EVENT_SER_BAUD:
-	s2n_baud(gensio_to_sergensio(net), *((int *) buf));
+	s2n_baud(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_DATASIZE:
-	s2n_datasize(gensio_to_sergensio(net), *((int *) buf));
+	s2n_datasize(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_PARITY:
-	s2n_parity(gensio_to_sergensio(net), *((int *) buf));
+	s2n_parity(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_STOPBITS:
-	s2n_stopbits(gensio_to_sergensio(net), *((int *) buf));
+	s2n_stopbits(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_FLOWCONTROL:
-	s2n_flowcontrol(gensio_to_sergensio(net), *((int *) buf));
+	s2n_flowcontrol(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_IFLOWCONTROL:
-	s2n_iflowcontrol(gensio_to_sergensio(net), *((int *) buf));
+	s2n_iflowcontrol(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_SBREAK:
-	s2n_sbreak(gensio_to_sergensio(net), *((int *) buf));
+	s2n_sbreak(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_DTR:
-	s2n_dtr(gensio_to_sergensio(net), *((int *) buf));
+	s2n_dtr(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_RTS:
-	s2n_rts(gensio_to_sergensio(net), *((int *) buf));
+	s2n_rts(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
 
     default:
@@ -2457,9 +2445,10 @@ static rotator_t *rotators = NULL;
 
 /* A connection request has come in on a port. */
 static int
-handle_rot_child_event(struct gensio_accepter *accepter, int event, void *data)
+handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
+		       int event, void *data)
 {
-    rotator_t *rot = gensio_acc_get_user_data(accepter);
+    rotator_t *rot = user_data;
     int i;
     const char *err;
     struct gensio *net;
@@ -2620,9 +2609,10 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
 
 /* A connection request has come in on a port. */
 static int
-handle_port_child_event(struct gensio_accepter *accepter, int event, void *data)
+handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
+			int event, void *data)
 {
-    port_info_t *port = gensio_acc_get_user_data(accepter);
+    port_info_t *port = user_data;
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
