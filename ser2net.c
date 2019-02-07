@@ -781,7 +781,7 @@ main(int argc, char *argv[])
     if (err) {
 	fprintf(stderr,
 		"Could not initialize defaults: '%s'\n",
-		strerror(err));
+		gensio_err_to_str(err));
 	exit(1);
     }
 
