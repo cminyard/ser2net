@@ -462,6 +462,11 @@ setup_defaults(void)
 				     defaults[i].type, defaults[i].def.strval,
 				     defaults[i].def.intval, defaults[i].min,
 				     defaults[i].max, defaults[i].enums);
+	    if (err && err != GE_EXISTS)
+		return err;
+	    err = gensio_set_default(so, "ser2net", defaults[i].name,
+				     defaults[i].def.strval,
+				     defaults[i].def.intval);
 	    if (err)
 		return err;
 	}
@@ -501,17 +506,6 @@ find_default_str(const char *name, char **rstr)
     }
     *rstr = newstr;
     return 0;
-}
-
-static void
-handle_new_default(const char *name, char *str, char *class)
-{
-    int err;
-
-    err = gensio_set_default(so, class, name, str, 0);
-    if (err)
-	syslog(LOG_ERR, "error setting default value on line %d for %s: %s",
-	       lineno, name, strerror(err));
 }
 
 /*
@@ -707,6 +701,7 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, ":\n", &strtok_data);
 	char *class = strtok_r(NULL, "\n", &strtok_data);
+	int err;
 
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No default name given on line %d", lineno);
@@ -726,7 +721,32 @@ handle_config_line(char *inbuf, int len)
 	    class = "ser2net";
 	}
 
-	handle_new_default(name, str, class);
+	err = gensio_set_default(so, class, name, str, 0);
+	if (err)
+	    syslog(LOG_ERR, "error setting default value on line %d for %s: %s",
+		   lineno, name, strerror(err));
+	goto out;
+    }
+
+    if (startswith(inbuf, "DELDEFAULT", &strtok_data)) {
+	char *name = strtok_r(NULL, ":", &strtok_data);
+	char *class = strtok_r(NULL, "\n", &strtok_data);
+	int err;
+
+	if (!name) {
+	    syslog(LOG_ERR, "No default name given on line %d", lineno);
+	    goto out;
+	}
+	if (!class || strcmp(class, "ser2net") == 0 ||
+			strcmp(class, "default") == 0) {
+	    syslog(LOG_ERR, "Can only delete class default on line %d", lineno);
+	    goto out;
+	}
+
+	err = gensio_del_default(so, class, name, false);
+	if (err)
+	    syslog(LOG_ERR, "error deleting default value on line %d for %s: %s",
+		   lineno, name, strerror(err));
 	goto out;
     }
 
