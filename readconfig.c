@@ -442,6 +442,7 @@ struct default_data defaults[] = {
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = "" },
+    { "authdir",	GENSIO_DEFAULT_STR,	.def.strval = "" },
     { NULL }
 };
 

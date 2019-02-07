@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <assert.h>
 #include <time.h>
+#include <limits.h>
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
@@ -374,6 +375,11 @@ struct port_info
      */
     struct led_s *led_tx;
     struct led_s *led_rx;
+
+    /*
+     * Directory that has authentication info.
+     */
+    char *authdir;
 };
 
 static void setup_port(port_info_t *port, net_info_t *netcon);
@@ -560,6 +566,8 @@ init_port_data(port_info_t *port)
     port->dev_to_net.maxsize = find_default_int("dev-to-net-bufsize");
     port->net_to_dev.maxsize = find_default_int("net-to-dev-bufsize");
     port->max_connections = find_default_int("max-connections");
+    if (find_default_str("authdir", &port->authdir))
+	return ENOMEM;
 
     port->led_tx = NULL;
     port->led_rx = NULL;
@@ -1144,7 +1152,7 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 	goto out_unlock;
 
     if (readerr) {
-	if (readerr == ECONNRESET || readerr == EPIPE) {
+	if (readerr == GE_REMCLOSE) {
 	    reason = "network read close";
 	} else {
 	    /* Got an error on the read, shut down the port. */
@@ -2427,6 +2435,127 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
     syslog(gensio_log_level_to_syslog(i->level), "%s: %s", name, buf);
 }
 
+/*
+ * The next few functions are for authentication handling.
+ */
+static int
+handle_auth_begin(struct gensio *net, const char *authdir)
+{
+    gensiods len;
+    char username[100];
+    char service[100];
+    char filename[PATH_MAX];
+    int err;
+
+    len = sizeof(username);
+    err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
+			 &len);
+    if (err) {
+	syslog(LOG_ERR, "No username provided by remote: %s",
+	       gensio_err_to_str(err));
+	return GE_AUTHREJECT;
+    }
+    len = sizeof(service);
+    err = gensio_control(net, 0, true, GENSIO_CONTROL_SERVICE,
+			 service, &len);
+    if (err) {
+	syslog(LOG_ERR, "Could not get service: %s", gensio_err_to_str(err));
+	return GE_AUTHREJECT;
+    }
+    if (strncmp(service, "login:", 6) != 0) {
+	syslog(LOG_ERR, "Invalid service: %s", service);
+	return GE_AUTHREJECT;
+    }
+    snprintf(filename, sizeof(filename), "%s/%s", authdir, username);
+
+    return GE_NOTSUP;
+}
+
+static int
+handle_precert(struct gensio *net, const char *authdir)
+{
+    gensiods len;
+    char username[100];
+    char filename[PATH_MAX];
+    int err;
+
+    len = sizeof(username);
+    err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
+			 &len);
+    if (err) {
+	/* Try to get the username from the cert common name. */
+	snprintf(username, sizeof(username), "-1,CN");
+	len = sizeof(username);
+	err = gensio_control(net, 0, true, GENSIO_CONTROL_GET_PEER_CERT_NAME,
+			     username, &len);
+	if (err) {
+	    syslog(LOG_ERR, "No username provided by remote or cert: %s",
+		   gensio_err_to_str(err));
+	    return GE_AUTHREJECT;
+	}
+	/* Set the username so it's available later. */
+	err = gensio_control(net, 0, false, GENSIO_CONTROL_USERNAME, username,
+			     NULL);
+	if (err) {
+	    syslog(LOG_ERR, "Unable to set username to %s: %s", username,
+		   gensio_err_to_str(err));
+	    return GE_AUTHREJECT;
+	}
+    }
+
+    snprintf(filename, sizeof(filename), "%s/%s/allowed_certs/",
+	     authdir, username);
+    err = gensio_control(net, 0, false, GENSIO_CONTROL_CERT_AUTH,
+			 filename, &len);
+    if (err && err != GE_CERTNOTFOUND) {
+	syslog(LOG_ERR, "Unable to set authdir to %s: %s", filename,
+	       gensio_err_to_str(err));
+    }
+    return GE_NOTSUP;
+}
+
+static int
+handle_password(struct gensio *net, const char *authdir, const char *password)
+{
+    gensiods len;
+    char username[100];
+    char filename[PATH_MAX];
+    FILE *pwfile;
+    char readpw[100], *s;
+    int err;
+
+    len = sizeof(username);
+    err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
+			 &len);
+    if (err) {
+	syslog(LOG_ERR, "No username provided by remote: %s",
+	       gensio_err_to_str(err));
+	return GE_AUTHREJECT;
+    }
+
+    snprintf(filename, sizeof(filename), "%s/%s/password",
+	     authdir, username);
+    pwfile = fopen(filename, "r");
+    if (!pwfile) {
+	syslog(LOG_ERR, "Can't open password file %s: %s", filename,
+	       strerror(errno));
+	return GE_AUTHREJECT;
+    }
+    s = fgets(readpw, sizeof(readpw), pwfile);
+    fclose(pwfile);
+    if (!s) {
+	syslog(LOG_ERR, "Can't read password file %s: %s", filename,
+	       strerror(errno));
+	return GE_AUTHREJECT;
+    }
+    s = strchr(readpw, '\n');
+    if (s)
+	*s = '\0';
+    if (strcmp(readpw, password) == 0)
+	return 0;
+    return GE_NOTSUP;
+}
+
 typedef struct rotator
 {
     /* Rotators use the ports_lock for mutex. */
@@ -2438,6 +2567,8 @@ typedef struct rotator
 
     struct gensio_accepter *accepter;
 
+    char *authdir;
+
     struct rotator *next;
 } rotator_t;
 
@@ -2445,23 +2576,11 @@ static rotator_t *rotators = NULL;
 
 /* A connection request has come in on a port. */
 static int
-handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
-		       int event, void *data)
+rot_new_con(rotator_t *rot, struct gensio *net)
 {
-    rotator_t *rot = user_data;
     int i;
     const char *err;
-    struct gensio *net;
 
-    if (event == GENSIO_ACC_EVENT_LOG) {
-	do_gensio_log(rot->portname, data);
-	return 0;
-    }
-
-    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
-	return ENOTSUP;
-
-    net = data;
     so->lock(ports_lock);
     i = rot->curr_port;
     do {
@@ -2486,6 +2605,44 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
     return 0;
 }
 
+static int
+handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
+		       int event, void *data)
+{
+    rotator_t *rot = user_data;
+
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	do_gensio_log(rot->portname, data);
+	return 0;
+    }
+
+    switch (event) {
+    case GENSIO_ACC_EVENT_NEW_CONNECTION:
+	return rot_new_con(rot, data);
+
+    case GENSIO_ACC_EVENT_AUTH_BEGIN:
+	if (!rot->authdir)
+	    return 0;
+	return handle_auth_begin(data, rot->authdir);
+
+    case GENSIO_ACC_EVENT_PRECERT_VERIFY:
+	if (!rot->authdir)
+	    return 0;
+	return handle_precert(data, rot->authdir);
+
+    case GENSIO_ACC_EVENT_PASSWORD_VERIFY: {
+	struct gensio_acc_password_verify_data *pwdata;
+	if (!rot->authdir)
+	    return 0;
+	pwdata = (struct gensio_acc_password_verify_data *) data;
+	return handle_password(pwdata->io, rot->authdir, pwdata->password);
+    }
+
+    default:
+	return ENOTSUP;
+    }
+}
+
 static struct gensio_waiter *rotator_shutdown_wait;
 
 static void
@@ -2502,6 +2659,8 @@ free_rotator(rotator_t *rot)
 	so->wait(rotator_shutdown_wait, 1, NULL);
 	gensio_acc_free(rot->accepter);
     }
+    if (rot->authdir)
+	free(rot->authdir);
     if (rot->portname)
 	free(rot->portname);
     if (rot->portv)
@@ -2536,6 +2695,11 @@ add_rotator(char *portname, char *ports, int lineno)
 
     rot->portname = strdup(portname);
     if (!rot->portname) {
+	free_rotator(rot);
+	return ENOMEM;
+    }
+
+    if (find_default_str("authdir", &rot->authdir)) {
 	free_rotator(rot);
 	return ENOMEM;
     }
@@ -2607,27 +2771,14 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
     handle_new_net(port, net, netcon);
 }
 
-/* A connection request has come in on a port. */
 static int
-handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
-			int event, void *data)
+port_new_con(port_info_t *port, struct gensio *net)
 {
-    port_info_t *port = user_data;
     const char *err = NULL;
     unsigned int i, j;
     struct sockaddr_storage addr;
     gensiods socklen;
-    struct gensio *net;
 
-    if (event == GENSIO_ACC_EVENT_LOG) {
-	do_gensio_log(port->portname, data);
-	return 0;
-    }
-
-    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
-	return ENOTSUP;
-
-    net = data;
     so->lock(ports_lock); /* For is_device_already_inuse() */
     so->lock(port->lock);
 
@@ -2688,6 +2839,45 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
     so->unlock(port->lock);
     so->unlock(ports_lock);
     return 0;
+}
+
+/* A connection request has come in on a port. */
+static int
+handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
+			int event, void *data)
+{
+    port_info_t *port = user_data;
+
+    if (event == GENSIO_ACC_EVENT_LOG) {
+	do_gensio_log(port->portname, data);
+	return 0;
+    }
+
+    switch (event) {
+    case GENSIO_ACC_EVENT_NEW_CONNECTION:
+	return port_new_con(port, data);
+
+    case GENSIO_ACC_EVENT_AUTH_BEGIN:
+	if (!port->authdir)
+	    return 0;
+	return handle_auth_begin(data, port->authdir);
+
+    case GENSIO_ACC_EVENT_PRECERT_VERIFY:
+	if (!port->authdir)
+	    return 0;
+	return handle_precert(data, port->authdir);
+
+    case GENSIO_ACC_EVENT_PASSWORD_VERIFY: {
+	struct gensio_acc_password_verify_data *pwdata;
+	if (!port->authdir)
+	    return 0;
+	pwdata = (struct gensio_acc_password_verify_data *) data;
+	return handle_password(pwdata->io, port->authdir, pwdata->password);
+    }
+
+    default:
+	return ENOTSUP;
+    }
 }
 
 static void
@@ -3491,6 +3681,12 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (ival < 1)
 	    ival = 1;
 	port->max_connections = ival;
+    } else if ((rv = cmpstrval(pos, "authdir=", &val))) {
+	port->authdir = strdup(val);
+	if (!port->authdir) {
+	    eout->out(eout, "Out of memory allocating authdir");
+	    return -1;
+	}
     } else if (cmpstrval(pos, "remaddr=", &val)) {
 	rv = port_add_remaddr(eout, port, val);
 	if (rv)
