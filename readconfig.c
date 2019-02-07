@@ -481,38 +481,33 @@ find_default_int(const char *name)
     return val;
 }
 
-char *
-find_default_str(const char *name)
+int
+find_default_str(const char *name, char **rstr)
 {
     int err;
     const char *val;
+    char *newstr = NULL;
 
     err = gensio_get_default(so, "ser2net", name, true, GENSIO_DEFAULT_STR,
 			     &val, NULL);
     if (err)
 	abort();
 
-    return strdup(val);
+    if (val) {
+	newstr = strdup(val);
+	if (!newstr)
+	    return GE_NOMEM;
+    }
+    *rstr = newstr;
+    return 0;
 }
 
 static void
-handle_new_default(const char *name, char *str)
+handle_new_default(const char *name, char *str, char *class)
 {
     int err;
-    char *s;
 
-    while (isspace(*str))
-	str++;
-    s = str;
-    while (!isspace(*s) && *s != '\0')
-	s++;
-    if (s == str) {
-	syslog(LOG_ERR, "No default value on %d", lineno);
-	return;
-    }
-    *s = '\0';
-
-    err = gensio_set_default(so, "ser2net", name, str, 0);
+    err = gensio_set_default(so, class, name, str, 0);
     if (err)
 	syslog(LOG_ERR, "error setting default value on line %d for %s: %s",
 	       lineno, name, strerror(err));
@@ -709,12 +704,28 @@ handle_config_line(char *inbuf, int len)
 
     if (startswith(inbuf, "DEFAULT", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
+	char *str = strtok_r(NULL, ":\n", &strtok_data);
+	char *class = strtok_r(NULL, "\n", &strtok_data);
+
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No default name given on line %d", lineno);
 	    goto out;
 	}
-	handle_new_default(name, str);
+	if (str && strlen(str) == 0) {
+	    str = NULL;
+	}
+	if (class) {
+	    while (isspace(*class))
+		class++;
+	    if (*class == '\0')
+		class = "ser2net";
+	    else if (strcmp(class, "default") == 0)
+		class = NULL;
+	} else {
+	    class = "ser2net";
+	}
+
+	handle_new_default(name, str, class);
 	goto out;
     }
 

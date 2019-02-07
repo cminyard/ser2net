@@ -56,8 +56,8 @@ char *find_rs485conf(const char *name);
 /* Return the default int value for the given name. */
 int find_default_int(const char *name);
 
-/* Return the default string value for the given name.  Return NULL if
+/* Return the default string value for the given name.  Return GE_NOMEM if
    out of memory.  The returned value must be freed. */
-char *find_default_str(const char *name);
+int find_default_str(const char *name, char **rstr);
 
 #endif /* READCONFIG */

@@ -3714,10 +3714,10 @@ portconfig(struct absout *eout,
      * it to an empty string.
      */
     if (!new_port->remaddr_set) {
-	char *remaddr = find_default_str("remaddr");
-	if (!remaddr) {
+	char *remaddr;
+	if (find_default_str("remaddr", &remaddr)) {
 	    eout->out(eout, "Out of memory processing default remote address");
-	} else {
+	} else if (remaddr) {
 	    err = port_add_remaddr(eout, new_port, remaddr);
 	    free(remaddr);
 	    if (err)
