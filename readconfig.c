@@ -838,9 +838,8 @@ readconfig_init(void)
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int
-readconfig(char *filename)
+readconfig(FILE *instream)
 {
-    FILE *instream = NULL;
     int linesize = 256;
     char *inbuf = malloc(linesize);
     int  rv = 0, pos = 0;
@@ -851,13 +850,6 @@ readconfig(char *filename)
     }
 
     lineno = 0;
-
-    instream = fopen(filename, "r");
-    if (!instream) {
-	syslog(LOG_ERR, "Unable to open config file '%s': %m", filename);
-	rv = -1;
-	goto out_err;
-    }
 
     while (fgets(inbuf + pos, linesize - pos, instream) != NULL) {
 	int len = strlen(inbuf);
@@ -892,8 +884,6 @@ readconfig(char *filename)
     clear_old_port_config(config_num);
 
  out_err:
-    if (instream)
-	fclose(instream);
     free(inbuf);
     return rv;
 }

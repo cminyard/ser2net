@@ -43,7 +43,9 @@
 #include "dataxfer.h"
 #include "led.h"
 
-static char *config_file = "/etc/ser2net.conf";
+static char *config_file = "/etc/ser2net/ser2net.conf";
+static bool config_file_set = false;
+static char *old_config_file = "/etc/ser2net.conf";
 int config_port_from_cmdline = 0;
 char *config_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
@@ -67,7 +69,7 @@ char *rfc2217_signature = "ser2net";
 
 static char *help_string =
 "%s: Valid parameters are:\n"
-"  -c <config file> - use a config file besides /etc/ser2net.conf\n"
+"  -c <config file> - use a config file besides /etc/ser2net/ser2net.conf\n"
 "  -C <config line> - Handle a single configuration line.  This may be\n"
 "     specified multiple times for multiple lines.  This is just like a\n"
 "     line in the config file.  This disables the default config file,\n"
@@ -86,15 +88,44 @@ static char *help_string =
 "  -v - print the program's version and exit\n"
 "  -s - specify a default signature for RFC2217 protocol\n";
 
+static FILE *
+fopen_config_file(void)
+{
+    FILE *instream = fopen(config_file, "r");
+
+    if (!instream) {
+	if (config_file_set) {
+	    syslog(LOG_ERR, "Unable to open config file '%s': %m",
+		   config_file);
+	    return NULL;
+	}
+	instream = fopen(old_config_file, "r");
+	if (!instream) {
+	    syslog(LOG_ERR, "Unable to open config file '%s' or old one"
+		   " '%s': %m", config_file, old_config_file);
+	    return NULL;
+	}
+    }
+    return instream;
+}
+
 static void
 reread_config_file(void)
 {
     if (config_file) {
 	char *prev_config_port = config_port;
+	FILE *instream = NULL;
+
 	config_port = NULL;
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
 	readconfig_init();
-	readconfig(config_file);
+
+	instream = fopen_config_file();
+	if (!instream)
+	    goto config_port_unchanged;
+
+	readconfig(instream);
+	fclose(instream);
 	if (config_port_from_cmdline) {
 	    /* Never override the config port from the command line. */
 	    free(config_port);
@@ -654,6 +685,7 @@ main(int argc, char *argv[])
 	    }
 	    config_lines[num_config_lines - 1] = argv[i];
 	    config_file = NULL;
+	    config_file_set = true;
 	    break;
 
 	case 'c':
@@ -664,6 +696,7 @@ main(int argc, char *argv[])
 		arg_error(argv[0]);
 	    }
 	    config_file = argv[i];
+	    config_file_set = true;
 	    break;
 
 	case 'p':
@@ -789,8 +822,14 @@ main(int argc, char *argv[])
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
     if (config_file) {
-	if (readconfig(config_file) == -1)
+	FILE *instream = fopen_config_file();
+
+	if (!instream)
 	    exit(1);
+
+	if (readconfig(instream) == -1)
+	    exit(1);
+	fclose(instream);
     }
 
     if (config_port != NULL) {

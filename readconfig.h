@@ -19,6 +19,7 @@
 
 #ifndef READCONFIG
 #define READCONFIG
+#include <stdio.h>
 
 /* Handle one line of configuration. */
 int handle_config_line(char *inbuf, int len);
@@ -28,7 +29,7 @@ int readconfig_init(void);
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
-int readconfig(char *filename);
+int readconfig(FILE *instream);
 
 /*
  * Search for a banner/open/close string by name.  Note that the
