@@ -20,11 +20,6 @@
 /* This is the entry point for the ser2net program.  It reads
    parameters, initializes everything, then starts the select loop. */
 
-/* TODO
- *
- * Add some type of security
- */
-
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -43,9 +38,9 @@
 #include "dataxfer.h"
 #include "led.h"
 
-static char *config_file = "/etc/ser2net/ser2net.conf";
+static char *config_file = SYSCONFDIR "/ser2net/ser2net.conf";
 static bool config_file_set = false;
-static char *old_config_file = "/etc/ser2net.conf";
+static char *old_config_file = SYSCONFDIR "/ser2net.conf";
 int config_port_from_cmdline = 0;
 char *config_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;

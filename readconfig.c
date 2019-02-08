@@ -441,11 +441,35 @@ struct default_data defaults[] = {
 					.def.intval = PORT_BUFSIZE },
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
-    { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = "" },
-    { "authdir",	GENSIO_DEFAULT_STR,	.def.strval = "" },
+    { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
+						DATAROOT "/ser2net/auth" },
     { NULL }
 };
 
+static int
+setup_ser2net_defaults(void)
+{
+    unsigned int i;
+    int err;
+
+    for (i = 0; defaults[i].name; i++) {
+	err = gensio_set_default(so, NULL, defaults[i].name,
+				 defaults[i].def.strval,
+				 defaults[i].def.intval);
+	if (err)
+	    return err;
+    }
+    err = gensio_set_default(so, "ssl", "key",
+			     SYSCONFDIR "/ser2net/ser2net.key", 0);
+    if (err)
+	return err;
+    err = gensio_set_default(so, "ssl", "cert",
+			     SYSCONFDIR "/ser2net/ser2net.crt", 0);
+    if (err)
+	return err;
+    return 0;
+}
 
 static int
 setup_defaults(void)
@@ -464,14 +488,10 @@ setup_defaults(void)
 				     defaults[i].max, defaults[i].enums);
 	    if (err && err != GE_EXISTS)
 		return err;
-	    err = gensio_set_default(so, "ser2net", defaults[i].name,
-				     defaults[i].def.strval,
-				     defaults[i].def.intval);
-	    if (err)
-		return err;
 	}
+	defaults_added = true;
     }
-    return 0;
+    return setup_ser2net_defaults();
 }
 
 int
@@ -479,7 +499,7 @@ find_default_int(const char *name)
 {
     int err, val;
 
-    err = gensio_get_default(so, "ser2net", name, true, GENSIO_DEFAULT_INT,
+    err = gensio_get_default(so, "ser2net", name, false, GENSIO_DEFAULT_INT,
 			     NULL, &val);
     if (err)
 	abort();
@@ -491,16 +511,17 @@ int
 find_default_str(const char *name, char **rstr)
 {
     int err;
-    const char *val;
+    char *val;
     char *newstr = NULL;
 
-    err = gensio_get_default(so, "ser2net", name, true, GENSIO_DEFAULT_STR,
+    err = gensio_get_default(so, "ser2net", name, false, GENSIO_DEFAULT_STR,
 			     &val, NULL);
     if (err)
 	abort();
 
     if (val) {
 	newstr = strdup(val);
+	so->free(so, val);
 	if (!newstr)
 	    return GE_NOMEM;
     }
@@ -711,14 +732,12 @@ handle_config_line(char *inbuf, int len)
 	    str = NULL;
 	}
 	if (class) {
-	    while (isspace(*class))
-		class++;
-	    if (*class == '\0')
-		class = "ser2net";
-	    else if (strcmp(class, "default") == 0)
-		class = NULL;
-	} else {
-	    class = "ser2net";
+	    /* Watch out for trailing spaces. */
+	    unsigned int len = strlen(class);
+
+	    while(len > 0 && isspace(class[len]))
+		len--;
+	    class[len] = '\0';
 	}
 
 	err = gensio_set_default(so, class, name, str, 0);

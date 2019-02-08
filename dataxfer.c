@@ -2443,8 +2443,6 @@ handle_auth_begin(struct gensio *net, const char *authdir)
 {
     gensiods len;
     char username[100];
-    char service[100];
-    char filename[PATH_MAX];
     int err;
 
     len = sizeof(username);
@@ -2455,18 +2453,6 @@ handle_auth_begin(struct gensio *net, const char *authdir)
 	       gensio_err_to_str(err));
 	return GE_AUTHREJECT;
     }
-    len = sizeof(service);
-    err = gensio_control(net, 0, true, GENSIO_CONTROL_SERVICE,
-			 service, &len);
-    if (err) {
-	syslog(LOG_ERR, "Could not get service: %s", gensio_err_to_str(err));
-	return GE_AUTHREJECT;
-    }
-    if (strncmp(service, "login:", 6) != 0) {
-	syslog(LOG_ERR, "Invalid service: %s", service);
-	return GE_AUTHREJECT;
-    }
-    snprintf(filename, sizeof(filename), "%s/%s", authdir, username);
 
     return GE_NOTSUP;
 }
@@ -2478,6 +2464,7 @@ handle_precert(struct gensio *net, const char *authdir)
     char username[100];
     char filename[PATH_MAX];
     int err;
+    char *s = username;
 
     len = sizeof(username);
     err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
@@ -2493,18 +2480,28 @@ handle_precert(struct gensio *net, const char *authdir)
 		   gensio_err_to_str(err));
 	    return GE_AUTHREJECT;
 	}
+	/* Skip over the <n>,CN, in the username output. */
+	s = strchr(username, ',');
+	if (s)
+	    s = strchr(s + 1, ',');
+	if (!s) {
+	    syslog(LOG_ERR, "Got invalid username: %s", username);
+	    return GE_AUTHREJECT;
+	}
+	s++;
+
 	/* Set the username so it's available later. */
-	err = gensio_control(net, 0, false, GENSIO_CONTROL_USERNAME, username,
+	err = gensio_control(net, 0, false, GENSIO_CONTROL_USERNAME, s,
 			     NULL);
 	if (err) {
-	    syslog(LOG_ERR, "Unable to set username to %s: %s", username,
+	    syslog(LOG_ERR, "Unable to set username to %s: %s", s,
 		   gensio_err_to_str(err));
 	    return GE_AUTHREJECT;
 	}
     }
 
     snprintf(filename, sizeof(filename), "%s/%s/allowed_certs/",
-	     authdir, username);
+	     authdir, s);
     err = gensio_control(net, 0, false, GENSIO_CONTROL_CERT_AUTH,
 			 filename, &len);
     if (err && err != GE_CERTNOTFOUND) {
@@ -3844,7 +3841,7 @@ portconfig(struct absout *eout,
 	goto errout;
 
     if (write_only) {
-	err = strdupcat(&new_port->devname, "wronly");
+	err = strdupcat(&new_port->devname, "WRONLY");
 	if (err) {
 	    eout->out(eout, "Out of memory appending to devname");
 	    goto errout;

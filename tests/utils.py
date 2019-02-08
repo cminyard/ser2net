@@ -455,7 +455,7 @@ class Ser2netDaemon:
         return
 
     def read_callback(self, io, err, buf, auxdata):
-        print "Error from ser2net: " + buf;
+        print("Error from ser2net: " + buf);
         return len(buf)
 
     def terminate(self):
