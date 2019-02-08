@@ -425,8 +425,7 @@ struct default_data
 
 struct default_data defaults[] = {
     /* All port types */
-    { "remctl",		GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
-    { "telnet_brk_on_sync",GENSIO_DEFAULT_BOOL,.def.intval = 0 },
+    { "telnet-brk-on-sync",GENSIO_DEFAULT_BOOL,.def.intval = 0 },
     { "kickolduser",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
     { "chardelay",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
     { "chardelay-scale",GENSIO_DEFAULT_INT,	.min = 1, .max = 1000,
@@ -500,6 +499,20 @@ find_default_int(const char *name)
     int err, val;
 
     err = gensio_get_default(so, "ser2net", name, false, GENSIO_DEFAULT_INT,
+			     NULL, &val);
+    if (err)
+	abort();
+
+    return val;
+}
+
+bool
+find_default_bool(const char *name)
+{
+    int err;
+    bool val;
+
+    err = gensio_get_default(so, "ser2net", name, false, GENSIO_DEFAULT_BOOL,
 			     NULL, &val);
     if (err)
 	abort();

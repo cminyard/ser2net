@@ -71,8 +71,8 @@ char *enabled_str[] = { "off", "on" };
 
 typedef struct trace_info_s
 {
-    int  hexdump;     /* output each block as a hexdump */
-    int  timestamp;   /* preceed each line with a timestamp */
+    bool hexdump;     /* output each block as a hexdump */
+    bool timestamp;   /* preceed each line with a timestamp */
     char *filename;   /* open file.  NULL if not used */
     int  fd;          /* open file.  -1 if not used */
 } trace_info_t;
@@ -220,26 +220,26 @@ struct port_info
 					   handler context that needs
 					   to be waited for exit. */
 
-    int chardelay;                      /* The amount of time to wait after
+    unsigned int chardelay;             /* The amount of time to wait after
 					   receiving a character before
 					   sending it, unless we receive
 					   another character.  Based on
 					   bit rate. */
 
-    int bps;				/* Bits per second rate. */
-    int bpc;				/* Bits per character. */
-    int stopbits;
-    int paritybits;
+    unsigned int bps;			/* Bits per second rate. */
+    unsigned int bpc;			/* Bits per character. */
+    unsigned int stopbits;
+    unsigned int paritybits;
 
     bool enable_chardelay;
 
-    int  chardelay_scale;		/* The number of character
+    unsigned int chardelay_scale;	/* The number of character
 					   periods to wait for the
 					   next character, in tenths of
 					   a character period. */
-    int  chardelay_min;			/* The minimum chardelay, in
+    unsigned int chardelay_min;		/* The minimum chardelay, in
 					   microseconds. */
-    int  chardelay_max;			/* Maximum amount of time to
+    unsigned int chardelay_max;		/* Maximum amount of time to
 					   wait before sending the data. */
     struct timeval send_time;		/* When using chardelay, the
 					   time when we will send the
@@ -313,10 +313,10 @@ struct port_info
     bool allow_2217;
 
     /* Send a break if we get a sync command? */
-    int telnet_brk_on_sync;
+    bool telnet_brk_on_sync;
 
     /* kickolduser mode */
-    int kickolduser_mode;
+    bool kickolduser_mode;
 
     /* Banner to display at startup, or NULL if none. */
     char *bannerstr;
@@ -556,9 +556,8 @@ init_port_data(port_info_t *port)
     port->trace_write.fd = -1;
     port->trace_both.fd = -1;
 
-    port->allow_2217 = find_default_int("remctl");
-    port->telnet_brk_on_sync = find_default_int("telnet_brk_on_sync");
-    port->kickolduser_mode = find_default_int("kickolduser");
+    port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
+    port->kickolduser_mode = find_default_bool("kickolduser");
     port->enable_chardelay = find_default_int("chardelay");
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");
@@ -2166,7 +2165,7 @@ setup_trace(port_info_t *port)
 static void
 recalc_port_chardelay(port_info_t *port)
 {
-    int bpc = port->bpc + port->stopbits + port->paritybits + 1;
+    unsigned int bpc = port->bpc + port->stopbits + port->paritybits + 1;
 
     /* delay is (((1 / bps) * bpc) * scale) seconds */
     if (!port->enable_chardelay) {
@@ -3456,35 +3455,6 @@ got_timeout(struct gensio_timer *timer, void *data)
     so->unlock(port->lock);
 }
 
-int
-cmpstrval(const char *s, const char *prefix, const char **val)
-{
-    int len = strlen(prefix);
-
-    if (strncmp(s, prefix, len))
-	return 0;
-    *val = s + len;
-
-    return 1;
-}
-
-static int cmpstrint(const char *s, const char *prefix, int *rval,
-		     struct absout *eout)
-{
-    const char *val;
-    char *endpos;
-
-    if (!cmpstrval(s, prefix, &val))
-	return 0;
-
-    *rval = strtoul(val, &endpos, 10);
-    if (endpos == val || *endpos != '\0') {
-	eout->out(eout, "Invalid number for %s: %s\n", prefix, val);
-	return -1;
-    }
-    return 1;
-}
-
 static int
 port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
 {
@@ -3562,7 +3532,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
     char *s;
     const char *val;
     unsigned int len;
-    int rv, ival;
+    int rv;
 
     /*
      * This is a hack for backwards compatibility, if we see a config
@@ -3575,122 +3545,114 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	    eout->out(eout, "Out of memory appending to devname");
 	    return -1;
 	}
-    } else if (strcmp(pos, "remctl") == 0) {
-	port->allow_2217 = true;
-    } else if (strcmp(pos, "-remctl") == 0) {
-	port->allow_2217 = false;
-    } else if (strcmp(pos, "kickolduser") == 0) {
-        port->kickolduser_mode = 1;
-    } else if (strcmp(pos, "-kickolduser") == 0) {
-        port->kickolduser_mode = 0;
-    } else if (strcmp(pos, "hexdump") == 0 ||
-	       strcmp(pos, "-hexdump") == 0) {
-	port->trace_read.hexdump = (*pos != '-');
-	port->trace_write.hexdump = (*pos != '-');
-	port->trace_both.hexdump = (*pos != '-');
-    } else if (strcmp(pos, "timestamp") == 0 ||
-	       strcmp(pos, "-timestamp") == 0) {
-	port->trace_read.timestamp = (*pos != '-');
-	port->trace_write.timestamp = (*pos != '-');
-	port->trace_both.timestamp = (*pos != '-');
-    } else if (strcmp(pos, "tr-hexdump") == 0 ||
-	       strcmp(pos, "-tr-hexdump") == 0) {
-	port->trace_read.hexdump = (*pos != '-');
-    } else if (strcmp(pos, "tr-timestamp") == 0 ||
-	       strcmp(pos, "-tr-timestamp") == 0) {
-	port->trace_read.timestamp = (*pos != '-');
-    } else if (strcmp(pos, "tw-hexdump") == 0 ||
-	       strcmp(pos, "-tw-hexdump") == 0) {
-	port->trace_write.hexdump = (*pos != '-');
-    } else if (strcmp(pos, "tw-timestamp") == 0 ||
-	       strcmp(pos, "-tw-timestamp") == 0) {
-	port->trace_write.timestamp = (*pos != '-');
-    } else if (strcmp(pos, "tb-hexdump") == 0 ||
-	       strcmp(pos, "-tb-hexdump") == 0) {
-	port->trace_both.hexdump = (*pos != '-');
-    } else if (strcmp(pos, "tb-timestamp") == 0 ||
-	       strcmp(pos, "-tb-timestamp") == 0) {
-	port->trace_both.timestamp = (*pos != '-');
-    } else if (cmpstrval(pos, "tr=", &val)) {
+    } else if (gensio_check_keybool(pos, "kickolduser",
+				    &port->kickolduser_mode) > 0) {
+    } else if (gensio_check_keybool(pos, "hexdump",
+				    &port->trace_read.hexdump) > 0) {
+	port->trace_write.hexdump = port->trace_read.hexdump;
+	port->trace_both.hexdump = port->trace_read.hexdump;
+    } else if (gensio_check_keybool(pos, "timestamp",
+				    &port->trace_read.timestamp) > 0) {
+	port->trace_write.timestamp = port->trace_read.timestamp;
+	port->trace_both.timestamp = port->trace_read.timestamp;
+    } else if (gensio_check_keybool(pos, "tr-hexdump",
+				    &port->trace_read.hexdump) > 0) {
+    } else if (gensio_check_keybool(pos, "tr-timestamp",
+				    &port->trace_read.timestamp) > 0) {
+    } else if (gensio_check_keybool(pos, "tw-hexdump",
+				    &port->trace_write.hexdump) > 0) {
+    } else if (gensio_check_keybool(pos, "tw-timestamp",
+				    &port->trace_write.timestamp) > 0) {
+    } else if (gensio_check_keybool(pos, "tb-hexdump",
+				    &port->trace_both.hexdump) > 0) {
+    } else if (gensio_check_keybool(pos, "tb-timestamp",
+				    &port->trace_both.timestamp) > 0) {
+    } else if (gensio_check_keyvalue(pos, "tr", &val) > 0) {
 	/* trace read, data from the port to the socket */
 	port->trace_read.filename = find_tracefile(val);
-    } else if (cmpstrval(pos, "tw=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "tw", &val) > 0) {
 	/* trace write, data from the socket to the port */
 	port->trace_write.filename = find_tracefile(val);
-    } else if (cmpstrval(pos, "tb=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "tb", &val) > 0) {
 	/* trace both directions. */
 	port->trace_both.filename = find_tracefile(val);
-    } else if (cmpstrval(pos, "led-rx=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "led-rx", &val) > 0) {
 	/* LED for UART RX traffic */
 	port->led_rx = find_led(val);
-    } else if (cmpstrval(pos, "led-tx=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "led-tx=", &val) > 0) {
 	/* LED for UART TX traffic */
 	port->led_tx = find_led(val);
-    } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
-	port->telnet_brk_on_sync = 1;
-    } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
-	port->telnet_brk_on_sync = 0;
-    } else if (strcmp(pos, "chardelay") == 0) {
-	port->enable_chardelay = true;
-    } else if (strcmp(pos, "-chardelay") == 0) {
-	port->enable_chardelay = false;
-    } else if ((rv = cmpstrint(pos, "chardelay-scale=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	port->chardelay_scale = ival;
-    } else if ((rv = cmpstrint(pos, "chardelay-min=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	port->chardelay_min = ival;
-    } else if ((rv = cmpstrint(pos, "chardelay-max=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	port->chardelay_max = ival;
-    } else if ((rv = cmpstrint(pos, "dev-to-net-bufsize=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	if (ival < 2)
-	    ival = 2;
-	port->dev_to_net.maxsize = ival;
-    } else if ((rv = cmpstrint(pos, "net-to-dev-bufsize=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	if (ival < 2)
-	    ival = 2;
-	port->net_to_dev.maxsize = ival;
-    } else if ((rv = cmpstrint(pos, "dev-to-tcp-bufsize=", &ival, eout))) {
-	/* deprecated */
-	if (rv == -1)
-	    return -1;
-	if (ival < 2)
-	    ival = 2;
-	port->dev_to_net.maxsize = ival;
-    } else if ((rv = cmpstrint(pos, "tcp-to-dev-bufsize=", &ival, eout))) {
-	/* deprecated */
-	if (rv == -1)
-	    return -1;
-	if (ival < 2)
-	    ival = 2;
-	port->net_to_dev.maxsize = ival;
-    } else if ((rv = cmpstrint(pos, "max-connections=", &ival, eout))) {
-	if (rv == -1)
-	    return -1;
-	if (ival < 1)
-	    ival = 1;
-	port->max_connections = ival;
-    } else if ((rv = cmpstrval(pos, "authdir=", &val))) {
+    } else if (gensio_check_keybool(pos, "telnet-brk-on-sync",
+				    &port->telnet_brk_on_sync) > 0) {
+    } else if (gensio_check_keybool(pos, "chardelay",
+				    &port->enable_chardelay) > 0) {
+    } else if (gensio_check_keyuint(pos, "chardelay-scale",
+				   &port->chardelay_scale) > 0) {
+    } else if (gensio_check_keyuint(pos, "chardelay-min",
+				   &port->chardelay_min) > 0) {
+    } else if (gensio_check_keyuint(pos, "chardelay-max",
+				   &port->chardelay_max) > 0) {
+    } else if (gensio_check_keyds(pos, "dev-to-net-bufsize",
+				  &port->dev_to_net.maxsize) > 0) {
+	if (port->dev_to_net.maxsize < 2)
+	    port->dev_to_net.maxsize = 2;
+    } else if (gensio_check_keyds(pos, "net-to-dev-bufsize",
+				  &port->net_to_dev.maxsize) > 0) {
+	if (port->net_to_dev.maxsize < 2)
+	    port->net_to_dev.maxsize = 2;
+    } else if (gensio_check_keyuint(pos, "max-connections",
+				   &port->max_connections) > 0) {
+	if (port->max_connections < 1)
+	    port->max_connections = 1;
+    } else if (gensio_check_keyvalue(pos, "authdir", &val) > 0) {
 	port->authdir = strdup(val);
 	if (!port->authdir) {
 	    eout->out(eout, "Out of memory allocating authdir");
 	    return -1;
 	}
-    } else if (cmpstrval(pos, "remaddr=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "remaddr", &val) > 0) {
 	rv = port_add_remaddr(eout, port, val);
 	if (rv)
 	    return -1;
 	port->remaddr_set = true;
-    } else if (cmpstrval(pos, "rs485=", &val)) {
+    } else if (gensio_check_keyvalue(pos, "rs485", &val)) {
 	port->rs485 = find_rs485conf(val);
+
+    /* Everything from here down to the banner, etc is deprecated. */
+    } else if (strcmp(pos, "remctl") == 0) {
+	port->allow_2217 = true;
+    } else if (strcmp(pos, "-remctl") == 0) {
+	port->allow_2217 = false;
+    } else if (strcmp(pos, "-kickolduser") == 0) {
+        port->kickolduser_mode = 0;
+    } else if (strcmp(pos, "-hexdump") == 0) {
+	port->trace_read.hexdump = false;
+	port->trace_write.hexdump = false;
+	port->trace_both.hexdump = false;
+    } else if (strcmp(pos, "-timestamp") == 0) {
+	port->trace_read.timestamp = false;
+	port->trace_write.timestamp = false;
+	port->trace_both.timestamp = false;
+    } else if (strcmp(pos, "-tr-hexdump") == 0) {
+	port->trace_read.hexdump = false;
+    } else if (strcmp(pos, "-tr-timestamp") == 0) {
+	port->trace_read.timestamp = false;
+    } else if (strcmp(pos, "-tw-hexdump") == 0) {
+	port->trace_write.hexdump = false;
+    } else if (strcmp(pos, "-tw-timestamp") == 0) {
+	port->trace_write.timestamp = false;
+    } else if (strcmp(pos, "-tb-hexdump") == 0) {
+	port->trace_both.hexdump = false;
+    } else if (strcmp(pos, "-tb-timestamp") == 0) {
+	port->trace_both.timestamp = false;
+    } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
+	port->telnet_brk_on_sync = 1;
+    } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
+	port->telnet_brk_on_sync = 0;
+    } else if (strcmp(pos, "-chardelay") == 0) {
+	port->enable_chardelay = false;
+
+    /* Banner and friend handling. */
     } else if ((s = find_str(pos, &stype, &len))) {
 	/* It's a startup banner, signature or open/close string, it's
 	   already set. */
