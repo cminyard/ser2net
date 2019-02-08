@@ -567,6 +567,8 @@ init_port_data(port_info_t *port)
     port->max_connections = find_default_int("max-connections");
     if (find_default_str("authdir", &port->authdir))
 	return ENOMEM;
+    if (find_default_str("signature", &port->signaturestr))
+	return ENOMEM;
 
     port->led_tx = NULL;
     port->led_rx = NULL;
@@ -3500,27 +3502,32 @@ strdupcat(char **str, const char *cat)
 }
 
 static const char *serialdev_parms[] = {
-    "XONXOFF",
-    "-XONXOFF",
-    "RTSCTS",
-    "-RTSCTS",
-    "LOCAL",
-    "-LOCAL",
-    "HANGUP_WHEN_DONE",
-    "-HANGUP_WHEN_DONE",
-    "NOBREAK",
-    "-NOBREAK",
+    "XONXOFF", NULL,
+    "-XONXOFF", "xonxoff=false",
+    "RTSCTS", NULL,
+    "-RTSCTS", "rtscts=false",
+    "LOCAL", NULL,
+    "-LOCAL", "local=false",
+    "HANGUP_WHEN_DONE", "hangup-when-done",
+    "-HANGUP_WHEN_DONE", "hangup-when-done=false",
+    "NOBREAK", NULL,
+    "-NOBREAK", "nobreak=false",
     NULL
 };
 
 static bool
-matchstr(const char *parms[], const char *c)
+matchstr(const char *parms[], const char *c, const char **newval)
 {
     unsigned int i;
 
-    for (i = 0; parms[i]; i++) {
-	if (strcmp(parms[i], c) == 0)
+    for (i = 0; parms[i]; i += 2) {
+	if (strcmp(parms[i], c) == 0) {
+	    if (parms[i + 1])
+		*newval = parms[i + 1];
+	    else
+		*newval = parms[i];
 	    return true;
+	}
     }
     return false;
 }
@@ -3530,7 +3537,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
     enum str_type stype;
     char *s;
-    const char *val;
+    const char *val, *newval = pos;
     unsigned int len;
     int rv;
 
@@ -3538,8 +3545,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
      * This is a hack for backwards compatibility, if we see a config
      * item meant for the device, we stick it onto the device name.
      */
-    if (isdigit(pos[0]) || matchstr(serialdev_parms, pos)) {
-	int err = strdupcat(&port->devname, pos);
+    if (isdigit(pos[0]) || matchstr(serialdev_parms, pos, &newval)) {
+	int err = strdupcat(&port->devname, newval);
 
 	if (err) {
 	    eout->out(eout, "Out of memory appending to devname");

@@ -443,6 +443,7 @@ struct default_data defaults[] = {
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
 						DATAROOT "/ser2net/auth" },
+    { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
     { NULL }
 };
 
@@ -510,7 +511,7 @@ bool
 find_default_bool(const char *name)
 {
     int err;
-    bool val;
+    int val;
 
     err = gensio_get_default(so, "ser2net", name, false, GENSIO_DEFAULT_BOOL,
 			     NULL, &val);
