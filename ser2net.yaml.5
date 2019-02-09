@@ -1,0 +1,650 @@
+.TH ser2net.yaml 5 06/02/01  "Serial to network proxy configuration file"
+
+.SH NAME
+/etc/ser2net/ser2net.yaml \- Serial to network proxy configuration file
+
+.SH DESCRIPTION
+ser2net used to be a program for connection network connections to
+serial ports.  It's now a program for connecting accepter gensio to
+connecting gensios.  See gensio(5) for details on gensios.
+
+ser2net is configured with yaml, which is flexible and easy to use.
+Look at yaml documentation on the internet for how that works.
+
+.SH CONNECTION SPECIFICATION
+
+A connection is a structure that describes how to connect an accepting
+gensio to a connecting gensio.
+
+An accepter specification looks like:
+.IP
+connection:
+    name: <name>
+    accepter: <accepter>
+    timeout: <number>
+    connector: <connector>
+    options:  {
+        <option name>: <option value>,
+	<option name>: <option value>...
+    ]
+.PP
+An <accepter> is an accepting gensio specification.  When ser2net
+receive a connection on the accepter, it attempts to make a
+connection to the <connector> gensio.
+
+If the connection receive no activity in <timeout> seconds, ser2net
+will close the connection.  Setting <timeout> to zero disables the
+timeout.  The timeout field is optional.
+
+An is a configuration setting that doesn't have anything to do
+with specific gensios, they are controls for ser2net in general.
+The option section is optional.
+
+See gensio(5) for a lot of information about the specific gensios
+available.
+
+To allow a TCP connection to a serial port and ignore modem control,
+you can do:
+.IP
+connection:
+    name: connection to /dev/ttyS0
+    accepter: tcp,1234
+    connector: serialdev,/dev/ttyS0,LOCAL
+.PP
+
+Both accepting and connecting gensios stack, so if you want to add
+telnet with RFC2217 support, you can do:
+.IP
+connection:
+    name: connection to /dev/ttyS0
+    accepter: telnet(rfc2217)tcp,1234
+    connector: serialdev,/dev/ttyS0,LOCAL
+.PP
+
+If you want to accept a telnet over SCTP connection only on IPv6
+localhost and connect to a telnet connection with SSL, you can do:
+.IP
+connection:
+    name: connection to myhost.domain.org,1234
+    accepter: telnet,sctp,::1,1234
+    connector: telnet,ssl,tcp,myhost.domain.org,1234
+.PP
+
+RFC2217 support only make sense with a serial-capable device on the
+other end.  Also note that IPv6 is fully supported.  Accepters will
+generally default to being both IPv4 and IPv6 unless otherwise
+specified.  See gensio(5) for details.
+
+And yes, sctp is supported and is highly recommended if you can use
+it.  Multi-homing alone is worth it.
+
+You could create a secure login with telnet RFC2217 support that then
+connects to an IPMI sol connection:
+.IP
+connection:
+    name: connection to ipimsol on ipmiserver.domain.org
+    accepter: telnet(rfc2217),certauth,ssl,sctp,1234
+    connector: ipmisol,lan -U ipmiusr -P test -p 9001
+        ipmiserver.domain.org,9600
+    options: {
+        banner: My banner
+    }
+.PP
+
+These are some examples.  For SSL and certauth, I have ignored the
+authentication configuration, more on that later.  Using
+authentication is strongly recommended, it's easy now with gtlssh and
+if you need to use it from a program, it's easy with gensio.  There is
+even python support.  Adding support for other scripting languages
+shouldn't be too hard.
+
+.SS "ACCEPTER SPECIFICATION OPTIONS"
+
+.I kickolduser[=true|false]
+sets the port so that the previous user will be kicked off if a new user
+comes in.  Useful if you forget to log off from someplace else a lot.
+
+.I banner=<banner string>
+displays the given banner when a client connects.
+
+.I signature=<signature name>
+sends RFC2217 signature on clients request.
+
+.I openstr=<openstr name>
+Send the given string to the device on first open.
+
+.I closestr=<closestr name>
+Send the given string to the device on final close.
+
+.I tr=<filename>
+When the acceptor is opened, open the given tracefile and store all data read
+from the physical device (and thus written to the client's TCP port) in
+the file.  The actual filename is specified in the TRACEFILE directive.
+If the file already exists, it is appended.  The file is closed
+when the port is closed.
+
+.I tw=<filename>
+Like tr, but traces data written to the connecting gensio.
+
+.I tb=<filename>
+trace both read and written data to the same file.  Note that this is
+independent of tr and tw, so you may be tracing read, write, and both
+to different files.
+
+.I hexdump[=true|false]
+turns on/off hexdump output to all trace files.  Each line in the
+trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
+useful for debugging a binary protocol.
+
+.I timestamp[=true|false]
+adds/removes a timestamp to all of the trace files. A timestamp
+is prepended to each line if hexdump is active for the trace file.  A
+timestamped line is also recorded in the trace file when a remote client
+connects or disconnects from the port.
+
+.I [tr-|tw-|tb-]hexdump[=true|false]
+turns on/off hexdump output for only one trace file.
+May be combined with hexdump.  Order is important.
+
+.I [tr-|tw-|tb-]timestamp[=true|false]
+adds/removes a timestamp to only one the trace files
+May be combined with [-]timestamp.  Order is important.
+
+.I telnet-brk-on-sync
+causes a telnet sync operation to send a break.  By default data is
+flushed until the data mark, but no break is sent.
+
+.I chardelay[=true|false]
+enables the small wait after each character received on the
+connecting gensio before sending data on the accepted gensio.
+Normally ser2net will wait the time it takes to receive 2 serial port
+characters, or at least 1000us, before sending.  This allows more
+efficient use of network resources when receiving large amounts of
+data, but gives reasonable interactivity.  Default is true.
+
+.I chardelay-scale=<number>
+sets the number of serial port characters, in tenths of a character,
+to wait after receiving from the connection gensio and sending to the
+accepted gensio.  So setting this to 25 will cause ser2net to wait the
+amount of time it takes to recieve 2.5 serial port characters before
+sending the data on to the TCP port.  The default value is 20.
+
+.I chardelay-min=<number>
+sets the minimum delay that ser2net will wait, in microseconds.  If
+the calculation for chardelay-scale results in a value smaller than
+this number, this number will be used instead.  The default value
+is 1000.
+
+.I chardelay-max=<number>
+sets the maximum delay that ser2net will wait, in microseconds, before
+sending the data.  The default value is 20000.  This keeps the connection
+working smoothly at slow speeds.
+
+.I dev-to-net-bufsize=<number>
+sets the size of the buffer reading from the connecting gensio and writing
+to the accepted gensio.
+
+.I net-to-dev-bufsize=<number>
+sets the size of the buffer reading from the accepted gensio and
+writing to the connecting gensio.
+
+.I led-tx=<led-name>
+use the previously defined led to indicate serial tx traffic on this port.
+
+.I led-rx=<led-name>
+use the previously defined led to indicate serial rx traffic on this port.
+
+.I max-connections=<number>
+set the maximum number of connections that can be made on this particular
+TCP port.  If you make more than one connection to the same port, each
+ports output goes to the device, and the device output goes to all ports
+simultaneously.  See "MULTIPLE CONNECTIONS" below for details.  The default
+is 1.
+
+.I remaddr=[!]<addr>[;[!]<addr>[;...]]
+specifies the allowed remote connections, where the addr is a standard
+address, generally in the form <ip address>,<port>.  Multiple
+addresses can be separated by semicolons, and you can specify remaddr
+more than once.  If you set the port for an address to zero, ser2net
+will accept a connection from any port from the given network host.
+If a "!" is given at the beginning of the address, the address is a
+"connect back" address.  If a connect back address is specified, one
+of the network connections (see max-connections) is reserved for that
+address.  If data comes in on the device, ser2net will attempt to
+connect to the address.  This does not work on all accepting gensios.
+
+.I authdir
+specified the authentication directory to use for this connection.
+
+.SH "ROTATOR"
+A rotator allows a single network connection to connect to one of a
+number of connections.
+
+A rotator specification looks like:
+.IP
+connection:
+    name: <name>
+    accepter: <accepter>
+    connections: [
+        <connection>,
+	<connection>....
+    ]
+    options: {
+        <option name>: <option val>,
+        <option name>: <option val>...
+    }
+.PP
+
+A rotator only has one option, "authdir", same as connections.
+
+.SH "SER2NET DEFAULTS"
+To set a default, do:
+.IP
+default: {
+    name: <default name>,
+    value: <default value>,
+    class: <default class>
+}
+.PP
+The class is optional, if it is not there it sets the base default for
+all classes that is used unelss overridden for a specific class.  If
+the class is there, it sets the default for a specific gensio class.
+There is also a ser2net class that is for ser2net specific options.
+
+The value is also optional, if it is not present a string value is set
+to NULL and an integer value is set to 0.
+
+To delete a default value for class (so it will use the base default), do:
+.IP
+delete_default: {
+    name: <default name>,
+    class: <default class>
+}
+.PP
+You must supply the class, you cannot delete base defaults.
+
+The following default values are specific to ser2net:
+
+.TP
+.B telnet_brk_on_sync=false
+If a telnet is received, send a break on the connected gensio (if
+applicable).  By default data is flushed until the data mark, but no
+break is sent.
+
+.TP
+.B kickolduser=false
+If a new user comes in on a connection that already has a user, kick
+off the previous user.
+
+.TP
+.B chardelay=true
+Enable asmall wait after each character received on the serial
+port before sending data on the TCP port.  Normally ser2net will wait
+the time it takes to receive 2 serial port characters, or at least
+1000us, before sending on the TCP port.  This allows more efficient
+use of network resources when receiving large amounts of data, but
+gives reasonable interactivity.
+
+.TP
+.B chardelay-scale=20
+sets the number of serial port characters, in tenths of a character,
+to wait after receiving from the serial port and sending to the TCP
+port.  So setting this to 25 will cause ser2net to wait the amount
+of time it takes to recieve 2.5 serial port characters before sending
+the data on to the TCP port.  This can range from 1-1000.
+.TP
+.B chardelay-min=1000
+sets the minimum delay that ser2net will wait, in microseconds.  If
+the calculation for chardelay-scale results in a value smaller than
+this number, this number will be used instead.  The default value
+is 1000.  This can range from 1-100000.
+
+.TP
+.B net-to-dev-bufsize=64
+sets the size of the buffer reading from the network port and writing to the
+serial device.
+
+.TP
+.B dev-to-net-bufsize=64
+sets the size of the buffer reading from the serial device and writing
+to the network port.
+
+.TP
+.B max-connections=1
+set the maximum number of connections that can be made on this
+particular TCP port.  If you make more than one connection to the same
+port, each ports output goes to the device, and the device output goes
+to all ports simultaneously.  See "MULTIPLE CONNECTIONS" below.
+for details.
+
+.TP
+.B remaddr=[!]<addr>[;[!]<addr>[;...]]
+specifies the allowed remote connections, where the addr is a standard
+address in the form (see "network port" above).  Multiple addresses
+can be separated by semicolons, and you can specify remaddr more than
+once.  If you set the port for an address to zero, ser2net will accept
+a connection from any port from the given network host.  If a "!" is
+given at the beginning of the address, the address is a "connect back"
+address.  If a connect back address is specified, one of the network
+connections (see max-connections) is reserved for that address.  If
+data comes in on the device, ser2net will attempt to connect to the
+address.  This works on TCP and UDP.
+
+.TP
+.B authdir=/usr/share/ser2net/auth
+The authentication directory for ser2net.  The AUTHENTICATION for more
+details.
+
+.SH FILENAME, BANNER, AND STRING FORMATTING
+Filenames, banners, and open/close string may contain normal "C"
+escape sequences and a large number of other escape sequences, too:
+
+.RS 2
+\ea - bell
+.br
+\eb - backspace
+.br
+\ef - form feed
+.br
+\en - newline
+.br
+\er - carriage return
+.br
+\et - tab
+.br
+\ev - vertical tab
+.br
+\e\e - \e
+.br
+\e? - ?
+.br
+\e' - '
+.br
+\e" - "
+.br
+\ennn - octal value for nnn
+.br
+\exXX - hex value for XX
+.br
+\ed - The connecting gensio string (serialdev,/dev/ttyS0, etc.)
+.br
+\eo - The device as specified on the config line (before DEVICE substitution)
+.br
+\eN - The port name
+.br
+\ep - The accepter string
+.br
+\eB - The serial port parameters (eg 9600N81)
+.br
+\eY -> year
+.br
+\ey -> day of the year (days since Jan 1)
+.br
+\eM -> month (Jan, Feb, Mar, etc.)
+.br
+\em -> month (as a number)
+.br
+\eA -> day of the week (Mon, Tue, etc.)
+.br
+\eD -> day of the month
+.br
+\ee -> epoc (seconds since Jan 1, 1970)
+.br
+\eU -> microseconds in the current second
+.br
+\ep -> local port number
+.br
+\eI -> remote address of the accepter gensio
+.br
+\eH -> hour (24-hour time)
+.br
+\eh -> hour (12-hour time)
+.br
+\ei -> minute
+.br
+\eS -> second
+.br
+\eq -> am/pm
+.br
+\eP -> AM/PM
+.RE
+
+In addition, for backwards compatibility because filenames and banners
+used to have different formatting, \es is the serial port parameters
+if in a banner and seconds if in a filename.  Use of this is
+discouraged as it may change in the future.
+
+These sequences may be used to make the filename unique per open and
+identify which port/device the filename was for.  Note that in
+filenames when using \ed or \eo, everything up to and including last /
+in the device name is removed, because you can't have a / in a
+filename.  So in a filename /dev/ttyS0 would become just ttyS0.
+
+.SH UDP
+UDP handling is a bit different than you might imagine, because it's
+hard for ser2net to know where to send the data to.  To handle this,
+UDP ports still have the concept of a "connection".  If a UDP port is
+not connected, then if it receives a packet the remote address for
+that packet is set to the remote end of the "connection".  It will do
+all the normal new connection operations.  ser2net will accept new
+connections up to "max-connections" then ignore packets from other
+addresses until a disconnect occurs.
+
+Unfortunately, there is no easy way to know when to disconnect.  You
+have two basic options:
+.IP
+Set a timeout, if the remote end isn't heard from before the
+timeout, then the port is disconnected and something else can
+connect.  This means anything that is using the port must
+periodically send a packet (empty is fine) to ser2net to
+keep the connection alive.
+
+Use the kickolduser option on the port, any new connection that
+comes in will replace the previous connection.
+.PP
+Note that UDP ports handle multiple connections just like TCP ports,
+so you can have multiple UDP listeners.
+
+You also have a third option.  If you set a remote address (remaddr)
+with a non-zero port and a connect back port (see discussion on remote
+addresses above), ser2net will take one of the connections and assign
+it to that port permanently.  This is called a fixed remote address.
+All the traffic from the device will go to that port.  Every fixed
+remote address on a UDP port has to have a corresponding connection,
+so if you have 3 fixed remote addresses, you must have at least 3
+connections.
+
+.SH MULTIPLE CONNECTIONS
+As mentioned earlier, you can set
+.I max-connections=<n>
+on a port to allow more than one connection at a time to the same serial
+port.  These connections will share all the settings.  You cannot have
+two separate TCP ports connect to the same port at the same time.
+
+This has some significant interactions with other features:
+
+.I flow control
+is not exactly a feature, but more an interaction between the different
+connections.  If a TCP port stops receiving data from ser2net, all TCP
+ports connected will be flow-controlled.  This means a single TCP
+connection can stop all the others.
+
+.I closeon
+will close all connections when the closeon sequence is seen.
+
+.I openstr
+is only sent when the port is unconnected and the first connections is
+made.
+
+.I closestr
+is only sent when the last port disconnects and there are no more connections
+to the port.
+
+Any monitor ("monitor start" from a control connections) will catch
+input from all network connections.
+
+.I kickolduser
+will kick off all connections if a connection comes in on a port that already
+has a maximum number of connections.
+
+.I tracing
+will trace data from all network connections.
+
+.I remctl
+(remote telnet serial control) will change the connection settings on the
+device and will be accepted from any network connection.
+
+.I ROTATOR
+will only choose a port if there are no connections at all on the
+port.  Note that the use of a rotator with a port with max-connections
+> 1 will result in undefined behavior.
+
+.I timeout
+will be per TCP port and will only disconnect that TCP port on a timeout.
+
+.I telnet_brk_on_sync
+will send a break for any TCP port that does a sync.
+
+.I showport
+will show all possible connections, so if you say
+.I max-connections=3
+you will get three entries.
+
+.I showshortport
+will only show the first live connection, or if no connection is present
+it will show whatever the first one was the last time a connection was
+present.
+
+.SH "AUTHENTICATION AND ENCRYPTION"
+
+.SS "TCP WRAPPERS"
+ser2net uses the tcp wrappers interface to implement host-based security.
+See hosts_access(5) for a description of the file setup.  Two daemons are
+used by ser2net, "ser2net" is for the data ports and "ser2net-control"
+is for the control ports.
+.SS "ENCRYPTION"
+ser2net supports SSL encryption using the ssl gensio.  To enable
+encryption, use an accepter like:
+.IP
+telnet,ssl,tcp,1234
+.PP
+Then you can install telnet-ssl and do
+.IP
+telnet -z ssl,secure <server> 1234
+.PP
+The SSL connection is made using the provided keys.  This example
+uses the default keys (as set in the default, see those below).
+You can also set them using (key=<keyfile>,cert=<certfile>) after
+ssl above, or modify the defaults.
+
+If you do not have genuine certificates from a certificate authority,
+the connection will fail.  Getting certificates this was is very
+inconvenient, so there is another way.  You can do:
+.IP
+gtlssh-keygen --keydir /etc/ser2net keygen ser2net
+.PP
+to generate the default keys in /etc/ser2net (or wherever) and
+then provide /etc/ser2net/ser2net.crt to the telnet command, like:
+.IP
+telnet -z ssl,secure,cacert=ser2net.crt
+.PP
+Then you will have a secure connection.  Just make sure your
+certificates are valid.
+.SS "AUTHENTICATION WITH SSL"
+ser2net provides a way to authenticate with SSL.  It's not the
+greatest, but it does work.  You must enable clientauth on ssl:
+.IP
+telnet,ssl(clientauth),tcp,1234
+.PP
+or set it in the default.  Then you must create a certificate
+with the username as the common name.  You can do this with:
+.IP
+gtlssh-keygen --keydir outdir --commonname username keygen keyname
+.PP
+which will generate keyname.crt and keyname.key in outdir.  Then
+put keyname.crt in ser2net's authdir/username/allowed_certs.  By
+default authdir is /usr/share/ser2net/auth, but you can change
+that with the authdir default in the ser2net config file or by
+setting authdir on individual ports (in case you want differet
+ones for different ports).  You then much rehash the allowed_certs
+directory:
+.IP
+gtlssh-keygen rehash authdir/username/allowed_certs
+.PP
+Then restart/reload ser2net and use this very long line to telnet
+into it:
+.IP
+telnet -z ssl,secure,cacert=ser2net.crt,cert=username.crt,key=username.key server 1234
+.PP
+.SS "AUTHENTICATION WITH CERTAUTH (GTLSSH)"
+All of the above is a big pain.  Fortunately there is an easier.
+way.  gtlssh is a ssh-like program, but runs over TLS and it
+implements a custom ssh-like authentication protocol.
+
+ser2net supports this authentication system running on top of the
+ssl and certauth gensios.  Those gensios provide the framework
+for handling authentication, ser2net itself controls it.
+
+This uses the same authdir and allowed keys directory as before,
+and still requires a server certificate, but the self-signed one
+generated with gtlssh-keygen works fine without doing anything
+special.  Add certauth to the port line:
+.IP
+telnet,certauth,ssl,tcp,1234
+.PP
+and *make sure* clientauth is disabled (or ssl will still attempt
+to authenticate the client).
+
+The gtlssh program does its own certificate handling.  Look at
+the gtlssh man page for detail on that.  Take the certificate
+for gtlssh and put it in the authdir/username/allowed_certs directory
+and reshash it as before.  gtlssh will *not* use the common name
+provided in the certificate, instead it users a username the same
+as ssh.  Then connect with gtlssh:
+.IP
+gtlssh --nosctp --telnet username@server 1234
+.PP
+The --nosctp thing keep gtlssh from trying sctp, which will fail
+because we put tcp in the port line.  You could use sctp there and
+get all it's advantages for free!  Then --nosctp would no longer
+be required to avoid the nagging.
+
+The username is optional if it's the same as your current user.
+If you have not connected to that server/port before, gtlssh will
+ask you to verify it, much like ssh does.  If certificates, IP
+address, etc. change, gtlssh will tell you about it.
+
+If you do not want to use a certificate (certificates are certainly
+preferred, but may not alway be workable) you can use a password
+login, too.  Put a password in authdir/username/password.  When
+you connect with gtlssh, if certificate validate fails, you will
+be prompted for the password.  If it matches the first line in the
+password file, then authentication will succeed.
+.SS "AUTHENTICATION AND ROTATORS"
+Rotators are a special case.  BE CAREFUL.  A rotator has its own
+authentication.  If you set up authentication on a port that is
+part of a rotator, that port's authentication is not used.  Only
+the rotator's authentication is used.
+
+.SH "SIGNALS"
+.TP 0.5i
+.B SIGHUP
+If ser2net receives a SIGHUP, it will reread it configuration file
+and make the appropriate changes.  If an inuse port is changed or deleted,
+the actual change will not occur until the port is disconnected.
+
+.SH "Error"
+Almost all error output goes to syslog, not standard output.
+
+.SH "FILES"
+/etc/ser2net.conf
+
+.SH "SEE ALSO"
+telnet(1), hosts_access(5), gensio(5), gtlssh(1), gtlssh-keygen(1)
+
+.SH "KNOWN PROBLEMS"
+None.
+
+.SH AUTHOR
+.PP
+Corey Minyard <minyard@acm.org>
