@@ -445,6 +445,10 @@ struct default_data defaults[] = {
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
 						DATAROOT "/ser2net/auth" },
     { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
+    { "openstr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "closestr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "closeon",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "banner",		GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { NULL }
 };
 
@@ -873,8 +877,8 @@ handle_config_line(char *inbuf, int len)
 	goto out;
     }
 
-    portconfig(&syslog_eout, portnum, state, timeout, devname, devcfg_argv,
-	       config_num);
+    portconfig(&syslog_eout, portnum, portnum, state, timeout, devname,
+	       devcfg_argv, config_num);
 
     gensio_argv_free(so, devcfg_argv);
  out:

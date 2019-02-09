@@ -38,7 +38,8 @@
 
 /* Create a port given the criteria. */
 int portconfig(struct absout *eout,
-	       char *portnum,
+	       char *name,
+	       char *accstr,
 	       char *state,
 	       unsigned int timeout,
 	       char *devname,

@@ -38,7 +38,7 @@
 #include "dataxfer.h"
 #include "led.h"
 
-static char *config_file = SYSCONFDIR "/ser2net/ser2net.conf";
+static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";
 static bool config_file_set = false;
 static char *old_config_file = SYSCONFDIR "/ser2net.conf";
 int config_port_from_cmdline = 0;
@@ -64,7 +64,7 @@ char *rfc2217_signature = "ser2net";
 
 static char *help_string =
 "%s: Valid parameters are:\n"
-"  -c <config file> - use a config file besides /etc/ser2net/ser2net.conf\n"
+"  -c <config file> - use a config file besides /etc/ser2net/ser2net.yaml\n"
 "  -C <config line> - Handle a single configuration line.  This may be\n"
 "     specified multiple times for multiple lines.  This is just like a\n"
 "     line in the config file.  This disables the default config file,\n"
@@ -83,8 +83,21 @@ static char *help_string =
 "  -v - print the program's version and exit\n"
 "  -s - specify a default signature for RFC2217 protocol\n";
 
+static bool
+str_endswith(const char *str, const char *end)
+{
+    unsigned int slen = strlen(str);
+    unsigned int elen = strlen(end);
+
+    if (elen > slen)
+	return false;
+    if (strcmp(end, str + slen - elen) == 0)
+	return true;
+    return false;
+}
+
 static FILE *
-fopen_config_file(void)
+fopen_config_file(bool *is_yaml)
 {
     FILE *instream = fopen(config_file, "r");
 
@@ -100,6 +113,9 @@ fopen_config_file(void)
 		   " '%s': %m", config_file, old_config_file);
 	    return NULL;
 	}
+	*is_yaml = false;
+    } else {
+	*is_yaml = str_endswith(config_file, ".yaml");
     }
     return instream;
 }
@@ -110,16 +126,20 @@ reread_config_file(void)
     if (config_file) {
 	char *prev_config_port = config_port;
 	FILE *instream = NULL;
+	bool is_yaml;
 
 	config_port = NULL;
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
 	readconfig_init();
 
-	instream = fopen_config_file();
+	instream = fopen_config_file(&is_yaml);
 	if (!instream)
 	    goto config_port_unchanged;
 
-	readconfig(instream);
+	if (is_yaml)
+	    yaml_readconfig(instream);
+	else
+	    readconfig(instream);
 	fclose(instream);
 	if (config_port_from_cmdline) {
 	    /* Never override the config port from the command line. */
@@ -817,12 +837,18 @@ main(int argc, char *argv[])
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
     if (config_file) {
-	FILE *instream = fopen_config_file();
+	bool is_yaml;
+	FILE *instream = fopen_config_file(&is_yaml);
+	int rv;
 
 	if (!instream)
 	    exit(1);
 
-	if (readconfig(instream) == -1)
+	if (is_yaml)
+	    rv = yaml_readconfig(instream);
+	else
+	    rv = readconfig(instream);
+	if (rv == -1)
 	    exit(1);
 	fclose(instream);
     }

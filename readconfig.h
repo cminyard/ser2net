@@ -30,6 +30,7 @@ int readconfig_init(void);
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int readconfig(FILE *instream);
+int yaml_readconfig(FILE *f);
 
 extern int config_num;
 

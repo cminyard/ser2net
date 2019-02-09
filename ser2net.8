@@ -24,7 +24,7 @@ or serial port, the connection is refused with an error message.
 .TP
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
-.BR "/etc/ser2net.conf"
+.BR "/etc/ser2net/ser2net.yaml"
 .TP
 .I "\-C config-line"
 Handle a single configuration line.  This may be
@@ -32,6 +32,9 @@ specified multiple times for multiple lines.  This is just like a
 line in the config file.  This disables the default config file,
 you must specify a -c after the last -C to have it read a config
 file, too.
+
+Note that this is the old-style configuration lines and is likely
+to go away when old style configuration is removed.
 .TP
 .I \-n
 Stops  the  daemon  from  forking  and  detaching  from the controlling
@@ -127,7 +130,7 @@ shut down if no activity has been seen on the port.
 .TP
 .B setportconfig <network port> <config>
 Set the port configuration as in the device configuration in the
-.BR /etc/ser2net.conf
+.BR /etc/ser2net/ser2net.yaml
 file.  If conflicting options are specified, the last option will
 be the one used.  Note that these will not change until the port
 is disconnected and connected again.  Options
@@ -176,67 +179,13 @@ to enable the network port is up run the telnet negotiation protocol on the port
 
 .SH CONFIGURATION
 Configuration is accomplished through the file
-.BR /etc/ser2net.conf .
+.BR /etc/ser2net/ser2net.yaml .
 A file with another name or path may be specified using the
 .I \-c
-option, or individual config lines may be specified with the
-.I \-C
-option.  This  file consists of one or more entries with the following
-format:
-.IP
-<network port>:<state>:<timeout>:<device>:<options>
-.PP
-or
-.IP
-BANNER:<banner name>:<banner text>
-.PP
-or
-.IP
-SIGNATURE:<signature name>:<signature text>
-.PP
-or
-.IP
-OPENSTR:<openstr name>:<openstr text>
-.PP
-or
-.IP
-CLOSESTR:<closestr name>:<closestr text>
-.PP
-or
-.IP
-CLOSEON:<closeon name>:<closeon text>
-.PP
-or
-.IP
-TRACEFILE:<tracefile name>:<tracefile>
-.PP
-or
-.IP
-CONTROLPORT:<port spec>
-.PP
-or
-.IP
-DEVICE:<name>:<device>
-.PP
-or
-.IP
-DEFAULT:<parm>:<defaultval>[:<class>]
-.PP
-or
-.IP
-DELDEFAULT:<parm>:<class>
-.PP
-or
-.IP
-ROTATOR:<TCP port>:<port list>
-.PP
-or
-.IP
-LED:<led-name>:<driver>:<parameters>
-.PP
-
-A line that ends in '\\' (it must be the very last character) is continued
-on the next line.  There is no arbitrary maximum line length.
+option.  If the file ends in .yaml, it will be processed with the
+new yaml parser.  If it ends in anything else, it will use the
+old configuration file format, no longer supported or documented.
+The old style configuration will go away at some point.
 
 .SS FIELDS
 .TP
@@ -728,10 +677,10 @@ the actual change will not occur until the port is disconnected.
 Almost all error output goes to syslog, not standard output.
 
 .SH "FILES"
-/etc/ser2net.conf
+/etc/ser2net/ser2net.yaml
 
 .SH "SEE ALSO"
-telnet(1), hosts_access(5)
+telnet(1), ser2net.yaml(5), hosts_access(5)
 
 .SH "KNOWN PROBLEMS"
 None.

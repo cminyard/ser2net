@@ -247,7 +247,7 @@ struct port_info
 					   by chardelay_max. */
 
     /* Information about the network port. */
-    char               *portname;       /* The name given for the port. */
+    char               *name;           /* The name given for the port. */
     char               *accstr;         /* The accepter string. */
     struct gensio_accepter *accepter;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
@@ -570,6 +570,14 @@ init_port_data(port_info_t *port)
 	return ENOMEM;
     if (find_default_str("signature", &port->signaturestr))
 	return ENOMEM;
+    if (find_default_str("banner", &port->bannerstr))
+	return ENOMEM;
+    if (find_default_str("openstr", &port->openstr))
+	return ENOMEM;
+    if (find_default_str("closestr", &port->closestr))
+	return ENOMEM;
+    if (find_default_str("closeon", &port->closeon))
+	return ENOMEM;
 
     port->led_tx = NULL;
     port->led_rx = NULL;
@@ -676,10 +684,10 @@ do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 
 	    if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
 		syslog(LOG_ERR, "Unable write to trace file on port %s: %d",
-		       port->portname, err);
+		       port->name, err);
 	    else
 		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
-		       port->portname, errbuf);
+		       port->name, errbuf);
 
 	    close(t->fd);
 	    t->fd = -1;
@@ -856,7 +864,7 @@ port_check_connect_backs(port_info_t *port)
 					   &netcon->net);
 	    if (err) {
 		syslog(LOG_ERR, "Unable to allocate connect back port %s,"
-		       " addr %s: %s\n", port->portname, netcon->remote_str,
+		       " addr %s: %s\n", port->name, netcon->remote_str,
 		       gensio_err_to_str(err));
 		continue;
 	    }
@@ -865,7 +873,7 @@ port_check_connect_backs(port_info_t *port)
 		gensio_free(netcon->net);
 		netcon->net = NULL;
 		syslog(LOG_ERR, "Unable to open connect back port %s,"
-		       " addr %s: %s\n", port->portname, netcon->remote_str,
+		       " addr %s: %s\n", port->name, netcon->remote_str,
 		       gensio_err_to_str(err));
 		continue;
 	    }
@@ -910,7 +918,7 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for device on port %s: %m",
-	       port->portname);
+	       port->name);
 	shutdown_port(port, "dev read error");
     }
 
@@ -1104,7 +1112,7 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
     err = gbuf_write(port, buf);
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, gensio_err_to_str(err));
+	       port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
 	return;
     }
@@ -1159,7 +1167,7 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 	    reason = "network read close";
 	} else {
 	    /* Got an error on the read, shut down the port. */
-	    syslog(LOG_ERR, "read error for port %s: %s", port->portname,
+	    syslog(LOG_ERR, "read error for port %s: %s", port->name,
 		   gensio_err_to_str(readerr));
 	    reason = "network read error";
 	}
@@ -1200,7 +1208,7 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
     err = gbuf_write(port, &port->net_to_dev);
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %m",
-	       port->portname);
+	       port->name);
 	shutdown_port(port, "dev write error");
 	goto out_unlock;
     } else {
@@ -1256,7 +1264,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     } else if (reterr) {
 	/* Some other bad error. */
 	syslog(LOG_ERR, "The network write for port %s had error: %m",
-	       port->portname);
+	       port->name);
 	shutdown_one_netcon(netcon, "network write error");
 	return -1;
     }
@@ -1752,6 +1760,12 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    op(data, *t);
 		break;
 
+	    /* Port's name. */
+	    case 'N':
+		for (t = port->name; *t; t++)
+		    op(data, *t);
+		break;
+
 	    case 'p':
 		/* ser2net network port. */
 		for (t = port->accstr; *t; t++)
@@ -2053,7 +2067,7 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
     else
 	bufop.str = malloc(len);
     if (!bufop.str) {
-	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
+	syslog(LOG_ERR, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
     process_str(port, netcon, &now, tv, str, buffer_op, &bufop, isfilename);
@@ -2080,13 +2094,13 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
 
     buf = malloc(sizeof(*buf));
     if (!buf) {
-	syslog(LOG_ERR, "Out of memory processing string: %s", port->portname);
+	syslog(LOG_ERR, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
     bstr = process_str_to_str(port, netcon, str, &tv, &len, 0);
     if (!bstr) {
 	free(buf);
-	syslog(LOG_ERR, "Error processing string: %s", port->portname);
+	syslog(LOG_ERR, "Error processing string: %s", port->name);
 	return NULL;
     }
     buf->buf = (unsigned char *) bstr;
@@ -2255,8 +2269,10 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     so->lock(port->lock);
     if (err) {
-	const char *errstr = gensio_err_to_str(err);
+	char errstr[200];
 
+	snprintf(errstr, sizeof(errstr), "Device open failure: %s\r\n",
+		 gensio_err_to_str(err));
 	for_each_connection(port, netcon) {
 	    if (!netcon->net)
 		continue;
@@ -2315,7 +2331,7 @@ port_dev_enable(port_info_t *port)
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
 	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %m",
-	       port->portname);
+	       port->name);
 
     port->dev_to_net_state = PORT_OPENING;
     return 0;
@@ -2332,7 +2348,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
 	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %m",
-	       port->portname);
+	       port->name);
 
     if (netcon->banner) {
 	free(netcon->banner->buf);
@@ -2348,8 +2364,10 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	/* We are first, set things up on the device. */
 	err = port_dev_enable(port);
 	if (err) {
-	    const char *errstr = gensio_err_to_str(err);
+	    char errstr[200];
 
+	    snprintf(errstr, sizeof(errstr), "Device open failure: %s\r\n",
+		     gensio_err_to_str(err));
 	    gensio_write(netcon->net, NULL, errstr, strlen(errstr), NULL);
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
@@ -2368,7 +2386,7 @@ find_rotator_port(const char *portname, struct gensio *net,
     port_info_t *port = ports;
 
     while (port) {
-	if (strcmp(port->portname, portname) == 0) {
+	if (strcmp(port->name, portname) == 0) {
 	    unsigned int i;
 	    struct sockaddr_storage addr;
 	    gensiods socklen;
@@ -2885,7 +2903,7 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
     port_info_t *port = user_data;
 
     if (event == GENSIO_ACC_EVENT_LOG) {
-	do_gensio_log(port->portname, data);
+	do_gensio_log(port->name, data);
 	return 0;
     }
 
@@ -2949,7 +2967,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 
     if (err && eout) {
 	eout->out(eout, "Unable to startup network port %s: %s",
-		  port->portname, gensio_err_to_str(err));
+		  port->name, gensio_err_to_str(err));
 	return err;
     }
 
@@ -2960,7 +2978,7 @@ startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
 	err = port_dev_enable(port);
 	if (err && eout)
 	    eout->out(eout, "Unable to enable port device %s: %s",
-		      port->portname, gensio_err_to_str(err));
+		      port->name, gensio_err_to_str(err));
 	if (err)
 	    gensio_acc_shutdown(port->accepter, NULL, NULL);
     }
@@ -3079,14 +3097,18 @@ free_port(port_info_t *port)
 	free(port->trace_both.filename);
     if (port->devname)
 	free(port->devname);
-    if (port->portname)
-	free(port->portname);
+    if (port->name)
+	free(port->name);
+    if (port->accstr)
+	free(port->accstr);
     if (port->new_config)
 	free_port(port->new_config);
     if (port->bannerstr)
 	free(port->bannerstr);
     if (port->signaturestr)
 	free(port->signaturestr);
+    if (port->authdir)
+	free(port->authdir);
     if (port->openstr)
 	free(port->openstr);
     if (port->closestr)
@@ -3114,6 +3136,11 @@ switchout_port(struct absout *eout, port_info_t *new_port,
     new_port->enabled = curr->enabled;
 
     /* Keep the same accepter structure. */
+    /*
+     * FIXME - this is wrong.  The port can change accepters now without
+     * changing the name.  We need to shut down the old accepter and
+     * start a new one if it has changed.
+     */
     tmp_accepter = new_port->accepter;
     new_port->accepter = curr->accepter;
     curr->accepter = tmp_accepter;
@@ -3291,7 +3318,7 @@ handle_dev_fd_close_write(port_info_t *port)
 
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->portname, gensio_err_to_str(err));
+	       port->name, gensio_err_to_str(err));
 	goto closeit;
     }
 
@@ -3574,7 +3601,7 @@ static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
     enum str_type stype;
-    char *s;
+    char *s, *fval;
     const char *val, *newval = pos;
     unsigned int len;
     int rv;
@@ -3650,18 +3677,66 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->max_connections < 1)
 	    port->max_connections = 1;
     } else if (gensio_check_keyvalue(pos, "authdir", &val) > 0) {
-	port->authdir = strdup(val);
+	fval = strdup(val);
 	if (!port->authdir) {
 	    eout->out(eout, "Out of memory allocating authdir");
 	    return -1;
 	}
+	if (port->authdir)
+	    free(port->authdir);
+	port->authdir = fval;
     } else if (gensio_check_keyvalue(pos, "remaddr", &val) > 0) {
 	rv = port_add_remaddr(eout, port, val);
 	if (rv)
 	    return -1;
 	port->remaddr_set = true;
-    } else if (gensio_check_keyvalue(pos, "rs485", &val)) {
+    } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
 	port->rs485 = find_rs485conf(val);
+    } else if (gensio_check_keyvalue(pos, "banner", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating banner");
+	    return -1;
+	}
+	if (port->bannerstr)
+	    free(port->bannerstr);
+	port->bannerstr = fval;
+    } else if (gensio_check_keyvalue(pos, "openstr", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating openstr");
+	    return -1;
+	}
+	if (port->openstr)
+	    free(port->openstr);
+	port->openstr = fval;
+    } else if (gensio_check_keyvalue(pos, "closestr", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating closestr");
+	    return -1;
+	}
+	if (port->closestr)
+	    free(port->closestr);
+	port->closestr = fval;
+    } else if (gensio_check_keyvalue(pos, "closeon", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating closeon");
+	    return -1;
+	}
+	if (port->closeon)
+	    free(port->closeon);
+	port->closeon = fval;
+    } else if (gensio_check_keyvalue(pos, "signature", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory banner");
+	    return -1;
+	}
+	if (port->signaturestr)
+	    free(port->signaturestr);
+	port->signaturestr = fval;
 
     /* Everything from here down to the banner, etc is deprecated. */
     } else if (strcmp(pos, "remctl") == 0) {
@@ -3721,7 +3796,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
-	   char *portnum,
+	   char *name,
+	   char *accstr,
 	   char *state,
 	   unsigned int timeout,
 	   char *devname,
@@ -3790,10 +3866,20 @@ portconfig(struct absout *eout,
     /* Errors from here on out must goto errout. */
     init_port_data(new_port);
 
-    if (!new_port->portname) {
-	new_port->portname = strdup(portnum);
-	if (!new_port->portname)
+    if (!new_port->name) {
+	new_port->name = strdup(name);
+	if (!new_port->name) {
+	    eout->out(eout, "unable to allocate port name");
 	    goto errout;
+	}
+    }
+
+    if (!new_port->accstr) {
+	new_port->accstr = strdup(accstr);
+	if (!new_port->accstr) {
+	    eout->out(eout, "unable to allocate port accepter string");
+	    goto errout;
+	}
     }
 
     if (strcmp(state, "on") == 0) {
@@ -3849,7 +3935,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    err = str_to_gensio_accepter(new_port->portname, so,
+    err = str_to_gensio_accepter(new_port->accstr, so,
 				handle_port_child_event, new_port,
 				&new_port->accepter);
     if (err) {
@@ -3926,7 +4012,7 @@ portconfig(struct absout *eout,
     so->lock(ports_lock);
     curr = ports;
     while (curr != NULL) {
-	if (strcmp(curr->portname, new_port->portname) == 0) {
+	if (strcmp(curr->name, new_port->name) == 0) {
 	    /* We are reconfiguring this port. */
 	    so->lock(curr->lock);
 	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
@@ -4046,7 +4132,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     net_info_t *netcon = NULL;
     unsigned int bytes_recv = 0, bytes_sent = 0;
 
-    controller_outputf(cntlr, "%-22s ", port->portname);
+    controller_outputf(cntlr, "%-22s ", port->name);
     if (port->config_num == -1)
 	controller_outputf(cntlr, "%-6s ", "DEL");
     else
@@ -4072,6 +4158,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     bytes_recv = netcon->bytes_received;
     bytes_sent = netcon->bytes_sent;
 
+    controller_outputf(cntlr, "%-22s ", port->accstr);
     controller_outputf(cntlr, "%-22s ", port->devname);
     controller_outputf(cntlr, "%-14s ", state_str[port->net_to_dev_state]);
     controller_outputf(cntlr, "%-14s ", state_str[port->dev_to_net_state]);
@@ -4095,7 +4182,8 @@ showport(struct controller_info *cntlr, port_info_t *port)
     net_info_t *netcon;
     int err;
 
-    controller_outputf(cntlr, "Port %s\r\n", port->portname);
+    controller_outputf(cntlr, "Port %s\r\n", port->name);
+    controller_outputf(cntlr, "  accepter: %s\r\n", port->accstr);
     controller_outputf(cntlr, "  enable state: %s\r\n",
 		       enabled_str[port->enabled]);
     controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
@@ -4165,18 +4253,18 @@ showport(struct controller_info *cntlr, port_info_t *port)
 }
 
 /*
- * Find a port data structure given a port number.  Returns with port->lock
+ * Find a port data structure given a port name.  Returns with port->lock
  * held, if it returns a non-NULL port.
  */
 static port_info_t *
-find_port_by_num(char *portstr, bool allow_deleted)
+find_port_by_name(char *name, bool allow_deleted)
 {
     port_info_t *port;
 
     so->lock(ports_lock);
     port = ports;
     while (port != NULL) {
-	if (strcmp(portstr, port->portname) == 0) {
+	if (strcmp(name, port->name) == 0) {
 	    so->lock(port->lock);
 	    so->unlock(ports_lock);
 	    if (port->config_num == -1 && !allow_deleted) {
@@ -4210,7 +4298,7 @@ showports(struct controller_info *cntlr, char *portspec)
 	}
 	so->unlock(ports_lock);
     } else {
-	port = find_port_by_num(portspec, true);
+	port = find_port_by_name(portspec, true);
 	if (port == NULL) {
 	    controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	} else {
@@ -4227,12 +4315,13 @@ showshortports(struct controller_info *cntlr, char *portspec)
     port_info_t *port;
 
     controller_outputf(cntlr,
-	    "%-22s %-6s %7s %-*s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
+	    "%-22s %-6s %7s %-*s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
 	    "Port name",
 	    "Type",
 	    "Timeout",
 	    REMOTEADDR_COLUMN_WIDTH,
 	    "Remote address",
+	    "Accepter",
 	    "Device",
 	    "TCP to device",
 	    "Device to TCP",
@@ -4253,7 +4342,7 @@ showshortports(struct controller_info *cntlr, char *portspec)
 	}
 	so->unlock(ports_lock);
     } else {
-	port = find_port_by_num(portspec, true);
+	port = find_port_by_name(portspec, true);
 	if (port == NULL) {
 	    controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	} else {
@@ -4272,7 +4361,7 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
     port_info_t *port;
     net_info_t *netcon;
 
-    port = find_port_by_num(portspec, true);
+    port = find_port_by_name(portspec, true);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
     } else {
@@ -4300,7 +4389,7 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
 {
     port_info_t *port;
 
-    port = find_port_by_num(portspec, false);
+    port = find_port_by_name(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	goto out;
@@ -4344,7 +4433,7 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
     unsigned int shutdown_count = 0;
 
-    port = find_port_by_num(portspec, false);
+    port = find_port_by_name(portspec, false);
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	return;
@@ -4380,7 +4469,7 @@ data_monitor_start(struct controller_info *cntlr,
 {
     port_info_t *port;
 
-    port = find_port_by_num(portspec, true);
+    port = find_port_by_name(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
 	controller_outs(cntlr, err);
@@ -4444,7 +4533,7 @@ disconnect_port(struct controller_info *cntlr,
 {
     port_info_t *port;
 
-    port = find_port_by_num(portspec, true);
+    port = find_port_by_name(portspec, true);
     if (port == NULL) {
 	char *err = "Invalid port number: ";
 	controller_outs(cntlr, err);
