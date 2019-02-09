@@ -40,6 +40,10 @@ enum ystate {
     IN_DEFAULT_NAME,
     IN_DEFAULT_VALUE,
     IN_DEFAULT_CLASS,
+    IN_DELDEFAULT,
+    IN_DELDEFAULT_MAP,
+    IN_DELDEFAULT_NAME,
+    IN_DELDEFAULT_CLASS,
     IN_CONNSPEC,
     IN_CONNSPEC_MAP,
     IN_CONNSPEC_NAME,
@@ -209,13 +213,20 @@ add_option(struct yconf *y, const char *name, const char *option,
     }
 
     if (name) {
-	y->options[y->curr_option] = malloc(strlen(name) + strlen(option) + 2);
-	if (!y->options[y->curr_option]) {
+	char *s;
+	if (option && strlen(option) > 0) {
+	    s = malloc(strlen(name) + strlen(option) + 2);
+	    if (s)
+		sprintf(s, "%s=%s", name, option);
+	} else {
+	    s = strdup(name);
+	}
+	if (!s) {
 	    eout->out(eout, "Out of memory allocating option %s for %s",
 		      option, place);
 	    return -1;
 	}
-	sprintf(y->options[y->curr_option], "%s=%s", name, option);
+	y->options[y->curr_option] = s;
     } else {
 	y->options[y->curr_option] = NULL;
     }
@@ -266,6 +277,7 @@ struct scalar_next_state {
 static struct scalar_next_state sc_main[] = {
     { "define", IN_DEFINE },
     { "default", IN_DEFAULT },
+    { "delete_default", IN_DELDEFAULT },
     { "connection", IN_CONNSPEC },
     { "rotator", IN_ROTATOR },
     {}
@@ -275,6 +287,12 @@ static struct scalar_next_state sc_default[] = {
     { "name", IN_DEFAULT_NAME },
     { "value", IN_DEFAULT_VALUE },
     { "class", IN_DEFAULT_CLASS },
+    {}
+};
+
+static struct scalar_next_state sc_deldefault[] = {
+    { "name", IN_DELDEFAULT_NAME },
+    { "class", IN_DELDEFAULT_CLASS },
     {}
 };
 
@@ -355,7 +373,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
     case IN_DEFAULT_MAP:
 	y->state = scalar_next_state(sc_default, scalar);
 	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token at the main level: %s\n", scalar);
+	    eout->out(eout, "Invalid token in the default: %s\n", scalar);
 	    return -1;
 	}
 	break;
@@ -374,6 +392,26 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 
     case IN_DEFAULT_CLASS:
 	if (setstr(&y->class, scalar, "default class", eout))
+	    return -1;
+	y->state = IN_DEFAULT_MAP;
+	break;
+
+    case IN_DELDEFAULT_MAP:
+	y->state = scalar_next_state(sc_deldefault, scalar);
+	if (y->state == PARSE_ERR) {
+	    eout->out(eout, "Invalid token in delete_default: %s\n", scalar);
+	    return -1;
+	}
+	break;
+	    
+    case IN_DELDEFAULT_NAME:
+	if (setstr(&y->name, scalar, "delete_default name", eout))
+	    return -1;
+	y->state = IN_DELDEFAULT_MAP;
+	break;
+
+    case IN_DELDEFAULT_CLASS:
+	if (setstr(&y->class, scalar, "delete_default class", eout))
 	    return -1;
 	y->state = IN_DEFAULT_MAP;
 	break;
@@ -469,6 +507,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
     case PARSE_ERR:
     case BEGIN_DOC:
     case IN_DEFAULT:
+    case IN_DELDEFAULT:
     case IN_CONNSPEC:
     case IN_CONNSPEC_OPTIONS:
     case IN_ROTATOR:
@@ -503,6 +542,10 @@ yhandle_seq_start(struct yconf *y, struct absout *eout)
     case IN_DEFAULT_NAME:
     case IN_DEFAULT_VALUE:
     case IN_DEFAULT_CLASS:
+    case IN_DELDEFAULT:
+    case IN_DELDEFAULT_MAP:
+    case IN_DELDEFAULT_NAME:
+    case IN_DELDEFAULT_CLASS:
     case IN_CONNSPEC:
     case IN_CONNSPEC_MAP:
     case IN_CONNSPEC_NAME:
@@ -543,6 +586,10 @@ yhandle_seq_end(struct yconf *y, struct absout *eout)
     case IN_DEFAULT_NAME:
     case IN_DEFAULT_VALUE:
     case IN_DEFAULT_CLASS:
+    case IN_DELDEFAULT:
+    case IN_DELDEFAULT_MAP:
+    case IN_DELDEFAULT_NAME:
+    case IN_DELDEFAULT_CLASS:
     case IN_CONNSPEC:
     case IN_CONNSPEC_MAP:
     case IN_CONNSPEC_NAME:
@@ -580,6 +627,10 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	y->state = IN_DEFAULT_MAP;
 	break;
 
+    case IN_DELDEFAULT:
+	y->state = IN_DELDEFAULT_MAP;
+	break;
+
     case IN_CONNSPEC:
 	y->state = IN_CONNSPEC_MAP;
 	break;
@@ -603,6 +654,9 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
     case IN_DEFAULT_NAME:
     case IN_DEFAULT_VALUE:
     case IN_DEFAULT_CLASS:
+    case IN_DELDEFAULT_MAP:
+    case IN_DELDEFAULT_NAME:
+    case IN_DELDEFAULT_CLASS:
     case IN_CONNSPEC_MAP:
     case IN_CONNSPEC_NAME:
     case IN_CONNSPEC_ACCEPTER:
@@ -641,11 +695,27 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	    eout->out(eout, "No name given in default");
 	    return -1;
 	}
-	if (!y->value) {
-	    eout->out(eout, "No value given in default");
+	err = gensio_set_default(so, y->class, y->name, y->value, 0);
+	if (err) {
+	    eout->out(eout, "Unable to set default name %s:%s:%s: %s",
+		      y->class ? y->class : "",
+		      y->name, y->value, gensio_err_to_str(err));
 	    return -1;
 	}
-	err = gensio_set_default(so, y->class, y->name, y->value, 0);
+	y->state = MAIN_LEVEL;
+	yconf_cleanup_main(y);
+	break;
+
+    case IN_DELDEFAULT_MAP:
+	if (!y->name) {
+	    eout->out(eout, "No name given in delete_default");
+	    return -1;
+	}
+	if (!y->class) {
+	    eout->out(eout, "No class given in delete_default");
+	    return -1;
+	}
+	err = gensio_del_default(so, y->class, y->name, false);
 	if (err) {
 	    eout->out(eout, "Unable to set default name %s:%s:%s: %s",
 		      y->class ? y->class : "",
@@ -726,6 +796,9 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
     case IN_DEFAULT_NAME:
     case IN_DEFAULT_VALUE:
     case IN_DEFAULT_CLASS:
+    case IN_DELDEFAULT:
+    case IN_DELDEFAULT_NAME:
+    case IN_DELDEFAULT_CLASS:
     case IN_CONNSPEC:
     case IN_CONNSPEC_NAME:
     case IN_CONNSPEC_ACCEPTER:
