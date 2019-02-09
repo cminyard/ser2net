@@ -40,9 +40,9 @@
 int portconfig(struct absout *eout,
 	       char *portnum,
 	       char *state,
-	       char *timeout,
+	       unsigned int timeout,
 	       char *devname,
-	       char *devcfg,
+	       const char * const *devcfg,
 	       int  config_num);
 
 /* Shut down all the ports, and provide a way to check when done. */
@@ -106,7 +106,10 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 				   const char *item),
 		void *data);
 
-int add_rotator(char *portname, char *ports, int lineno);
+int add_rotator(const char *name, const char *accstr,
+		int portc, const char **ports,
+		const char **options, int lineno);
+
 void free_rotators(void);
 
 #endif /* DATAXFER */

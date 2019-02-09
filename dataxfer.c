@@ -248,6 +248,7 @@ struct port_info
 
     /* Information about the network port. */
     char               *portname;       /* The name given for the port. */
+    char               *accstr;         /* The accepter string. */
     struct gensio_accepter *accepter;	/* Used to receive new connections. */
     bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
@@ -908,7 +909,8 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	}
 
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "dev read error for device %s: %m", port->portname);
+	syslog(LOG_ERR, "dev read error for device on port %s: %m",
+	       port->portname);
 	shutdown_port(port, "dev read error");
     }
 
@@ -1752,7 +1754,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 
 	    case 'p':
 		/* ser2net network port. */
-		for (t = port->portname; *t; t++)
+		for (t = port->accstr; *t; t++)
 		    op(data, *t);
 		break;
 
@@ -2561,7 +2563,8 @@ typedef struct rotator
     const char **portv;
     int portc;
 
-    char *portname;
+    char *name;
+    char *accstr;
 
     struct gensio_accepter *accepter;
 
@@ -2610,7 +2613,7 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
     rotator_t *rot = user_data;
 
     if (event == GENSIO_ACC_EVENT_LOG) {
-	do_gensio_log(rot->portname, data);
+	do_gensio_log(rot->accstr, data);
 	return 0;
     }
 
@@ -2659,8 +2662,10 @@ free_rotator(rotator_t *rot)
     }
     if (rot->authdir)
 	free(rot->authdir);
-    if (rot->portname)
-	free(rot->portname);
+    if (rot->name)
+	free(rot->name);
+    if (rot->accstr)
+	free(rot->accstr);
     if (rot->portv)
 	gensio_argv_free(so, rot->portv);
     free(rot);
@@ -2681,7 +2686,8 @@ free_rotators(void)
 }
 
 int
-add_rotator(char *portname, char *ports, int lineno)
+add_rotator(const char *name, const char *accstr, int portc, const char **ports,
+	    const char **options, int lineno)
 {
     rotator_t *rot;
     int rv;
@@ -2691,8 +2697,14 @@ add_rotator(char *portname, char *ports, int lineno)
 	return ENOMEM;
     memset(rot, 0, sizeof(*rot));
 
-    rot->portname = strdup(portname);
-    if (!rot->portname) {
+    rot->name = strdup(name);
+    if (!rot->name) {
+	free_rotator(rot);
+	return ENOMEM;
+    }
+
+    rot->accstr = strdup(accstr);
+    if (!rot->accstr) {
 	free_rotator(rot);
 	return ENOMEM;
     }
@@ -2702,14 +2714,37 @@ add_rotator(char *portname, char *ports, int lineno)
 	return ENOMEM;
     }
 
-    rv = gensio_str_to_argv(so, ports, &rot->portc, &rot->portv, NULL);
-    if (rv)
-	goto out;
+    if (options) {
+	unsigned int i;
+	const char *str;
 
-    rv = str_to_gensio_accepter(rot->portname, so,
+	for (i = 0; options[i]; i++) {
+	    if (gensio_check_keyvalue(options[i], "authdir", &str) > 0) {
+		if (rot->authdir)
+		    free(rot->authdir);
+		rot->authdir = strdup(str);
+		if (!rot->authdir) {
+		    free_rotator(rot);
+		    syslog(LOG_ERR, "Out of memory allocating rotator"
+			   " authdir on line %d\n", lineno);
+		    return ENOMEM;
+		}
+		continue;
+	    }
+	    free_rotator(rot);
+	    syslog(LOG_ERR, "Invalid option %s for rotator on line %d\n",
+		   options[i], lineno);
+	    return EINVAL;
+	}
+    }
+
+    rot->portc = portc;
+    rot->portv = ports;
+
+    rv = str_to_gensio_accepter(rot->accstr, so,
 				handle_rot_child_event, rot, &rot->accepter);
     if (rv) {
-	syslog(LOG_ERR, "port was invalid on line %d", lineno);
+	syslog(LOG_ERR, "accepter was invalid on line %d", lineno);
 	goto out;
     }
 
@@ -2724,8 +2759,11 @@ add_rotator(char *portname, char *ports, int lineno)
     }
 
  out:
-    if (rv)
+    if (rv) {
+	rot->portc = 0;
+	rot->portv = NULL;
 	free_rotator(rot);
+    }
     return rv;
 }
 
@@ -3680,37 +3718,14 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
     return 0;
 }
 
-static int
-myconfigs(port_info_t *port, struct absout *eout, const char *istr)
-{
-    char *pos, *str, *strtok_data;
-    int rv = 0;
-
-    str = strdup(istr);
-    if (!str) {
-	eout->out(eout, "Out of memory handling config");
-	return -1;
-    }
-
-    for (pos = strtok_r(str, " \t", &strtok_data); pos != NULL;
-		pos = strtok_r(NULL, " \t", &strtok_data)) {
-	rv = myconfig(port, eout, pos);
-	if (rv)
-	    break;
-    }
-
-    free(str);
-    return rv;
-}
-
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
 	   char *portnum,
 	   char *state,
-	   char *timeout,
+	   unsigned int timeout,
 	   char *devname,
-	   char *devcfg,
+	   const char * const *devcfg,
 	   int  config_num)
 {
     port_info_t *new_port, *curr, *prev;
@@ -3720,6 +3735,7 @@ portconfig(struct absout *eout,
     unsigned int shutdown_count = 0;
     bool do_telnet = false;
     bool write_only = false;
+    unsigned int i;
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -3799,15 +3815,13 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    new_port->timeout = scan_int(timeout);
-    if (new_port->timeout == -1) {
-	eout->out(eout, "timeout was invalid");
-	goto errout;
-    }
+    new_port->timeout = timeout;
 
-    err = myconfigs(new_port, eout, devcfg);
-    if (err)
-	goto errout;
+    for (i = 0; devcfg[i]; i++) {
+	err = myconfig(new_port, eout, devcfg[i]);
+	if (err)
+	    goto errout;
+    }
 
     if (write_only) {
 	err = strdupcat(&new_port->devname, "WRONLY");

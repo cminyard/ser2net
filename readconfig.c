@@ -30,6 +30,7 @@
 #include <stdarg.h>
 #include <limits.h>
 #include <gensio/gensio.h>
+#include <gensio/argvutils.h>
 
 #include "ser2net.h"
 #include "dataxfer.h"
@@ -40,7 +41,7 @@
 
 extern char *config_port;
 
-static int config_num = 0;
+int config_num = 0;
 
 static int lineno = 0;
 
@@ -607,8 +608,11 @@ scan_for_state(char *str)
 int
 handle_config_line(char *inbuf, int len)
 {
-    char *portnum, *state, *timeout, *devname, *devcfg;
+    char *portnum, *state, *timeoutstr, *devname, *devcfg;
+    unsigned int timeout;
     char *strtok_data = NULL;
+    const char **devcfg_argv;
+    int err;
 
     if (len == 0)
 	/* Ignore empty lines */
@@ -736,7 +740,6 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, ":\n", &strtok_data);
 	char *class = strtok_r(NULL, "\n", &strtok_data);
-	int err;
 
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No default name given on line %d", lineno);
@@ -764,7 +767,6 @@ handle_config_line(char *inbuf, int len)
     if (startswith(inbuf, "DELDEFAULT", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *class = strtok_r(NULL, "\n", &strtok_data);
-	int err;
 
 	if (!name) {
 	    syslog(LOG_ERR, "No default name given on line %d", lineno);
@@ -786,11 +788,23 @@ handle_config_line(char *inbuf, int len)
     if (startswith(inbuf, "ROTATOR", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
+	int portc;
+	const char **portv;
+
 	if (name == NULL) {
 	    syslog(LOG_ERR, "No rotator name given on line %d", lineno);
 	    goto out;
 	}
-	add_rotator(name, str, lineno);
+
+	err = gensio_str_to_argv(so, str, &portc, &portv, NULL);
+	if (err) {
+	    syslog(LOG_ERR, "Unable to allocate rotator argv on line %d",
+		   lineno);
+	    goto out;
+	}
+	err = add_rotator(name, name, portc, portv, NULL, lineno);
+	if (err)
+	    gensio_argv_free(so, portv);
 	goto out;
     }
 
@@ -826,10 +840,19 @@ handle_config_line(char *inbuf, int len)
     *inbuf = '\0';
     inbuf++;
 
-    timeout = strtok_r(inbuf, ":", &strtok_data);
-    if (timeout == NULL) {
+    timeoutstr = strtok_r(inbuf, ":", &strtok_data);
+    if (timeoutstr == NULL) {
 	syslog(LOG_ERR, "No timeout given on line %d", lineno);
 	goto out;
+    } else {
+	char *end;
+
+	timeout = strtoul(timeoutstr, &end, 0);
+	if (end == timeoutstr || *end != '\0') {
+	    syslog(LOG_ERR, "Invalid timeout '%s' on line %d\n",
+		   timeoutstr, lineno);
+	    goto out;
+	}
     }
 
     devname = strtok_r(NULL, ":", &strtok_data);
@@ -839,14 +862,21 @@ handle_config_line(char *inbuf, int len)
     }
 
     devcfg = strtok_r(NULL, "", &strtok_data);
-    if (devcfg == NULL) {
+    if (devcfg == NULL)
 	/* An empty device config is ok. */
 	devcfg = "";
+
+    err = gensio_str_to_argv(so, devcfg, NULL, &devcfg_argv, NULL);
+    if (err) {
+	syslog(LOG_ERR, "Invalid device config on line %d: %s",
+	       lineno, gensio_err_to_str(err));
+	goto out;
     }
 
-    portconfig(&syslog_eout, portnum, state, timeout, devname, devcfg,
+    portconfig(&syslog_eout, portnum, state, timeout, devname, devcfg_argv,
 	       config_num);
 
+    gensio_argv_free(so, devcfg_argv);
  out:
     return 0;
 }

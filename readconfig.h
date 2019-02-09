@@ -31,6 +31,8 @@ int readconfig_init(void);
    create the ports. */
 int readconfig(FILE *instream);
 
+extern int config_num;
+
 /*
  * Search for a banner/open/close string by name.  Note that the
  * returned value needs to be free-ed when done.
