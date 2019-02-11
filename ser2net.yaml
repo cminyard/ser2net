@@ -14,15 +14,13 @@ default:
 
 define: &banner1 This is a banner for port \N(\p)\r\n
 
-led:
-  name: led1
+led: &led1
   driver: sysfs
   options: {
     device: "tpacpi::standby"
   }
 
-connection: &jkl1
-  name: con2
+connection: &con2
   accepter: telnet,tcp,2002
   timeout: 0
   connector: serialdev,/dev/ttyEcho0,9600,local
@@ -35,9 +33,8 @@ connection: &jkl1
     led-rx: led1
   }
 
-rotator:
-  name: rot1
+rotator: &rot1
   accepter: telnet,tcp,2003
   connections: [
-    con1
+    *con2
   ]

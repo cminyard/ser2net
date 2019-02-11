@@ -112,6 +112,7 @@ struct map_info {
     struct scalar_next_state *states;
     enum ystate next_state;
     int map_type;
+    bool needs_anchor;
 };
 
 enum which_info {
@@ -391,8 +392,6 @@ static struct option_info connspec_option_info = {
 };
 
 static struct scalar_next_state sc_connection[] = {
-    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
-      .keyval_info = &keyval_name },
     { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_accepter },
     { "timeout", IN_CONNSPEC_TIMEOUT },
@@ -409,8 +408,6 @@ static struct option_info rotator_option_info = {
 };
 
 static struct scalar_next_state sc_rotator[] = {
-    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
-      .keyval_info = &keyval_name },
     { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_accepter },
     { "connections", IN_ROTATOR_CONNECTIONS },
@@ -425,8 +422,6 @@ static struct option_info led_option_info = {
 };
 
 static struct scalar_next_state sc_led[] = {
-    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
-      .keyval_info = &keyval_name },
     { "driver", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_driver },
     { "options", IN_OPTIONS, WHICH_INFO_OPTION,
@@ -443,23 +438,23 @@ enum main_map_types {
 };
 
 static struct map_info sc_default_map = {
-    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT
+    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT, false
 };
 
 static struct map_info sc_deldefault_map = {
-    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT
+    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT, false
 };
 
 static struct map_info sc_connection_map = {
-    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION
+    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION, true
 };
 
 static struct map_info sc_rotator_map = {
-    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR
+    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR, true
 };
 
 static struct map_info sc_led_map = {
-    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED
+    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED, true
 };
 
 static struct scalar_next_state sc_main[] = {
@@ -637,6 +632,21 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	break;
 
     case IN_MAIN_NAME:
+	if (y->map_info->needs_anchor) {
+	    char *anchor = (char *) y->e.data.mapping_start.anchor;
+
+	    if (!anchor) {
+		eout->out(eout, "Main mapping requires an anchor for the name");
+		return -1;
+	    }
+	    y->name = strdup(anchor);
+	    if (!y->name) {
+		eout->out(eout, "Out of memory allocating name");
+		return -1;
+	    }
+	    if (add_alias(y, anchor, anchor, eout))
+		return -1;
+	}
 	y->state = IN_MAIN_MAP;
 	break;
 
