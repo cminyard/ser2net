@@ -52,4 +52,9 @@ int sub_timeval_us(struct timeval *left, struct timeval *right);
    integer was invalid.  Spaces are not handled. */
 int scan_int(const char *str);
 
+/*
+ * Handle authorization events from accepters.
+ */
+int handle_acc_auth_event(const char *authdir, int event, void *data);
+
 #endif /* SER2NET_H */

@@ -26,7 +26,8 @@
 #define CONTROLLER_CANT_OPEN_PORT	-2
 #define CONTROLLER_OUT_OF_MEMORY	-3
 /* Initialize the controller code, return -n (above) on error. */
-int controller_init(char *controller_port);
+int controller_init(char *controller_port, const char * const *options,
+		    struct absout *eout);
 
 /* Disable the control port. */
 void controller_shutdown(void);

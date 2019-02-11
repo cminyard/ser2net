@@ -39,8 +39,6 @@
 
 #define PORT_BUFSIZE	64	/* Default data transfer buffer size */
 
-extern char *config_port;
-
 int config_num = 0;
 
 static int lineno = 0;
@@ -443,7 +441,9 @@ struct default_data defaults[] = {
 					.def.intval = 1 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
-						DATAROOT "/ser2net/auth" },
+						DATAROOT "/ser2net/auth/" },
+    { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
+						SYSCONFDIR "/ser2net/auth/" },
     { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
     { "openstr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "closestr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
@@ -711,17 +711,9 @@ handle_config_line(char *inbuf, int len)
     }
 
     if (startswith(inbuf, "CONTROLPORT", &strtok_data)) {
-	if (config_port)
-	    /*
-	     * The control port has already been configured either on the
-	     * command line or on a previous statement.  Only take the first.
-	     */
-	    goto out;
-	config_port = strdup(strtok_r(NULL, "\n", &strtok_data));
-	if (!config_port) {
-	    syslog(LOG_ERR, "Could not allocate memory for CONTROLPORT");
-	    goto out;
-	}
+	char *config_port = strtok_r(NULL, "\n", &strtok_data);
+
+	controller_init(config_port, NULL, NULL);
 	goto out;
     }
 

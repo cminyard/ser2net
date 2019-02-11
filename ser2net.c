@@ -41,8 +41,8 @@
 static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";
 static bool config_file_set = false;
 static char *old_config_file = SYSCONFDIR "/ser2net.conf";
-int config_port_from_cmdline = 0;
-char *config_port = NULL; /* Can be set from readconfig, too. */
+bool admin_port_from_cmdline = false;
+char *admin_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
 static int detach = 1;
 int ser2net_debug = 0;
@@ -124,59 +124,25 @@ static void
 reread_config_file(void)
 {
     if (config_file) {
-	char *prev_config_port = config_port;
 	FILE *instream = NULL;
 	bool is_yaml;
 
-	config_port = NULL;
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
 	readconfig_init();
 
 	instream = fopen_config_file(&is_yaml);
 	if (!instream)
-	    goto config_port_unchanged;
+	    goto out;
 
+	if (!admin_port_from_cmdline)
+	    controller_shutdown();
 	if (is_yaml)
 	    yaml_readconfig(instream);
 	else
 	    readconfig(instream);
 	fclose(instream);
-	if (config_port_from_cmdline) {
-	    /* Never override the config port from the command line. */
-	    free(config_port);
-	    config_port = prev_config_port;
-	    goto config_port_unchanged;
-	}
-	if (config_port && prev_config_port
-	    && (strcmp(config_port, prev_config_port) == 0)) {
-	    free(prev_config_port);
-	    goto config_port_unchanged;
-	}
-
-	if (prev_config_port) {
-	    controller_shutdown();
-	    free(prev_config_port);
-	}
-
-	if (config_port) {
-	    int rv = controller_init(config_port);
-	    if (rv == CONTROLLER_INVALID_TCP_SPEC)
-		syslog(LOG_ERR, "Invalid control port specified: %s",
-		       config_port);
-	    else if (rv == CONTROLLER_OUT_OF_MEMORY)
-		syslog(LOG_ERR, "Out of memory opening control port: %s",
-		       config_port);
-	    else if (rv == CONTROLLER_CANT_OPEN_PORT)
-		syslog(LOG_ERR, "Can't open control port: %s",
-		       config_port);
-	    if (rv) {
-		syslog(LOG_ERR, "Control port is disabled");
-		free(config_port);
-		config_port = NULL;
-	    }
-	}
     }
- config_port_unchanged:
+ out:
     return;
 }
 
@@ -533,8 +499,8 @@ finish_shutdown_cleanly(void)
     if (pid_file)
 	unlink(pid_file);
 
-    if (config_port)
-	free(config_port);
+    if (admin_port)
+	free(admin_port);
 
     so->free_funcs(so);
 
@@ -721,12 +687,12 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No control port specified with -p\n");
 		arg_error(argv[0]);
 	    }
-	    config_port = strdup(argv[i]);
-	    if (!config_port) {
+	    admin_port = strdup(argv[i]);
+	    if (!admin_port) {
 		fprintf(stderr, "Could not allocate memory for -p\n");
 		exit(1);
 	    }
-	    config_port_from_cmdline = 1;
+	    admin_port_from_cmdline = true;
 	    break;
 
 	case 'P':
@@ -833,6 +799,9 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
+    if (admin_port)
+	controller_init(admin_port, NULL, NULL);
+
     for (i = 0; i < num_config_lines; i++)
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
@@ -851,21 +820,6 @@ main(int argc, char *argv[])
 	if (rv == -1)
 	    exit(1);
 	fclose(instream);
-    }
-
-    if (config_port != NULL) {
-	int rv;
-	rv = controller_init(config_port);
-	if (rv == CONTROLLER_INVALID_TCP_SPEC) {
-	    fprintf(stderr, "Invalid control port specified: %s\n",
-		    config_port);
-	    arg_error(argv[0]);
-	}
-	if (rv == CONTROLLER_CANT_OPEN_PORT) {
-	    fprintf(stderr, "Unable to open control port, see syslog: %s\n",
-		    config_port);
-	    exit(1);
-	}
     }
 
     if (detach) {

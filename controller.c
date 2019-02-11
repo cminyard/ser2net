@@ -30,6 +30,7 @@
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
+#include "readconfig.h"
 
 /** BASED ON sshd.c FROM openssh.com */
 #ifdef HAVE_TCPD_H
@@ -43,6 +44,7 @@ static char *progname = "ser2net-control";
 
 static struct gensio_lock *cntlr_lock;
 static struct gensio_accepter *controller_accepter;
+static char *controller_authdir;
 static struct gensio_waiter *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -472,7 +474,7 @@ controller_read(struct gensio *net, int err,
     if (cntlr->inbuf_count == INBUF_SIZE)
 	goto inbuf_overflow;
 
-    if (err) {
+    if (err && err != GE_REMCLOSE) {
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "read error for controller port: %s",
 	       gensio_err_to_str(err));
@@ -602,19 +604,12 @@ controller_io_event(struct gensio *net, void *user_data, int event, int err,
     return ENOTSUP;
 }
 
-/* A connection request has come in for the control port. */
 static int
-controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
-			   int event, void *data)
+controller_acc_new_child(struct gensio *net)
 {
     controller_info_t *cntlr;
-    char              *err = NULL;
-    struct gensio *net;
+    char *err = NULL;
 
-    if (event != GENSIO_ACC_EVENT_NEW_CONNECTION)
-	return ENOTSUP;
-
-    net = data;
     so->lock(cntlr_lock);
     if (num_controller_ports >= max_controller_ports) {
 	err = "Too many controller ports\r\n";
@@ -660,6 +655,20 @@ errout:
     return 0;
 }
 
+/* A connection request has come in for the control port. */
+static int
+controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
+			   int event, void *data)
+{
+    switch (event) {
+    case GENSIO_ACC_EVENT_NEW_CONNECTION:
+	return controller_acc_new_child(data);
+
+    default:
+	return handle_acc_auth_event(controller_authdir, event, data);
+    }
+}
+
 static void
 controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
 {
@@ -668,27 +677,57 @@ controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
 
 /* Set up the controller port to accept connections. */
 int
-controller_init(char *controller_port)
+controller_init(char *controller_port, const char * const *options,
+		struct absout *eout)
 {
+    unsigned int i;
+    const char *val;
     int rv;
+
+    if (controller_accepter) {
+	if (eout)
+	    eout->out(eout, "Admin port already configured");
+	return -1;
+    }
+
+    if (find_default_str("authdir-admin", &controller_authdir))
+	goto out_nomem;
+
+    for (i = 0; options[i]; i++) {
+	if (gensio_check_keyvalue(options[i], "authdir-admin", &val) > 0) {
+	    char *s = strdup(val);
+
+	    if (!s)
+		goto out_nomem;
+	    if (controller_authdir)
+		free(controller_authdir);
+	    controller_authdir = s;
+	    continue;
+	}
+	if (eout)
+	    eout->out(eout, "Invalid option to admin port: %s", options[i]);
+    }
 
     if (!cntlr_lock) {
 	cntlr_lock = so->alloc_lock(so);
 	if (!cntlr_lock)
-	    return ENOMEM;
+	    goto out_nomem;
     }
 
     if (!controller_shutdown_waiter) {
 	controller_shutdown_waiter = so->alloc_waiter(so);
 	if (!controller_shutdown_waiter)
-	    return ENOMEM;
+	    goto out_nomem;
     }
 
     if (!accept_waiter) {
 	accept_waiter = so->alloc_waiter(so);
 	if (!accept_waiter) {
-	    syslog(LOG_ERR, "Unable to allocate controller accept waiter");
-	    return CONTROLLER_CANT_OPEN_PORT;
+	    if (eout)
+		eout->out(eout, "Unable to allocate controller accept waiter");
+	    else
+		syslog(LOG_ERR, "Unable to allocate controller accept waiter");
+	    goto out;
 	}
     }
 
@@ -696,18 +735,33 @@ controller_init(char *controller_port)
 				controller_acc_child_event, NULL,
 				&controller_accepter);
     if (rv) {
-	if (rv == EINVAL)
-	    return CONTROLLER_INVALID_TCP_SPEC;
-	else if (rv == ENOMEM)
-	    return CONTROLLER_OUT_OF_MEMORY;
+	if (eout)
+	    eout->out(eout, "Unable to allocate controller accepter: %s",
+		      gensio_err_to_str(rv));
 	else
-	    return -1;
+	    syslog(LOG_ERR, "Unable to allocate controller accepter: %s",
+		      gensio_err_to_str(rv));
+	goto out;
     }
 
     rv = gensio_acc_startup(controller_accepter);
-    if (rv)
-	return CONTROLLER_CANT_OPEN_PORT;
+    if (rv) {
+	if (eout)
+	    eout->out(eout, "Unable to start controller accepter: %s",
+		      gensio_err_to_str(rv));
+	else
+	    syslog(LOG_ERR, "Unable to start controller accepter: %s",
+		      gensio_err_to_str(rv));
+    }
 
+ out:
+    return 0;
+
+ out_nomem:
+    if (eout)
+	eout->out(eout, "Unable to allocate memory for controller");
+    else
+	syslog(LOG_ERR, "Unable to allocate memory for controller");
     return 0;
 }
 
@@ -720,6 +774,9 @@ controller_shutdown(void)
 	so->wait(accept_waiter, 1, NULL);
 	gensio_acc_free(controller_accepter);
 	controller_accepter = NULL;
+	if (controller_authdir)
+	    free(controller_authdir);
+	controller_authdir = NULL;
     }
 }
 

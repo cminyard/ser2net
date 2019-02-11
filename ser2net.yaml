@@ -9,8 +9,24 @@
 
 default:
   name: authdir
-  value: /etc/ser2net/auth
+  value: auth/
   class: ser2net
+
+default:
+  name: key
+  value: test.key
+  class: ssl
+
+default:
+  name: cert
+  value: test.crt
+  class: ssl
+
+admin:
+  accepter: certauth,ssl,sctp,2000
+  options: {
+    authdir-admin: auth/
+  }
 
 define: &banner1 This is a banner for port \N(\p)\r\n
 
@@ -20,14 +36,25 @@ led: &led1
     device: "tpacpi::standby"
   }
 
-define: &mydev /dev/ttyEcho0
+define: &mydev /dev/ttyEcho
 
-connection: &con2
+connection: &con1
   accepter: telnet,tcp,2002
   timeout: 0
-  connector: serialdev,*(mydev),9600,local
+  connector: serialdev,*(mydev)0,9600,local
   options: {
-    authdir: asdf,
+    banner: *banner1,
+    telnet-brk-on-sync,
+    chardelay,
+    led-tx: led1,
+    led-rx: led1
+  }
+
+connection: &con2
+  accepter: certauth,ssl,sctp,2003
+  timeout: 0
+  connector: serialdev,*(mydev)1,9600,local
+  options: {
     banner: *banner1,
     telnet-brk-on-sync,
     chardelay,
@@ -36,7 +63,8 @@ connection: &con2
   }
 
 rotator: &rot1
-  accepter: telnet,tcp,2003
+  accepter: telnet,tcp,2020
   connections: [
+    *con1,
     *con2
   ]

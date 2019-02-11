@@ -435,12 +435,21 @@ static struct scalar_next_state sc_led[] = {
     {}
 };
 
+static struct scalar_next_state sc_admin[] = {
+    { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_accepter },
+    { "options", IN_OPTIONS, WHICH_INFO_OPTION,
+      .option_info = &led_option_info },
+    {}
+};
+
 enum main_map_types {
     MAIN_MAP_DEFAULT,
     MAIN_MAP_DELDEFAULT,
     MAIN_MAP_CONNECTION,
     MAIN_MAP_ROTATOR,
-    MAIN_MAP_LED
+    MAIN_MAP_LED,
+    MAIN_MAP_ADMIN
 };
 
 static struct map_info sc_default_map = {
@@ -463,6 +472,10 @@ static struct map_info sc_led_map = {
     "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED, true
 };
 
+static struct map_info sc_admin_map = {
+    "admin", sc_admin, MAIN_LEVEL, MAIN_MAP_ADMIN, false
+};
+
 static struct scalar_next_state sc_main[] = {
     { "define", IN_DEFINE },
     { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map },
@@ -472,6 +485,7 @@ static struct scalar_next_state sc_main[] = {
       .map_info = &sc_connection_map },
     { "rotator", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_rotator_map },
     { "led", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_led_map },
+    { "admin", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_admin_map },
     {}
 };
 
@@ -875,6 +889,19 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 		return -1;
 	    err = add_led(y->name, y->driver,
 			  (const char **) y->options, y->e.start_mark.line);
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
+
+	case MAIN_MAP_ADMIN:
+	    if (!y->accepter) {
+		eout->out(eout, "No accepter given in admin");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "admin", eout))
+		return -1;
+	    controller_init(y->accepter, (const char **) y->options, eout);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
 	    break;
