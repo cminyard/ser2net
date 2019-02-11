@@ -45,31 +45,25 @@ enum ystate {
     IN_DELDEFAULT_MAP,
     IN_DELDEFAULT_NAME,
     IN_DELDEFAULT_CLASS,
+    IN_OPTIONS,
+    IN_OPTIONS_MAP,
+    IN_OPTIONS_NAME,
     IN_CONNSPEC,
     IN_CONNSPEC_MAP,
     IN_CONNSPEC_NAME,
     IN_CONNSPEC_ACCEPTER,
     IN_CONNSPEC_TIMEOUT,
     IN_CONNSPEC_CONNECTOR,
-    IN_CONNSPEC_OPTIONS,
-    IN_CONNSPEC_OPTIONS_MAP,
-    IN_CONNSPEC_OPTIONS_NAME,
     IN_ROTATOR,
     IN_ROTATOR_MAP,
     IN_ROTATOR_NAME,
     IN_ROTATOR_ACCEPTER,
     IN_ROTATOR_CONNECTIONS,
     IN_ROTATOR_CONNECTIONS_SEQ,
-    IN_ROTATOR_OPTIONS,
-    IN_ROTATOR_OPTIONS_MAP,
-    IN_ROTATOR_OPTIONS_NAME,
     IN_LED,
     IN_LED_MAP,
     IN_LED_NAME,
     IN_LED_DRIVER,
-    IN_LED_OPTIONS,
-    IN_LED_OPTIONS_MAP,
-    IN_LED_OPTIONS_NAME,
     END_DOC
 };
 
@@ -77,6 +71,12 @@ struct alias {
     char *name;
     char *value;
     struct alias *next;
+};
+
+struct option_info {
+    enum ystate option_next_state;
+    char *option_str;
+    char *option_name_str;
 };
 
 struct yconf {
@@ -88,13 +88,14 @@ struct yconf {
     char *connector;
     char *value;
     char *class;
-    char *optionname;
     char **connections;
     unsigned int curr_connection;
     unsigned int connections_len;
     char **options;
+    char *optionname;
     unsigned int curr_option;
     unsigned int options_len;
+    struct option_info *option_info;
     yaml_parser_t parser;
     yaml_event_t e;
     struct alias *aliases;
@@ -282,6 +283,7 @@ add_connection(struct yconf *y, const char *connection, const char *place,
 struct scalar_next_state {
     char *name;
     enum ystate next_state;
+    struct option_info *option_info;
 };
 
 static struct scalar_next_state sc_main[] = {
@@ -307,27 +309,45 @@ static struct scalar_next_state sc_deldefault[] = {
     {}
 };
 
+static struct option_info connspec_option_info = {
+    IN_CONNSPEC_MAP,
+    "connection",
+    "connection option name"
+};
+
 static struct scalar_next_state sc_connspec[] = {
     { "name", IN_CONNSPEC_NAME },
     { "accepter", IN_CONNSPEC_ACCEPTER },
     { "timeout", IN_CONNSPEC_TIMEOUT },
     { "connector", IN_CONNSPEC_CONNECTOR },
-    { "options", IN_CONNSPEC_OPTIONS },
+    { "options", IN_OPTIONS, &connspec_option_info },
     {}
+};
+
+static struct option_info rotator_option_info = {
+    IN_ROTATOR_MAP,
+    "rotator",
+    "rotator option name"
 };
 
 static struct scalar_next_state sc_rotator[] = {
     { "name", IN_ROTATOR_NAME },
     { "accepter", IN_ROTATOR_ACCEPTER },
     { "connections", IN_ROTATOR_CONNECTIONS },
-    { "options", IN_ROTATOR_OPTIONS },
+    { "options", IN_OPTIONS, &rotator_option_info },
     {}
+};
+
+static struct option_info led_option_info = {
+    IN_LED_MAP,
+    "led",
+    "led option name"
 };
 
 static struct scalar_next_state sc_led[] = {
     { "name", IN_LED_NAME },
     { "driver", IN_LED_DRIVER },
-    { "options", IN_LED_OPTIONS },
+    { "options", IN_OPTIONS, &led_option_info },
     {}
 };
 
@@ -350,15 +370,19 @@ setstr(char **oval, const char *ival, const char *desc, struct absout *eout)
     return 0;
 }
 
-static enum ystate
-scalar_next_state(struct scalar_next_state *s, const char *scalar)
+static void
+scalar_next_state(struct yconf *y,
+		  struct scalar_next_state *s, const char *scalar)
 {
     while (s->name) {
-	if (strcasecmp(s->name, scalar) == 0)
-	    return s->next_state;
+	if (strcasecmp(s->name, scalar) == 0) {
+	    y->option_info = s->option_info;
+	    y->state = s->next_state;
+	    return;
+	}
 	s++;
     }
-    return PARSE_ERR;
+    y->state = PARSE_ERR;
 }
 
 static int
@@ -370,7 +394,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 
     switch (y->state) {
     case MAIN_LEVEL:
-	y->state = scalar_next_state(sc_main, scalar);
+	scalar_next_state(y, sc_main, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token at the main level: %s\n", scalar);
 	    return -1;
@@ -389,7 +413,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	break;
 
     case IN_DEFAULT_MAP:
-	y->state = scalar_next_state(sc_default, scalar);
+	scalar_next_state(y, sc_default, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in the default: %s\n", scalar);
 	    return -1;
@@ -415,7 +439,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	break;
 
     case IN_DELDEFAULT_MAP:
-	y->state = scalar_next_state(sc_deldefault, scalar);
+	scalar_next_state(y, sc_deldefault, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in delete_default: %s\n", scalar);
 	    return -1;
@@ -435,7 +459,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	break;
 
     case IN_CONNSPEC_MAP:
-	y->state = scalar_next_state(sc_connspec, scalar);
+	scalar_next_state(y, sc_connspec, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in the connection map: %s\n",
 		      scalar);
@@ -470,21 +494,23 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	y->state = IN_CONNSPEC_MAP;
 	break;
 
-    case IN_CONNSPEC_OPTIONS_MAP:
-	if (setstr(&y->optionname, scalar, "connection option name", eout))
+    case IN_OPTIONS_MAP:
+	if (setstr(&y->optionname, scalar, y->option_info->option_name_str,
+		   eout))
 	    return -1;
-	y->state = IN_CONNSPEC_OPTIONS_NAME;
+	y->state = IN_OPTIONS_NAME;
 	break;
 
-    case IN_CONNSPEC_OPTIONS_NAME:
-	if (add_option(y, y->optionname, scalar, "connection", eout))
+    case IN_OPTIONS_NAME:
+	if (add_option(y, y->optionname, scalar, y->option_info->option_str,
+		       eout))
 	    return -1;
 	dofree(&y->optionname);
-	y->state = IN_CONNSPEC_OPTIONS_MAP;
+	y->state = IN_OPTIONS_MAP;
 	break;
 
     case IN_ROTATOR_MAP:
-	y->state = scalar_next_state(sc_rotator, scalar);
+	scalar_next_state(y, sc_rotator, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in the rotator map: %s\n",
 		      scalar);
@@ -509,21 +535,8 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	    return -1;
 	break;
 
-    case IN_ROTATOR_OPTIONS_MAP:
-	if (setstr(&y->optionname, scalar, "rotator option name", eout))
-	    return -1;
-	y->state = IN_ROTATOR_OPTIONS_NAME;
-	break;
-
-    case IN_ROTATOR_OPTIONS_NAME:
-	if (add_option(y, y->optionname, scalar, "rotator", eout))
-	    return -1;
-	dofree(&y->optionname);
-	y->state = IN_ROTATOR_OPTIONS_MAP;
-	break;
-
     case IN_LED_MAP:
-	y->state = scalar_next_state(sc_led, scalar);
+	scalar_next_state(y, sc_led, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in the led map: %s\n",
 		      scalar);
@@ -541,19 +554,6 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	if (setstr(&y->driver, scalar, "led driver", eout))
 	    return -1;
 	y->state = IN_LED_MAP;
-	break;
-
-    case IN_LED_OPTIONS_MAP:
-	if (setstr(&y->optionname, scalar, "led option name", eout))
-	    return -1;
-	y->state = IN_LED_OPTIONS_NAME;
-	break;
-
-    case IN_LED_OPTIONS_NAME:
-	if (add_option(y, y->optionname, scalar, "led", eout))
-	    return -1;
-	dofree(&y->optionname);
-	y->state = IN_LED_OPTIONS_MAP;
 	break;
 
     default:
@@ -626,16 +626,8 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	y->state = IN_LED_MAP;
 	break;
 
-    case IN_CONNSPEC_OPTIONS:
-	y->state = IN_CONNSPEC_OPTIONS_MAP;
-	break;
-
-    case IN_ROTATOR_OPTIONS:
-	y->state = IN_ROTATOR_OPTIONS_MAP;
-	break;
-
-    case IN_LED_OPTIONS:
-	y->state = IN_LED_OPTIONS_MAP;
+    case IN_OPTIONS:
+	y->state = IN_OPTIONS_MAP;
 	break;
 
     default:
@@ -766,16 +758,8 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	yconf_cleanup_main(y);
 	break;
 
-    case IN_CONNSPEC_OPTIONS_MAP:
-	y->state = IN_CONNSPEC_MAP;
-	break;
-
-    case IN_ROTATOR_OPTIONS_MAP:
-	y->state = IN_ROTATOR_MAP;
-	break;
-
-    case IN_LED_OPTIONS_MAP:
-	y->state = IN_LED_MAP;
+    case IN_OPTIONS_MAP:
+	y->state = y->option_info->option_next_state;
 	break;
 
     default:
