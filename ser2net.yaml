@@ -20,10 +20,12 @@ led: &led1
     device: "tpacpi::standby"
   }
 
+define: &mydev /dev/ttyEcho0
+
 connection: &con2
   accepter: telnet,tcp,2002
   timeout: 0
-  connector: serialdev,/dev/ttyEcho0,9600,local
+  connector: serialdev,*(mydev),9600,local
   options: {
     authdir: asdf,
     banner: *banner1,

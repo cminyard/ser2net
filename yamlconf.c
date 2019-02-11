@@ -220,14 +220,20 @@ syslog_eprint(struct absout *e, const char *str, ...)
 }
 
 static struct alias *
-lookup_alias(struct yconf *y, const char *name)
+lookup_alias_len(struct yconf *y, const char *name, unsigned int len)
 {
     struct alias *a;
 
     a = y->aliases;
-    while (a && strcmp(a->name, name) != 0)
+    while (a && strncmp(a->name, name, len) != 0)
 	a = a->next;
     return a;
+}
+
+static struct alias *
+lookup_alias(struct yconf *y, const char *name)
+{
+    return lookup_alias_len(y, name, strlen(name));
 }
 
 static int
@@ -509,19 +515,102 @@ scalar_next_state(struct yconf *y,
     y->state = PARSE_ERR;
 }
 
+/*
+ * Convert *(xxx) into the aliases.
+ */
+static char *
+process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
+{
+    const char *s, *start;
+    char *rv = NULL, *out = NULL;
+    unsigned int len, alen;
+    struct alias *a;
+    int state = 0;
+
+ restart:
+    for (s = iscalar; *s; s++) {
+	if (state == 0) {
+	    if (*s == '*')
+		state = 1;
+	    else {
+		if (out)
+		    *out++ = *s;
+		len++;
+	    }
+	} else if (state == 1) {
+	    /* We have seen a '*' */
+	    if (*s == '(') {
+		start = s + 1;
+		state = 2;
+	    } else if (*s == '*') {
+		if (out)
+		    *out++ = *s;
+		len++; /* Stay in state 1 */
+	    } else {
+		len += 2;
+		state = 0;
+	    }
+	} else if (state == 2) {
+	    /* We are in a '*(' */
+	    if (start == s && *s == '*') {
+		/* '*(*' outputs a '*(' */
+		if (out) {
+		    *out++ = '*';
+		    *out++ = '(';
+		}
+		len += 2;
+		state = 0;
+	    } else if (!*s) {
+		eout->out(eout, "Missing ')' for alias at '%s'", start - 2);
+		return NULL;
+	    } else if (*s == ')') {
+		a = lookup_alias_len(y, start, s - start);
+		if (!a) {
+		    eout->out(eout, "unknown alias at '%s'", start - 2);
+		    return NULL;
+		}
+		alen = strlen(a->value);
+		if (out) {
+		    memcpy(out, a->value, alen);
+		    out += alen;
+		}
+		len += alen;
+		state = 0;
+	    }
+	}
+    }
+    if (!out) {
+	out = malloc(len + 1);
+	if (!out) {
+	    eout->out(eout, "Out of memory processing string '%s'", iscalar);
+	    return NULL;
+	}
+	rv = out;
+	goto restart;
+    }
+    *out = '\0';
+
+    return rv;
+}
+
 static int
-yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
+yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar,
 	       struct absout *eout)
 {
     bool anchor_allowed = false;
     char *end;
+    char *scalar;
+
+    scalar = process_scalar(y, iscalar, eout);
+    if (!scalar)
+	return -1;
 
     switch (y->state) {
     case MAIN_LEVEL:
 	scalar_next_state(y, sc_main, scalar);
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token at the main level: %s\n", scalar);
-	    return -1;
+	    goto out_err;
 	}
 	break;
 
@@ -531,7 +620,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	    eout->out(eout, "No anchor for define, define ignored\n");
 	else {
 	    if (add_alias(y, anchor, scalar, eout))
-		return -1;
+		goto out_err;
 	}
 	y->state = MAIN_LEVEL;
 	break;
@@ -541,14 +630,14 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	if (y->state == PARSE_ERR) {
 	    eout->out(eout, "Invalid token in the %s: %s",
 		      y->map_info->name, scalar);
-	    return -1;
+	    goto out_err;
 	}
 	break;
 	    
     case IN_MAIN_MAP_KEYVAL:
 	if (setstr(KEYVAL_OFFSET(y), scalar, y->map_info->name,
 		   y->keyval_info->name, eout))
-	    return -1;
+	    goto out_err;
 	y->state = IN_MAIN_MAP;
 	break;
 
@@ -556,7 +645,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	y->timeout = strtoul(scalar, &end, 0);
 	if (end == scalar || *end != '\0') {
 	    eout->out(eout, "Invalid number in connection timeout");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
 	break;
@@ -564,31 +653,37 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
     case IN_OPTIONS_MAP:
 	if (setstr(&y->optionname, scalar, y->option_info->name, "option name",
 		   eout))
-	    return -1;
+	    goto out_err;
 	y->state = IN_OPTIONS_NAME;
 	break;
 
     case IN_OPTIONS_NAME:
 	if (add_option(y, y->optionname, scalar, y->option_info->name,
 		       eout))
-	    return -1;
+	    goto out_err;
 	dofree(&y->optionname);
 	y->state = IN_OPTIONS_MAP;
 	break;
 
     case IN_ROTATOR_CONNECTIONS_SEQ:
 	if (add_connection(y, scalar, "rotator", eout))
-	    return -1;
+	    goto out_err;
 	break;
 
     default:
 	eout->out(eout, "Unexpected scalar value");
-	return -1;
+	goto out_err;
     }
 
     if (anchor && !anchor_allowed)
 	eout->out(eout, "Anchor on non-scalar ignored\n");
+
+    free(scalar);
     return 0;
+
+ out_err:
+    free(scalar);
+    return -1;
 }
 
 static int
