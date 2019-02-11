@@ -27,6 +27,7 @@
 #include "ser2net.h"
 #include "dataxfer.h"
 #include "readconfig.h"
+#include "led.h"
 
 //#define DEBUG 1
 
@@ -62,6 +63,13 @@ enum ystate {
     IN_ROTATOR_OPTIONS,
     IN_ROTATOR_OPTIONS_MAP,
     IN_ROTATOR_OPTIONS_NAME,
+    IN_LED,
+    IN_LED_MAP,
+    IN_LED_NAME,
+    IN_LED_DRIVER,
+    IN_LED_OPTIONS,
+    IN_LED_OPTIONS_MAP,
+    IN_LED_OPTIONS_NAME,
     END_DOC
 };
 
@@ -75,6 +83,7 @@ struct yconf {
     enum ystate state;
     char *name;
     char *accepter;
+    char *driver;
     unsigned int timeout;
     char *connector;
     char *value;
@@ -104,6 +113,7 @@ yconf_cleanup_main(struct yconf *y)
 {
     dofree(&y->name);
     dofree(&y->accepter);
+    dofree(&y->driver);
     y->timeout = 0;
     dofree(&y->connector);
     dofree(&y->value);
@@ -156,8 +166,8 @@ lookup_alias(struct yconf *y, const char *name)
 }
 
 static int
-add_alias(struct yconf *y, const char *iname, const char *ivalue,
-	  struct absout *eout)
+add_alias(struct yconf *y, const char *iname,
+	  const char *ivalue, struct absout *eout)
 {
     struct alias *a;
     char *name, *value;
@@ -280,6 +290,7 @@ static struct scalar_next_state sc_main[] = {
     { "delete_default", IN_DELDEFAULT },
     { "connection", IN_CONNSPEC },
     { "rotator", IN_ROTATOR },
+    { "led", IN_LED },
     {}
 };
 
@@ -313,6 +324,13 @@ static struct scalar_next_state sc_rotator[] = {
     {}
 };
 
+static struct scalar_next_state sc_led[] = {
+    { "name", IN_LED_NAME },
+    { "driver", IN_LED_DRIVER },
+    { "options", IN_LED_OPTIONS },
+    {}
+};
+
 static int
 setstr(char **oval, const char *ival, const char *desc, struct absout *eout)
 {
@@ -336,7 +354,7 @@ static enum ystate
 scalar_next_state(struct scalar_next_state *s, const char *scalar)
 {
     while (s->name) {
-	if (strcmp(s->name, scalar) == 0)
+	if (strcasecmp(s->name, scalar) == 0)
 	    return s->next_state;
 	s++;
     }
@@ -504,16 +522,41 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	y->state = IN_ROTATOR_OPTIONS_MAP;
 	break;
 
-    case PARSE_ERR:
-    case BEGIN_DOC:
-    case IN_DEFAULT:
-    case IN_DELDEFAULT:
-    case IN_CONNSPEC:
-    case IN_CONNSPEC_OPTIONS:
-    case IN_ROTATOR:
-    case IN_ROTATOR_CONNECTIONS:
-    case IN_ROTATOR_OPTIONS:
-    case END_DOC:
+    case IN_LED_MAP:
+	y->state = scalar_next_state(sc_led, scalar);
+	if (y->state == PARSE_ERR) {
+	    eout->out(eout, "Invalid token in the led map: %s\n",
+		      scalar);
+	    return -1;
+	}
+	break;
+
+    case IN_LED_NAME:
+	if (setstr(&y->name, scalar, "led name", eout))
+	    return -1;
+	y->state = IN_LED_MAP;
+	break;
+
+    case IN_LED_DRIVER:
+	if (setstr(&y->driver, scalar, "led driver", eout))
+	    return -1;
+	y->state = IN_LED_MAP;
+	break;
+
+    case IN_LED_OPTIONS_MAP:
+	if (setstr(&y->optionname, scalar, "led option name", eout))
+	    return -1;
+	y->state = IN_LED_OPTIONS_NAME;
+	break;
+
+    case IN_LED_OPTIONS_NAME:
+	if (add_option(y, y->optionname, scalar, "led", eout))
+	    return -1;
+	dofree(&y->optionname);
+	y->state = IN_LED_OPTIONS_MAP;
+	break;
+
+    default:
 	eout->out(eout, "Unexpected scalar value");
 	return -1;
     }
@@ -531,37 +574,7 @@ yhandle_seq_start(struct yconf *y, struct absout *eout)
 	y->state = IN_ROTATOR_CONNECTIONS_SEQ;
 	break;
 
-    case IN_CONNSPEC_OPTIONS:
-    case IN_ROTATOR_OPTIONS:
-    case PARSE_ERR:
-    case BEGIN_DOC:
-    case MAIN_LEVEL:
-    case IN_DEFINE:
-    case IN_DEFAULT:
-    case IN_DEFAULT_MAP:
-    case IN_DEFAULT_NAME:
-    case IN_DEFAULT_VALUE:
-    case IN_DEFAULT_CLASS:
-    case IN_DELDEFAULT:
-    case IN_DELDEFAULT_MAP:
-    case IN_DELDEFAULT_NAME:
-    case IN_DELDEFAULT_CLASS:
-    case IN_CONNSPEC:
-    case IN_CONNSPEC_MAP:
-    case IN_CONNSPEC_NAME:
-    case IN_CONNSPEC_ACCEPTER:
-    case IN_CONNSPEC_TIMEOUT:
-    case IN_CONNSPEC_CONNECTOR:
-    case IN_CONNSPEC_OPTIONS_MAP:
-    case IN_CONNSPEC_OPTIONS_NAME:
-    case IN_ROTATOR:
-    case IN_ROTATOR_MAP:
-    case IN_ROTATOR_NAME:
-    case IN_ROTATOR_ACCEPTER:
-    case IN_ROTATOR_CONNECTIONS_SEQ:
-    case IN_ROTATOR_OPTIONS_MAP:
-    case IN_ROTATOR_OPTIONS_NAME:
-    case END_DOC:
+    default:
 	eout->out(eout, "Unexpected sequence start: %d", y->state);
 	return -1;
     }
@@ -577,37 +590,7 @@ yhandle_seq_end(struct yconf *y, struct absout *eout)
 	y->state = IN_ROTATOR_MAP;
 	break;
 
-    case PARSE_ERR:
-    case BEGIN_DOC:
-    case MAIN_LEVEL:
-    case IN_DEFINE:
-    case IN_DEFAULT:
-    case IN_DEFAULT_MAP:
-    case IN_DEFAULT_NAME:
-    case IN_DEFAULT_VALUE:
-    case IN_DEFAULT_CLASS:
-    case IN_DELDEFAULT:
-    case IN_DELDEFAULT_MAP:
-    case IN_DELDEFAULT_NAME:
-    case IN_DELDEFAULT_CLASS:
-    case IN_CONNSPEC:
-    case IN_CONNSPEC_MAP:
-    case IN_CONNSPEC_NAME:
-    case IN_CONNSPEC_ACCEPTER:
-    case IN_CONNSPEC_TIMEOUT:
-    case IN_CONNSPEC_CONNECTOR:
-    case IN_CONNSPEC_OPTIONS:
-    case IN_CONNSPEC_OPTIONS_MAP:
-    case IN_CONNSPEC_OPTIONS_NAME:
-    case IN_ROTATOR:
-    case IN_ROTATOR_MAP:
-    case IN_ROTATOR_NAME:
-    case IN_ROTATOR_ACCEPTER:
-    case IN_ROTATOR_CONNECTIONS:
-    case IN_ROTATOR_OPTIONS:
-    case IN_ROTATOR_OPTIONS_MAP:
-    case IN_ROTATOR_OPTIONS_NAME:
-    case END_DOC:
+    default:
 	eout->out(eout, "Unexpected sequence end: %d", y->state);
 	return -1;
     }
@@ -639,6 +622,10 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	y->state = IN_ROTATOR_MAP;
 	break;
 
+    case IN_LED:
+	y->state = IN_LED_MAP;
+	break;
+
     case IN_CONNSPEC_OPTIONS:
 	y->state = IN_CONNSPEC_OPTIONS_MAP;
 	break;
@@ -647,31 +634,11 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	y->state = IN_ROTATOR_OPTIONS_MAP;
 	break;
 
-    case PARSE_ERR:
-    case MAIN_LEVEL:
-    case IN_DEFINE:
-    case IN_DEFAULT_MAP:
-    case IN_DEFAULT_NAME:
-    case IN_DEFAULT_VALUE:
-    case IN_DEFAULT_CLASS:
-    case IN_DELDEFAULT_MAP:
-    case IN_DELDEFAULT_NAME:
-    case IN_DELDEFAULT_CLASS:
-    case IN_CONNSPEC_MAP:
-    case IN_CONNSPEC_NAME:
-    case IN_CONNSPEC_ACCEPTER:
-    case IN_CONNSPEC_TIMEOUT:
-    case IN_CONNSPEC_CONNECTOR:
-    case IN_CONNSPEC_OPTIONS_MAP:
-    case IN_CONNSPEC_OPTIONS_NAME:
-    case IN_ROTATOR_MAP:
-    case IN_ROTATOR_NAME:
-    case IN_ROTATOR_ACCEPTER:
-    case IN_ROTATOR_CONNECTIONS:
-    case IN_ROTATOR_CONNECTIONS_SEQ:
-    case IN_ROTATOR_OPTIONS_MAP:
-    case IN_ROTATOR_OPTIONS_NAME:
-    case END_DOC:
+    case IN_LED_OPTIONS:
+	y->state = IN_LED_OPTIONS_MAP;
+	break;
+
+    default:
 	eout->out(eout, "Unexpected mapping start: %d", y->state);
 	return -1;
     }
@@ -781,6 +748,24 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	yconf_cleanup_main(y);
 	break;
 
+    case IN_LED_MAP:
+	if (!y->name) {
+	    eout->out(eout, "No name given in led");
+	    return -1;
+	}
+	if (!y->driver) {
+	    eout->out(eout, "No driver given in led");
+	    return -1;
+	}
+	/* NULL terminate the options. */
+	if (add_option(y, NULL, NULL, "led", eout))
+	    return -1;
+	err = add_led(y->name, y->driver,
+		      (const char **) y->options, y->e.start_mark.line);
+	y->state = MAIN_LEVEL;
+	yconf_cleanup_main(y);
+	break;
+
     case IN_CONNSPEC_OPTIONS_MAP:
 	y->state = IN_CONNSPEC_MAP;
 	break;
@@ -789,31 +774,11 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	y->state = IN_ROTATOR_MAP;
 	break;
 
-    case PARSE_ERR:
-    case BEGIN_DOC:
-    case IN_DEFINE:
-    case IN_DEFAULT:
-    case IN_DEFAULT_NAME:
-    case IN_DEFAULT_VALUE:
-    case IN_DEFAULT_CLASS:
-    case IN_DELDEFAULT:
-    case IN_DELDEFAULT_NAME:
-    case IN_DELDEFAULT_CLASS:
-    case IN_CONNSPEC:
-    case IN_CONNSPEC_NAME:
-    case IN_CONNSPEC_ACCEPTER:
-    case IN_CONNSPEC_TIMEOUT:
-    case IN_CONNSPEC_CONNECTOR:
-    case IN_CONNSPEC_OPTIONS:
-    case IN_CONNSPEC_OPTIONS_NAME:
-    case IN_ROTATOR:
-    case IN_ROTATOR_NAME:
-    case IN_ROTATOR_ACCEPTER:
-    case IN_ROTATOR_CONNECTIONS:
-    case IN_ROTATOR_CONNECTIONS_SEQ:
-    case IN_ROTATOR_OPTIONS:
-    case IN_ROTATOR_OPTIONS_NAME:
-    case END_DOC:
+    case IN_LED_OPTIONS_MAP:
+	y->state = IN_LED_MAP;
+	break;
+
+    default:
 	eout->out(eout, "Unexpected mapping end: %d", y->state);
 	return -1;
     }

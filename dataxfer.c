@@ -3651,9 +3651,17 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
     } else if (gensio_check_keyvalue(pos, "led-rx", &val) > 0) {
 	/* LED for UART RX traffic */
 	port->led_rx = find_led(val);
-    } else if (gensio_check_keyvalue(pos, "led-tx=", &val) > 0) {
+	if (!port->led_rx) {
+	    eout->out(eout, "Could not find led-rx LED: %s", val);
+	    return -1;
+	}
+    } else if (gensio_check_keyvalue(pos, "led-tx", &val) > 0) {
 	/* LED for UART TX traffic */
 	port->led_tx = find_led(val);
+	if (!port->led_tx) {
+	    eout->out(eout, "Could not find led-tx LED: %s", val);
+	    return -1;
+	}
     } else if (gensio_check_keybool(pos, "telnet-brk-on-sync",
 				    &port->telnet_brk_on_sync) > 0) {
     } else if (gensio_check_keybool(pos, "chardelay",

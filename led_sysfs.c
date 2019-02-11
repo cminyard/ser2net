@@ -27,6 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <syslog.h>
 #include "led.h"
@@ -55,54 +56,66 @@ led_is_trigger_missing(const char *led)
     snprintf(buffer, BUFSIZE, "%s/%s/trigger", SYSFS_LED_BASE, led);
 
     if ((fd = open(buffer, O_RDONLY)) == -1) {
+	syslog(LOG_ERR, "led: Unable to open %s", buffer);
 	free(buffer);
 	return -1;
     }
 
     if ((c = read(fd, buffer, BUFSIZE)) <= 0) {
+	syslog(LOG_ERR, "led: Unable to read from %s", buffer);
 	free(buffer);
 	close(fd);
 	return -1;
     }
 
-    if (close(fd) < 0) {
-	free(buffer);
-	return -1;
-    }
+    close(fd);
 
     buffer[c] = '\0';
     trigger = strstr(buffer, "transient");
     free(buffer);
+    if (!trigger)
+	syslog(LOG_ERR, "led: missing transient trigger in %s,"
+	       " maybe you need to 'modprobe ledtrig-transient'", buffer);
     return trigger == NULL;
 }
 
 static int
-led_write(const char *led, const char *property, const char *buf)
+led_write(const char *led, const char *property, const char *buf, int lineno)
 {
     char filename[255];
     int fd;
+    char linestr[100] = "";
 
-    snprintf(filename, sizeof(filename), "%s/%s/%s", SYSFS_LED_BASE, led, property);
+    snprintf(filename, sizeof(filename), "%s/%s/%s",
+	     SYSFS_LED_BASE, led, property);
 
-    if ((fd = open(filename, O_WRONLY | O_TRUNC)) == -1)
+    if ((fd = open(filename, O_WRONLY | O_TRUNC)) == -1) {
+	if (lineno)
+	    snprintf(linestr, sizeof(linestr), " on line %d", lineno);
+	syslog(LOG_ERR, "Unable to open to LED %s%s: %s", linestr, led,
+	       strerror(errno));
 	return -1;
+    }
 
     if (write(fd, buf, strlen(buf)) != strlen(buf)) {
+	if (lineno)
+	    snprintf(linestr, sizeof(linestr), " on line %d", lineno);
+	syslog(LOG_ERR, "Unable to write to LED %s%s: %s", linestr, led,
+	       strerror(errno));
 	close(fd);
 	return -1;
     }
 
-    return close(fd);
+    close(fd);
+    return 0;
 }
 
 static int
-led_sysfs_init(struct led_s *led, char *parameters, int lineno)
+led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
 {
     struct led_sysfs_s *drv_data = NULL;
-    char *str1, *str2, *token, *subtoken;
-    char *saveptr1, *saveptr2;
-    char *key, *value;
-    int i;
+    const char *key, *value;
+    unsigned int i, len;
 
     drv_data = calloc(1, sizeof(*drv_data));
     if (!drv_data) {
@@ -115,46 +128,39 @@ led_sysfs_init(struct led_s *led, char *parameters, int lineno)
     /* preset to detect default and/or wrong user input */
     drv_data->state = -1;
 
-    /* parse parameter key=value pairs - seperated by whitespace */
-    for (str1 = parameters; ; str1 = NULL) {
-	token = strtok_r(str1, " \t", &saveptr1);
-	if (!token)
-	    break;
+    for (i = 0; options[i]; i++) {
+	value = strchr(options[i], '=');
+	if (!value) {
+	    syslog(LOG_ERR, "Missing '=' in option %s on line %d\n",
+		   options[i], lineno);
+	    goto out_err;
+	} if (value == options[i]) {
+	    syslog(LOG_ERR, "Missing key in option '%s' on line %d\n",
+		   options[i], lineno);
+	    goto out_err;
+	}
+	len = value - options[i];
+	value++;
+	key = options[i];
 
-	/* parse single key=value pair */
-	for (i = 0, str2 = token; ; i++, str2 = NULL) {
-	    subtoken = strtok_r(str2, "=", &saveptr2);
-	    if (!subtoken)
-		break;
+	if (strncasecmp(key, "device", len) == 0) {
+	    /* if 'device' is given more than once, last wins */
+	    if (drv_data->device)
+		free(drv_data->device);
 
-	    if (i == 0)
-		key = subtoken;
-
-	    if (i == 1) {
-		value = subtoken;
-
-		if (strcasecmp(key, "device") == 0) {
-		    /* if 'device' is given more than once, last wins */
-		    if (drv_data->device)
-			free(drv_data->device);
-
-		    drv_data->device = strdup(value);
-		    if (!drv_data->device) {
-			syslog(LOG_ERR,
-			       "Out of memory handling LED '%s' on line %d.",
-			       led->name, lineno);
-			free(drv_data);
-			return -1;
-		    }
-		}
-
-		if (strcasecmp(key, "duration") == 0)
-		    drv_data->duration = atoi(value);
-
-		if (strcasecmp(key, "state") == 0)
-		    drv_data->state = atoi(value);
+	    drv_data->device = strdup(value);
+	    if (!drv_data->device) {
+		syslog(LOG_ERR, "Out of memory handling LED '%s' on line %d.",
+		       led->name, lineno);
+		goto out_err;
 	    }
 	}
+
+	if (strncasecmp(key, "duration", len) == 0)
+	    drv_data->duration = atoi(value);
+
+	if (strncasecmp(key, "state", len) == 0)
+	    drv_data->state = atoi(value);
     }
 
     if (!drv_data->device) {
@@ -163,8 +169,7 @@ led_sysfs_init(struct led_s *led, char *parameters, int lineno)
 	       led->name, lineno);
 	if (drv_data->device)
 	    free(drv_data->device);
-	free(drv_data);
-	return -1;
+	goto out_err;
     }
 
     if (drv_data->duration < 0) {
@@ -189,6 +194,10 @@ led_sysfs_init(struct led_s *led, char *parameters, int lineno)
     led->drv_data = (void *)drv_data;
 
     return 0;
+
+ out_err:
+    free(drv_data);
+    return -1;
 }
 
 static int
@@ -204,7 +213,7 @@ led_sysfs_free(struct led_s *led)
 }
 
 static int
-led_sysfs_configure(void *led_driver_data)
+led_sysfs_configure(void *led_driver_data, int lineno)
 {
     struct led_sysfs_s *ctx = (struct led_sysfs_s *)led_driver_data;
     char buffer[255];
@@ -219,16 +228,16 @@ led_sysfs_configure(void *led_driver_data)
      * switch to transient trigger, this will kick creation of additional
      * property file in sysfs
      */
-    rv = led_write(ctx->device, "trigger", "transient");
+    rv = led_write(ctx->device, "trigger", "transient", lineno);
     if (rv)
 	return rv;
 
     /* pre-configure the trigger for our needs */
     snprintf(buffer, sizeof(buffer), "%d", ctx->duration);
-    rv |= led_write(ctx->device, "duration", buffer);
+    rv |= led_write(ctx->device, "duration", buffer, lineno);
 
     snprintf(buffer, sizeof(buffer), "%d", ctx->state);
-    rv |= led_write(ctx->device, "state", buffer);
+    rv |= led_write(ctx->device, "state", buffer, lineno);
 
     return rv;
 }
@@ -238,7 +247,7 @@ led_sysfs_flash(void *led_driver_data)
 {
     struct led_sysfs_s *ctx = (struct led_sysfs_s *)led_driver_data;
 
-    return led_write(ctx->device, "activate", "1");
+    return led_write(ctx->device, "activate", "1", 0);
 }
 
 static int
@@ -248,8 +257,8 @@ led_sysfs_deconfigure(void *led_driver_data)
     int rv = 0;
 
 
-    rv |= led_write(ctx->device, "trigger", "none");
-    rv |= led_write(ctx->device, "brightness", "0");
+    rv |= led_write(ctx->device, "trigger", "none", 0);
+    rv |= led_write(ctx->device, "brightness", "0", 0);
 
     return rv;
 }

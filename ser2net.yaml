@@ -7,29 +7,37 @@
 #
 # This is described in ser2net.yaml(5)
 
-default: {
-    name: authdir,
-    value: /etc/ser2net/auth,
-    class: ser2net
-}
+default:
+  name: authdir
+  value: /etc/ser2net/auth
+  class: ser2net
 
 define: &banner1 This is a banner for port \N(\p)\r\n
 
+led:
+  name: led1
+  driver: sysfs
+  options: {
+    device: "tpacpi::standby"
+  }
+
 connection:
-    name: con2
-    accepter: telnet,tcp,2002
-    timeout: 0
-    connector: serialdev,/dev/ttyEcho0,9600,local
-    options: {
-        authdir: asdf,
-        banner: *banner1,
-        telnet-brk-on-sync,
-        chardelay
-    }
+  name: con2
+  accepter: telnet,tcp,2002
+  timeout: 0
+  connector: serialdev,/dev/ttyEcho0,9600,local
+  options: {
+    authdir: asdf,
+    banner: *banner1,
+    telnet-brk-on-sync,
+    chardelay,
+    led-tx: led1,
+    led-rx: led1
+  }
 
 rotator:
-    name: rot1
-    accepter: telnet,tcp,2003
-    connections: [
-        con1
-    ]
+  name: rot1
+  accepter: telnet,tcp,2003
+  connections: [
+    con1
+  ]

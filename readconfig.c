@@ -814,16 +814,27 @@ handle_config_line(char *inbuf, int len)
 
     if (startswith(inbuf, "LED", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
-	char *str = strtok_r(NULL, "\n", &strtok_data);
-	if (name == NULL) {
+	char *driver = strtok_r(NULL, ":", &strtok_data);
+	char *cfg;
+	const char **argv;
+
+	if (name == NULL || strlen(name) == 0) {
 	    syslog(LOG_ERR, "No LED name given on line %d", lineno);
 	    goto out;
 	}
-	if ((str == NULL) || (strlen(str) == 0)) {
-	    syslog(LOG_ERR, "No LED given on line %d", lineno);
+	if ((driver == NULL) || (strlen(driver) == 0)) {
+	    syslog(LOG_ERR, "No LED driver given on line %d", lineno);
 	    goto out;
 	}
-	handle_led(name, str, lineno);
+	cfg = strtok_r(NULL, "\n", &strtok_data);
+	err = gensio_str_to_argv(so, cfg, NULL, &argv, NULL);
+	if (err) {
+	    syslog(LOG_ERR, "Error parsing LED config: %s\n",
+		   gensio_err_to_str(err));
+	    goto out;
+	}
+	add_led(name, driver, argv, lineno);
+	gensio_argv_free(so, argv);
 	goto out;
     }
 

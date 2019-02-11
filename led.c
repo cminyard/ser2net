@@ -68,69 +68,6 @@ led_driver_register(struct led_driver_s *led_driver)
     return 0;
 }
 
-void
-handle_led(const char *name, char *cfg, int lineno)
-{
-    struct led_driver_s *driver;
-    struct led_s *new_led;
-    char *delim;
-
-    delim = strchr(cfg, ':');
-    if (!delim) {
-	syslog(LOG_ERR, "Couldn't parse LED definition for '%s' on %d",
-	       name, lineno);
-	return;
-    }
-    *delim++ = '\0';
-
-    driver = led_driver_by_name(cfg);
-    if (!driver) {
-	syslog(LOG_ERR, "Unknown LED driver '%s' for LED '%s' on %d",
-	       cfg, name, lineno);
-	return;
-    }
-
-    new_led = calloc(1, sizeof(*new_led));
-    if (!new_led) {
-	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
-	return;
-    }
-
-    new_led->name = strdup(name);
-    if (!new_led->name) {
-	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
-	free(new_led);
-	return;
-    }
-
-    new_led->driver = driver;
-
-    if (new_led->driver->init(new_led, delim, lineno) < 0) {
-	/* errors should be reported by driver itself */
-	free(new_led->name);
-	free(new_led);
-	return;
-    }
-
-    if (new_led->driver->configure) {
-	if (new_led->driver->configure(new_led->drv_data) < 0) {
-	    /*
-	     * errors should be reported by driver itself; however, we
-	     * cleanup here
-	     */
-	    if (new_led->driver->free)
-		new_led->driver->free(new_led);
-
-	    free(new_led->name);
-	    free(new_led);
-	    return;
-	}
-    }
-
-    new_led->next = leds;
-    leds = new_led;
-}
-
 struct led_s *
 find_led(const char *name)
 {
@@ -142,8 +79,69 @@ find_led(const char *name)
 	led = led->next;
     }
 
-    syslog(LOG_ERR, "LED '%s' not found, it will be ignored", name);
     return NULL;
+}
+
+int
+add_led(const char *name, const char *driverstr, const char * const *options,
+	int lineno)
+{
+    struct led_driver_s *driver;
+    struct led_s *led;
+
+    led = find_led(name);
+    if (led) {
+	syslog(LOG_ERR, "LED %s already exists on line %d\n", name, lineno);
+	return -1;
+    }
+
+    driver = led_driver_by_name(driverstr);
+    if (!driver) {
+	syslog(LOG_ERR, "Unknown LED driver '%s' for LED '%s' on %d",
+	       driverstr, name, lineno);
+	return -1;
+    }
+
+    led = calloc(1, sizeof(*led));
+    if (!led) {
+	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
+	return -1;
+    }
+
+    led->name = strdup(name);
+    if (!led->name) {
+	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
+	free(led);
+	return -1;
+    }
+
+    led->driver = driver;
+
+    if (led->driver->init(led, options, lineno) < 0) {
+	/* errors should be reported by driver itself */
+	free(led->name);
+	free(led);
+	return -1;
+    }
+
+    if (led->driver->configure) {
+	if (led->driver->configure(led->drv_data, lineno) < 0) {
+	    /*
+	     * errors should be reported by driver itself; however, we
+	     * cleanup here
+	     */
+	    if (led->driver->free)
+		led->driver->free(led);
+
+	    free(led->name);
+	    free(led);
+	    return -1;
+	}
+    }
+
+    led->next = leds;
+    leds = led;
+    return 0;
 }
 
 void
