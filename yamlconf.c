@@ -18,6 +18,7 @@
  */
 
 #include <stdio.h>
+#include <stddef.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <yaml.h>
@@ -31,39 +32,59 @@
 
 //#define DEBUG 1
 
+/*
+ * States for the state machine reading the configuration file.
+ */
 enum ystate {
     PARSE_ERR,
     BEGIN_DOC,
+
+    /*
+     * The main level consists of mappings.
+     */
     MAIN_LEVEL,
+
     IN_DEFINE,
-    IN_DEFAULT,
-    IN_DEFAULT_MAP,
-    IN_DEFAULT_NAME,
-    IN_DEFAULT_VALUE,
-    IN_DEFAULT_CLASS,
-    IN_DELDEFAULT,
-    IN_DELDEFAULT_MAP,
-    IN_DELDEFAULT_NAME,
-    IN_DELDEFAULT_CLASS,
+
+    /*
+     * We have read the type of the main mapping (connection, led, etc)
+     * now waiting for a mapping start.
+     */
+    IN_MAIN_NAME,
+
+    /*
+     * We are in the mapping of a "normal" main mapping, it will contain
+     * things like name, accepter, etc. in key-value pairs.
+     */
+    IN_MAIN_MAP,
+
+    /*
+     * Got the key-value name, waiting for the value.
+     */
+    IN_MAIN_MAP_KEYVAL,
+
+    /*
+     * Got an "options" key, these consists of another mapping holding
+     * the options.
+     */
     IN_OPTIONS,
     IN_OPTIONS_MAP,
     IN_OPTIONS_NAME,
-    IN_CONNSPEC,
-    IN_CONNSPEC_MAP,
-    IN_CONNSPEC_NAME,
-    IN_CONNSPEC_ACCEPTER,
+
+    /*
+     * Special handling for an integer timeout.
+     */
     IN_CONNSPEC_TIMEOUT,
-    IN_CONNSPEC_CONNECTOR,
-    IN_ROTATOR,
-    IN_ROTATOR_MAP,
-    IN_ROTATOR_NAME,
-    IN_ROTATOR_ACCEPTER,
+
+    /*
+     * Rotators have a sequence of connections.
+     */
     IN_ROTATOR_CONNECTIONS,
     IN_ROTATOR_CONNECTIONS_SEQ,
-    IN_LED,
-    IN_LED_MAP,
-    IN_LED_NAME,
-    IN_LED_DRIVER,
+
+    /*
+     * Shouldn't see anything after this.
+     */
     END_DOC
 };
 
@@ -73,32 +94,74 @@ struct alias {
     struct alias *next;
 };
 
+struct scalar_next_state;
+
 struct option_info {
+    char *name;
     enum ystate option_next_state;
-    char *option_str;
-    char *option_name_str;
+};
+
+struct keyval_info {
+    char *name;
+    unsigned int keyval_offset;
+    int keyval_type;
+};
+
+struct map_info {
+    char *name;
+    struct scalar_next_state *states;
+    enum ystate next_state;
+    int map_type;
+};
+
+enum which_info {
+    WHICH_INFO_NONE = 0,
+    WHICH_INFO_OPTION,
+    WHICH_INFO_KEYVAL,
+    WHICH_INFO_MAP
+};
+
+struct scalar_next_state {
+    char *name;
+    enum ystate next_state;
+    enum which_info infotype;
+    union {
+	struct option_info *option_info;
+	struct keyval_info *keyval_info;
+	struct map_info *map_info;
+    };
 };
 
 struct yconf {
     enum ystate state;
+
+    struct map_info *map_info;
+
+    struct keyval_info *keyval_info;
+    /* main keyvalue types. */
     char *name;
     char *accepter;
     char *driver;
-    unsigned int timeout;
     char *connector;
     char *value;
     char *class;
+
+    unsigned int timeout;
+
     char **connections;
     unsigned int curr_connection;
     unsigned int connections_len;
+
+    struct option_info *option_info;
     char **options;
     char *optionname;
     unsigned int curr_option;
     unsigned int options_len;
-    struct option_info *option_info;
+
+    struct alias *aliases;
+
     yaml_parser_t parser;
     yaml_event_t e;
-    struct alias *aliases;
 };
 
 static void
@@ -280,91 +343,152 @@ add_connection(struct yconf *y, const char *connection, const char *place,
     return 0;
 }
 
-struct scalar_next_state {
-    char *name;
-    enum ystate next_state;
-    struct option_info *option_info;
+enum main_keytypes {
+    MAIN_KEYTYPE_name,
+    MAIN_KEYTYPE_accepter,
+    MAIN_KEYTYPE_driver,
+    MAIN_KEYTYPE_connector,
+    MAIN_KEYTYPE_value,
+    MAIN_KEYTYPE_class
 };
 
-static struct scalar_next_state sc_main[] = {
-    { "define", IN_DEFINE },
-    { "default", IN_DEFAULT },
-    { "delete_default", IN_DELDEFAULT },
-    { "connection", IN_CONNSPEC },
-    { "rotator", IN_ROTATOR },
-    { "led", IN_LED },
-    {}
-};
+#define DECL_KEYVAL(type)						\
+    static struct keyval_info keyval_##type = { #type,			\
+						offsetof(struct yconf, type), \
+						MAIN_KEYTYPE_##type }
+
+DECL_KEYVAL(name);
+DECL_KEYVAL(accepter);
+DECL_KEYVAL(driver);
+DECL_KEYVAL(connector);
+DECL_KEYVAL(value);
+DECL_KEYVAL(class);
+
+#define KEYVAL_OFFSET(y)			\
+    ((char **) (((char *) (y)) + (y)->keyval_info->keyval_offset))
 
 static struct scalar_next_state sc_default[] = {
-    { "name", IN_DEFAULT_NAME },
-    { "value", IN_DEFAULT_VALUE },
-    { "class", IN_DEFAULT_CLASS },
+    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_name },
+    { "value", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_value },
+    { "class", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_class },
     {}
 };
 
 static struct scalar_next_state sc_deldefault[] = {
-    { "name", IN_DELDEFAULT_NAME },
-    { "class", IN_DELDEFAULT_CLASS },
+    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_name },
+    { "class", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_class },
     {}
 };
 
 static struct option_info connspec_option_info = {
-    IN_CONNSPEC_MAP,
     "connection",
-    "connection option name"
+    IN_MAIN_MAP,
 };
 
-static struct scalar_next_state sc_connspec[] = {
-    { "name", IN_CONNSPEC_NAME },
-    { "accepter", IN_CONNSPEC_ACCEPTER },
+static struct scalar_next_state sc_connection[] = {
+    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_name },
+    { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_accepter },
     { "timeout", IN_CONNSPEC_TIMEOUT },
-    { "connector", IN_CONNSPEC_CONNECTOR },
-    { "options", IN_OPTIONS, &connspec_option_info },
+    { "connector", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_connector },
+    { "options", IN_OPTIONS, WHICH_INFO_OPTION,
+      .option_info = &connspec_option_info },
     {}
 };
 
 static struct option_info rotator_option_info = {
-    IN_ROTATOR_MAP,
     "rotator",
-    "rotator option name"
+    IN_MAIN_MAP,
 };
 
 static struct scalar_next_state sc_rotator[] = {
-    { "name", IN_ROTATOR_NAME },
-    { "accepter", IN_ROTATOR_ACCEPTER },
+    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_name },
+    { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_accepter },
     { "connections", IN_ROTATOR_CONNECTIONS },
-    { "options", IN_OPTIONS, &rotator_option_info },
+    { "options", IN_OPTIONS, WHICH_INFO_OPTION,
+      .option_info = &rotator_option_info },
     {}
 };
 
 static struct option_info led_option_info = {
-    IN_LED_MAP,
     "led",
-    "led option name"
+    IN_MAIN_MAP,
 };
 
 static struct scalar_next_state sc_led[] = {
-    { "name", IN_LED_NAME },
-    { "driver", IN_LED_DRIVER },
-    { "options", IN_OPTIONS, &led_option_info },
+    { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_name },
+    { "driver", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_driver },
+    { "options", IN_OPTIONS, WHICH_INFO_OPTION,
+      .option_info = &led_option_info },
+    {}
+};
+
+enum main_map_types {
+    MAIN_MAP_DEFAULT,
+    MAIN_MAP_DELDEFAULT,
+    MAIN_MAP_CONNECTION,
+    MAIN_MAP_ROTATOR,
+    MAIN_MAP_LED
+};
+
+static struct map_info sc_default_map = {
+    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT
+};
+
+static struct map_info sc_deldefault_map = {
+    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT
+};
+
+static struct map_info sc_connection_map = {
+    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION
+};
+
+static struct map_info sc_rotator_map = {
+    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR
+};
+
+static struct map_info sc_led_map = {
+    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED
+};
+
+static struct scalar_next_state sc_main[] = {
+    { "define", IN_DEFINE },
+    { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map },
+    { "delete_default", IN_MAIN_NAME, WHICH_INFO_MAP,
+      .map_info = &sc_deldefault_map },
+    { "connection", IN_MAIN_NAME, WHICH_INFO_MAP,
+      .map_info = &sc_connection_map },
+    { "rotator", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_rotator_map },
+    { "led", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_led_map },
     {}
 };
 
 static int
-setstr(char **oval, const char *ival, const char *desc, struct absout *eout)
+setstr(char **oval, const char *ival, const char *mapname, const char *keyname,
+       struct absout *eout)
 {
     if (!ival || strlen(ival) == 0) {
-	eout->out(eout, "Empty %s not permitted", desc);
+	eout->out(eout, "Empty %s %s not permitted", mapname, keyname);
 	return -1;
     }	
     if (*oval) {
-	eout->out(eout, "%s already set in connection", desc);
+	eout->out(eout, "%s %s already set in connection", mapname, keyname);
 	return -1;
     }
     *oval = strdup(ival);
     if (!*oval) {
-	eout->out(eout, "Unable to allocate %s", desc);
+	eout->out(eout, "Unable to allocate %s %s", mapname, keyname);
 	return -1;
     }
     return 0;
@@ -376,7 +500,12 @@ scalar_next_state(struct yconf *y,
 {
     while (s->name) {
 	if (strcasecmp(s->name, scalar) == 0) {
-	    y->option_info = s->option_info;
+	    switch (s->infotype) {
+	    case WHICH_INFO_NONE: break;
+	    case WHICH_INFO_OPTION: y->option_info = s->option_info; break;
+	    case WHICH_INFO_KEYVAL: y->keyval_info = s->keyval_info; break;
+	    case WHICH_INFO_MAP: y->map_info = s->map_info; break;
+	    }
 	    y->state = s->next_state;
 	    return;
 	}
@@ -412,71 +541,20 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	y->state = MAIN_LEVEL;
 	break;
 
-    case IN_DEFAULT_MAP:
-	scalar_next_state(y, sc_default, scalar);
+    case IN_MAIN_MAP:
+	scalar_next_state(y, y->map_info->states, scalar);
 	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in the default: %s\n", scalar);
+	    eout->out(eout, "Invalid token in the %s: %s",
+		      y->map_info->name, scalar);
 	    return -1;
 	}
 	break;
 	    
-    case IN_DEFAULT_NAME:
-	if (setstr(&y->name, scalar, "default name", eout))
+    case IN_MAIN_MAP_KEYVAL:
+	if (setstr(KEYVAL_OFFSET(y), scalar, y->map_info->name,
+		   y->keyval_info->name, eout))
 	    return -1;
-	y->state = IN_DEFAULT_MAP;
-	break;
-
-    case IN_DEFAULT_VALUE:
-	if (setstr(&y->value, scalar, "default value", eout))
-	    return -1;
-	y->state = IN_DEFAULT_MAP;
-	break;
-
-    case IN_DEFAULT_CLASS:
-	if (setstr(&y->class, scalar, "default class", eout))
-	    return -1;
-	y->state = IN_DEFAULT_MAP;
-	break;
-
-    case IN_DELDEFAULT_MAP:
-	scalar_next_state(y, sc_deldefault, scalar);
-	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in delete_default: %s\n", scalar);
-	    return -1;
-	}
-	break;
-	    
-    case IN_DELDEFAULT_NAME:
-	if (setstr(&y->name, scalar, "delete_default name", eout))
-	    return -1;
-	y->state = IN_DELDEFAULT_MAP;
-	break;
-
-    case IN_DELDEFAULT_CLASS:
-	if (setstr(&y->class, scalar, "delete_default class", eout))
-	    return -1;
-	y->state = IN_DEFAULT_MAP;
-	break;
-
-    case IN_CONNSPEC_MAP:
-	scalar_next_state(y, sc_connspec, scalar);
-	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in the connection map: %s\n",
-		      scalar);
-	    return -1;
-	}
-	break;
-
-    case IN_CONNSPEC_NAME:
-	if (setstr(&y->name, scalar, "connection name", eout))
-	    return -1;
-	y->state = IN_CONNSPEC_MAP;
-	break;
-
-    case IN_CONNSPEC_ACCEPTER:
-	if (setstr(&y->accepter, scalar, "connection accepter", eout))
-	    return -1;
-	y->state = IN_CONNSPEC_MAP;
+	y->state = IN_MAIN_MAP;
 	break;
 
     case IN_CONNSPEC_TIMEOUT:
@@ -485,75 +563,27 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *scalar,
 	    eout->out(eout, "Invalid number in connection timeout");
 	    return -1;
 	}
-	y->state = IN_CONNSPEC_MAP;
-	break;
-
-    case IN_CONNSPEC_CONNECTOR:
-	if (setstr(&y->connector, scalar, "connection connector", eout))
-	    return -1;
-	y->state = IN_CONNSPEC_MAP;
+	y->state = IN_MAIN_MAP;
 	break;
 
     case IN_OPTIONS_MAP:
-	if (setstr(&y->optionname, scalar, y->option_info->option_name_str,
+	if (setstr(&y->optionname, scalar, y->option_info->name, "option name",
 		   eout))
 	    return -1;
 	y->state = IN_OPTIONS_NAME;
 	break;
 
     case IN_OPTIONS_NAME:
-	if (add_option(y, y->optionname, scalar, y->option_info->option_str,
+	if (add_option(y, y->optionname, scalar, y->option_info->name,
 		       eout))
 	    return -1;
 	dofree(&y->optionname);
 	y->state = IN_OPTIONS_MAP;
 	break;
 
-    case IN_ROTATOR_MAP:
-	scalar_next_state(y, sc_rotator, scalar);
-	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in the rotator map: %s\n",
-		      scalar);
-	    return -1;
-	}
-	break;
-
-    case IN_ROTATOR_NAME:
-	if (setstr(&y->name, scalar, "rotator name", eout))
-	    return -1;
-	y->state = IN_ROTATOR_MAP;
-	break;
-
-    case IN_ROTATOR_ACCEPTER:
-	if (setstr(&y->accepter, scalar, "rotator accepter", eout))
-	    return -1;
-	y->state = IN_ROTATOR_MAP;
-	break;
-
     case IN_ROTATOR_CONNECTIONS_SEQ:
 	if (add_connection(y, scalar, "rotator", eout))
 	    return -1;
-	break;
-
-    case IN_LED_MAP:
-	scalar_next_state(y, sc_led, scalar);
-	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in the led map: %s\n",
-		      scalar);
-	    return -1;
-	}
-	break;
-
-    case IN_LED_NAME:
-	if (setstr(&y->name, scalar, "led name", eout))
-	    return -1;
-	y->state = IN_LED_MAP;
-	break;
-
-    case IN_LED_DRIVER:
-	if (setstr(&y->driver, scalar, "led driver", eout))
-	    return -1;
-	y->state = IN_LED_MAP;
 	break;
 
     default:
@@ -587,7 +617,7 @@ yhandle_seq_end(struct yconf *y, struct absout *eout)
 {
     switch (y->state) {
     case IN_ROTATOR_CONNECTIONS_SEQ:
-	y->state = IN_ROTATOR_MAP;
+	y->state = IN_MAIN_MAP;
 	break;
 
     default:
@@ -606,24 +636,8 @@ yhandle_mapping_start(struct yconf *y, struct absout *eout)
 	y->state = MAIN_LEVEL;
 	break;
 
-    case IN_DEFAULT:
-	y->state = IN_DEFAULT_MAP;
-	break;
-
-    case IN_DELDEFAULT:
-	y->state = IN_DELDEFAULT_MAP;
-	break;
-
-    case IN_CONNSPEC:
-	y->state = IN_CONNSPEC_MAP;
-	break;
-
-    case IN_ROTATOR:
-	y->state = IN_ROTATOR_MAP;
-	break;
-
-    case IN_LED:
-	y->state = IN_LED_MAP;
+    case IN_MAIN_NAME:
+	y->state = IN_MAIN_MAP;
 	break;
 
     case IN_OPTIONS:
@@ -649,113 +663,117 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	y->state = END_DOC;
 	break;
 
-    case IN_DEFAULT_MAP:
-	if (!y->name) {
-	    eout->out(eout, "No name given in default");
-	    return -1;
-	}
-	err = gensio_set_default(so, y->class, y->name, y->value, 0);
-	if (err) {
-	    eout->out(eout, "Unable to set default name %s:%s:%s: %s",
-		      y->class ? y->class : "",
-		      y->name, y->value, gensio_err_to_str(err));
-	    return -1;
-	}
-	y->state = MAIN_LEVEL;
-	yconf_cleanup_main(y);
-	break;
+    case IN_MAIN_MAP:
+	switch (y->map_info->map_type) {
+	case MAIN_MAP_DEFAULT:
+	    if (!y->name) {
+		eout->out(eout, "No name given in default");
+		return -1;
+	    }
+	    err = gensio_set_default(so, y->class, y->name, y->value, 0);
+	    if (err) {
+		eout->out(eout, "Unable to set default name %s:%s:%s: %s",
+			  y->class ? y->class : "",
+			  y->name, y->value, gensio_err_to_str(err));
+		return -1;
+	    }
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
 
-    case IN_DELDEFAULT_MAP:
-	if (!y->name) {
-	    eout->out(eout, "No name given in delete_default");
-	    return -1;
-	}
-	if (!y->class) {
-	    eout->out(eout, "No class given in delete_default");
-	    return -1;
-	}
-	err = gensio_del_default(so, y->class, y->name, false);
-	if (err) {
-	    eout->out(eout, "Unable to set default name %s:%s:%s: %s",
-		      y->class ? y->class : "",
-		      y->name, y->value, gensio_err_to_str(err));
-	    return -1;
-	}
-	y->state = MAIN_LEVEL;
-	yconf_cleanup_main(y);
-	break;
+	case MAIN_MAP_DELDEFAULT:
+	    if (!y->name) {
+		eout->out(eout, "No name given in delete_default");
+		return -1;
+	    }
+	    if (!y->class) {
+		eout->out(eout, "No class given in delete_default");
+		return -1;
+	    }
+	    err = gensio_del_default(so, y->class, y->name, false);
+	    if (err) {
+		eout->out(eout, "Unable to set default name %s:%s:%s: %s",
+			  y->class ? y->class : "",
+			  y->name, y->value, gensio_err_to_str(err));
+		return -1;
+	    }
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
 
-    case IN_CONNSPEC_MAP:
-	if (!y->name) {
-	    eout->out(eout, "No name given in connection");
-	    return -1;
-	}
-	if (!y->accepter) {
-	    eout->out(eout, "No accepter given in connection");
-	    return -1;
-	}
-	if (!y->connector) {
-	    eout->out(eout, "No connector given in connection");
-	    return -1;
-	}
-	/* NULL terminate the options. */
-	if (add_option(y, NULL, NULL, "connection", eout))
-	    return -1;
-	portconfig(eout, y->name, y->accepter, "raw", y->timeout, y->connector,
-		   (const char **) y->options, config_num);
-	y->state = MAIN_LEVEL;
-	yconf_cleanup_main(y);
-	break;
+	case MAIN_MAP_CONNECTION:
+	    if (!y->name) {
+		eout->out(eout, "No name given in connection");
+		return -1;
+	    }
+	    if (!y->accepter) {
+		eout->out(eout, "No accepter given in connection");
+		return -1;
+	    }
+	    if (!y->connector) {
+		eout->out(eout, "No connector given in connection");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "connection", eout))
+		return -1;
+	    portconfig(eout, y->name, y->accepter, "raw", y->timeout,
+		       y->connector, (const char **) y->options, config_num);
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
 	
-    case IN_ROTATOR_MAP:
-	if (!y->name) {
-	    eout->out(eout, "No name given in rotator");
-	    return -1;
-	}
-	if (!y->accepter) {
-	    eout->out(eout, "No accepter given in rotator");
-	    return -1;
-	}
-	if (y->curr_connection == 0) {
-	    eout->out(eout, "No connections given in rotator");
-	    return -1;
-	}
-	/* NULL terminate the connections. */
-	if (add_connection(y, NULL, "rotator", eout))
-	    return -1;
-	err = gensio_argv_copy(so, (const char **) y->connections,
-			       &argc, &argv);
-	if (err) {
-	    eout->out(eout, "Unable to allocat rotator connections");
-	    return -1;
-	}
-	/* NULL terminate the options. */
-	if (add_option(y, NULL, NULL, "rotator", eout))
-	    return -1;
-	err = add_rotator(y->name, y->accepter, argc, argv,
-			  (const char **) y->options, y->e.start_mark.line);
-	if (err)
-	    gensio_argv_free(so, argv);
-	y->state = MAIN_LEVEL;
-	yconf_cleanup_main(y);
-	break;
+	case MAIN_MAP_ROTATOR:
+	    if (!y->name) {
+		eout->out(eout, "No name given in rotator");
+		return -1;
+	    }
+	    if (!y->accepter) {
+		eout->out(eout, "No accepter given in rotator");
+		return -1;
+	    }
+	    if (y->curr_connection == 0) {
+		eout->out(eout, "No connections given in rotator");
+		return -1;
+	    }
+	    /* NULL terminate the connections. */
+	    if (add_connection(y, NULL, "rotator", eout))
+		return -1;
+	    err = gensio_argv_copy(so, (const char **) y->connections,
+				   &argc, &argv);
+	    if (err) {
+		eout->out(eout, "Unable to allocat rotator connections");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "rotator", eout))
+		return -1;
+	    err = add_rotator(y->name, y->accepter, argc, argv,
+			      (const char **) y->options, y->e.start_mark.line);
+	    if (err)
+		gensio_argv_free(so, argv);
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
 
-    case IN_LED_MAP:
-	if (!y->name) {
-	    eout->out(eout, "No name given in led");
-	    return -1;
+	case MAIN_MAP_LED:
+	    if (!y->name) {
+		eout->out(eout, "No name given in led");
+		return -1;
+	    }
+	    if (!y->driver) {
+		eout->out(eout, "No driver given in led");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "led", eout))
+		return -1;
+	    err = add_led(y->name, y->driver,
+			  (const char **) y->options, y->e.start_mark.line);
+	    y->state = MAIN_LEVEL;
+	    yconf_cleanup_main(y);
+	    break;
 	}
-	if (!y->driver) {
-	    eout->out(eout, "No driver given in led");
-	    return -1;
-	}
-	/* NULL terminate the options. */
-	if (add_option(y, NULL, NULL, "led", eout))
-	    return -1;
-	err = add_led(y->name, y->driver,
-		      (const char **) y->options, y->e.start_mark.line);
-	y->state = MAIN_LEVEL;
-	yconf_cleanup_main(y);
 	break;
 
     case IN_OPTIONS_MAP:

@@ -21,7 +21,7 @@ led:
     device: "tpacpi::standby"
   }
 
-connection:
+connection: &jkl1
   name: con2
   accepter: telnet,tcp,2002
   timeout: 0
