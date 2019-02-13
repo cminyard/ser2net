@@ -269,6 +269,8 @@ add_alias(struct yconf *y, const char *iname,
     } else {
 	a = malloc(sizeof(*a));
 	if (!a) {
+	    free(name);
+	    free(value);
 	    eout->out(eout, "Out of memory allocating alias");
 	    return -1;
 	}
@@ -584,12 +586,12 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
 		state = 0;
 	    } else if (!*s) {
 		eout->out(eout, "Missing ')' for alias at '%s'", start - 2);
-		return NULL;
+		goto out_err;
 	    } else if (*s == ')') {
 		a = lookup_alias_len(y, start, s - start);
 		if (!a) {
 		    eout->out(eout, "unknown alias at '%s'", start - 2);
-		    return NULL;
+		    goto out_err;
 		}
 		alen = strlen(a->value);
 		if (out) {
@@ -613,6 +615,11 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
     *out = '\0';
 
     return rv;
+
+ out_err:
+    if (rv)
+	free(rv);
+    return NULL;
 }
 
 static int

@@ -11,23 +11,68 @@ connecting gensios.  See gensio(5) for details on gensios.
 ser2net is configured with yaml, which is flexible and easy to use.
 Look at yaml documentation on the internet for how that works.
 
-.SH CONNECTION SPECIFICATION
+.SH DEFINE SPECIFICATION
+YAML has the ability to create aliases that can be used elsewhere in
+the configuration file.  These can be used for tying things together
+between parts of the file, or (as an extension to YAML) for string
+subtitution.
 
+You define an alias with the following:
+.IP
+define: &aliasname alias text
+.PP
+This will create an alias with the given name.  Then you can use it
+elsewhere like:
+.IP
+banner: *aliasname
+.PP
+and the banner will be "alias text".  Unlike standard YAML, you can
+also use this inside strings using
+.IP
+*(aliasname)
+.PP
+so if you have
+.IP
+banner: My banner *(aliasname) is here
+.PP
+The banner will be "My banner alias text is here".  See the YAML
+documentation for how spaces are handled, but as a note, use quotes if
+you are not sure, like:
+.IP
+define: &aliasname "alias text"
+banner: "My banner *(aliasname) is here"
+.PP
+
+If you for some reason need "*(" in your text, use "*(*" for that.
+
+.SH CONNECTION SPECIFICATION
 A connection is a structure that describes how to connect an accepting
 gensio to a connecting gensio.
 
 An accepter specification looks like:
-.IP
+
+.RS
 connection:
-    name: <name>
-    accepter: <accepter>
-    timeout: <number>
-    enable: on|off
-    connector: <connector>
-    options:  {
-        <option name>: <option value>,
-	<option name>: <option value>...
-    ]
+.RS
+name: <name>
+.br
+accepter: <accepter>
+.br
+timeout: <number>
+.br
+enable: on|off
+.br
+connector: <connector>
+.br
+options: {
+.RS
+<option name>: <option value>,
+.br
+<option name>: <option value>...
+.RE
+}
+.RE
+.RE
 .PP
 An <accepter> is an accepting gensio specification.  When ser2net
 receive a connection on the accepter, it attempts to make a
@@ -52,11 +97,14 @@ available.
 
 To allow a TCP connection to a serial port and ignore modem control,
 you can do:
-.IP
+.RS
 connection:
-    name: connection to /dev/ttyS0
-    accepter: tcp,1234
-    connector: serialdev,/dev/ttyS0,LOCAL
+.RS
+name: connection to /dev/ttyS0
+accepter: tcp,1234
+connector: serialdev,/dev/ttyS0,LOCAL
+.RE
+.RE
 .PP
 
 Both accepting and connecting gensios stack, so if you want to add
@@ -195,11 +243,13 @@ to the accepted gensio.
 sets the size of the buffer reading from the accepted gensio and
 writing to the connecting gensio.
 
-.I led-tx=<led-name>
+.I led-tx=<led-alias>
 use the previously defined led to indicate serial tx traffic on this port.
+This should be a YAML alias, like *led2.
 
-.I led-rx=<led-name>
+.I led-rx=<led-alias>
 use the previously defined led to indicate serial rx traffic on this port.
+This should be a YAML alias, like *led2.
 
 .I max-connections=<number>
 set the maximum number of connections that can be made on this particular
@@ -233,8 +283,8 @@ connection:
     name: <name>
     accepter: <accepter>
     connections: [
-        <connection>,
-	<connection>....
+        <connection alias>,
+	<connection alias>....
     ]
     options: {
         <option name>: <option val>,
@@ -243,6 +293,18 @@ connection:
 .PP
 
 A rotator only has one option, "authdir", same as connections.
+
+You should use YAML aliases for the connections.
+
+Connections to the accepter will go through the set of connections and
+find the first unused one and use that.  The next connection will
+start after the last connection used.
+
+Note that the security of the connection is
+.B NOT
+used, only the security of the rotator.
+
+.SH 
 
 .SH "SER2NET DEFAULTS"
 To set a default, do:
@@ -439,13 +501,13 @@ addresses until a disconnect occurs.
 
 Unfortunately, there is no easy way to know when to disconnect.  You
 have two basic options:
-.IP
+.IP \(bu
 Set a timeout, if the remote end isn't heard from before the
 timeout, then the port is disconnected and something else can
 connect.  This means anything that is using the port must
 periodically send a packet (empty is fine) to ser2net to
 keep the connection alive.
-
+.IP \(bu
 Use the kickolduser option on the port, any new connection that
 comes in will replace the previous connection.
 .PP

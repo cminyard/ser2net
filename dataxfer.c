@@ -3516,7 +3516,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	    port->max_connections = 1;
     } else if (gensio_check_keyvalue(pos, "authdir", &val) > 0) {
 	fval = strdup(val);
-	if (!port->authdir) {
+	if (!fval) {
 	    eout->out(eout, "Out of memory allocating authdir");
 	    return -1;
 	}

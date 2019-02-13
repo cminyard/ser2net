@@ -30,6 +30,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <syslog.h>
+#include <limits.h>
 #include "led.h"
 
 #define SYSFS_LED_BASE "/sys/class/leds"
@@ -46,24 +47,19 @@ struct led_sysfs_s
 static int
 led_is_trigger_missing(const char *led)
 {
-    char *buffer, *trigger;
+    char path[PATH_MAX];
+    char buffer[BUFSIZE], *trigger;
     int fd, c;
 
-    buffer = malloc(BUFSIZE);
-    if (!buffer)
-	return -1;
+    snprintf(path, sizeof(path), "%s/%s/trigger", SYSFS_LED_BASE, led);
 
-    snprintf(buffer, BUFSIZE, "%s/%s/trigger", SYSFS_LED_BASE, led);
-
-    if ((fd = open(buffer, O_RDONLY)) == -1) {
+    if ((fd = open(path, O_RDONLY)) == -1) {
 	syslog(LOG_ERR, "led: Unable to open %s", buffer);
-	free(buffer);
 	return -1;
     }
 
     if ((c = read(fd, buffer, BUFSIZE)) <= 0) {
 	syslog(LOG_ERR, "led: Unable to read from %s", buffer);
-	free(buffer);
 	close(fd);
 	return -1;
     }
@@ -72,7 +68,6 @@ led_is_trigger_missing(const char *led)
 
     buffer[c] = '\0';
     trigger = strstr(buffer, "transient");
-    free(buffer);
     if (!trigger)
 	syslog(LOG_ERR, "led: missing transient trigger in %s,"
 	       " maybe you need to 'modprobe ledtrig-transient'", buffer);
