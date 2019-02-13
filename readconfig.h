@@ -32,7 +32,7 @@ int readconfig_init(void);
 int readconfig(FILE *instream);
 int yaml_readconfig(FILE *f);
 
-extern int config_num;
+int readconfig_finalize(void);
 
 /*
  * Search for a banner/open/close string by name.  Note that the

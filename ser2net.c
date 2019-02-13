@@ -141,6 +141,8 @@ reread_config_file(void)
 	else
 	    readconfig(instream);
 	fclose(instream);
+
+	readconfig_finalize();
     }
  out:
     return;
@@ -821,6 +823,7 @@ main(int argc, char *argv[])
 	    exit(1);
 	fclose(instream);
     }
+    readconfig_finalize();
 
     if (detach) {
 	int pid;

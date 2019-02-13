@@ -38,20 +38,17 @@
 
 /* Create a port given the criteria. */
 int portconfig(struct absout *eout,
-	       char *name,
-	       char *accstr,
-	       char *state,
+	       const char *name,
+	       const char *accstr,
+	       const char *state,
 	       unsigned int timeout,
-	       char *devname,
-	       const char * const *devcfg,
-	       int  config_num);
+	       const char *devname,
+	       const char * const *devcfg);
+void apply_new_ports(void);
 
 /* Shut down all the ports, and provide a way to check when done. */
 void shutdown_ports(void);
 int check_ports_shutdown(void);
-
-/* Clear out any old ports on a reconfigure. */
-void clear_old_port_config(int config_num);
 
 /* Initialize the data transfer code. */
 void dataxfer_init(void);

@@ -52,21 +52,18 @@ static char *progname = "ser2net";
 #endif /* HAVE_TCPD_H */
 
 /* States for the net_to_dev_state and dev_to_net_state. */
-#define PORT_UNCONNECTED		0 /* The TCP port is not connected
+#define PORT_CLOSED			0 /* The accepter is disabled. */
+#define PORT_UNCONNECTED		1 /* The TCP port is not connected
                                              to anything right now. */
-#define PORT_OPENING			1 /* The device is being set up
-					     but it not yet ready. */
 #define PORT_WAITING_INPUT		2 /* Waiting for input from the
 					     input side. */
 #define PORT_WAITING_OUTPUT_CLEAR	3 /* Waiting for output to clear
 					     so I can send data. */
 #define PORT_CLOSING			4 /* Waiting for output close
 					     string to be sent. */
-char *state_str[] = { "unconnected", "waiting input", "waiting output",
-		      "closing" };
+char *state_str[] = { "closed", "unconnected", "waiting input",
+		      "waiting output", "closing" };
 
-#define PORT_DISABLED		0 /* The port is not open. */
-#define PORT_ON			1 /* Port is open. */
 char *enabled_str[] = { "off", "on" };
 
 typedef struct trace_info_s
@@ -157,12 +154,11 @@ struct net_info {
 					   seconds) before the timeout
 					   goes off. */
 
-    struct gensio_runner *runshutdown;	/* Used to run things at the
-					   base context.  This way we
-					   don't have to worry that we
-					   are running inside a
-					   handler context that needs
-					   to be waited for exit. */
+    /*
+     * Close the session when all the output has been written to the
+     * network port.
+     */
+    bool close_on_output_done;
 
     unsigned char linestate_mask;
     unsigned char modemstate_mask;
@@ -180,13 +176,15 @@ struct net_info {
 struct port_info
 {
     struct gensio_lock *lock;
-    int            enabled;		/* If PORT_DISABLED, the port
-					   is disabled and the
-					   accepter is not
-					   operational.  If PORT_ON,
-					   the port is enabled and
-					   will not do any telnet
-					   negotiations. */
+
+    /* If false, port is not accepting, if true it is. */
+    bool enabled;
+
+    const char *shutdown_reason;
+
+    /* The port has been deleted, but still has connections in use. */
+    bool deleted;
+    struct gensio_waiter *deleted_waiter;
 
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
@@ -250,15 +248,14 @@ struct port_info
     char               *name;           /* The name given for the port. */
     char               *accstr;         /* The accepter string. */
     struct gensio_accepter *accepter;	/* Used to receive new connections. */
+    bool accepter_stopped;
+
     bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
     bool has_connect_back;		/* We have connect back addresses. */
     unsigned int num_waiting_connect_backs;
 
-    int wait_accepter_shutdown;
-    bool accepter_reinit_on_shutdown;
-
-    unsigned int max_connections;	/* Maximum number of TCP connections
+    unsigned int max_connections;	/* Maximum number of connections
 					   we can accept at a time for this
 					   port. */
     net_info_t *netcons;
@@ -266,8 +263,10 @@ struct port_info
     gensiods dev_bytes_received;    /* Number of bytes read from the device. */
     gensiods dev_bytes_sent;        /* Number of bytes written to the device. */
 
-    /* Information use when transferring information from the network port
-       to the terminal device. */
+    /*
+     * Informationd use when transferring information from the network
+     * port to the terminal device.
+     */
     int            net_to_dev_state;		/* State of transferring
 						   data from the network port
                                                    to the device. */
@@ -279,13 +278,21 @@ struct port_info
 					    to this controller port. */
     struct gbuf *devstr;		 /* Outgoing string */
 
-    /* Information use when transferring information from the terminal
-       device to the network port. */
+    /*
+     * Information used when transferring information from the
+     * terminal device to the network port.
+     */
     int            dev_to_net_state;		/* State of transferring
 						   data from the device to
                                                    the network port. */
 
     struct gbuf dev_to_net;
+
+    /*
+     * We have called shutdown_port but the accepter has not yet been
+     * read disabled.
+     */
+    bool shutdown_started;
 
     struct controller_info *dev_monitor; /* If non-null, send any input
 					    received from the device
@@ -294,15 +301,11 @@ struct port_info
     struct port_info *next;		/* Used to keep a linked list
 					   of these. */
 
-    int config_num; /* Keep track of what configuration this was last
-		       updated under.  Setting to -1 means to delete
-		       the port when the current session is done. */
-
-    struct port_info *new_config; /* If the port is reconfigged while
-				     open, this will hold the new
-				     configuration that should be
-				     loaded when the current session
-				     is done. */
+    /*
+     * The port was reconfigured but had pending users.  This holds the
+     * new config until the pending users have finished.
+     */
+    struct port_info *new_config;
 
     char *rs485; /* If not NULL, rs485 was specified. */
 
@@ -340,12 +343,6 @@ struct port_info
     gensiods closeon_len;
 
     /*
-     * Close the session when all the output has been written to the
-     * network port.
-     */
-    bool close_on_output_done;
-
-    /*
      * File to read/write trace, NULL if none.  If the same, then
      * trace information is in the same file, only one open is done.
      */
@@ -363,6 +360,7 @@ struct port_info
 
     char *devname;
     struct gensio *io; /* For handling I/O operation to the device */
+    bool io_open;
     void (*dev_write_handler)(port_info_t *);
 
     /*
@@ -497,10 +495,12 @@ remaddr_check(const struct port_remaddr *list,
 	 netcon++)
 
 static struct gensio_lock *ports_lock;
-port_info_t *ports = NULL; /* Linked list of ports. */
+static port_info_t *ports = NULL; /* Linked list of ports. */
+static port_info_t *new_ports = NULL; /* New ports during config/reconfig. */
+static port_info_t *new_ports_end = NULL;
 
-static void shutdown_one_netcon(net_info_t *netcon, char *reason);
-static void shutdown_port(port_info_t *port, char *reason);
+static void shutdown_one_netcon(net_info_t *netcon, const char *reason);
+static int shutdown_port(port_info_t *port, const char *errreason);
 
 /*
  * Like above but does a new line at the end of the output, generally
@@ -549,10 +549,10 @@ first_live_net_con(port_info_t *port)
 static int
 init_port_data(port_info_t *port)
 {
-    port->enabled = PORT_DISABLED;
+    port->enabled = false;
 
-    port->net_to_dev_state = PORT_UNCONNECTED;
-    port->dev_to_net_state = PORT_UNCONNECTED;
+    port->net_to_dev_state = PORT_CLOSED;
+    port->dev_to_net_state = PORT_CLOSED;
     port->trace_read.fd = -1;
     port->trace_write.fd = -1;
     port->trace_both.fd = -1;
@@ -734,7 +734,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
 }
 
 static void
-footer_trace(port_info_t *port, char *type, char *reason)
+footer_trace(port_info_t *port, char *type, const char *reason)
 {
     char buf[1024];
     trace_info_t tr = { 1, 1, NULL, -1 };
@@ -919,6 +919,8 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for device on port %s: %m",
 	       port->name);
+	if (port->has_connect_back)
+	    port->enabled = false;
 	shutdown_port(port, "dev read error");
     }
 
@@ -942,7 +944,10 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	    if (buf[i] == port->closeon[port->closeon_pos]) {
 		port->closeon_pos++;
 		if (port->closeon_pos >= port->closeon_len) {
-		    port->close_on_output_done = true;
+		    net_info_t *netcon;
+
+		    for_each_connection(port, netcon)
+			netcon->close_on_output_done = true;
 		    /* Ignore everything after the closeon string */
 		    count = i + 1;
 		    break;
@@ -1113,6 +1118,8 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->name, gensio_err_to_str(err));
+	if (port->has_connect_back)
+	    port->enabled = false;
 	shutdown_port(port, "dev write error");
 	return;
     }
@@ -1258,13 +1265,13 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     /* Can't use buffer send operation here, multiple writers can send
        from the buffers. */
     reterr = gensio_write(netcon->net, &count, buf->buf + *pos, to_send, NULL);
-    if (reterr == EPIPE) {
-	shutdown_one_netcon(netcon, "EPIPE");
+    if (reterr == GE_REMCLOSE) {
+	shutdown_one_netcon(netcon, "Remote closed");
 	return -1;
     } else if (reterr) {
 	/* Some other bad error. */
-	syslog(LOG_ERR, "The network write for port %s had error: %m",
-	       port->name);
+	syslog(LOG_ERR, "The network write for port %s had error: %s",
+	       port->name, gensio_err_to_str(reterr));
 	shutdown_one_netcon(netcon, "network write error");
 	return -1;
     }
@@ -1277,20 +1284,20 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     return 1;
 }
 
-static bool
+static void
 finish_dev_to_net_write(port_info_t *port)
 {
     if (any_net_data_to_write(port))
-	return false;
+	return;
 
     port->dev_to_net.cursize = 0;
     port->dev_to_net.pos = 0;
 
-    /* We are done writing on this port, turn the reader back on. */
-    gensio_set_read_callback_enable(port->io, true);
-    port->dev_to_net_state = PORT_WAITING_INPUT;
-
-    return true;
+    if (port->net_to_dev_state != PORT_CLOSING) {
+	/* We are done writing on this port, turn the reader back on. */
+	gensio_set_read_callback_enable(port->io, true);
+	port->dev_to_net_state = PORT_WAITING_INPUT;
+    }
 }
 
 /* The network fd has room to write some data.  This is only activated
@@ -1317,16 +1324,15 @@ handle_net_fd_write_ready(net_info_t *netcon, struct gensio *net)
 	rv = net_fd_write(port, netcon,
 			  &port->dev_to_net, &netcon->write_pos);
 
-	if (rv <= 0)
+	if (rv == 0)
 	    goto out_unlock;
 
-	if (finish_dev_to_net_write(port)) {
-	    if (port->close_on_output_done) {
-		shutdown_one_netcon(netcon, "closeon sequence found");
-		rv = -1;
-		goto out_unlock;
-	    }
+	if (netcon->close_on_output_done) {
+	    netcon->close_on_output_done = false;
+	    shutdown_one_netcon(netcon, "port closing");
+	    rv = -1;
 	}
+	finish_dev_to_net_write(port);
     }
 
  out_unlock:
@@ -2203,7 +2209,6 @@ finish_setup_net(port_info_t *port, net_info_t *netcon)
     gensio_set_callback(netcon->net, handle_net_event, netcon);
 
     gensio_set_read_callback_enable(netcon->net, true);
-    port->net_to_dev_state = PORT_WAITING_INPUT;
 
     gensio_set_write_callback_enable(netcon->net, true);
 
@@ -2313,6 +2318,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	    continue;
 	finish_setup_net(port, netcon);
     }
+    port->net_to_dev_state = PORT_WAITING_INPUT;
  out_unlock:
     so->unlock(port->lock);
 }
@@ -2326,14 +2332,14 @@ port_dev_enable(port_info_t *port)
     err = gensio_open(port->io, port_dev_open_done, port);
     if (err)
 	return err;
+    port->io_open = true;
 
     err = gensio_control(port->io, GENSIO_CONTROL_DEPTH_ALL, false,
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
-	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %m",
-	       port->name);
+	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %s",
+	       port->name, gensio_err_to_str(err));
 
-    port->dev_to_net_state = PORT_OPENING;
     return 0;
 }
 
@@ -2355,10 +2361,6 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	free(netcon->banner);
     }
     netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
-
-    if (port->dev_to_net_state == PORT_OPENING)
-	/* Nothing to do, after the port is open it will finish. */
-	return;
 
     if (num_connected_net(port) == 1 && !port->has_connect_back) {
 	/* We are first, set things up on the device. */
@@ -2393,7 +2395,7 @@ find_rotator_port(const char *portname, struct gensio *net,
 	    int err;
 
 	    so->lock(port->lock);
-	    if (port->enabled == PORT_DISABLED)
+	    if (!port->enabled)
 		goto next;
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
@@ -2700,15 +2702,19 @@ port_new_con(port_info_t *port, struct gensio *net)
     so->lock(ports_lock); /* For is_device_already_inuse() */
     so->lock(port->lock);
 
-    if (port->enabled == PORT_DISABLED) {
-	err = "Port disabled\r\n";
-	goto out_err;
+    if (port->net_to_dev_state == PORT_CLOSING) {
+	/* Can happen on a race with the callback disable. */
+
+	if (!port->enabled) {
+	    err = "Port closing\r\n";
+	    goto out_err;
+	}
+	/* We hold off new connections during a close */
+	goto out;
     }
 
-    /* We raced, the shutdown should disable the accept read
-       until the shutdown is complete. */
-    if (port->dev_to_net_state == PORT_CLOSING) {
-	err = "Port closing\r\n";
+    if (!port->enabled) {
+	err = "Port disabled\r\n";
 	goto out_err;
     }
 
@@ -2781,118 +2787,50 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 }
 
 static void
-process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r,
-                bool is_reconfig)
+finish_startup_port_err(struct gensio_accepter *acc, void *cb_data)
 {
-    net_info_t *netcon;
-
-    if (!r->is_connect_back)
-	return;
-
-    for_each_connection(port, netcon) {
-        if (netcon->remote_fixed)
-            continue;
-
-	netcon->remote_fixed = true;
-	netcon->remote_str = r->str;
-	port->has_connect_back = true;
-	netcon->connect_back = true;
-	return;
-    }
-
-    if (eout)
-	eout->out(eout, "Too many remote addresses specified for the"
-		  " max-connections given");
-}
-
-static int
-startup_port(struct absout *eout, port_info_t *port, bool is_reconfig)
-{
-    int err = gensio_acc_startup(port->accepter);
-    struct port_remaddr *r;
-
-    if (err && eout) {
-	eout->out(eout, "Unable to startup network port %s: %s",
-		  port->name, gensio_err_to_str(err));
-	return err;
-    }
-
-    for (r = port->remaddrs; r; r = r->next)
-	process_remaddr(eout, port, r, is_reconfig);
-
-    if (port->has_connect_back) {
-	err = port_dev_enable(port);
-	if (err && eout)
-	    eout->out(eout, "Unable to enable port device %s: %s",
-		      port->name, gensio_err_to_str(err));
-	if (err)
-	    gensio_acc_shutdown(port->accepter, NULL, NULL);
-    }
-
-    return err;
-}
-
-static void
-port_reinit_now(port_info_t *port)
-{
-    if (port->enabled != PORT_DISABLED) {
-	net_info_t *netcon;
-
-	port->dev_to_net_state = PORT_UNCONNECTED;
-	gensio_acc_set_accept_callback_enable(port->accepter, true);
-	for_each_connection(port, netcon)
-	    check_port_new_net(port, netcon);
-    }
-}
-
-static struct gensio_waiter *accepter_shutdown_wait;
-
-static void
-handle_port_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
-{
-    port_info_t *port = gensio_acc_get_user_data(accepter);
+    port_info_t *port = cb_data;
 
     so->lock(port->lock);
-    while (port->wait_accepter_shutdown--)
-	so->wake(accepter_shutdown_wait);
-
-    if (port->accepter_reinit_on_shutdown) {
-	port->accepter_reinit_on_shutdown = false;
-	port_reinit_now(port);
-    }
+    port->dev_to_net_state = PORT_CLOSED;
+    port->net_to_dev_state = PORT_CLOSED;
     so->unlock(port->lock);
 }
 
-static bool
-change_port_state(struct absout *eout, port_info_t *port, int state,
-		  bool is_reconfig)
+static int
+startup_port(struct absout *eout, port_info_t *port)
 {
-    if (port->enabled == state)
-	return false;
+    int err;
 
-    if (state == PORT_DISABLED) {
-	port->enabled = PORT_DISABLED; /* Stop accepts */
-	if (port->wait_accepter_shutdown || port->accepter_reinit_on_shutdown)
-	    /* Shutdown is already running. */
-	    return true;
-	return gensio_acc_shutdown(port->accepter,
-				  handle_port_shutdown_done, NULL) == 0;
-    } else {
-	if (port->enabled == PORT_DISABLED) {
-	    int rv = startup_port(eout, port, is_reconfig);
-	    if (!rv)
-		port->enabled = state;
+    if (port->dev_to_net_state != PORT_CLOSED)
+	return GE_INUSE;
+
+    err = gensio_acc_startup(port->accepter);
+    if (err) {
+	if (eout)
+	    eout->out(eout, "Unable to startup network port %s: %s",
+		      port->name, gensio_err_to_str(err));
+	return err;
+    }
+    port->dev_to_net_state = PORT_UNCONNECTED;
+    port->net_to_dev_state = PORT_UNCONNECTED;
+
+    if (port->has_connect_back) {
+	err = port_dev_enable(port);
+	if (err) {
+	    port->dev_to_net_state = PORT_CLOSING;
+	    port->net_to_dev_state = PORT_CLOSING;
+	    if (eout)
+		eout->out(eout, "Unable to enable port device %s: %s",
+			  port->name, gensio_err_to_str(err));
+	    if (gensio_acc_shutdown(port->accepter, finish_startup_port_err,
+				    port))
+		/* Shouldn't happen, but just in case... */
+		finish_startup_port_err(NULL, port);
 	}
     }
 
-    return false;
-}
-
-static void
-wait_for_port_shutdown(port_info_t *port, unsigned int *count)
-{
-    port->wait_accepter_shutdown++;
-    (*count)++;
+    return err;
 }
 
 static void
@@ -2908,8 +2846,6 @@ free_port(port_info_t *port)
 		gensio_write(netcon->new_net, NULL, err, strlen(err), NULL);
 		gensio_free(netcon->new_net);
 	    }
-	    if (netcon->runshutdown)
-		so->free_runner(netcon->runshutdown);
 	}
     }
 
@@ -2968,66 +2904,20 @@ free_port(port_info_t *port)
     free(port);
 }
 
-/*
- * Returns true if this requested a net shutdown, false if not.
- */
-static bool
-switchout_port(struct absout *eout, port_info_t *new_port,
-	       port_info_t *curr, port_info_t *prev)
-{
-    int new_state = new_port->enabled;
-    struct gensio_accepter *tmp_accepter;
-    int i;
-
-    new_port->enabled = curr->enabled;
-
-    /* Keep the same accepter structure. */
-    /*
-     * FIXME - this is wrong.  The port can change accepters now without
-     * changing the name.  We need to shut down the old accepter and
-     * start a new one if it has changed.
-     */
-    tmp_accepter = new_port->accepter;
-    new_port->accepter = curr->accepter;
-    curr->accepter = tmp_accepter;
-    gensio_acc_set_user_data(curr->accepter, curr);
-    gensio_acc_set_user_data(new_port->accepter, new_port);
-
-    for (i = 0; i < new_port->max_connections; i++) {
-	if (i >= curr->max_connections)
-	    break;
-	if (!curr->netcons[i].net)
-	    continue;
-	new_port->netcons[i].net = curr->netcons[i].net;
-    }
-
-    if (prev == NULL) {
-	ports = new_port;
-    } else {
-	prev->next = new_port;
-    }
-    new_port->next = curr->next;
-    so->unlock(curr->lock);
-    free_port(curr);
-
-    return change_port_state(eout, new_port, new_state, true);
-}
-
 static void
 finish_shutdown_port(port_info_t *port)
 {
-    bool reinit_now = true;
-
-    /*
-     * At this point nothing can happen on the port, so no need for a
-     * lock over the data.  However, we need to make sure the process
-     * that caused the port shutdown has released it's lock because we
-     * might free the port.
-     */
+    so->lock(ports_lock);
     so->lock(port->lock);
-    so->unlock(port->lock);
 
-    port->net_to_dev_state = PORT_UNCONNECTED;
+    if (port->enabled) {
+	port->net_to_dev_state = PORT_UNCONNECTED;
+	port->dev_to_net_state = PORT_UNCONNECTED;
+    } else {
+	port->net_to_dev_state = PORT_CLOSED;
+	port->dev_to_net_state = PORT_CLOSED;
+	gensio_acc_disable(port->accepter);
+    }
     gbuf_reset(&port->net_to_dev);
     if (port->devstr) {
 	free(port->devstr->buf);
@@ -3044,75 +2934,52 @@ finish_shutdown_port(port_info_t *port)
 	   closes. */
 	exit(0);
 
-    /* If the port has been disabled, then delete it.  Check this before
-       the new config so the port will be deleted properly and not
-       reconfigured on a reconfig. */
-    if (port->config_num == -1) {
-	port_info_t *curr, *prev;
+    /* If the port has been deleted, then finish the job. */
+    if (port->deleted) {
+	port_info_t *curr, *prev, *new;
+
+	new = port->new_config;
+	port->new_config = NULL;
 
 	prev = NULL;
-	so->lock(ports_lock);
-	curr = ports;
-	while ((curr != NULL) && (curr != port)) {
+	for (curr = ports; curr && curr != port; curr = curr->next)
 	    prev = curr;
-	    curr = curr->next;
-	}
-	if (curr != NULL) {
+	if (curr) {
 	    if (prev == NULL)
 		ports = curr->next;
 	    else
 		prev->next = curr->next;
 	}
-	so->unlock(ports_lock);
-	free_port(port);
-	return; /* We have to return here because we no longer have a port. */
-    }
-
-    /*
-     * The configuration for this port has changed, install it now that
-     * the user has closed the connection.
-     */
-    if (port->new_config != NULL) {
-	port_info_t *curr, *prev;
-
-	prev = NULL;
-	so->lock(ports_lock);
-	curr = ports;
-	while ((curr != NULL) && (curr != port)) {
-	    prev = curr;
-	    curr = curr->next;
-	}
-	if (curr != NULL) {
-	    port = curr->new_config;
-	    curr->new_config = NULL;
-	    so->lock(curr->lock);
-	    so->lock(port->lock);
-	    /* Releases curr->lock */
-	    if (switchout_port(NULL, port, curr, prev)) {
-		/*
-		 * This is an unusual case.  We have switched out the
-		 * port and it requested a shutdown, but we really
-		 * can't wait here in this thread for the shutdown to
-		 * complete.  So we mark that we are waiting and do
-		 * the startup later in the callback.
-		 */
-		port->accepter_reinit_on_shutdown = true;
-		reinit_now = false;
-		so->unlock(port->lock);
-	    } else {
-		so->unlock(ports_lock);
-		goto reinit_port;
-	    }
-	}
-	so->unlock(ports_lock);
-    }
-
-    if (reinit_now) {
-	so->lock(port->lock);
-    reinit_port:
-	port_reinit_now(port);
 	so->unlock(port->lock);
+
+	free_port(port);
+
+	/* Start the replacement port if it was set. */
+	if (new) {
+	    int err;
+
+	    so->lock(new->lock);
+	    if (prev) {
+		new->next = prev->next;
+		prev->next = new;
+	    } else {
+		new->next = ports;
+		ports = new;
+	    }
+	    if (new->enabled) {
+		err = startup_port(NULL, new);
+		if (err)
+		    new->enabled = false;
+	    }
+	    so->unlock(new->lock);
+	}
+	so->unlock(ports_lock);
+	return; /* We have to return here because we no longer have a port. */
+    } else {
+	gensio_acc_set_accept_callback_enable(port->accepter, true);
     }
+    so->unlock(port->lock);
+    so->unlock(ports_lock);
 }
 
 static void call_finish_shutdown_port(struct gensio_runner *runner,
@@ -3128,6 +2995,7 @@ io_shutdown_done(struct gensio *io, void *cb_data)
 {
     port_info_t *port = cb_data;
 
+    port->io_open = false;
     so->run(port->runshutdown);
 }
 
@@ -3136,17 +3004,39 @@ shutdown_port_io(port_info_t *port)
 {
     int err = 1;
 
+    if (port->trace_write.fd != -1) {
+	close(port->trace_write.fd);
+	port->trace_write.fd = -1;
+    }
+    if (port->trace_read.fd != -1) {
+	close(port->trace_read.fd);
+	port->trace_read.fd = -1;
+    }
+    if (port->trace_both.fd != -1) {
+	close(port->trace_both.fd);
+	port->trace_both.fd = -1;
+    }
+
+    port->tw = port->tr = port->tb = NULL;
+
     if (port->io)
 	err = gensio_close(port->io, io_shutdown_done, port);
 
-    if (err)
+    if (err) {
+	port->io_open = false;
 	so->run(port->runshutdown);
+    }
 }
 
 static void
 timer_shutdown_done(struct gensio_timer *timer, void *cb_data)
 {
-    shutdown_port_io(cb_data);
+    port_info_t *port = cb_data;
+
+    so->lock(port->lock);
+    gensio_set_write_callback_enable(port->io, false);
+    shutdown_port_io(port);
+    so->unlock(port->lock);
 }
 
 /* Output any pending data and the devstr buffer. */
@@ -3184,51 +3074,18 @@ closeit:
 static void
 start_shutdown_port_io(port_info_t *port)
 {
+    if (!port->io_open) {
+	so->run(port->runshutdown);
+	return;
+    }
+
     if (port->devstr) {
 	free(port->devstr->buf);
 	free(port->devstr);
     }
     port->devstr = process_str_to_buf(port, NULL, port->closestr);
-    if (port->net_to_dev_state != PORT_UNCONNECTED) {
-	gensio_set_read_callback_enable(port->io, false);
-	port->dev_write_handler = handle_dev_fd_close_write;
-	gensio_set_write_callback_enable(port->io, true);
-    } else {
-	shutdown_port_io(port);
-    }
-}
-
-static void
-start_shutdown_port(port_info_t *port, char *reason)
-{
-    if (port->dev_to_net_state == PORT_CLOSING ||
-		port->dev_to_net_state == PORT_UNCONNECTED)
-	return;
-
-    port->close_on_output_done = false;
-
-    gensio_set_read_callback_enable(port->io, false);
-    gensio_acc_set_accept_callback_enable(port->accepter, false);
-
-    footer_trace(port, "port", reason);
-
-    if (port->trace_write.fd != -1) {
-	close(port->trace_write.fd);
-	port->trace_write.fd = -1;
-    }
-    if (port->trace_read.fd != -1) {
-	close(port->trace_read.fd);
-	port->trace_read.fd = -1;
-    }
-    if (port->trace_both.fd != -1) {
-	close(port->trace_both.fd);
-	port->trace_both.fd = -1;
-    }
-    port->tw = port->tr = port->tb = NULL;
-
-    /* FIXME - this should be calculated somehow, not a raw number .*/
-    port->shutdown_timeout_count = 4;
-    port->dev_to_net_state = PORT_CLOSING;
+    port->dev_write_handler = handle_dev_fd_close_write;
+    gensio_set_write_callback_enable(port->io, true);
 }
 
 static void
@@ -3236,7 +3093,11 @@ netcon_finish_shutdown(net_info_t *netcon)
 {
     port_info_t *port = netcon->port;
 
-    so->lock(port->lock);
+    if (netcon->net) {
+	gensio_free(netcon->net);
+	netcon->net = NULL;
+    }
+
     netcon->closing = false;
     netcon->bytes_received = 0;
     netcon->bytes_sent = 0;
@@ -3247,77 +3108,199 @@ netcon_finish_shutdown(net_info_t *netcon)
 	netcon->banner = NULL;
     }
 
+    check_port_new_net(port, netcon);
     if (num_connected_net(port) == 0) {
-	if (!port->has_connect_back) {
-	    start_shutdown_port(port, "All network connections free");
+	if (port->net_to_dev_state == PORT_CLOSING) {
 	    start_shutdown_port_io(port);
+	} else if (port->has_connect_back && port->enabled) {
+	    /* Leave the device open for connect backs. */
+	    port->dev_to_net_state = PORT_UNCONNECTED;
+	    port->net_to_dev_state = PORT_UNCONNECTED;
+	} else {
+	    shutdown_port(port, NULL);
 	}
-    } else {
-	check_port_new_net(port, netcon);
     }
-    so->unlock(port->lock);
 }
 
 static void
 handle_net_fd_closed(struct gensio *net, void *cb_data)
 {
-    net_info_t *netcon = gensio_get_user_data(net);
+    net_info_t *netcon = cb_data;
     port_info_t *port = netcon->port;
 
-    gensio_free(netcon->net);
-    netcon->net = NULL;
-
     so->lock(port->lock);
-    if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR)
-	finish_dev_to_net_write(port);
-    so->unlock(port->lock);
-
     netcon_finish_shutdown(netcon);
-}
-
-static void shutdown_netcon_clear(struct gensio_runner *runner, void *cb_data)
-{
-    net_info_t *netcon = cb_data;
-
-    if (netcon->net) {
-	int err = gensio_close(netcon->net, handle_net_fd_closed, NULL);
-	if (err)
-	    handle_net_fd_closed(netcon->net, NULL);
-    } else {
-	netcon_finish_shutdown(netcon);
-    }
+    so->unlock(port->lock);
 }
 
 static void
-shutdown_one_netcon(net_info_t *netcon, char *reason)
+shutdown_one_netcon(net_info_t *netcon, const char *reason)
 {
+    int err;
+
     if (netcon->closing)
 	return;
 
+    netcon->write_pos = 0;
     footer_trace(netcon->port, "netcon", reason);
 
     netcon->closing = true;
-    /* shutdown_netcon_clear() may clain the port lock, run it elsewhere. */
-    so->run(netcon->runshutdown);
+    err = gensio_close(netcon->net, handle_net_fd_closed, netcon);
+    if (err)
+	netcon_finish_shutdown(netcon);
 }
 
-static void
-shutdown_port(port_info_t *port, char *reason)
+static bool
+shutdown_all_netcons(port_info_t *port)
 {
     net_info_t *netcon;
     bool some_to_close = false;
 
-    start_shutdown_port(port, reason);
-
     for_each_connection(port, netcon) {
 	if (netcon->net) {
 	    some_to_close = true;
-	    shutdown_one_netcon(netcon, "Port closing");
+	    netcon->close_on_output_done = false;
+	    netcon->write_pos = port->dev_to_net.cursize;
+	    shutdown_one_netcon(netcon, "port closing");
 	}
     }
 
-    if (!some_to_close)
-	start_shutdown_port_io(port);
+    return some_to_close;
+}
+
+static bool
+handle_shutdown_timeout(port_info_t *port)
+{
+    /* Something wasn't able to do any writes and locked up the shutdown. */
+
+    /* Check the network connections first. */
+    if (shutdown_all_netcons(port))
+	return true;
+
+    shutdown_port_io(port);
+    return false;
+}
+
+static void
+accept_read_disabled(void *cb_data)
+{
+    port_info_t *port = cb_data;
+    net_info_t *netcon;
+    bool some_to_close = false;
+
+    so->lock(port->lock);
+    port->shutdown_started = false;
+
+    /*
+     * At this point we won't receive any more accepts until we re-enable it,
+     * go into closing state unless it wasn't an error and a new net came in.
+     */
+    if (port->net_to_dev_state != PORT_CLOSING &&
+		num_connected_net(port) > 0) {
+	/*
+	 * It wasn't an error close and a new connection came in.  Just
+	 * ignore the shutdown.
+	 */
+	gensio_acc_set_accept_callback_enable(port->accepter, true);
+	for_each_connection(port, netcon) {
+	    if (netcon->net)
+		gensio_set_read_callback_enable(netcon->net, true);
+	}
+	gensio_set_read_callback_enable(port->io, true);
+	goto out_unlock;
+    }
+
+    /* After this point we will shut down the port completely. */
+
+    /* FIXME - this should be calculated somehow, not a raw number .*/
+    port->shutdown_timeout_count = 4;
+
+    if (port->shutdown_reason)
+	footer_trace(port, "port", port->shutdown_reason);
+    else
+	footer_trace(port, "port", "All users disconnected");
+
+    /*
+     * If close_on_output_done is already set, the netcons are all set to
+     * close, anyway.  No need to kick that off.
+     */
+    for_each_connection(port, netcon) {
+	if (netcon->net) {
+	    some_to_close = true;
+	    if (netcon->new_net) {
+		/* Something is waiting for a kick. */
+		char *err = "port is shutting down\r\n";
+
+		gensio_write(netcon->new_net, NULL, err, strlen(err), NULL);
+		gensio_free(netcon->new_net);
+		netcon->new_net = NULL;
+	    }
+
+	    if (port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR &&
+			netcon->write_pos < port->dev_to_net.cursize)
+		/* Net has data to send, wait until it's done. */
+		netcon->close_on_output_done = true;
+	    else
+		shutdown_one_netcon(netcon, "port closing");
+	}
+    }
+
+    if (!some_to_close) {
+	if (port->has_connect_back && port->enabled) {
+	    /* Leave the device open for connect backs. */
+	    port->dev_to_net_state = PORT_UNCONNECTED;
+	    port->net_to_dev_state = PORT_UNCONNECTED;
+	    goto out_unlock;
+	} else {
+	    start_shutdown_port_io(port);
+	}
+    }
+
+    port->dev_to_net_state = PORT_CLOSING;
+    port->net_to_dev_state = PORT_CLOSING;
+
+ out_unlock:
+    so->unlock(port->lock);
+}
+
+static int
+shutdown_port(port_info_t *port, const char *errreason)
+{
+    net_info_t *netcon;
+    int err;
+
+    if (port->shutdown_started && port->net_to_dev_state != PORT_CLOSING
+		&& errreason) {
+	/* An error occurred and we are in a non-err shutdown.  Convert it. */
+	port->shutdown_reason = errreason;
+	port->net_to_dev_state = PORT_CLOSING;
+	return 0;
+    }
+
+    if (port->net_to_dev_state == PORT_CLOSING ||
+		port->net_to_dev_state == PORT_CLOSED ||
+		(port->enabled && port->dev_to_net_state == PORT_UNCONNECTED) ||
+		port->shutdown_started)
+	return GE_INUSE;
+
+    port->shutdown_reason = errreason;
+    if (errreason)
+	/* It's an error, force a shutdown.  Don't set dev_to_net_state yet. */
+	port->net_to_dev_state = PORT_CLOSING;
+
+    port->shutdown_started = true;
+
+    err = gensio_acc_set_accept_callback_enable_cb(port->accepter, false,
+						   accept_read_disabled, port);
+    /* This is bad, it's an out of memory condition. Abort. */
+    assert(err == 0);
+
+    for_each_connection(port, netcon) {
+	if (netcon->net)
+	    gensio_set_read_callback_enable(netcon->net, false);
+    }
+    gensio_set_read_callback_enable(port->io, false);
+    return 0;
 }
 
 void
@@ -3332,11 +3315,14 @@ got_timeout(struct gensio_timer *timer, void *data)
     if (port->dev_to_net_state == PORT_CLOSING) {
 	if (port->shutdown_timeout_count <= 1) {
 	    int count = port->shutdown_timeout_count;
+	    bool dotimer = false;
 
 	    port->shutdown_timeout_count = 0;
-	    so->unlock(port->lock);
 	    if (count == 1)
-		shutdown_port_io(port);
+		dotimer = handle_shutdown_timeout(port);
+	    so->unlock(port->lock);
+	    if (dotimer)
+		goto out;
 	    return;
 	} else {
 	    port->shutdown_timeout_count--;
@@ -3647,25 +3633,61 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
     return 0;
 }
 
+static void
+process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r)
+{
+    net_info_t *netcon;
+
+    if (!r->is_connect_back)
+	return;
+
+    for_each_connection(port, netcon) {
+        if (netcon->remote_fixed)
+            continue;
+
+	netcon->remote_fixed = true;
+	netcon->remote_str = r->str;
+	port->has_connect_back = true;
+	netcon->connect_back = true;
+	return;
+    }
+
+    if (eout)
+	eout->out(eout, "Too many connect back remote addresses specified"
+		  " for the max-connections given");
+}
+
 /* Create a port based on a set of parameters passed in. */
 int
 portconfig(struct absout *eout,
-	   char *name,
-	   char *accstr,
-	   char *state,
+	   const char *name,
+	   const char *accstr,
+	   const char *state,
 	   unsigned int timeout,
-	   char *devname,
-	   const char * const *devcfg,
-	   int  config_num)
+	   const char *devname,
+	   const char * const *devcfg)
 {
-    port_info_t *new_port, *curr, *prev;
+    port_info_t *new_port, *curr;
     net_info_t *netcon;
     enum str_type str_type;
     int err;
-    unsigned int shutdown_count = 0;
     bool do_telnet = false;
     bool write_only = false;
     unsigned int i;
+    struct port_remaddr *r;
+
+    so->lock(ports_lock);
+    curr = new_ports;
+    while (curr) {
+	if (strcmp(curr->name, name) == 0) {
+	    /* We don't allow duplicate names. */
+	    so->unlock(ports_lock);
+	    eout->out(eout, "Duplicate connection name: %s", name);
+	    return -1;
+	}
+	curr = curr->next;
+    }
+    so->unlock(ports_lock);
 
     new_port = malloc(sizeof(port_info_t));
     if (new_port == NULL) {
@@ -3737,19 +3759,19 @@ portconfig(struct absout *eout,
     }
 
     if (strcmp(state, "on") == 0) {
-	new_port->enabled = PORT_ON;
+	new_port->enabled = true;
     } else if (strcmp(state, "raw") == 0) {
-	new_port->enabled = PORT_ON;
+	new_port->enabled = true;
     } else if (strcmp(state, "rawlp") == 0) {
 	/* FIXME - remove this someday. */
-	new_port->enabled = PORT_ON;
+	new_port->enabled = true;
 	write_only = true;
     } else if (strcmp(state, "telnet") == 0) {
 	/* FIXME - remove this someday. */
-	new_port->enabled = PORT_ON;
+	new_port->enabled = true;
 	do_telnet = true;
     } else if (strcmp(state, "off") == 0) {
-	new_port->enabled = PORT_DISABLED;
+	new_port->enabled = false;
     } else {
 	eout->out(eout, "state was invalid");
 	goto errout;
@@ -3797,7 +3819,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    if (new_port->enabled == PORT_ON && do_telnet) {
+    if (new_port->enabled && do_telnet) {
 	const char *args[] = { NULL, NULL };
 	struct gensio_accepter *parent;
 
@@ -3848,129 +3870,166 @@ portconfig(struct absout *eout,
     }
     memset(new_port->netcons, 0,
 	   sizeof(net_info_t) * new_port->max_connections);
-    for_each_connection(new_port, netcon) {
-	netcon->runshutdown = so->alloc_runner(so, shutdown_netcon_clear,
-					       netcon);
-	if (!netcon->runshutdown) {
-	    eout->out(eout, "Could not allocate a netcon shutdown handler");
-	    goto errout;
-	}
-
+    for_each_connection(new_port, netcon)
 	netcon->port = new_port;
-    }
 
-    new_port->config_num = config_num;
+    for (r = new_port->remaddrs; r; r = r->next)
+	process_remaddr(eout, new_port, r);
 
-    /* See if the port already exists, and reconfigure it if so. */
-    prev = NULL;
-    so->lock(ports_lock);
-    curr = ports;
-    while (curr != NULL) {
-	if (strcmp(curr->name, new_port->name) == 0) {
-	    /* We are reconfiguring this port. */
-	    so->lock(curr->lock);
-	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
-		/* Port is disconnected, switch it now. */
-		so->lock(new_port->lock);
-		/* releases curr->lock */
-		if (switchout_port(eout, new_port, curr, prev))
-		    wait_for_port_shutdown(new_port, &shutdown_count);
-		so->unlock(new_port->lock);
-	    } else {
-		/* Mark it to be replaced later. */
-		if (curr->new_config != NULL)
-		    free_port(curr->new_config);
-		curr->config_num = config_num;
-		curr->new_config = new_port;
-		so->unlock(curr->lock);
-	    }
-	    goto out;
-	} else {
-	    prev = curr;
-	    curr = curr->next;
-	}
-    }
-
-    /* If we get here, the port is brand new, so don't do anything that
-       would affect a port replacement here. */
-
-    if (new_port->enabled != PORT_DISABLED) {
-	int rv;
-
-	so->lock(new_port->lock);
-	rv = startup_port(eout, new_port, false);
-	so->unlock(new_port->lock);
-	if (rv == -1)
-	    goto errout_unlock;
-    }
-
-    /* Tack it on to the end of the list of ports. */
-    new_port->next = NULL;
-    if (ports == NULL) {
-	ports = new_port;
-    } else {
-	curr = ports;
-	while (curr->next != NULL) {
-	    curr = curr->next;
-	}
-	curr->next = new_port;
-    }
- out:
-    so->unlock(ports_lock);
-
-    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
+    /* Link it on the end of new_ports for now. */
+    if (new_ports_end)
+	new_ports_end->next = new_port;
+    else
+	new_ports = new_port;
+    new_ports_end = new_port;
 
     return 0;
 
-errout_unlock:
-    so->unlock(ports_lock);
 errout:
     free_port(new_port);
     return -1;
 }
 
 void
-clear_old_port_config(int curr_config)
+apply_new_ports(void)
 {
-    port_info_t *curr, *prev;
-    unsigned int shutdown_count = 0;
+    port_info_t *new, *curr, *next, *prev, *new_prev;
+    int err;
 
-    prev = NULL;
-    curr = ports;
     so->lock(ports_lock);
-    while (curr != NULL) {
-	if (curr->config_num != curr_config) {
-	    /* The port was removed, remove it. */
-	    so->lock(curr->lock);
-	    if (curr->dev_to_net_state == PORT_UNCONNECTED) {
-		if (change_port_state(NULL, curr, PORT_DISABLED, false))
-		    wait_for_port_shutdown(curr, &shutdown_count);
-		so->unlock(curr->lock);
-		if (prev == NULL) {
-		    ports = curr->next;
-		    free_port(curr);
-		    curr = ports;
-		} else {
-		    prev->next = curr->next;
-		    free_port(curr);
-		    curr = prev->next;
-		}
-	    } else {
-		curr->config_num = -1;
-		if (change_port_state(NULL, curr, PORT_DISABLED, false))
-		    wait_for_port_shutdown(curr, &shutdown_count);
-		so->unlock(curr->lock);
-		prev = curr;
-		curr = curr->next;
-	    }
-	} else {
-	    prev = curr;
-	    curr = curr->next;
+    /* First turn off all the accepters. */
+    for (curr = ports; curr; curr = curr->next) {
+	int err;
+
+	if (curr->deleted)
+	    continue;
+
+	if (curr->enabled) {
+	    /*
+	     * This unlock is a little strange, but we don't want to
+	     * do any waiting while holding the ports lock, otherwise
+	     * we might deadlock on a deletion in finish_shutdown_port().
+	     * This is save as long as curr is not deleted, because curr
+	     * will not go away, though curr->next may change, that
+	     * shouldn't matter.
+	     */
+	    so->unlock(ports_lock);
+	    err = gensio_acc_set_accept_callback_enable_s(curr->accepter,
+							  false);
+	    /* Errors only happen on out of memory. */
+	    assert(err == 0);
+	    so->lock(ports_lock);
+	    curr->accepter_stopped = true;
 	}
     }
-    so->unlock(ports_lock);
 
-    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
+    /* At this point we can't get any new accepts. */
+
+    /*
+     * See if the port already exists, and link it to this port.  We
+     * put the old port in the new port's place for now.
+     */
+    for (new_prev = NULL, new = new_ports; new;
+			new_prev = new, new = new->next) {
+	so->lock(new->lock);
+	for (prev = NULL, curr = ports; curr; prev = curr, curr = curr->next) {
+	    so->lock(curr->lock);
+	    if (strcmp(curr->name, new->name) == 0) {
+		if (curr->dev_to_net_state == PORT_UNCONNECTED) {
+		    if (strcmp(curr->accstr, new->accstr) == 0) {
+			/* Accepter didn't change, just move it over. */
+			struct gensio_accepter *tmp;
+			tmp = new->accepter;
+			new->accepter = curr->accepter;
+			new->accepter_stopped = true;
+			curr->accepter = tmp;
+			curr->accepter_stopped = false;
+			gensio_acc_set_user_data(curr->accepter, curr);
+			gensio_acc_set_user_data(new->accepter, new);
+		    }
+		    /* Just let the old one get deleted. */
+		    so->unlock(curr->lock);
+		    break;
+		}
+
+		/* We are reconfiguring this port. */
+		if (curr->new_config)
+		    free_port(curr->new_config);
+		curr->new_config = new;
+
+		/*
+		 * Put the current entry into the place of the new entry
+		 * in the new_ports array.
+		 */
+		if (prev)
+		    prev->next = curr->next;
+		else
+		    ports = curr->next;
+
+		curr->next = new->next;
+		if (new_prev)
+		    new_prev->next = curr;
+		else
+		    new_ports = curr;
+
+		if (new_ports_end == new)
+		    new_ports_end = curr;
+
+		gensio_acc_disable(curr->accepter);
+		curr->deleted = true;
+		so->unlock(new->lock);
+		new = curr;
+		break;
+	    }
+	    so->unlock(curr->lock);
+	}
+	so->unlock(new->lock);
+    }
+
+    /*
+     * We nuke any old port without a new config.  Do this first so
+     * new ports can use the given port numbers that might be in these.
+     */
+    for (curr = ports; curr; curr = next) {
+	next = curr->next;
+	so->lock(curr->lock);
+	if (curr->accepter_stopped)
+	    gensio_acc_disable(curr->accepter);
+	curr->deleted = true;
+	curr->enabled = false;
+	if (curr->dev_to_net_state == PORT_UNCONNECTED) {
+	    so->unlock(curr->lock);
+	    free_port(curr);
+	} else {
+	    /* Leave it in ports for shutdown when the user closes. */
+	    new_ports_end->next = curr;
+	    curr->next = NULL;
+	    new_ports_end = curr;
+	    shutdown_all_netcons(curr);
+	    so->unlock(curr->lock);
+	}
+    }
+
+    /* Now start up the new ports. */
+    ports = new_ports;
+    new_ports = NULL;
+    new_ports_end = NULL;
+
+    for (curr = ports; curr; curr = curr->next) {
+	so->lock(curr->lock);
+	if (!curr->deleted) {
+	    if (curr->accepter_stopped) {
+		curr->accepter_stopped = false;
+		gensio_acc_set_accept_callback_enable(curr->accepter, true);
+	    } else {
+		err = startup_port(NULL, curr);
+		if (err)
+		    curr->enabled = false;
+	    }
+	}
+	so->unlock(curr->lock);
+    }
+    so->unlock(ports_lock);
 }
 
 #define REMOTEADDR_COLUMN_WIDTH \
@@ -3987,7 +4046,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     unsigned int bytes_recv = 0, bytes_sent = 0;
 
     controller_outputf(cntlr, "%-22s ", port->name);
-    if (port->config_num == -1)
+    if (port->deleted)
 	controller_outputf(cntlr, "%-6s ", "DEL");
     else
 	controller_outputf(cntlr, "%-6s ", enabled_str[port->enabled]);
@@ -4097,11 +4156,11 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "  bytes written to device: %d\r\n",
 		      port->dev_bytes_sent);
 
-    if (port->config_num == -1) {
-	controller_outputf(cntlr, "  Port will be deleted when current"
-			   " session closes.\r\n");
-    } else if (port->new_config != NULL) {
+    if (port->new_config != NULL) {
 	controller_outputf(cntlr, "  Port will be reconfigured when current"
+			   " session closes.\r\n");
+    } else if (port->deleted) {
+	controller_outputf(cntlr, "  Port will be deleted when current"
 			   " session closes.\r\n");
     }
 }
@@ -4121,7 +4180,7 @@ find_port_by_name(char *name, bool allow_deleted)
 	if (strcmp(name, port->name) == 0) {
 	    so->lock(port->lock);
 	    so->unlock(ports_lock);
-	    if (port->config_num == -1 && !allow_deleted) {
+	    if (port->deleted && !allow_deleted) {
 		so->unlock(port->lock);
 		return NULL;
 	    }
@@ -4283,34 +4342,47 @@ void
 setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 {
     port_info_t *port;
-    int         new_enable;
+    bool new_enable;
     struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
-    unsigned int shutdown_count = 0;
+    int rv;
 
     port = find_port_by_name(portspec, false);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
+	controller_outputf(cntlr, "Invalid port: %s\r\n", portspec);
 	return;
     }
 
     if (strcmp(enable, "off") == 0) {
-	new_enable = PORT_DISABLED;
+	new_enable = false;
     } else if (strcmp(enable, "on") == 0) {
-	new_enable = PORT_ON;
+	new_enable = true;
     } else if (strcmp(enable, "raw") == 0) {
-	new_enable = PORT_ON;
+	new_enable = true;
     } else {
 	controller_outputf(cntlr, "Invalid enable: %s\r\n", enable);
 	goto out_unlock;
     }
 
-    if (change_port_state(&eout, port, new_enable, false))
-	wait_for_port_shutdown(port, &shutdown_count);
+
+    if (port->enabled == new_enable) {
+	controller_outputf(cntlr, "port was already in the given state");
+	goto out_unlock;
+    }
+
+    port->enabled = new_enable;
+    if (!new_enable) {
+	rv = shutdown_port(port, "admin disable");
+	if (rv)
+	    controller_outputf(cntlr, "Error disabling port: %s",
+			       gensio_err_to_str(rv));
+    } else {
+	rv = startup_port(&eout, port);
+    }
+    if (rv)
+	port->enabled = !new_enable;
 
  out_unlock:
     so->unlock(port->lock);
-
-    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 }
 
 /* Start data monitoring on the given port, type may be either "tcp" or
@@ -4402,39 +4474,35 @@ disconnect_port(struct controller_info *cntlr,
 	goto out_unlock;
     }
 
-    shutdown_port(port, "disconnect");
+    shutdown_port(port, "admin disconnect");
  out_unlock:
     so->unlock(port->lock);
  out:
     return;
 }
 
+static struct gensio_waiter *accepter_shutdown_wait;
+
 void
 shutdown_ports(void)
 {
-    port_info_t *port = ports, *next;
+    port_info_t *port;
+    int err;
     unsigned int shutdown_count = 0;
 
-    /* No need for a lock here, nothing can reconfigure the port list at
-       this point. */
-    while (port != NULL) {
-	port->config_num = -1;
-	next = port->next;
+    so->lock(ports_lock);
+    for (port = ports; port; port = port->next) {
 	so->lock(port->lock);
-	if (change_port_state(NULL, port, PORT_DISABLED, false))
-	    wait_for_port_shutdown(port, &shutdown_count);
+	port->deleted = true;
+	port->deleted_waiter = accepter_shutdown_wait;
+	err = shutdown_port(port, "program shutdown");
+	if (!err)
+	    shutdown_count++;
 	so->unlock(port->lock);
-	port = next;
     }
+    so->unlock(ports_lock);
 
     so->wait(accepter_shutdown_wait, shutdown_count, NULL);
-
-    port = ports;
-    while (port != NULL) {
-	next = port->next;
-	shutdown_port(port, "program shutdown");
-	port = next;
-    }
 }
 
 int

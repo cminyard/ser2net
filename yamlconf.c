@@ -837,7 +837,7 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	    if (add_option(y, NULL, NULL, "connection", eout))
 		return -1;
 	    portconfig(eout, y->name, y->accepter, "raw", y->timeout,
-		       y->connector, (const char **) y->options, config_num);
+		       y->connector, (const char **) y->options);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
 	    break;
@@ -1048,9 +1048,6 @@ yaml_readconfig(FILE *f)
 	free(a->value);
 	free(a);
     }
-
-    /* Delete anything that wasn't in the new config file. */
-    clear_old_port_config(config_num);
 
     return err;
 }

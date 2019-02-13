@@ -39,8 +39,6 @@
 
 #define PORT_BUFSIZE	64	/* Default data transfer buffer size */
 
-int config_num = 0;
-
 static int lineno = 0;
 
 struct longstr_s
@@ -881,7 +879,7 @@ handle_config_line(char *inbuf, int len)
     }
 
     portconfig(&syslog_eout, portnum, portnum, state, timeout, devname,
-	       devcfg_argv, config_num);
+	       devcfg_argv);
 
     gensio_argv_free(so, devcfg_argv);
  out:
@@ -900,8 +898,14 @@ readconfig_init(void)
     free_rs485confs();
     free_leds();
 
-    config_num++;
     free_rotators();
+    return 0;
+}
+
+int
+readconfig_finalize(void)
+{
+    apply_new_ports();
     return 0;
 }
 
@@ -949,9 +953,6 @@ readconfig(FILE *instream)
     }
     if (pos > 0)
 	handle_config_line(inbuf, strlen(inbuf));
-
-    /* Delete anything that wasn't in the new config file. */
-    clear_old_port_config(config_num);
 
  out_err:
     free(inbuf);

@@ -293,15 +293,12 @@ static char *help_str =
 "       has been seen on the port.\r\n"
 "setportcontrol <tcp port> <controls>\r\n"
 "       Dynamically modify the characteristics of the port.  These are\r\n"
-"       immedaite and won't live between connections.  Valid controls are\r\n"
+"       immediate and won't live between connections.  Valid controls are\r\n"
 "       DTRHI, DTRLO, RTSHI, and RTSLO.\r\n"
 "setportenable <tcp port> <enable state> - Sets the port operation state.\r\n"
 "       Valid states are:\r\n"
 "         off - The port is shut down\r\n"
-"         raw - The port is up and all I/O is transferred\r\n"
-"         rawlp - The port is up and the input is transferred to dev\r\n"
-"         telnet - The port is up and the telnet negotiation protocol\r\n"
-"                  runs on the port.\r\n";
+"         on - The port is up and all I/O is transferred\r\n";
 
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
