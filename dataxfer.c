@@ -184,7 +184,6 @@ struct port_info
 
     /* The port has been deleted, but still has connections in use. */
     bool deleted;
-    struct gensio_waiter *deleted_waiter;
 
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
@@ -4499,28 +4498,35 @@ disconnect_port(struct controller_info *cntlr,
     return;
 }
 
-static struct gensio_waiter *accepter_shutdown_wait;
-
 void
 shutdown_ports(void)
 {
-    port_info_t *port;
-    int err;
-    unsigned int shutdown_count = 0;
+    port_info_t *port, *next, *prev;
 
     so->lock(ports_lock);
-    for (port = ports; port; port = port->next) {
+    prev = NULL;
+    for (port = ports; port; port = next) {
+	next = port->next;
 	so->lock(port->lock);
-	port->deleted = true;
-	port->deleted_waiter = accepter_shutdown_wait;
-	err = shutdown_port(port, "program shutdown");
-	if (!err)
-	    shutdown_count++;
-	so->unlock(port->lock);
+	if (port->enabled) {
+	    if (port->new_config) {
+		free_port(port->new_config);
+		port->new_config = NULL;
+	    }
+	    port->deleted = true;
+	    port->enabled = false;
+	    shutdown_port(port, "program shutdown");
+	    so->unlock(port->lock);
+	    prev = port;
+	} else {
+	    if (prev)
+		prev->next = port->next;
+	    else
+		ports = port->next;
+	    free_port(port);
+	}
     }
     so->unlock(ports_lock);
-
-    so->wait(accepter_shutdown_wait, shutdown_count, NULL);
 }
 
 int
@@ -4534,8 +4540,6 @@ shutdown_dataxfer(void)
 {
     if (rotator_shutdown_wait)
 	so->free_waiter(rotator_shutdown_wait);
-    if (accepter_shutdown_wait)
-	so->free_waiter(accepter_shutdown_wait);
     if (ports_lock)
 	so->free_lock(ports_lock);
 }
@@ -4545,10 +4549,6 @@ init_dataxfer(void)
 {
     ports_lock = so->alloc_lock(so);
     if (!ports_lock)
-	goto out_nomem;
-
-    accepter_shutdown_wait = so->alloc_waiter(so);
-    if (!accepter_shutdown_wait)
 	goto out_nomem;
 
     rotator_shutdown_wait = so->alloc_waiter(so);
