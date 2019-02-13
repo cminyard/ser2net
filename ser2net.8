@@ -194,7 +194,13 @@ The yaml configuration file is descrdibed in ser2net.yaml(5)
 .B SIGHUP
 If ser2net receives a SIGHUP, it will reread it configuration file
 and make the appropriate changes.  If an inuse port is changed or deleted,
-the actual change will not occur until the port is disconnected.
+the actual change will not occur until the port is disconnected, except
+that if you disable a connection it will kick the users off.
+
+This has some unusual interactions with connections that allow more
+than one simultaneous connection.  It works just like the other
+port, but the accepter is disabled and new connections will not
+be accepted until all the existing connections are closed.
 
 .SH "Error"
 Almost all error output goes to syslog, not standard output.

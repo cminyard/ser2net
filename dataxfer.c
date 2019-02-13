@@ -2918,7 +2918,6 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
     } else {
 	port->net_to_dev_state = PORT_CLOSED;
 	port->dev_to_net_state = PORT_CLOSED;
-	gensio_acc_disable(port->accepter);
     }
     gbuf_reset(&port->net_to_dev);
     if (port->devstr) {
@@ -3987,7 +3986,7 @@ apply_new_ports(void)
     for (curr = ports; curr; curr = next) {
 	next = curr->next;
 	so->lock(curr->lock);
-	if (curr->accepter_stopped)
+	if (curr->accepter_stopped && curr->enabled)
 	    gensio_acc_disable(curr->accepter);
 	curr->deleted = true;
 	curr->enabled = false;
@@ -3995,11 +3994,13 @@ apply_new_ports(void)
 	    so->unlock(curr->lock);
 	    free_port(curr);
 	} else {
-	    /* Leave it in ports for shutdown when the user closes. */
-	    new_ports_end->next = curr;
+	    /* Leave it in the new ports for shutdown when the user closes. */
+	    if (new_ports_end)
+		new_ports_end->next = curr;
 	    curr->next = NULL;
 	    new_ports_end = curr;
-	    shutdown_all_netcons(curr);
+	    if (!curr->enabled)
+		shutdown_all_netcons(curr);
 	    so->unlock(curr->lock);
 	}
     }
@@ -4014,7 +4015,15 @@ apply_new_ports(void)
 	if (!curr->deleted) {
 	    if (curr->accepter_stopped) {
 		curr->accepter_stopped = false;
-		gensio_acc_set_accept_callback_enable(curr->accepter, true);
+		if (curr->enabled) {
+		    gensio_acc_set_accept_callback_enable(curr->accepter, true);
+		    curr->dev_to_net_state = PORT_UNCONNECTED;
+		    curr->net_to_dev_state = PORT_UNCONNECTED;
+		} else {
+		    gensio_acc_disable(curr->accepter);
+		    curr->dev_to_net_state = PORT_CLOSED;
+		    curr->net_to_dev_state = PORT_CLOSED;
+		}
 	    } else {
 		err = startup_port(NULL, curr);
 		if (err)
