@@ -2905,8 +2905,10 @@ free_port(port_info_t *port)
 }
 
 static void
-finish_shutdown_port(port_info_t *port)
+finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 {
+    port_info_t *port = cb_data;
+
     so->lock(ports_lock);
     so->lock(port->lock);
 
@@ -2980,14 +2982,6 @@ finish_shutdown_port(port_info_t *port)
     }
     so->unlock(port->lock);
     so->unlock(ports_lock);
-}
-
-static void call_finish_shutdown_port(struct gensio_runner *runner,
-				      void *cb_data)
-{
-    port_info_t *port = cb_data;
-
-    finish_shutdown_port(port);
 }
 
 static void
@@ -3714,7 +3708,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    new_port->runshutdown = so->alloc_runner(so, call_finish_shutdown_port,
+    new_port->runshutdown = so->alloc_runner(so, finish_shutdown_port,
 					     new_port);
     if (!new_port->runshutdown)
 	goto errout;
