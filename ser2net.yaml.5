@@ -22,6 +22,7 @@ connection:
     name: <name>
     accepter: <accepter>
     timeout: <number>
+    enable: on|off
     connector: <connector>
     options:  {
         <option name>: <option value>,
@@ -34,7 +35,13 @@ connection to the <connector> gensio.
 
 If the connection receive no activity in <timeout> seconds, ser2net
 will close the connection.  Setting <timeout> to zero disables the
-timeout.  The timeout field is optional.
+timeout.  The timeout field is optional and defaults to zero.
+
+The connection may be enabled or disabled with the enable.  The enable
+field is optional and defaults to on.  This is useful for temporarily
+disabling port by setting enable to off and sending a SIGHUP.  If
+there are users connected and you disable a port and send a SIGHUP,
+the users will be kicked off.
 
 An is a configuration setting that doesn't have anything to do
 with specific gensios, they are controls for ser2net in general.

@@ -77,6 +77,11 @@ enum ystate {
     IN_CONNSPEC_TIMEOUT,
 
     /*
+     * Special handling for an enable bool.
+     */
+    IN_CONNSPEC_ENABLE,
+
+    /*
      * Rotators have a sequence of connections.
      */
     IN_ROTATOR_CONNECTIONS,
@@ -148,6 +153,7 @@ struct yconf {
     char *class;
 
     unsigned int timeout;
+    bool enable;
 
     char **connections;
     unsigned int curr_connection;
@@ -180,6 +186,7 @@ yconf_cleanup_main(struct yconf *y)
     dofree(&y->accepter);
     dofree(&y->driver);
     y->timeout = 0;
+    y->enable = true;
     dofree(&y->connector);
     dofree(&y->value);
     dofree(&y->class);
@@ -401,6 +408,7 @@ static struct scalar_next_state sc_connection[] = {
     { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_accepter },
     { "timeout", IN_CONNSPEC_TIMEOUT },
+    { "enable", IN_CONNSPEC_ENABLE },
     { "connector", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_connector },
     { "options", IN_OPTIONS, WHICH_INFO_OPTION,
@@ -537,7 +545,7 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
 {
     const char *s, *start;
     char *rv = NULL, *out = NULL;
-    unsigned int len, alen;
+    unsigned int len = 0, alen;
     struct alias *a;
     int state = 0;
 
@@ -659,6 +667,18 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar,
 	y->timeout = strtoul(scalar, &end, 0);
 	if (end == scalar || *end != '\0') {
 	    eout->out(eout, "Invalid number in connection timeout");
+	    goto out_err;
+	}
+	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_CONNSPEC_ENABLE:
+	if (strcasecmp(scalar, "on") == 0) {
+	    y->enable = true;
+	} else if (strcasecmp(scalar, "off") == 0) {
+	    y->enable = false;
+	} else {
+	    eout->out(eout, "enable must be 'on' or 'off'");
 	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
@@ -836,7 +856,8 @@ yhandle_mapping_end(struct yconf *y, struct absout *eout)
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "connection", eout))
 		return -1;
-	    portconfig(eout, y->name, y->accepter, "raw", y->timeout,
+	    portconfig(eout, y->name, y->accepter,
+		       y->enable ? "raw" : "off", y->timeout,
 		       y->connector, (const char **) y->options);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
@@ -929,6 +950,7 @@ yaml_readconfig(FILE *f)
     int err = 0;
 
     memset(&y, 0, sizeof(y));
+    y.enable = true;
     y.options = malloc(sizeof(char *) * 10);
     if (!y.options) {
 	syslog(LOG_ERR, "Out of memory allocating options array");

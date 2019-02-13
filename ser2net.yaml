@@ -42,6 +42,7 @@ define: &mydev /dev/ttyEcho
 connection: &con1
   accepter: telnet,tcp,2002
   timeout: 0
+  enable: off
   connector: serialdev,*(mydev)0,9600,local
   options: {
     banner: *banner1,

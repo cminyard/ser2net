@@ -1680,6 +1680,13 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 
 static void handle_net_fd_closed(struct gensio *net, void *cb_data);
 
+static bool
+port_in_use(port_info_t *port)
+{
+    return (port->net_to_dev_state != PORT_UNCONNECTED &&
+	    port->net_to_dev_state != PORT_CLOSED);
+}
+
 /* Checks to see if some other port has the same device in use.  Must
    be called with ports_lock held. */
 static int
@@ -1690,8 +1697,7 @@ is_device_already_inuse(port_info_t *check_port)
     while (port != NULL) {
 	if (port != check_port) {
 	    if ((strcmp(port->devname, check_port->devname) == 0)
-		&& (port->net_to_dev_state != PORT_UNCONNECTED))
-	    {
+				&& port_in_use(port)) {
 		return 1;
 	    }
 	}
@@ -3330,7 +3336,7 @@ got_timeout(struct gensio_timer *timer, void *data)
 	goto out;
     }
 
-    if (port->timeout && port->net_to_dev_state != PORT_UNCONNECTED) {
+    if (port->timeout && port_in_use(port)) {
 	for_each_connection(port, netcon) {
 	    if (!netcon->net)
 		continue;
@@ -3928,9 +3934,18 @@ apply_new_ports(void)
 	for (prev = NULL, curr = ports; curr; prev = curr, curr = curr->next) {
 	    so->lock(curr->lock);
 	    if (strcmp(curr->name, new->name) == 0) {
-		if (curr->dev_to_net_state == PORT_UNCONNECTED) {
-		    if (strcmp(curr->accstr, new->accstr) == 0) {
-			/* Accepter didn't change, just move it over. */
+		if (port_in_use(curr)) {
+		    /* If we are disabling, kick off old users. */
+		    if (!new->enabled && curr->enabled)
+			shutdown_all_netcons(curr);
+		} else {
+		    if (strcmp(curr->accstr, new->accstr) == 0 &&
+					curr->enabled) {
+			/*
+			 * Accepter didn't change and was on, just
+			 * move it over.  This avoid issues with a
+			 * connection coming in during a reconfig.
+			 */
 			struct gensio_accepter *tmp;
 			tmp = new->accepter;
 			new->accepter = curr->accepter;
@@ -3990,7 +4005,7 @@ apply_new_ports(void)
 	    gensio_acc_disable(curr->accepter);
 	curr->deleted = true;
 	curr->enabled = false;
-	if (curr->dev_to_net_state == PORT_UNCONNECTED) {
+	if (!port_in_use(curr)) {
 	    so->unlock(curr->lock);
 	    free_port(curr);
 	} else {
@@ -3999,8 +4014,6 @@ apply_new_ports(void)
 		new_ports_end->next = curr;
 	    curr->next = NULL;
 	    new_ports_end = curr;
-	    if (!curr->enabled)
-		shutdown_all_netcons(curr);
 	    so->unlock(curr->lock);
 	}
     }
@@ -4013,6 +4026,8 @@ apply_new_ports(void)
     for (curr = ports; curr; curr = curr->next) {
 	so->lock(curr->lock);
 	if (!curr->deleted) {
+	    curr->dev_to_net_state = PORT_CLOSED;
+	    curr->net_to_dev_state = PORT_CLOSED;
 	    if (curr->accepter_stopped) {
 		curr->accepter_stopped = false;
 		if (curr->enabled) {
@@ -4021,13 +4036,13 @@ apply_new_ports(void)
 		    curr->net_to_dev_state = PORT_UNCONNECTED;
 		} else {
 		    gensio_acc_disable(curr->accepter);
-		    curr->dev_to_net_state = PORT_CLOSED;
-		    curr->net_to_dev_state = PORT_CLOSED;
 		}
 	    } else {
-		err = startup_port(NULL, curr);
-		if (err)
-		    curr->enabled = false;
+		if (curr->enabled) {
+		    err = startup_port(NULL, curr);
+		    if (err)
+			curr->enabled = false;
+		}
 	    }
 	}
 	so->unlock(curr->lock);
@@ -4059,7 +4074,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     if (!netcon)
 	netcon = &(port->netcons[0]);
 
-    if (port->net_to_dev_state != PORT_UNCONNECTED) {
+    if (port_in_use(port)) {
 	gensio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	count = controller_outputf(cntlr, "%s", buffer);
     } else {
@@ -4309,7 +4324,7 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
     if (port == NULL) {
 	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
 	goto out;
-    } else if (port->net_to_dev_state == PORT_UNCONNECTED) {
+    } else if (!port_in_use(port)) {
 	controller_outputf(cntlr, "Port is not currently connected: %s\r\n",
 			   portspec);
     } else {
@@ -4469,7 +4484,7 @@ disconnect_port(struct controller_info *cntlr,
 	controller_outs(cntlr, portspec);
 	controller_outs(cntlr, "\r\n");
 	goto out;
-    } else if (port->net_to_dev_state == PORT_UNCONNECTED) {
+    } else if (!port_in_use(port)) {
 	char *err = "Port not connected: ";
 	controller_outs(cntlr, err);
 	controller_outs(cntlr, portspec);
