@@ -1,7 +1,7 @@
 sbin_PROGRAMS = ser2net
 ACLOCAL_AMFLAGS = -I m4
 AM_CFLAGS=-Wall -I$(top_srcdir)
-AM_CPPFLAGS = -DSYSCONFDIR="\"${sysconfdir}\"" -DDATAROOT="\"${dataroot}\""
+AM_CPPFLAGS = -DSYSCONFDIR="\"${sysconfdir}\"" -DDATAROOT="\"${datarootdir}\""
 ser2net_SOURCES = controller.c dataxfer.c readconfig.c \
 	ser2net.c led.c led_sysfs.c yamlconf.c auth.c
 ser2net_LDADD = -lgensio -lyaml $(OPENSSL_LIBS)

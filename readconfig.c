@@ -439,9 +439,9 @@ struct default_data defaults[] = {
 					.def.intval = 1 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
-						DATAROOT "/ser2net/auth/" },
+						DATAROOT "/ser2net/auth" },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
-						SYSCONFDIR "/ser2net/auth/" },
+						SYSCONFDIR "/ser2net/auth" },
     { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
     { "openstr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "closestr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
