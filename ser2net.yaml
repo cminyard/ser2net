@@ -7,67 +7,141 @@
 #
 # This is described in ser2net.yaml(5)
 
-default:
-  name: authdir
-  value: auth/
-  class: ser2net
 
-default:
-  name: key
-  value: test.key
-  class: ssl
+# # Set all baud rates to 115200n81 by default.
+# default:
+#   name: speed
+#   value: 115200n81
 
-default:
-  name: cert
-  value: test.crt
-  class: ssl
+# # Enable CLOCAL by default
+# default:
+#   name: local
+#   value: true
+#   class: serialdev
 
-admin:
-#  accepter: certauth,ssl,sctp,2000
-  accepter: tcp,2000
-  options: {
-    authdir-admin: auth/
-  }
+# # Create a secure admin interface on sctp,2000
+# admin:
+#   accepter: certauth,ssl,sctp,2000
 
-define: &banner1 This is a banner for port \N(\p)\r\n
+# # Define an arbitrary string substitution, we will use this later
+# # for a banner.
+# define: &banner1 This is a banner for port \N(\p)\r\n
 
-led: &led1
-  driver: sysfs
-  options: {
-    device: "tpacpi::standby"
-  }
+# # Create an LED to flash the ACPI standby light on serial activity.
+# led: &led1
+#   driver: sysfs
+#   options:
+#     device: "tpacpi::standby"
 
-define: &mydev /dev/ttyEcho
+# # This creates an arbitrary string we will use inside other strings.
+# # The quotes are necessary to keep YAML from interpreting the colons.
+# define: &serbase "/dev/serial/by-path/pci-0000:00:1d.0"
+# define: &serUSB0 "*(serbase)-usb-0:1.8.2.4:1.0"
 
-connection: &con1
-  accepter: telnet,tcp,2002
-  timeout: 0
-  enable: off
-  connector: serialdev,*(mydev)0,9600,local
-  options: {
-    banner: *banner1,
-    telnet-brk-on-sync,
-    chardelay,
-    led-tx: *led1,
-    led-rx: *led1
-  }
+# # A connection on
+# #  /dev/serial/by-path/pci-0000:00:1d.0-usb-0:1.8.2.4:1.0-port0
+# # mapped to tcp port 2002 with telnet enabled.
+# # Note that it is disabled at startup.  You can enable it through
+# # the admin interface or by changing enable to "on" and sending a SIGHUP.
+# # Note that even though this is disabled, you can still access it through
+# # the rotator.
+# connection: &con1
+#   accepter: telnet,tcp,2002
+#   timeout: 0
+#   enable: off
+#   connector: serialdev,*(serUSB0)-port0
+#   options:
+#     banner: *banner1
+#     led-tx: *led1
+#     led-rx: *led1
 
-connection: &con2
-  #accepter: certauth,ssl,sctp,2004
-  accepter: telnet,tcp,2003
-  timeout: 0
-  connector: serialdev,*(mydev)1,9600n81 local
-  options: {
-    banner: *banner1,
-    telnet-brk-on-sync,
-    chardelay,
-    led-tx: *led1,
-    led-rx: *led1
-  }
+# # A connection on
+# #  /dev/serial/by-path/pci-0000:00:1d.0-usb-0:1.8.2.4:1.0-port1
+# # mapped to SCTP port 2003.  The baud rate is overridden from the
+# # default we set before.  It also demonstrates how lines can be
+# # continued.
+# # You can access SCTP ports with the gensiot command, to connect
+# # to this one do:
+# #   gensiot telnet,sctp,<host>,2003
+# connection: &con2
+#   accepter: telnet,sctp,2003
+#   timeout: 0
+#   connector: serialdev,*(serUSB0)-port1,9600e71
+#              local=false
+#   options:
+#     banner: *banner1
 
-rotator: &rot1
-  accepter: telnet,tcp,2020
-  connections: [
-    *con1,
-    *con2
-  ]
+# # A rotator on TCP port 2020.  It will alternate between the
+# # two previous connections.  The "dummy" gensio accepter is
+# # useful in this case if you don't want independent access
+# # to each connection.  This will only be bound to address
+# # 192.168.27.3.
+# rotator: &rot1
+#   accepter: telnet,tcp,192.168.27.3,2020
+#   connections: [
+#     *con1,
+#     *con2
+#   ]
+
+# # Now lets talk about secure connections.  At this stage in the state
+# # of computers, all your connections should be at least encrypted, and
+# # preferably authenticated.
+# #
+# # Note that the examples below use SCTP.  TCP can be subtituted.  They
+# # also use the echo gensio, which is useful for testing.
+# #
+# # For encrypted connections to work, you need to use the ssl gensio
+# # over other connections.  This requires a certificate and key, which
+# # reside in /etc/ser2net/ser2net.crt and /etc/ser2net/ser2net.key by
+# # default.  You can, of course, change the defaults or override these
+# # on the accepter line.  Make sure ser2net.key is not readable by
+# # anyone but the user running ser2net, or anyone can see your private
+# # key.  Distribute ser2net.crt to the users so they can authenticate
+# # the server.  You can get your certificate from a certificate
+# # authority for best practice.  Or you can create it yourself.
+# #
+# # To create your own keys, do:
+# #
+# #   gtlssh-keygen --keydir /etc/ser2net keygen ser2net
+# #
+# # which will install them in the right place. You can then connect with:
+# #
+# #   gensiot ssl(CA=ser2net.crt),sctp,2004
+# #
+# connection: &con3
+#   accepter: ssl,sctp,2004
+#   connector: echo
+#   options:
+#     banner: *banner1
+
+# # Authentication with SSL is not shown, but is described in
+# # ser2net.yaml(5).  It's fairly inconvenient.
+
+# # Now do an authenticated connection with certauth.  You need a host
+# # key/certificate pair as in the ssl-only example above.  Then you
+# # need to create /usr/share/ser2net/auth/<user>.  You can create a
+# # file named "password" in that directory and put a password there.
+# # Make sure it's only readable by ser2net!  Or you can create a
+# # directory named /usr/share/ser2net/auth/<user>/allowed_certs,
+# # put the user's gtlssh certificate there, and run
+# #  gtlssh-keygen rehash /usr/share/ser2net/auth/<user>/allowed_certs
+# # Then you can do:
+# #  gtlssh -p 2005 <user>@<hostname>
+# # and do a normal gtlssh authentication.
+# connection: &con4
+#   accepter: certauth,ssl,sctp,2005
+#   connector: echo
+#   options:
+#     banner: *banner1
+
+# # If you just want to have encryption and no authentication but you want
+# # to use gtlssh for login, you set allow-authfail and disable-password
+# # on certauth, which will run the protocol but ignore any failures, and
+# # then you can just log in.  It's easy enough to just handle the
+# # certificate,though, so that's really preferred.
+# connection: &con5
+#   accepter: certauth(allow-authfail,disable-password),ssl,sctp,2006
+#   connector: echo
+#   options:
+#     openstr: hello
+#     banner: *banner1

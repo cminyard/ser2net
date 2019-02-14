@@ -69,23 +69,17 @@ Prints the version of the program and exits.
 Spawn the given number of threads for ser2net to use.  The default
 is 1.  Only valid if pthreads is enabled at build time.
 .TP
-.I \-p controlport
-Enables the control port and sets the TCP port to listen to for the
-control port.  A port number may be of the form [host,]port, such as
-127.0.0.1,2000
-or localhost,2000.  If this is specified, it will only bind to the
-IP address specified for the port.  Otherwise, it will bind to all the
-addresses on the machine.
-
-If the port number is zero, that means that standard in/out will be
-used for the only input/output, and only one port should be specified
-in the config.  This way, it can be used from inetd.
+.I \-p <admin-accepter>
+Enables the admin interface on the given accepter specification.
+See "ADMIN CONNECTION" in ser2net.yaml(5) for more details on how
+to configure this, and "ADMIN INTERFACE" below for details on how
+to use it.
 .TP
 .I \-s signature
 Specifies the default RFC2217 signature.
 
-.SH CONTROL PORT
-The control port provides a simple interface for controlling the ports and
+.SH ADMIN INTERFACE
+The admin interface provides a simple interface for controlling the ports and
 viewing their status. To accomplish this, it has the following commands:
 .TP
 .B showport [<network port>]
@@ -192,10 +186,15 @@ The yaml configuration file is descrdibed in ser2net.yaml(5)
 .SH "SIGNALS"
 .TP 0.5i
 .B SIGHUP
-If ser2net receives a SIGHUP, it will reread it configuration file
-and make the appropriate changes.  If an inuse port is changed or deleted,
-the actual change will not occur until the port is disconnected, except
-that if you disable a connection it will kick the users off.
+If ser2net receives a SIGHUP, it will reread it configuration file and
+make the appropriate changes.  If an inuse connection is changed or
+deleted, the actual change will not occur until the port is
+disconnected, except that if you disable a connection it will kick the
+users off.
+
+ser2net uses the name (the connection alias) of the connection to tell
+if it is new, changed or deleted.  If the new configuration file has a
+connection with the same name, it is treated as a change.
 
 This has some unusual interactions with connections that allow more
 than one simultaneous connection.  It works just like the other
