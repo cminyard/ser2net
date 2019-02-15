@@ -45,6 +45,11 @@ banner: "My banner *(aliasname) is here"
 
 If you for some reason need "*(" in your text, use "*(*" for that.
 
+.SH USING EXTERNAL FILES
+You may want to store passwords and such in external files for better
+security.  Putting *{filename} in a YAML scalar will put the file's
+contents into the scalar at that point.
+
 .SH CONNECTION SPECIFICATION
 A connection is a structure that describes how to connect an accepting
 gensio to a connecting gensio.

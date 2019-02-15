@@ -23,6 +23,11 @@
 #include <stdbool.h>
 #include <yaml.h>
 #include <syslog.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 #include "ser2net.h"
@@ -96,7 +101,15 @@ enum ystate {
 struct alias {
     char *name;
     char *value;
+    unsigned int namelen;
     struct alias *next;
+};
+
+struct yfile {
+    char *name;
+    char *value;
+    unsigned int namelen;
+    struct yfile *next;
 };
 
 struct scalar_next_state;
@@ -167,6 +180,8 @@ struct yconf {
 
     struct alias *aliases;
 
+    struct yfile *files;
+
     yaml_parser_t parser;
     yaml_event_t e;
 };
@@ -232,7 +247,7 @@ lookup_alias_len(struct yconf *y, const char *name, unsigned int len)
     struct alias *a;
 
     a = y->aliases;
-    while (a && strncmp(a->name, name, len) != 0)
+    while (a && a->namelen == len && strncmp(a->name, name, len) != 0)
 	a = a->next;
     return a;
 }
@@ -279,7 +294,75 @@ add_alias(struct yconf *y, const char *iname,
     }
     a->name = name;
     a->value = value;
+    a->namelen = strlen(name);
     return 0;
+}
+
+static struct yfile *
+lookup_filename_len(struct yconf *y, const char *filename, unsigned int len,
+		    struct absout *eout)
+{
+    struct yfile *f = y->files;
+    int infd, rv;
+    char *name, *value;
+    struct stat stat;
+
+    while (f && f->namelen == len && strncmp(f->name, filename, len) != 0)
+	f = f->next;
+    if (f)
+	return f;
+
+    name = strndup(filename, len);
+    if (!name) {
+	eout->out(eout, "Out of memory allocating alias name");
+	return NULL;
+    }
+
+    infd = open(name, O_RDONLY);
+    if (infd == -1) {
+	eout->out(eout, "Error opening %s: %s", name, strerror(errno));
+	free(name);
+	return NULL;
+    }
+
+    rv = fstat(infd, &stat);
+    if (rv == -1) {
+	eout->out(eout, "Error stat-ing %s: %s", name, strerror(errno));
+	free(name);
+	return NULL;
+    }
+
+    value = malloc(stat.st_size + 1);
+    if (!value) {
+	eout->out(eout, "Error allocating memory for file %s", name);
+	free(name);
+	return NULL;
+    }
+
+    rv = read(infd, value, stat.st_size);
+    if (rv == -1) {
+	free(value);
+	eout->out(eout, "Error reading %s: %s", name, strerror(errno));
+	free(name);
+	return NULL;
+    }
+    value[stat.st_size] = '\0';
+
+    f = malloc(sizeof(*f));
+    if (!f) {
+	free(value);
+	eout->out(eout, "Error allocating memory for file struct %s", name);
+	free(name);
+	return NULL;
+    }
+
+    f->name = name;
+    f->namelen = strlen(name);
+    f->value = value;
+    f->next = y->files;
+    y->files = f;
+
+    return f;
 }
 
 static int
@@ -540,7 +623,8 @@ scalar_next_state(struct yconf *y,
 }
 
 /*
- * Convert *(xxx) into the aliases.
+ * Convert *(xxx) into the alias text and *{filename} into the
+ * file's contents.
  */
 static char *
 process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
@@ -548,7 +632,6 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
     const char *s, *start;
     char *rv = NULL, *out = NULL;
     unsigned int len = 0, alen;
-    struct alias *a;
     int state = 0;
 
  restart:
@@ -562,15 +645,22 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
 		len++;
 	    }
 	} else if (state == 1) {
-	    /* We have seen a '*' */
+	    /* Last character was a '*' */
 	    if (*s == '(') {
 		start = s + 1;
 		state = 2;
+	    } else if (*s == '{') {
+		start = s + 1;
+		state = 3;
 	    } else if (*s == '*') {
 		if (out)
 		    *out++ = *s;
 		len++; /* Stay in state 1 */
 	    } else {
+		if (out) {
+		    *out++ = '*';
+		    *out++ = *s;
+		}
 		len += 2;
 		state = 0;
 	    }
@@ -588,7 +678,7 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
 		eout->out(eout, "Missing ')' for alias at '%s'", start - 2);
 		goto out_err;
 	    } else if (*s == ')') {
-		a = lookup_alias_len(y, start, s - start);
+		struct alias *a = lookup_alias_len(y, start, s - start);
 		if (!a) {
 		    eout->out(eout, "unknown alias at '%s'", start - 2);
 		    goto out_err;
@@ -596,6 +686,32 @@ process_scalar(struct yconf *y, const char *iscalar, struct absout *eout)
 		alen = strlen(a->value);
 		if (out) {
 		    memcpy(out, a->value, alen);
+		    out += alen;
+		}
+		len += alen;
+		state = 0;
+	    }
+	} else if (state == 3) {
+	    /* We are in a '*{' */
+	    if (start == s && *s == '*') {
+		/* '*{*' outputs a '*{' */
+		if (out) {
+		    *out++ = '*';
+		    *out++ = '{';
+		}
+		len += 2;
+		state = 0;
+	    } else if (!*s) {
+		eout->out(eout, "Missing '}' for filename at '%s'", start - 2);
+		goto out_err;
+	    } else if (*s == '}') {
+		struct yfile *f = lookup_filename_len(y, start, s - start,
+						      eout);
+		if (!f)
+		    goto out_err;
+		alen = strlen(f->value);
+		if (out) {
+		    memcpy(out, f->value, alen);
 		    out += alen;
 		}
 		len += alen;
@@ -1076,6 +1192,14 @@ yaml_readconfig(FILE *f)
 	free(a->name);
 	free(a->value);
 	free(a);
+    }
+
+    while (y.files) {
+	struct yfile *f = y.files;
+	y.files = f->next;
+	free(f->name);
+	free(f->value);
+	free(f);
     }
 
     return err;
