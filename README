@@ -1,11 +1,22 @@
-This is ser2net, a program for allowing network connections to serial
-ports or IPMI Serial Over Lan (SOL) connections.  See the man page for
-information about using the program.
+This is ser2net, a program for allowing connections between gensio
+accepters and gensio connectors.  Generally, this would be a network
+connections to serial ports or IPMI Serial Over Lan (SOL) connections,
+but there are lots of gensios and lots of options.  See gensio(5) for
+information on gensio.
+
+See the man page ser2net(8) for information about using the program.
+Also see ser2net.yaml(5) for information on the configuration file.
+
+Since gensios support encryption and authentication, these are also
+available to ser2net.  The gensiot and gtlssh programs that are part
+of gensio can do this encryption.  The telnet-ssl program can also be
+used for this.
 
 Note that ser2net supports RFC 2217 (remote control of serial port
-parameters), but you must have a compliant client.  The gensiot client
-can do this, as well as gtlssh.  Beyond that, the only one I know of
-is kermit (http://www.columbia.edu/kermit).
+parameters) via the telnet gensio, but you must have a compliant
+client.  The gensiot client can do this, as well as gtlssh.  Beyond
+that, the only one I know of is kermit
+(http://www.columbia.edu/kermit).
 
 ser2net supports making connections to IPMI SOL (serial over LAN)
 capable systems.  This way, if you have a system with SOL, you can use

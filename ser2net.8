@@ -181,13 +181,13 @@ new yaml parser.  If it ends in anything else, it will use the
 old configuration file format, no longer supported or documented.
 The old style configuration will go away at some point.
 
-The yaml configuration file is descrdibed in ser2net.yaml(5)
+The yaml configuration file is described in ser2net.yaml(5)
 
 .SH "SIGNALS"
 .TP 0.5i
 .B SIGHUP
 If ser2net receives a SIGHUP, it will reread it configuration file and
-make the appropriate changes.  If an inuse connection is changed or
+make the appropriate changes.  If an in use connection is changed or
 deleted, the actual change will not occur until the port is
 disconnected, except that if you disable a connection it will kick the
 users off.
@@ -201,11 +201,13 @@ than one simultaneous connection.  It works just like the other
 port, but the accepter is disabled and new connections will not
 be accepted until all the existing connections are closed.
 
-.SH "Error"
-Almost all error output goes to syslog, not standard output.
+.SH "ERRORS"
+All error output after startup goes to syslog, not standard output, unless
+you use the -d option.
 
 .SH "FILES"
-/etc/ser2net/ser2net.yaml
+/etc/ser2net/ser2net.yaml, /etc/ser2net/ser2net.key, /etc/ser2net/ser2net.crt,
+/usr/share/ser2net
 
 .SH "SEE ALSO"
 telnet(1), ser2net.yaml(5), hosts_access(5)
