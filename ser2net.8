@@ -24,7 +24,10 @@ or serial port, the connection is refused with an error message.
 .TP
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
-.BR "/etc/ser2net/ser2net.yaml"
+.BR "/etc/ser2net/ser2net.yaml".  If the filename does not end in
+".yaml" or the first line in the file does not begin with "%YAML", the
+configuration file is parsed as an old-style configuration file, which
+is not supported any more.
 .TP
 .I "\-C config-line"
 Handle a single configuration line.  This may be
