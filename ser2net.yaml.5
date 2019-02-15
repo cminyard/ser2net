@@ -47,8 +47,9 @@ If you for some reason need "*(" in your text, use "*(*" for that.
 
 .SH USING EXTERNAL FILES
 You may want to store passwords and such in external files for better
-security.  Putting *{filename} in a YAML scalar will put the file's
-contents into the scalar at that point.
+security.  Putting "*{filename}" in a YAML scalar will put the file's
+contents into the scalar at that point.  If you need a "*{" in the
+string for some reason, use "*{*".
 
 .SH CONNECTION SPECIFICATION
 A connection is a structure that describes how to connect an accepting
@@ -110,7 +111,7 @@ name: connection to /dev/ttyS0
 .br
 accepter: tcp,1234
 .br
-connector: serialdev,/dev/ttyS0,LOCAL
+connector: serialdev,/dev/ttyS0,local
 .RE
 .RE
 .PP
@@ -124,12 +125,13 @@ name: connection to /dev/ttyS0
 .br
 accepter: telnet(rfc2217)tcp,1234
 .br
-connector: serialdev,/dev/ttyS0,LOCAL
+connector: serialdev,/dev/ttyS0,local
 .RE
 .RE
 
 If you want to accept a telnet over SCTP connection only on IPv6
-localhost and connect to a telnet connection with SSL, you can do:
+localhost and connect to a telnet connection with SSL over tcp, you
+can do:
 .RS
 connection:
 .RS
@@ -141,16 +143,17 @@ connector: telnet,ssl,tcp,myhost.domain.org,1234
 .RE
 .RE
 
-RFC2217 support only make sense with a serial-capable device on the
-other end.  Also note that IPv6 is fully supported.  Accepters will
+RFC2217 support only make sense with a serial-capable device as the
+connector.  Also note that IPv6 is fully supported.  Accepters will
 generally default to being both IPv4 and IPv6 unless otherwise
 specified.  See gensio(5) for details.
 
-And yes, sctp is supported and is highly recommended if you can use
+And yes, SCTP is supported and is highly recommended if you can use
 it.  Multi-homing alone is worth it.
 
 You could create a secure login with telnet RFC2217 support that then
-connects to an IPMI sol connection:
+connects to an IPMI sol connection.  Notice how splitting the connector
+line is done with YAML.
 .RS
 connection:
 .RS
@@ -181,7 +184,7 @@ if you need to use it from a program, it's easy with gensio.  There is
 even python support.  Adding support for other scripting languages
 shouldn't be too hard.
 
-.SS "ACCEPTER SPECIFICATION OPTIONS"
+.SS "CONNECTION SPECIFICATION OPTIONS"
 
 .I kickolduser[=true|false]
 sets the port so that the previous user will be kicked off if a new user
@@ -785,6 +788,7 @@ ser2net uses the tcp wrappers interface to implement host-based security.
 See hosts_access(5) for a description of the file setup.  Two daemons are
 used by ser2net, "ser2net" is for the data ports and "ser2net-control"
 is for the control ports.
+
 .SS "ENCRYPTION"
 ser2net supports SSL encryption using the ssl gensio.  To enable
 encryption, use an accepter like:
@@ -864,15 +868,15 @@ special.  Add certauth to the port line:
 .IP
 telnet,certauth,ssl,tcp,1234
 .PP
-and *make sure* clientauth is disabled (or ssl will still attempt
-to authenticate the client).
+and *make sure* clientauth is disabled for ssl (or ssl will still
+attempt to authenticate the client).
 
-The gtlssh program does its own certificate handling.  Look at
-the gtlssh man page for detail on that.  Take the certificate
-for gtlssh and put it in the authdir/username/allowed_certs directory
-and reshash it as before.  gtlssh will *not* use the common name
-provided in the certificate, instead it users a username the same
-as ssh.  Then connect with gtlssh:
+The gtlssh program does its own certificate handling.  Look at the
+gtlssh man page for detail on that.  Take the certificate for gtlssh
+and put it in the authdir/username/allowed_certs directory and reshash
+it as before.  gtlssh will *not* use the common name provided in the
+certificate, instead it users a username provided by gtlssh.  Then
+connect with gtlssh:
 .IP
 gtlssh --nosctp --telnet username@server 1234
 .PP

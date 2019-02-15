@@ -14,7 +14,8 @@ used for this.
 
 Note that ser2net supports RFC 2217 (remote control of serial port
 parameters) via the telnet gensio, but you must have a compliant
-client.  The gensiot client can do this, as well as gtlssh.  Beyond
+client.  The gensiot client can do this, as well as gtlssh.  The
+gensio library provices programmatic access for C and Python.  Beyond
 that, the only one I know of is kermit
 (http://www.columbia.edu/kermit).
 
