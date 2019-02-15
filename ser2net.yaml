@@ -46,7 +46,7 @@
 # # Note that even though this is disabled, you can still access it through
 # # the rotator.
 # connection: &con1
-#   accepter: telnet,tcp,2002
+#   accepter: telnet(rfc2217),tcp,2002
 #   timeout: 0
 #   enable: off
 #   connector: serialdev,*(serUSB0)-port0
@@ -64,12 +64,20 @@
 # # to this one do:
 # #   gensiot telnet,sctp,<host>,2003
 # connection: &con2
-#   accepter: telnet,sctp,2003
+#   accepter: telnet(rfc2217),sctp,2003
 #   timeout: 0
 #   connector: serialdev,*(serUSB0)-port1,9600e71
 #              local=false
 #   options:
 #     banner: *banner1
+
+#
+# An IPMI SOL connection.  See the OpenIPMI library for details on
+# how to configure this.
+# Note the use of *{} to insert a password from an external file.
+connection: &ipmicon1
+  accepter: telnet,tcp,3022
+  connector: ipmisol,lan -U admin -P *{pwfile} 192.168.27.37,115200
 
 # # A rotator on TCP port 2020.  It will alternate between the
 # # two previous connections.  The "dummy" gensio accepter is
@@ -106,10 +114,10 @@
 # #
 # # which will install them in the right place. You can then connect with:
 # #
-# #   gensiot ssl(CA=ser2net.crt),sctp,2004
+# #   gensiot telnet,ssl(CA=ser2net.crt),sctp,2004
 # #
 # connection: &con3
-#   accepter: ssl,sctp,2004
+#   accepter: telnet,ssl,sctp,2004
 #   connector: echo
 #   options:
 #     banner: *banner1
@@ -126,10 +134,10 @@
 # # put the user's gtlssh certificate there, and run
 # #  gtlssh-keygen rehash /usr/share/ser2net/auth/<user>/allowed_certs
 # # Then you can do:
-# #  gtlssh -p 2005 <user>@<hostname>
-# # and do a normal gtlssh authentication.
+# #  gtlssh --telnet -p 2005 <user>@<hostname>
+# # and do a normal gtlssh authentication.  See gtlssh(1) for details.
 # connection: &con4
-#   accepter: certauth,ssl,sctp,2005
+#   accepter: telnet,certauth,ssl,sctp,2005
 #   connector: echo
 #   options:
 #     banner: *banner1
@@ -140,7 +148,7 @@
 # # then you can just log in.  It's easy enough to just handle the
 # # certificate,though, so that's really preferred.
 # connection: &con5
-#   accepter: certauth(allow-authfail,disable-password),ssl,sctp,2006
+#   accepter: telnet,certauth(allow-authfail,disable-password),ssl,sctp,2006
 #   connector: echo
 #   options:
 #     openstr: hello

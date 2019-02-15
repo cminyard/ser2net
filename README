@@ -3,17 +3,20 @@ ports or IPMI Serial Over Lan (SOL) connections.  See the man page for
 information about using the program.
 
 Note that ser2net supports RFC 2217 (remote control of serial port
-parameters), but you must have a compliant client.  The only one I
-know of is kermit (http://www.columbia.edu/kermit).
+parameters), but you must have a compliant client.  The gensiot client
+can do this, as well as gtlssh.  Beyond that, the only one I know of
+is kermit (http://www.columbia.edu/kermit).
 
 ser2net supports making connections to IPMI SOL (serial over LAN)
 capable systems.  This way, if you have a system with SOL, you can use
 it with programs that speak sockets and avoid having to run a serial
 cable to the system.  It uses OpenIPMI for this, so you have to know
 how to make an OpenIPMI connection to the remote system.  That can be
-rather complicated, but for a simple example, add a line like:
+rather complicated, but for a simple example, add a connection like:
 
-  3022:telnet:0:sol.lan -U <userid> -P <password> <ipmi BMC IP>:115200
+  connection: &ipmicon1
+    accepter: telnet,tcp,3022
+    connector: ipmisol,lan -U <userid> -P <password> <ipmi BMC IP>,115200
 
 Obviously, use the IPMI BMC userid and password here.  Depending on
 your system there are a lot of other options, and configuration of
