@@ -103,7 +103,7 @@ class IPMISimDaemon:
 
         self.pid = self.io.remote_id()
         self.handler.set_waitfor("> ")
-        if (self.handler.wait_timeout(2000)):
+        if (self.handler.wait_timeout(2000) == 0):
             raise Exception("Timeout waiting for ipmi_sim to start")
 
         self.handler.ignore_input = True

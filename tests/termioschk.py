@@ -70,7 +70,7 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
     try:
         io1.handler.set_compare("12345")
-        if (io1.handler.wait_timeout(1000)):
+        if (io1.handler.wait_timeout(1000) == 0):
             raise Exception("%s: %s: Timed out waiting for banner" %
                             (name, io1.handler.name))
         io1.read_cb_enable(True)
