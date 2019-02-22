@@ -3180,7 +3180,7 @@ handle_shutdown_timeout(port_info_t *port)
 }
 
 static void
-accept_read_disabled(void *cb_data)
+accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
 {
     port_info_t *port = cb_data;
     net_info_t *netcon;
