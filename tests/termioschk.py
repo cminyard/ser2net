@@ -4,7 +4,7 @@ import copy
 
 import gensio
 import utils
-from remote_termios import *
+from serialsim import *
 
 # This is the termios ser2net sets up when it opens a serial port.
 # Same for sergensio_termios gensio.
@@ -78,7 +78,7 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
 
         expected_termios = handler.op(io1, io2)
 
-        io2_rem_termios = get_remote_termios(io2)
+        io2_rem_termios = get_remote_termios(io2.remote_id())
 
         c = compare_termios(expected_termios, io2_rem_termios)
         if (c != 0):

@@ -56,3 +56,19 @@ If you check this out from git, you won't have all the configure
 programs and files, because those are generated.  Do:
    autoreconf -i
 to generate everything first.  Then you can run configure.
+
+Running Tests
+=============
+
+There are a number of tests for ser2net.  They currently only run on
+Linux and require some external tools.
+
+They require the serialsim kernel module and python interface.  These
+are at https://github.com/cminyard/serialsim and allow the tests to
+use a simulated serial port to read modem control line, inject errors,
+etc.
+
+They require the gensio python module.
+
+They also require the ipmi_sim program from the OpenIPMI library at
+https://github.com/cminyard/openipmi to run the ipmisol tests.
