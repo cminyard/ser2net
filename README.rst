@@ -8,6 +8,10 @@ connections to serial ports or IPMI Serial Over Lan (SOL) connections,
 but there are lots of gensios and lots of options.  See gensio(5) for
 information on gensios.
 
+Note that the gensio library is required for ser2net.  It is available
+as a tarball in the ser2net sourceforge files, or you can get it from
+github at https://github.com/cminyard/gensio
+
 See the man page ser2net(8) for information about using the program.
 Also see ser2net.yaml(5) for information on the configuration file.
 An example configuration file is provided in ser2net.yaml.
