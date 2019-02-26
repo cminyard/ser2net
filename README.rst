@@ -33,9 +33,7 @@ capable systems.  This way, if you have a system with SOL, you can use
 it with programs that speak sockets and avoid having to run a serial
 cable to the system.  It uses OpenIPMI for this, so you have to know
 how to make an OpenIPMI connection to the remote system.  That can be
-rather complicated, but for a simple example, add a connection like:
-
-::
+rather complicated, but for a simple example, add a connection like::
 
   connection: &ipmicon1
     accepter: telnet,tcp,3022
@@ -46,7 +44,9 @@ your system there are a lot of other options, and configuration of
 IPMI on the remote system is not for the faint of heart.  And also, if
 you put passwords in the ser2net.conf file, it becomes a security
 issue and you should make it readable only by the user that runs
-ser2net.
+ser2net.  There are ways to insert data from files, too, so the
+password doesn't have to be in the clear in the main configuration
+file, see the ser2net.yaml(5) manpage for details.
 
 ser2net also supports threading.  By default it runs with a single
 thread but you can add '-t <num threads>' and it will spawn the given
@@ -64,9 +64,7 @@ a tool for this at https://sourceforge.net/projects/cyclades-serial/.
 It is capable of connecting to ser2net using RFC2217.
 
 If you check this out from git, you won't have all the configure
-programs and files, because those are generated.  Do:
-
-::
+programs and files, because those are generated.  Do::
 
    autoreconf -i
 
