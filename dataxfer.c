@@ -3818,12 +3818,12 @@ portconfig(struct absout *eout,
     }
 
     if (new_port->enabled && do_telnet) {
-	const char *args[] = { NULL, NULL };
+	const char *str = "telnet";
 	struct gensio_accepter *parent;
 
 	if (new_port->allow_2217)
-	    args[0] = "rfc2217=true";
-	err = telnet_gensio_accepter_alloc(new_port->accepter, args,
+	    str = "telnet(rfc2217=true)";
+	err = str_to_gensio_accepter_child(new_port->accepter, str,
 					   so,
 					   handle_port_child_event,
 					   new_port, &parent);
