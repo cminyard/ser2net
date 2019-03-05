@@ -303,7 +303,7 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 {
     struct yfile *f = y->files;
     int infd, rv;
-    char *name, *value;
+    char *name, *value = NULL;
     struct stat stat;
 
     while (f && f->namelen == len && strncmp(f->name, filename, len) != 0)
@@ -320,40 +320,33 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
     infd = open(name, O_RDONLY);
     if (infd == -1) {
 	y->eout->out(y->eout, "Error opening %s: %s", name, strerror(errno));
-	free(name);
-	return NULL;
+	goto out_err;
     }
 
     rv = fstat(infd, &stat);
     if (rv == -1) {
 	y->eout->out(y->eout, "Error stat-ing %s: %s", name, strerror(errno));
-	free(name);
-	return NULL;
+	goto out_err;
     }
 
     value = malloc(stat.st_size + 1);
     if (!value) {
 	y->eout->out(y->eout, "Error allocating memory for file %s", name);
-	free(name);
-	return NULL;
+	goto out_err;
     }
 
     rv = read(infd, value, stat.st_size);
     if (rv == -1) {
-	free(value);
 	y->eout->out(y->eout, "Error reading %s: %s", name, strerror(errno));
-	free(name);
-	return NULL;
+	goto out_err;
     }
     value[stat.st_size] = '\0';
 
     f = malloc(sizeof(*f));
     if (!f) {
-	free(value);
 	y->eout->out(y->eout, "Error allocating memory for file struct %s",
 		     name);
-	free(name);
-	return NULL;
+	goto out_err;
     }
 
     f->name = name;
@@ -363,6 +356,14 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
     y->files = f;
 
     return f;
+
+ out_err:
+    if (value)
+	free(value);
+    free(name);
+    if (infd != -1)
+	close(infd);
+    return NULL;
 }
 
 static int

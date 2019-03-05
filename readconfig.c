@@ -961,6 +961,7 @@ readconfig(FILE *instream)
     return rv;
 
  process_yaml:
+    free(inbuf);
     fseek(instream, 0, SEEK_SET);
     return yaml_readconfig(instream);
 }

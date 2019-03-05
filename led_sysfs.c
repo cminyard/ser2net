@@ -48,7 +48,7 @@ static int
 led_is_trigger_missing(const char *led)
 {
     char path[PATH_MAX];
-    char buffer[BUFSIZE], *trigger;
+    char buffer[BUFSIZE + 1], *trigger;
     int fd, c;
 
     snprintf(path, sizeof(path), "%s/%s/trigger", SYSFS_LED_BASE, led);
@@ -59,7 +59,7 @@ led_is_trigger_missing(const char *led)
     }
 
     if ((c = read(fd, buffer, BUFSIZE)) <= 0) {
-	syslog(LOG_ERR, "led: Unable to read from %s", buffer);
+	syslog(LOG_ERR, "led: Unable to read from %s", path);
 	close(fd);
 	return -1;
     }
@@ -70,7 +70,7 @@ led_is_trigger_missing(const char *led)
     trigger = strstr(buffer, "transient");
     if (!trigger)
 	syslog(LOG_ERR, "led: missing transient trigger in %s,"
-	       " maybe you need to 'modprobe ledtrig-transient'", buffer);
+	       " maybe you need to 'modprobe ledtrig-transient'", path);
     return trigger == NULL;
 }
 
