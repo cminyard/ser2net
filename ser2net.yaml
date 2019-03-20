@@ -113,12 +113,19 @@ define: &confver 1.0
 # #
 # # To create your own keys, do:
 # #
-# #   gtlssh-keygen --keydir /etc/ser2net keygen ser2net
+# #   gtlssh-keygen --keydir /etc/ser2net keygen ser2net-<server>
 # #
-# # which will install them in the right place. You can then connect with:
+# # which will install them in the right place. Then you need to move
+# # the files named /etc/ser2net/ser2net-<server>.key|crt to
+# # /etc/ser2net/ser2net.key|crt.  Copy ser2net.crt to the accessing
+# # system.  Restart ser2net.  You can then connect with:
 # #
 # #   gensiot telnet,ssl(CA=ser2net.crt),sctp,2004
 # #
+# # Note that the "-<server>" at the end of the key is important because it
+# # make the subject name of the certificate more unique.  You can really
+# # put anything you want for what you provide to keygen, as long as you
+# # rename it properly.  That will be the subject name of the certificate.
 # connection: &con3
 #   accepter: telnet,ssl,sctp,2004
 #   connector: echo

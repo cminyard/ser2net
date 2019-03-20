@@ -813,17 +813,23 @@ the connection will fail due to certificate failure.  Getting
 certificates this way is very inconvenient, so there is another way.
 You can do:
 .IP
-gtlssh-keygen --keydir /etc/ser2net keygen ser2net
+gtlssh-keygen --keydir /etc/ser2net keygen ser2net-<server>
 .PP
-to generate the default keys in /etc/ser2net (or wherever) and
-then provide /etc/ser2net/ser2net.crt to connection commands, like:
+to generate the default keys in /etc/ser2net (or wherever).  The
+certificate/key will be named /etc/ser2net/ser2net-<server>.crt|key
+and you will need to rename them to be /etc/ser2net/ser2net.crt|key.
+Then provide /etc/ser2net/ser2net.crt to connection commands, like:
 .IP
 gensiot telnet,ssl(CA=ser2net.crt),<server>,1234
 telnet -z ssl,secure,cacert=ser2net.crt 1234
 .PP
 Then you will have an encrypted connection.  Just make sure your
 certificates are valid.
-
+.PP
+Note that the "-<server>" at the end of the key is important because it
+make the subject name of the certificate more unique.  You can really
+put anything you want for what you provide to keygen, as long as you
+rename it properly.  That will be the subject name of the certificate.
 .SS "AUTHENTICATION WITH SSL"
 ser2net provides a way to authenticate with SSL.  It's not the
 greatest, but it does work.  You must enable clientauth on ssl:
