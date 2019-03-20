@@ -40,4 +40,14 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
 
+AC_CHECK_HEADER(gensio/gensio.h, [],
+   [AC_MSG_ERROR([gensio.h not found, please install gensio dev package])])
+AC_CHECK_LIB(gensio, str_to_gensio, [],
+   [AC_MSG_ERROR([libgensio won't link, please install gensio dev package])])
+
+AC_CHECK_HEADER(yaml.h, [],
+   [AC_MSG_ERROR([yaml.h not found, please install libhaml dev package])])
+AC_CHECK_LIB(yaml, yaml_document_initialize, [],
+   [AC_MSG_ERROR([libyaml won't link, please install gensio dev package])])
+
 AC_OUTPUT([Makefile tests/Makefile])
