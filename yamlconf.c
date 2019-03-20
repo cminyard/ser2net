@@ -249,7 +249,7 @@ lookup_alias_len(struct yconf *y, const char *name, unsigned int len)
     struct alias *a;
 
     a = y->aliases;
-    while (a && a->namelen == len && strncmp(a->name, name, len) != 0)
+    while (a && (a->namelen != len || strncmp(a->name, name, len) != 0))
 	a = a->next;
     return a;
 }
