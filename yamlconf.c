@@ -238,7 +238,8 @@ syslog_eprint(struct absout *e, const char *str, ...)
     vsnprintf(buf, sizeof(buf), str, ap);
     va_end(ap);
     syslog(LOG_ERR, "%s on line %lu column %lu", buf,
-	   y->e.start_mark.line, y->e.start_mark.column);
+	   (unsigned long) y->e.start_mark.line,
+	   (unsigned long) y->e.start_mark.column);
     return 0;
 }
 
@@ -632,7 +633,7 @@ static char *
 process_scalar(struct yconf *y, const char *iscalar)
 {
     struct absout *eout = y->eout;
-    const char *s, *start;
+    const char *s, *start = NULL;
     char *rv = NULL, *out = NULL;
     unsigned int len = 0, alen;
     int state = 0;
@@ -1101,7 +1102,8 @@ yaml_readconfig(FILE *f)
     while (!done && !err) {
 	if (!yaml_parser_parse(&y.parser, &y.e)) {
 	    syslog(LOG_ERR, "yaml parsing error at line %lu column %lu: %s",
-		   y.parser.problem_mark.line, y.parser.problem_mark.column,
+		   (unsigned long) y.parser.problem_mark.line,
+		   (unsigned long) y.parser.problem_mark.column,
 		   y.parser.problem);
 	    err = -1;
 	    break;
