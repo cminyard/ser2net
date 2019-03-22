@@ -1929,7 +1929,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		int v;
 
 		v = time->tm_hour;
-		if (v == 0)
+		if (v <= 0 || v >= 24)
 		    v = 12;
 		else if (v > 12)
 		    v -= 12;
