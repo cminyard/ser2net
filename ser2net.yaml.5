@@ -901,7 +901,9 @@ preferred, but may not alway be workable) you can use a password
 login, too.  Put a password in authdir/username/password.  When
 you connect with gtlssh, if certificate validate fails, you will
 be prompted for the password.  If it matches the first line in the
-password file, then authentication will succeed.
+password file, then authentication will succeed.  You must set
+enable-password in the certauth gensio options for passwords
+to work.
 .SS "AUTHENTICATION AND ROTATORS"
 Rotators are a special case.  BE CAREFUL.  A rotator has its own
 authentication.  If you set up authentication on a port that is
