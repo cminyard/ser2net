@@ -349,6 +349,7 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 		     name);
 	goto out_err;
     }
+    close(infd);
 
     f->name = name;
     f->namelen = strlen(name);
