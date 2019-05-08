@@ -690,7 +690,7 @@ controller_init(char *controller_port, const char * const *options,
     if (find_default_str("authdir-admin", &controller_authdir))
 	goto out_nomem;
 
-    for (i = 0; options[i]; i++) {
+    for (i = 0; options && options[i]; i++) {
 	if (gensio_check_keyvalue(options[i], "authdir-admin", &val) > 0) {
 	    char *s = strdup(val);
 
