@@ -3407,6 +3407,11 @@ static const char *serialdev_parms[] = {
     "-HANGUP_WHEN_DONE", "hangup-when-done=false",
     "NOBREAK", NULL,
     "-NOBREAK", "nobreak=false",
+    "NONE", NULL,
+    "EVEN", NULL,
+    "ODD", NULL,
+    "MARK", NULL,
+    "SPACE", NULL,
     NULL
 };
 
