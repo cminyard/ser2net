@@ -74,7 +74,7 @@ static char *help_string =
 "  -P <file> - set location of pid file\n"
 "  -n - Don't detach from the controlling terminal\n"
 "  -d - Don't detach and send debug I/O to standard output\n"
-"  -l - Increate the debugging level\n"
+"  -l - Increase the debugging level\n"
 "  -u - Disable UUCP locking\n"
 #ifdef USE_PTHREADS
 "  -t <num threads> - Use the given number of threads, default 1\n"

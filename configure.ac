@@ -46,7 +46,7 @@ AC_CHECK_LIB(gensio, str_to_gensio, [],
    [AC_MSG_ERROR([libgensio won't link, please install gensio dev package])])
 
 AC_CHECK_HEADER(yaml.h, [],
-   [AC_MSG_ERROR([yaml.h not found, please install libhaml dev package])])
+   [AC_MSG_ERROR([yaml.h not found, please install libyaml dev package])])
 AC_CHECK_LIB(yaml, yaml_document_initialize, [],
    [AC_MSG_ERROR([libyaml won't link, please install gensio dev package])])
 
