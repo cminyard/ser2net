@@ -11,6 +11,27 @@
 # error doesn't happen.
 define: &confver 1.0
 
+# # Just a basic serial port  The con0 is the name of the connection,
+# # each connection must be given a unique name.  The accepter is the
+# # information about how to receive connections, in this case it is
+# # on TCP port 2002.  The connector is what the connection is hooked
+# # to when a connection comes in, in this case serial device /dev/ttyS0
+# # with the given serial parameters.  local means to ignore modem
+# # control lines, and is generally what you want.
+# connection: &con00
+#   accepter: tcp,2012
+#   connector: serialdev,/dev/ttyS0,9600n81,local
+
+# # Like the above, but with telnet and rfc2217 enabled.  With the
+# # gensio library that ser2net uses, protocols stack, so this stacks
+# # telnet on top of tcp.  It also shows how long complex lines can be broken
+# # up, and that by-path serial ports are no problem in yaml.
+# connection: &con01
+#   accepter: telnet(rfc2217),tcp,2013
+#   connector: serialdev,
+#              /dev/serial/by-path/platform-3f980000.usb-usb-0:1.2:1.0-port0,
+#              9600n81,local
+
 # # Set all baud rates to 115200n81 by default.
 # default:
 #   name: speed
