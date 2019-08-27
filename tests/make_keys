@@ -1,0 +1,24 @@
+#!/bin/sh -e
+
+rm -rf ca
+mkdir ca
+cd ca
+
+# NOTE: CN for CA certificate and other certificates must be different.
+
+openssl req -newkey rsa:2048 -nodes -x509 -keyout CA.key \
+	-subj "/C=US/ST=Texas/O=ser2net/OU=test/CN=ser2net.admin/emailAddress=ser2net@ser2net.org" \
+	-out CA.pem
+
+# Sign the key with the CA
+
+openssl req -newkey rsa:2048 -nodes -keyout key.pem \
+	-subj "/C=US/ST=Texas/O=ser2net/OU=test/CN=ser2net.org/emailAddress=ser2net@ser2net.org" \
+	-out key.csr
+openssl x509 -req -in key.csr -CA CA.pem -CAkey CA.key -CAcreateserial -out cert.pem
+
+# Self-signed certificate for the client
+
+openssl req -newkey rsa:2048 -nodes -x509 -keyout clientkey.pem \
+	-subj "/C=US/ST=Texas/O=ser2net/OU=test/CN=gensio.org/emailAddress=ser2net@ser2net.org" \
+	-out clientcert.pem

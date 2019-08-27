@@ -633,6 +633,12 @@ def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
     ser2net.terminate()
     return
 
+
+keydir = os.getenv("keydir")
+if not keydir:
+    if (not keydir):
+        keydir = "ca"
+
 srcdir = os.getenv("srcdir")
 if not srcdir:
     srcdir = os.path.dirname(sys.argv[0])
