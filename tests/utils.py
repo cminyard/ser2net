@@ -425,7 +425,8 @@ class Ser2netDaemon:
         self.io.open_s()
 
         # Open stderr output
-        self.err = self.io.open_channel_s(None, self)
+        self.err = self.io.alloc_channel(None, self)
+        self.err.open_s()
 
         self.pid = self.io.remote_id()
         self.handler.set_waitfor("Ready\n")
