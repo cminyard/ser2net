@@ -1026,6 +1026,9 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 
     switch (event) {
     case GENSIO_EVENT_READ:
+	if (gensio_str_in_auxdata(auxdata, "oob"))
+	    /* Ignore out of bound data. */
+	    return 0;
 	*buflen = handle_dev_read(port, err, buf, *buflen);
 	return 0;
 
