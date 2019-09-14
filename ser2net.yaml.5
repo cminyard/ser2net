@@ -160,7 +160,7 @@ connection:
 .br
 name: connection to ipimsol on ipmiserver.domain.org
 .br
-accepter: telnet(rfc2217),certauth,ssl,sctp,1234
+accepter: telnet(rfc2217),mux,certauth,ssl,sctp,1234
 .br
 connector: ipmisol,lan -U ipmiusr -P test -p 9001
 .br
@@ -872,10 +872,17 @@ and still requires a server certificate, but the self-signed one
 generated with gtlssh-keygen works fine without doing anything
 special.  Add certauth to the port line:
 .IP
-telnet,certauth,ssl,tcp,1234
+telnet,mux,certauth,ssl,tcp,1234
 .PP
 and *make sure* clientauth is disabled for ssl (or ssl will still
-attempt to authenticate the client).
+attempt to authenticate the client).  Disabled is the default but
+in case you changed, the default...
+
+The mux entry is because gtlssh uses the mux gensio to allow multiple
+channels on the same session.  It wasn't there with older (pre 1.2)
+version of gtlssh, but is required for newer one.  gtlssh also has a
+.B --nomux
+option, just in case.
 
 The gtlssh program does its own certificate handling.  Look at the
 gtlssh man page for detail on that.  Take the certificate for gtlssh

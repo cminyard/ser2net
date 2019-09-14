@@ -45,7 +45,7 @@ define: &confver 1.0
 
 # # Create a secure admin interface on sctp,2000
 # admin:
-#   accepter: certauth,ssl,sctp,2000
+#   accepter: mux,certauth,ssl,sctp,2000
 
 # # Define an arbitrary string substitution, we will use this later
 # # for a banner.
@@ -168,7 +168,7 @@ define: &confver 1.0
 # #  gtlssh --telnet -p 2005 <user>@<hostname>
 # # and do a normal gtlssh authentication.  See gtlssh(1) for details.
 # connection: &con4
-#   accepter: telnet,certauth(enable-password),ssl,sctp,2005
+#   accepter: telnet,mux,certauth(enable-password),ssl,sctp,2005
 #   connector: echo
 #   options:
 #     banner: *banner1
@@ -179,7 +179,7 @@ define: &confver 1.0
 # # then you can just log in.  It's easy enough to just handle the
 # # certificate,though, so that's really preferred.
 # connection: &con5
-#   accepter: telnet,certauth(allow-authfail),sctp,2006
+#   accepter: telnet,mux,certauth(allow-authfail),ssl,sctp,2006
 #   connector: echo
 #   options:
 #     openstr: hello
