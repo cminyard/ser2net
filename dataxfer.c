@@ -2684,7 +2684,7 @@ check_port_new_net(port_info_t *port, net_info_t *netcon)
     if (!netcon->new_net)
 	return;
 
-    if (!netcon->net) {
+    if (netcon->net) {
 	/* Something snuck in before, kick this one out. */
 	char *err = "kicked off, new user is coming\r\n";
 
@@ -2985,7 +2985,11 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 	so->unlock(ports_lock);
 	return; /* We have to return here because we no longer have a port. */
     } else {
+	net_info_t *netcon;
+
 	gensio_acc_set_accept_callback_enable(port->accepter, true);
+	for_each_connection(port, netcon)
+	    check_port_new_net(port, netcon);
     }
     so->unlock(port->lock);
     so->unlock(ports_lock);
@@ -3109,7 +3113,6 @@ netcon_finish_shutdown(net_info_t *netcon)
 	netcon->banner = NULL;
     }
 
-    check_port_new_net(port, netcon);
     if (num_connected_net(port) == 0) {
 	if (port->net_to_dev_state == PORT_CLOSING) {
 	    start_shutdown_port_io(port);
@@ -3117,9 +3120,12 @@ netcon_finish_shutdown(net_info_t *netcon)
 	    /* Leave the device open for connect backs. */
 	    port->dev_to_net_state = PORT_UNCONNECTED;
 	    port->net_to_dev_state = PORT_UNCONNECTED;
+	    check_port_new_net(port, netcon);
 	} else {
 	    shutdown_port(port, NULL);
 	}
+    } else {
+	check_port_new_net(port, netcon);
     }
 }
 
