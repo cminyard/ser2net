@@ -1023,13 +1023,19 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 {
     port_info_t *port = user_data;
     net_info_t *netcon;
+    gensiods len = 0;
+
+    if (buflen)
+	len = *buflen;
 
     switch (event) {
     case GENSIO_EVENT_READ:
 	if (gensio_str_in_auxdata(auxdata, "oob"))
 	    /* Ignore out of bound data. */
 	    return 0;
-	*buflen = handle_dev_read(port, err, buf, *buflen);
+	len = handle_dev_read(port, err, buf, len);
+	if (buflen)
+	    *buflen = len;
 	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
@@ -1600,10 +1606,16 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 		 const char *const *auxdata)
 {
     net_info_t *netcon = user_data;
+    gensiods len= 0;
+
+    if (buflen)
+	len = *buflen;
 
     switch (event) {
     case GENSIO_EVENT_READ:
-	*buflen = handle_net_fd_read(netcon, net, err, buf, *buflen);
+	len = handle_net_fd_read(netcon, net, err, buf, len);
+	if (buflen)
+	    *buflen = len;
 	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
@@ -1624,7 +1636,7 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 	return 0;
 
     case GENSIO_EVENT_SER_SIGNATURE:
-	s2n_signature(netcon, gensio_to_sergensio(net), (char *) buf, *buflen);
+	s2n_signature(netcon, gensio_to_sergensio(net), (char *) buf, len);
 	return 0;
 
     case GENSIO_EVENT_SER_FLOW_STATE:
