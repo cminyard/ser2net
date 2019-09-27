@@ -31,6 +31,7 @@
 
 #include <gensio/selector.h>
 #include <gensio/gensio_selector.h>
+#include <gensio/gensio.h>
 
 #include "ser2net.h"
 #include "readconfig.h"
@@ -610,6 +611,8 @@ main(int argc, char *argv[])
     char **config_lines;
     int num_config_lines = 0;
     int print_when_ready = 0;
+
+    gensio_set_progname("ser2net");
 
     config_lines = malloc(sizeof(*config_lines));
     if (!config_lines) {
