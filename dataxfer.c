@@ -3454,6 +3454,17 @@ matchstr(const char *parms[], const char *c, const char **newval)
 }
 
 static int
+check_keyvalue_default(const char *str, const char *name, const char **value,
+		       const char *def)
+{
+    if (strcmp(str, name) == 0)
+	*value = def;
+    else
+	return gensio_check_keyvalue(str, name, value);
+    return 1;
+}
+
+static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
     enum str_type stype;
@@ -3556,7 +3567,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	port->remaddr_set = true;
     } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
 	port->rs485 = find_rs485conf(val);
-    } else if (gensio_check_keyvalue(pos, "banner", &val) > 0) {
+    } else if (check_keyvalue_default(pos, "banner", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating banner");
@@ -3565,7 +3576,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->bannerstr)
 	    free(port->bannerstr);
 	port->bannerstr = fval;
-    } else if (gensio_check_keyvalue(pos, "openstr", &val) > 0) {
+    } else if (check_keyvalue_default(pos, "openstr", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating openstr");
@@ -3574,7 +3585,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->openstr)
 	    free(port->openstr);
 	port->openstr = fval;
-    } else if (gensio_check_keyvalue(pos, "closestr", &val) > 0) {
+    } else if (check_keyvalue_default(pos, "closestr", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating closestr");
@@ -3592,7 +3603,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->closeon)
 	    free(port->closeon);
 	port->closeon = fval;
-    } else if (gensio_check_keyvalue(pos, "signature", &val) > 0) {
+    } else if (check_keyvalue_default(pos, "signature", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
 	    eout->out(eout, "Out of memory banner");

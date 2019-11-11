@@ -186,61 +186,64 @@ shouldn't be too hard.
 
 .SS "CONNECTION SPECIFICATION OPTIONS"
 
-.I kickolduser[=true|false]
+.I kickolduser: true|false
 sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
 
-.I banner=<banner string>
+banner: <banner string>
 displays the given banner when a client connects.
 
-.I signature=<signature name>
-sends RFC2217 signature on clients request.
+.I signature: <signature string>
+sends RFC2217 signature on clients request.  This may be an empty
+string.
 
-.I openstr=<openstr name>
-Send the given string to the device on first open.
+.I openstr: <openstr name string>
+Send the given string to the device on first open.  This may be an
+empty string.
 
-.I closestr=<closestr name>
-Send the given string to the device on final close.
+.I closestr: <closestr name>
+Send the given string to the device on final close.  This may be an
+empty string.
 
-.I tr=<filename>
+.I tr: <filename>
 When the acceptor is opened, open the given tracefile and store all data read
 from the physical device (and thus written to the client's TCP port) in
 the file.  The actual filename is specified in the TRACEFILE directive.
 If the file already exists, it is appended.  The file is closed
 when the port is closed.
 
-.I tw=<filename>
+.I tw: <filename>
 Like tr, but traces data written to the connecting gensio.
 
-.I tb=<filename>
+.I tb: <filename>
 trace both read and written data to the same file.  Note that this is
 independent of tr and tw, so you may be tracing read, write, and both
 to different files.
 
-.I hexdump[=true|false]
+.I hexdump: true|false
 turns on/off hexdump output to all trace files.  Each line in the
 trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
 useful for debugging a binary protocol.
 
-.I timestamp[=true|false]
+.I timestamp: true|false
 adds/removes a timestamp to all of the trace files. A timestamp
 is prepended to each line if hexdump is active for the trace file.  A
 timestamped line is also recorded in the trace file when a remote client
 connects or disconnects from the port.
 
-.I [tr-|tw-|tb-]hexdump[=true|false]
+.I [tr-|tw-|tb-]hexdump: true|false
 turns on/off hexdump output for only one trace file.
 May be combined with hexdump.  Order is important.
 
-.I [tr-|tw-|tb-]timestamp[=true|false]
+.I [tr-|tw-|tb-]timestamp: true|false
 adds/removes a timestamp to only one the trace files
 May be combined with [-]timestamp.  Order is important.
 
-.I telnet-brk-on-sync
+.I telnet-brk-on-sync: true|false
 causes a telnet sync operation to send a break.  By default data is
 flushed until the data mark, but no break is sent.
 
-.I chardelay[=true|false]
+.I chardelay: true|false
 enables the small wait after each character received on the
 connecting gensio before sending data on the accepted gensio.
 Normally ser2net will wait the time it takes to receive 2 serial port
@@ -248,48 +251,48 @@ characters, or at least 1000us, before sending.  This allows more
 efficient use of network resources when receiving large amounts of
 data, but gives reasonable interactivity.  Default is true.
 
-.I chardelay-scale=<number>
+.I chardelay-scale: <number>
 sets the number of serial port characters, in tenths of a character,
 to wait after receiving from the connection gensio and sending to the
 accepted gensio.  So setting this to 25 will cause ser2net to wait the
 amount of time it takes to recieve 2.5 serial port characters before
 sending the data on to the TCP port.  The default value is 20.
 
-.I chardelay-min=<number>
+.I chardelay-min: <number>
 sets the minimum delay that ser2net will wait, in microseconds.  If
 the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.
 
-.I chardelay-max=<number>
+.I chardelay-max: <number>
 sets the maximum delay that ser2net will wait, in microseconds, before
 sending the data.  The default value is 20000.  This keeps the connection
 working smoothly at slow speeds.
 
-.I dev-to-net-bufsize=<number>
+.I dev-to-net-bufsize: <number>
 sets the size of the buffer reading from the connecting gensio and writing
 to the accepted gensio.
 
-.I net-to-dev-bufsize=<number>
+.I net-to-dev-bufsize: <number>
 sets the size of the buffer reading from the accepted gensio and
 writing to the connecting gensio.
 
-.I led-tx=<led-alias>
+.I led-tx: <led-alias>
 use the previously defined led to indicate serial tx traffic on this port.
 This should be a YAML alias, like *led2.
 
-.I led-rx=<led-alias>
+.I led-rx: <led-alias>
 use the previously defined led to indicate serial rx traffic on this port.
 This should be a YAML alias, like *led2.
 
-.I max-connections=<number>
+.I max-connections: <number>
 set the maximum number of connections that can be made on this particular
 TCP port.  If you make more than one connection to the same port, each
 ports output goes to the device, and the device output goes to all ports
 simultaneously.  See "MULTIPLE CONNECTIONS" below for details.  The default
 is 1.
 
-.I remaddr=[!]<addr>[;[!]<addr>[;...]]
+.I remaddr: [!]<addr>[;[!]<addr>[;...]]
 specifies the allowed remote connections, where the addr is a standard
 address, generally in the form <ip address>,<port>.  Multiple
 addresses can be separated by semicolons, and you can specify remaddr
@@ -301,7 +304,7 @@ of the network connections (see max-connections) is reserved for that
 address.  If data comes in on the device, ser2net will attempt to
 connect to the address.  This does not work on all accepting gensios.
 
-.I authdir
+.I authdir: <directory string>
 specified the authentication directory to use for this connection.
 
 .SH "ROTATOR"
@@ -524,14 +527,14 @@ options:
 
 The only supported driver is sysfs.  Supported options are:
 
-.I device=<sysfs device name>
+.I device: <sysfs device name>
 gives the name of the LED in /sys/class/led.  These generally have ":"
 in them, so you will need to put the name in quotes.  This is required.
 
-.I duration
+.I duration: <time in ms>
 The time in milliseconds to flash the LED.  Defaults to 10.
 
-.I state
+.I state: <number>
 The value to set the LED to to enable it.  Defaults to 1, but may need
 to be a different value.
 

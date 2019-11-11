@@ -184,3 +184,40 @@ define: &confver 1.0
 #   options:
 #     openstr: hello
 #     banner: *banner1
+
+# # An example showing all options and their defaults.  Note that empty
+# # strings are ok for most strings, but not for things that take filesname
+# # or are required to be aliases.
+# connection: &con6
+#   accepter: tcp,2007
+#   connector: echo
+#   options:
+#     kickolduser: false
+#     hexdump: false
+#     timestamp: false
+#     tr-hexdump: false
+#     tr-timestamp: false
+#     tw-hexdump: false
+#     tw-timestamp: false
+#     tb-hexdump: false
+#     tb-timestamp: false
+#     #tr: <trace read file>
+#     #t2: <trace write file>
+#     #tb: <trace both file>
+#     #led-rx: <led alias>
+#     #led-tx: <led alias>
+#     telnet-brk-on-sync: false
+#     chardelay: false
+#     chardelay-scale: 20
+#     chardelay-min: 1000
+#     chardelay-max: 20000
+#     dev-to-net-bufsize: 64
+#     net-to-dev-bufsize: 64
+#     max-connections: 1
+#     #authdir: <authentication directory>
+#     #remaddr: <remote address>
+#     #rs485: <rs485 alias>
+#     banner:
+#     signature:
+#     openstr:
+#     closestr:
