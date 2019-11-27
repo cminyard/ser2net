@@ -32,7 +32,7 @@ def test_transfer(name, data, config, io1str, io2str, timeout=1000,
 
 def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
                      initial_write_io1 = None, switch_delay = 0.0):
-    """Test that close does not loose data
+    """Test that close does not lose data
 
     This function takes a name (for reporting), some data to transfer,
     a config file for ser2net, and writes the data and immediately
