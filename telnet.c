@@ -54,7 +54,7 @@ handle_telnet_cmd(telnet_data_t *td)
 	td->cmd_handler(td->cb_data, cmd_str[1]);
     } else if (cmd_str[1] == TN_SB) { /* Option */
 	cmd = find_cmd(td->cmds, cmd_str[2]);
-	if (!cmd)
+	if (!cmd || !cmd->option_handler)
 	    return;
 	cmd->option_handler(td->cb_data, cmd_str + 2, size - 2);
     } else if (cmd_str[1] == TN_WILL) {
