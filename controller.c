@@ -456,27 +456,34 @@ remove_chars(controller_info_t *cntlr, int pos, int count) {
 }
 
 /* Data is ready to read on the TCP port. */
-static gensiods
+static void
 controller_read(struct gensio *net, int err,
-		unsigned char *buf, gensiods buflen)
+		unsigned char *buf, gensiods *ibuflen)
 {
     controller_info_t *cntlr = gensio_get_user_data(net);
-    int read_start;
-    int i;
+    int read_start, i;
+    gensiods buflen = 0;
 
     so->lock(cntlr->lock);
     if (cntlr->in_shutdown)
+	/* Can get here on a race condition, just return. */
 	goto out_unlock;
 
-    if (cntlr->inbuf_count == INBUF_SIZE)
-	goto inbuf_overflow;
-
-    if (err && err != GE_REMCLOSE) {
+    if (err) {
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "read error for controller port: %s",
-	       gensio_err_to_str(err));
+	if (err != GE_REMCLOSE)
+	    syslog(LOG_ERR, "read error for controller port: %s",
+		   gensio_err_to_str(err));
 	shutdown_controller(cntlr); /* Releases the lock */
-	goto out;
+	goto out_return;
+    }
+
+    buflen = *ibuflen;
+
+    if (cntlr->inbuf_count == INBUF_SIZE) {
+	controller_outs(cntlr, "Input line too long\r\n");
+	cntlr->inbuf_count = 0;
+	goto out_unlock;
     }
 
     read_start = cntlr->inbuf_count;
@@ -529,12 +536,9 @@ controller_read(struct gensio *net, int err,
  out_unlock:
     so->unlock(cntlr->lock);
  out:
-    return buflen;
-
- inbuf_overflow:
-    controller_outs(cntlr, "Input line too long\r\n");
-    cntlr->inbuf_count = 0;
-    goto out_unlock;
+    *ibuflen = buflen;
+ out_return:
+    return;
 }
 
 /* The TCP port has room to write some data.  This is only activated
@@ -590,7 +594,7 @@ controller_io_event(struct gensio *net, void *user_data, int event, int err,
 {
     switch (event) {
     case GENSIO_EVENT_READ:
-	*buflen = controller_read(net, err, buf, *buflen);
+	controller_read(net, err, buf, buflen);
 	return 0;
 
     case GENSIO_EVENT_WRITE_READY:
