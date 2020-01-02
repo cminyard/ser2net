@@ -4097,7 +4097,6 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     int count;
     int err;
     net_info_t *netcon = NULL;
-    unsigned int bytes_recv = 0, bytes_sent = 0;
 
     controller_outputf(cntlr, "%-22s ", port->name);
     if (port->deleted)
@@ -4122,17 +4121,14 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	count++;
     }
 
-    bytes_recv = netcon->bytes_received;
-    bytes_sent = netcon->bytes_sent;
-
     controller_outputf(cntlr, "%-22s ", port->accstr);
     controller_outputf(cntlr, "%-22s ", port->devname);
     controller_outputf(cntlr, "%-14s ", state_str[port->net_to_dev_state]);
     controller_outputf(cntlr, "%-14s ", state_str[port->dev_to_net_state]);
-    controller_outputf(cntlr, "%9d ", bytes_recv);
-    controller_outputf(cntlr, "%9d ", bytes_sent);
-    controller_outputf(cntlr, "%9d ", port->dev_bytes_received);
-    controller_outputf(cntlr, "%9d ", port->dev_bytes_sent);
+    controller_outputf(cntlr, "%9lu ", (unsigned long) netcon->bytes_received);
+    controller_outputf(cntlr, "%9lu ", (unsigned long) netcon->bytes_sent);
+    controller_outputf(cntlr, "%9lu ", (unsigned long)port->dev_bytes_received);
+    controller_outputf(cntlr, "%9lu ", (unsigned long) port->dev_bytes_sent);
 
     err = gensio_raddr_to_str(port->io, NULL, buffer, sizeof(buffer));
     if (!err)
@@ -4159,10 +4155,10 @@ showport(struct controller_info *cntlr, port_info_t *port)
 	if (netcon->net) {
 	    gensio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
 	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
-	    controller_outputf(cntlr, "    bytes read from TCP: %d\r\n",
-			       netcon->bytes_received);
-	    controller_outputf(cntlr, "    bytes written to TCP: %d\r\n",
-			       netcon->bytes_sent);
+	    controller_outputf(cntlr, "    bytes read from TCP: %lu\r\n",
+			       (unsigned long) netcon->bytes_received);
+	    controller_outputf(cntlr, "    bytes written to TCP: %lu\r\n",
+			       (unsigned long) netcon->bytes_sent);
 	} else {
 	    controller_outputf(cntlr, "  unconnected\r\n");
 	}
@@ -4204,11 +4200,11 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "  device to tcp state: %s\r\n",
 		      state_str[port->dev_to_net_state]);
 
-    controller_outputf(cntlr, "  bytes read from device: %d\r\n",
-		      port->dev_bytes_received);
+    controller_outputf(cntlr, "  bytes read from device: %u\r\n",
+		       (unsigned long) port->dev_bytes_received);
 
-    controller_outputf(cntlr, "  bytes written to device: %d\r\n",
-		      port->dev_bytes_sent);
+    controller_outputf(cntlr, "  bytes written to device: %lu\r\n",
+		       (unsigned long) port->dev_bytes_sent);
 
     if (port->new_config != NULL) {
 	controller_outputf(cntlr, "  Port will be reconfigured when current"
