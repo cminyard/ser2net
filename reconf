@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# If you get this code and you don't have a configure, you can run this
+# script to create the build infrastructure.
+
+libtoolize
+aclocal
+autoconf
+automake -a

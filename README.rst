@@ -58,6 +58,14 @@ blocking things up.
 If you don't want to compile with threads, you can add
 "--with-pthreads=no" to the configure line.
 
+This is a normal autoconf system, nothing special.  Note that if you
+get this directly from git, you won't have the build infrastructure
+included.  There is a script named "reconf" in the main directory
+that will create it for you.
+
+If you don't know about autoconf, the INSTALL file has some info,
+or google it.
+
 If you want the opposite of ser2net (you want to connect to a "local"
 serial port device that is really remote) then Cyclades has provided
 a tool for this at https://sourceforge.net/projects/cyclades-serial/.
