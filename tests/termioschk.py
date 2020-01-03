@@ -48,13 +48,15 @@ def dup_base_termios(iflags=0, iflags_mask=0,
                        cflags, cflags_mask, lflags, lflags_mask)
 
 def compare_termios(tio1, tio2):
+    """Compare two termios structures.  Return -1 if they are the same,
+    otherwise it returns the first byte that differs."""
     for i in range(0, 6):
         if tio1[i] != tio2[i]:
             return i;
     for i in range(0, len(tio2[6])):
         if tio1[6][i] != tio2[6][i]:
             return i + 6;
-    return 0
+    return -1
 
 def test_ser2net_termios(name, handler, config, io1str, io2str):
     """Test the settings of ser2net termios
@@ -81,7 +83,7 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
         io2_rem_termios = get_remote_termios(io2.remote_id())
 
         c = compare_termios(expected_termios, io2_rem_termios)
-        if (c != 0):
+        if (c != -1):
             raise Exception("Termios mismatch at %d\nExpected: %s\nBut got  %s" %
                             (c, str(expected_termios), str(io2_rem_termios)))
 
