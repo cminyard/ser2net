@@ -730,6 +730,16 @@ any_net_data_to_write(port_info_t *port)
 }
 
 static void
+clear_all_net_data_write(port_info_t *port)
+{
+    net_info_t *netcon;
+
+    port->dev_to_net.cursize = 0;
+    for_each_connection(port, netcon)
+	netcon->write_pos = 0;
+}
+
+static void
 handle_net_send_one(port_info_t *port, net_info_t *netcon)
 {
     int count = 0;
@@ -1258,7 +1268,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	if (any_net_data_to_write(port))
 	    goto out;
 
-	port->dev_to_net.cursize = 0;
+	clear_all_net_data_write(port);
 
 	/* We are done writing, turn the reader back on. */
 	io_enable_read_handler(port);
