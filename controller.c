@@ -564,7 +564,8 @@ controller_write_ready(struct gensio *net)
 	goto out_fail;
     } else if (err) {
 	/* Some other bad error. */
-	syslog(LOG_ERR, "The tcp write for controller had error: %m");
+	syslog(LOG_ERR, "The tcp write for controller had error: %s",
+	       gensio_err_to_str(err));
 	goto out_fail;
     }
 

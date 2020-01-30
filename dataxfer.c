@@ -916,8 +916,8 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	}
 
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "dev read error for device on port %s: %m",
-	       port->name);
+	syslog(LOG_ERR, "dev read error for device on port %s: %s",
+	       port->name, gensio_err_to_str(err));
 	if (port->has_connect_back)
 	    port->enabled = false;
 	shutdown_port(port, "dev read error");
@@ -1222,8 +1222,8 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 
     err = gbuf_write(port, &port->net_to_dev);
     if (err) {
-	syslog(LOG_ERR, "The dev write for port %s had error: %m",
-	       port->name);
+	syslog(LOG_ERR, "The dev write for port %s had error: %s",
+	       port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
 	goto out_unlock;
     } else {
@@ -2373,8 +2373,8 @@ setup_port(port_info_t *port, net_info_t *netcon)
     err = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_ALL, false,
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
-	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %m",
-	       port->name);
+	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %s",
+	       port->name, gensio_err_to_str(err));
 
     if (netcon->banner) {
 	free(netcon->banner->buf);
