@@ -415,7 +415,7 @@ class Ser2netDaemon:
         self.cfile.flush()
         self.o = o
 
-        args = "stdio," + prog + " -r -d -c " + self.cfile.name + " " + extra_args
+        args = "stdio," + prog + " -t 4 -r -d -c " + self.cfile.name + " " + extra_args
         if (debug):
             print("Running: " + args)
         self.handler = HandleData(o, args, name="ser2net daemon")
