@@ -427,6 +427,7 @@ class Ser2netDaemon:
         # Open stderr output
         self.err = self.io.alloc_channel(None, self)
         self.err.open_s()
+        self.err.closeme = True
 
         self.pid = self.io.remote_id()
         self.handler.set_waitfor("Ready\n")
@@ -469,9 +470,6 @@ class Ser2netDaemon:
         """
         if (debug):
             print("Terminating")
-        if self.io.closeme:
-            self.handler.close()
-            self.err.close_s()
 
         count = 10
         while (count > 0):
@@ -486,6 +484,10 @@ class Ser2netDaemon:
                 time.sleep(.01)
                 pid, rv = os.waitpid(self.pid, os.WNOHANG)
                 if (pid > 0):
+                    if self.io.closeme:
+                        self.handler.close()
+                    if self.err.closeme:
+                        self.err.close_s()
                     self.handler = None
                     return
                 subcount -= 1
