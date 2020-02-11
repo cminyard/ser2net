@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 from dataxfer import test_transfer, test_write_drain
 

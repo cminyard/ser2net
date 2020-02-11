@@ -13,7 +13,7 @@ AM_TESTS_ENVIRONMENT = \
     fi;
 
 test_setup:
-	echo "$(AM_TESTS_ENVIRONMENT) python $(utst_srcdir)/tests/"
+	echo "$(AM_TESTS_ENVIRONMENT) python3 $(utst_srcdir)/tests/"
 
 TESTS = test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
 	test_xfer_basic_ssl_tcp.py test_xfer_basic_telnet.py \

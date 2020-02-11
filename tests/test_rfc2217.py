@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 import termioschk
 import termios
 import time
@@ -57,7 +57,7 @@ try:
 except RuntimeError as E:
     if str(E) != "Error casting from gensio to sergensio":
         raise
-    print "  Success"
+    print("  Success")
     goterr = True
 if not goterr:
     raise Exception("Did not get error setting telnet rfc2217 when disabled.")

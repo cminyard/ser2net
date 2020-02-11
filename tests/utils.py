@@ -80,6 +80,8 @@ class HandleData:
         If the data does not compare, an exception is raised.
         """
         self.compared = 0
+        if to_compare.__class__ == str:
+            to_compare = bytes(to_compare, 'utf8')
         self.to_compare = to_compare
         if (start_reader):
             self.io.read_cb_enable(True)
@@ -92,7 +94,7 @@ class HandleData:
         If the data does not compare, an exception is raised.
         """
         self.compared = 0
-        self.to_waitfor = waitfor
+        self.to_waitfor = bytes(waitfor, encoding="utf8")
         if (start_reader):
             self.io.read_cb_enable(True)
         return
@@ -101,6 +103,8 @@ class HandleData:
                        close_on_done = False):
         self.close_on_done = close_on_done
         self.wrpos = 0
+        if to_write.__class__ == str:
+            to_write = bytes(to_write, 'utf8')
         self.wrlen = len(to_write)
         self.to_write = to_write
         if (start_writer):
@@ -176,8 +180,8 @@ class HandleData:
                 raise HandlerException("%s: compare failure on byte %d, "
                                        "expected %x, got %x" %
                                        (self.name, self.compared,
-                                        ord(self.to_compare[self.compared]),
-                                        ord(buf[i])))
+                                        self.to_compare[self.compared],
+                                        buf[i]))
             self.compared += 1
 
         if (self.compared >= len(self.to_compare)):
@@ -457,7 +461,7 @@ class Ser2netDaemon:
         return
 
     def read_callback(self, io, err, buf, auxdata):
-        print("Error from ser2net: " + buf);
+        print("Error from ser2net: " + str(buf, "utf8"));
         return len(buf)
 
     def terminate(self):
