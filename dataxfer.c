@@ -1868,7 +1868,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    /* \Y -> year */
 	    case 'Y':
 	    {
-		char d[10], *dp;
+		char d[12], *dp;
 		snprintf(d, sizeof(d), "%d", time->tm_year + 1900);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
