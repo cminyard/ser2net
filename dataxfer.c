@@ -1556,7 +1556,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    /* \Y -> year */
 	    case 'Y':
 	    {
-		char d[10], *dp;
+		char d[16], *dp;
 		snprintf(d, sizeof(d), "%d", time->tm_year + 1900);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
@@ -1628,7 +1628,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    /* \h -> hour (12-hour time) */
 	    case 'h':
 	    {
-		char d[10], *dp;
+		char d[16], *dp;
 		int v;
 
 		v = time->tm_hour;
