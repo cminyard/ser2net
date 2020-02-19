@@ -816,12 +816,12 @@ the connection will fail due to certificate failure.  Getting
 certificates this way is very inconvenient, so there is another way.
 You can do:
 .IP
-gtlssh-keygen --keydir /etc/ser2net keygen ser2net-<server>
+gtlssh-keygen --keydir /etc/ser2net --commonname "`hostname`-ser2net" serverkey ser2net
 .PP
 to generate the default keys in /etc/ser2net (or wherever).  The
-certificate/key will be named /etc/ser2net/ser2net-<server>.crt|key
-and you will need to rename them to be /etc/ser2net/ser2net.crt|key.
-Then provide /etc/ser2net/ser2net.crt to connection commands, like:
+certificate/key will be named /etc/ser2net/ser2net.crt|key.
+Then copy ser2net.crt over to the user system and provide it to connection
+commands, like:
 .IP
 gensiot telnet,ssl(CA=ser2net.crt),<server>,1234
 telnet -z ssl,secure,cacert=ser2net.crt 1234
