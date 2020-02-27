@@ -42,6 +42,16 @@
 #include "readconfig.h"
 #include "led.h"
 
+#ifdef gensio_version_major
+/* When the version info was added, the type was changed. */
+typedef struct gensio_addr gaddrinfo;
+#define gensio_free_addrinfo(o, a) gensio_addr_free(a)
+#include <sys/socket.h>
+#include <netdb.h>
+#else
+typedef struct addrinfo gaddrinfo;
+#endif
+
 #define SERIAL "term"
 #define NET    "tcp "
 
@@ -393,7 +403,7 @@ static int handle_net_event(struct gensio *net, void *user_data,
 struct port_remaddr
 {
     char *str;
-    struct addrinfo *ai;
+    gaddrinfo *ai;
     bool is_port_set;
     bool is_connect_back;
     struct port_remaddr *next;
@@ -404,21 +414,26 @@ static int
 remaddr_append(struct port_remaddr **list, const char *str)
 {
     struct port_remaddr *r, *r2;
-    struct addrinfo *ai = NULL;
+    gaddrinfo *ai = NULL;
     bool is_port_set = false, is_connect_back = false;
-    int socktype, protocol;
     int err = 0;
 
     if (*str == '!') {
 	str++;
 	is_connect_back = true;
     } else {
+#ifdef gensio_version_major
+	err = gensio_scan_network_port(so, str, false, &ai, NULL,
+				       &is_port_set, NULL, NULL);
+#else
+	int socktype, protocol;
 	err = gensio_scan_network_port(so, str, false, &ai,
 				       &socktype, &protocol,
 				       &is_port_set, NULL, NULL);
+#endif
 	if (err)
 	    return err;
-	/* FIXME - We currently ignore the socktype and protocol. */
+	/* FIXME - We currently ignore the protocol. */
     }
 
     r = malloc(sizeof(*r));
@@ -456,9 +471,12 @@ remaddr_append(struct port_remaddr **list, const char *str)
 }
 
 static bool
-ai_check(struct addrinfo *ai, const struct sockaddr *addr, socklen_t len,
+ai_check(gaddrinfo *ai, const struct sockaddr *addr, socklen_t len,
 	 bool is_port_set)
 {
+#ifdef gensio_version_major
+    return gensio_addr_addr_present(ai, addr, len, is_port_set);
+#else
     while (ai) {
 	if (gensio_sockaddr_equal(addr, len, ai->ai_addr, ai->ai_addrlen,
 				  is_port_set))
@@ -467,6 +485,7 @@ ai_check(struct addrinfo *ai, const struct sockaddr *addr, socklen_t len,
     }
 
     return false;
+#endif
 }
 
 /* Check that the given address matches something in the list. */
