@@ -2348,8 +2348,13 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     setup_trace(port);
 
+#ifdef gensio_version_major
     timeout.secs = 1;
     timeout.nsecs = 0;
+#else
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+#endif
     so->start_timer(port->timer, &timeout);
 
     for_each_connection(port, netcon) {
@@ -3386,8 +3391,13 @@ got_timeout(struct gensio_timer *timer, void *data)
     }
 
  out:
+#ifdef gensio_version_major
     timeout.secs = 1;
     timeout.nsecs = 0;
+#else
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+#endif
     so->start_timer(port->timer, &timeout);
     so->unlock(port->lock);
 }
