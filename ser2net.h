@@ -20,7 +20,6 @@
 #ifndef SER2NET_H
 #define SER2NET_H
 
-#include <gensio/selector.h>
 #include <gensio/gensio_selector.h>
 #include <gensio/gensio.h>
 
@@ -29,7 +28,6 @@
 /* The default rfc2217 signature if none is provided. */
 extern char *rfc2217_signature;
 
-extern struct selector_s *ser2net_sel;
 extern struct gensio_os_funcs *so;
 
 extern int ser2net_debug;

@@ -32,6 +32,7 @@
 #include <assert.h>
 #include <time.h>
 #include <limits.h>
+#include <sys/time.h>
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
