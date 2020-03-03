@@ -248,7 +248,7 @@ struct port_info
 					   microseconds. */
     unsigned int chardelay_max;		/* Maximum amount of time to
 					   wait before sending the data. */
-    struct timeval send_time;		/* When using chardelay, the
+    gensio_time send_time;		/* When using chardelay, the
 					   time when we will send the
 					   data, no matter what, set
 					   by chardelay_max. */
@@ -1001,7 +1001,7 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
     send_it:
 	start_net_send(port);
     } else {
-	struct timeval then;
+	gensio_time then;
 	int delay;
 
 	so->get_monotonic_time(so, &then);
@@ -1009,16 +1009,16 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	    so->stop_timer(port->send_timer);
 	} else {
 	    port->send_time = then;
-	    add_usec_to_timeval(&port->send_time, port->chardelay_max);
+	    add_usec_to_time(&port->send_time, port->chardelay_max);
 	}
-	delay = sub_timeval_us(&port->send_time, &then);
+	delay = sub_time(&port->send_time, &then);
 	if (delay > port->chardelay)
 	    delay = port->chardelay;
 	else if (delay < 0) {
 	    port->send_timer_running = false;
 	    goto send_it;
 	}
-	add_usec_to_timeval(&then, delay);
+	add_usec_to_time(&then, delay);
 	so->start_timer_abs(port->send_timer, &then);
 	port->send_timer_running = true;
     }
@@ -2309,7 +2309,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 {
     port_info_t *port = cb_data;
     net_info_t *netcon;
-    struct timeval timeout;
+    gensio_time timeout;
 
     so->lock(port->lock);
     if (err) {
@@ -2348,8 +2348,8 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     setup_trace(port);
 
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
+    timeout.secs = 1;
+    timeout.nsecs = 0;
     so->start_timer(port->timer, &timeout);
 
     for_each_connection(port, netcon) {
@@ -3345,7 +3345,7 @@ void
 got_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    struct timeval timeout;
+    gensio_time timeout;
     net_info_t *netcon;
 
     so->lock(port->lock);
@@ -3386,8 +3386,8 @@ got_timeout(struct gensio_timer *timer, void *data)
     }
 
  out:
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
+    timeout.secs = 1;
+    timeout.nsecs = 0;
     so->start_timer(port->timer, &timeout);
     so->unlock(port->lock);
 }

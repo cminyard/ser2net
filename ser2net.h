@@ -22,6 +22,7 @@
 
 #include <gensio/selector.h>
 #include <gensio/gensio_selector.h>
+#include <gensio/gensio.h>
 
 #include "absout.h"
 
@@ -45,8 +46,11 @@ void shutdown_dataxfer(void);
 /* Write the data completely out, return without comment on error. */
 void write_ignore_fail(int fd, const char *data, size_t count);
 
-void add_usec_to_timeval(struct timeval *tv, int usec);
-int sub_timeval_us(struct timeval *left, struct timeval *right);
+#ifndef gensio_version_major
+typedef struct timeval gensio_time;
+#endif
+void add_usec_to_time(gensio_time *tv, int usec);
+int sub_time(gensio_time *left, gensio_time *right);
 
 /* Scan for a positive integer, and return it.  Return -1 if the
    integer was invalid.  Spaces are not handled. */

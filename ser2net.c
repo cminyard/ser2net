@@ -29,10 +29,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <gensio/selector.h>
-#include <gensio/gensio_selector.h>
-#include <gensio/gensio.h>
-
 #include "ser2net.h"
 #include "readconfig.h"
 #include "controller.h"
@@ -161,20 +157,38 @@ write_ignore_fail(int fd, const char *data, size_t count)
 }
 
 void
-add_usec_to_timeval(struct timeval *tv, int usec)
+add_usec_to_time(gensio_time *tv, int usec)
 {
+#ifdef gensio_version_major
+    tv->nsecs += usec * 1000;
+    while (tv->nsecs >= 1000000000) {
+	tv->nsecs -= 1000000000;
+	tv->secs += 1;
+    }
+#else
     tv->tv_usec += usec;
-    while (usec >= 1000000) {
-	usec -= 1000000;
+    while (tv->tv_usec >= 1000000) {
+	tv->tv_usec -= 1000000;
 	tv->tv_sec += 1;
     }
+#endif
 }
 
 int
-sub_timeval_us(struct timeval *left, struct timeval *right)
+sub_time(gensio_time *left, gensio_time *right)
 {
-    struct timeval dest;
+    gensio_time dest;
 
+#ifdef gensio_version_major
+    dest.secs = left->secs - right->secs;
+    dest.nsecs = left->nsecs - right->nsecs;
+    while (dest.nsecs < 0) {
+	dest.nsecs += 1000000000;
+	dest.secs--;
+    }
+
+    return (dest.secs * 1000000) + (dest.nsecs + 500) / 1000;
+#else
     dest.tv_sec = left->tv_sec - right->tv_sec;
     dest.tv_usec = left->tv_usec - right->tv_usec;
     while (dest.tv_usec < 0) {
@@ -183,6 +197,7 @@ sub_timeval_us(struct timeval *left, struct timeval *right)
     }
 
     return (dest.tv_sec * 1000000) + dest.tv_usec;
+#endif
 }
 
 /* Scan for a positive integer, and return it.  Return -1 if the
