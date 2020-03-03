@@ -781,11 +781,7 @@ main(int argc, char *argv[])
 	exit(1);
     }
 
-#ifdef gensio_version_major
-    so = gensio_selector_alloc_sel(ser2net_sel, ser2net_wake_sig);
-#else
     so = gensio_selector_alloc(ser2net_sel, ser2net_wake_sig);
-#endif
     if (!so) {
 	fprintf(stderr, "Could not alloc ser2net gensio selector\n");
 	exit(1);
