@@ -5,8 +5,10 @@ AM_PROG_AR
 AM_PROG_LIBTOOL
 
 use_pthreads=yes
+use_pthreads_set=false
 AC_ARG_WITH(pthreads,
 [  --with-pthreads=yes|no      Use pthreads or not.],
+    use_pthreads_set=true
     if test "x$withval" = "xyes"; then
       use_pthreads=yes
     elif test "x$withval" = "xno"; then
