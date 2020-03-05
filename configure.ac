@@ -15,8 +15,11 @@ AC_ARG_WITH(pthreads,
 )
 
 if test "x$use_pthreads" != "xno"; then
-   LIBS="$LIBS -lpthread"
-   AC_DEFINE(USE_PTHREADS)
+   AX_PTHREAD
+   if test "x$use_pthreads$ax_pthread_ok" = "xyesno"; then
+      AC_MSG_FAILURE([--with-pthreads was given, but no working pthread library was found])
+   fi
+   AM_CONDITIONAL([USE_PTHREADS], [test "x$ax_pthread_ok" = "xyes"])
 fi
 
 AC_ARG_WITH(sysfs-led-support,
