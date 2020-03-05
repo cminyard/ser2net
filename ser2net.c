@@ -293,7 +293,7 @@ static struct gensio_lock *config_lock;
 
 static struct gensio_lock *maint_lock;
 
-#if USE_PTHREADS
+#ifdef USE_PTHREADS
 static int in_config_read = 0;
 
 int ser2net_wake_sig = SIGUSR1;
@@ -544,7 +544,7 @@ sig_fd_read_handler(int fd, void *cb_data)
 	shutdown_cleanly();
 
     if (reread_config && !in_shutdown) {
-#if USE_PTHREADS
+#ifdef USE_PTHREADS
 	thread_reread_config_file();
 #else
 	reread_config_file();
