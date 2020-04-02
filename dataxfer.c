@@ -924,8 +924,10 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
     int nr_handlers = 0;
 
     so->lock(port->lock);
-    if (port->dev_to_net_state != PORT_WAITING_INPUT)
+    if (port->dev_to_net_state != PORT_WAITING_INPUT) {
+	gensio_set_read_callback_enable(port->io, false);
 	goto out_unlock;
+    }
 
     if (err) {
 	if (port->dev_to_net.cursize) {
@@ -3155,7 +3157,8 @@ netcon_finish_shutdown(net_info_t *netcon)
 	    start_shutdown_port_io(port);
 	} else if (port->has_connect_back && port->enabled) {
 	    /* Leave the device open for connect backs. */
-	    port->dev_to_net_state = PORT_UNCONNECTED;
+	    gensio_set_write_callback_enable(port->io, true);
+	    port->dev_to_net_state = PORT_WAITING_INPUT;
 	    port->net_to_dev_state = PORT_UNCONNECTED;
 	    check_port_new_net(port, netcon);
 	} else {
