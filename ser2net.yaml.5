@@ -296,13 +296,21 @@ is 1.
 specifies the allowed remote connections, where the addr is a standard
 address, generally in the form <ip address>,<port>.  Multiple
 addresses can be separated by semicolons, and you can specify remaddr
-more than once.  If you set the port for an address to zero, ser2net
-will accept a connection from any port from the given network host.
-If a "!" is given at the beginning of the address, the address is a
-"connect back" address.  If a connect back address is specified, one
-of the network connections (see max-connections) is reserved for that
-address.  If data comes in on the device, ser2net will attempt to
-connect to the address.  This does not work on all accepting gensios.
+more than once.
+
+If you set the port for an address to zero, ser2net will accept a
+connection from any port from the given network host.  If a "!" is
+given at the beginning of the address, the address is a "connect back"
+address.  If a connect back address is specified, one of the network
+connections (see max-connections) is reserved for that address.  If
+data comes in on the device, ser2net will attempt to connect to the
+address.  This does not work on all accepting gensios.
+
+Using a "!" in yaml requires you put the address in quotes.
+
+Connect back addresses must match the format of the accepter address.
+So, for instance, if your accepter is "telnet,tcp,1234" your connect
+back address must be something like "telnet,tcp,hostname,1123".
 
 .I authdir: <directory string>
 specified the authentication directory to use for this connection.
