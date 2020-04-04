@@ -32,8 +32,6 @@ int readconfig_init(void);
 int readconfig(FILE *instream);
 int yaml_readconfig(FILE *f);
 
-int readconfig_finalize(void);
-
 /*
  * Search for a banner/open/close string by name.  Note that the
  * returned value needs to be free-ed when done.

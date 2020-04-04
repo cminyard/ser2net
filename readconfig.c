@@ -902,13 +902,6 @@ readconfig_init(void)
     return 0;
 }
 
-int
-readconfig_finalize(void)
-{
-    apply_new_ports();
-    return 0;
-}
-
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int

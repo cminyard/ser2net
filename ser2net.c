@@ -143,7 +143,7 @@ reread_config_file(void)
 	fclose(instream);
 
 	if (!rv)
-	    readconfig_finalize();
+	    apply_new_ports();
     }
  out:
     return;
@@ -845,7 +845,7 @@ main(int argc, char *argv[])
 	    exit(1);
 	fclose(instream);
     }
-    readconfig_finalize();
+    apply_new_ports();
 
     if (detach) {
 	int pid;
