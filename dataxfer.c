@@ -499,10 +499,11 @@ remaddr_check(const struct port_remaddr *list,
     if (!r)
 	return true;
 
-    while (r) {
+    for (; r; r = r->next) {
+	if (r->is_connect_back)
+	    continue;
 	if (ai_check(r->ai, addr, len, r->is_port_set))
 	    return true;
-	r = r->next;
     }
 
     return false;
