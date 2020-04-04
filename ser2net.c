@@ -125,6 +125,7 @@ reread_config_file(void)
     if (config_file) {
 	FILE *instream = NULL;
 	bool is_yaml;
+	int rv;
 
 	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
 	readconfig_init();
@@ -136,12 +137,13 @@ reread_config_file(void)
 	if (!admin_port_from_cmdline)
 	    controller_shutdown();
 	if (is_yaml)
-	    yaml_readconfig(instream);
+	    rv = yaml_readconfig(instream);
 	else
-	    readconfig(instream);
+	    rv = readconfig(instream);
 	fclose(instream);
 
-	readconfig_finalize();
+	if (!rv)
+	    readconfig_finalize();
     }
  out:
     return;
