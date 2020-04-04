@@ -2870,6 +2870,9 @@ startup_port(struct absout *eout, port_info_t *port)
 	    if (eout)
 		eout->out(eout, "Unable to enable port device %s: %s",
 			  port->name, gensio_err_to_str(err));
+	    else
+		syslog(LOG_ERR, "Unable to enable port device %s: %s",
+		       port->name, gensio_err_to_str(err));
 	    if (gensio_acc_shutdown(port->accepter, finish_startup_port_err,
 				    port))
 		/* Shouldn't happen, but just in case... */
