@@ -44,7 +44,7 @@ int portconfig(struct absout *eout,
 	       unsigned int timeout,
 	       const char *devname,
 	       const char * const *devcfg);
-void apply_new_ports(void);
+void apply_new_ports(struct absout *eout);
 
 /* Shut down all the ports, and provide a way to check when done. */
 void shutdown_ports(void);

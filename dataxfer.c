@@ -2854,9 +2854,8 @@ startup_port(struct absout *eout, port_info_t *port)
 
     err = gensio_acc_startup(port->accepter);
     if (err) {
-	if (eout)
-	    eout->out(eout, "Unable to startup network port %s: %s",
-		      port->name, gensio_err_to_str(err));
+	eout->out(eout, "Unable to startup network port %s: %s",
+		  port->name, gensio_err_to_str(err));
 	return err;
     }
     port->dev_to_net_state = PORT_UNCONNECTED;
@@ -2867,12 +2866,8 @@ startup_port(struct absout *eout, port_info_t *port)
 	if (err) {
 	    port->dev_to_net_state = PORT_CLOSING;
 	    port->net_to_dev_state = PORT_CLOSING;
-	    if (eout)
-		eout->out(eout, "Unable to enable port device %s: %s",
-			  port->name, gensio_err_to_str(err));
-	    else
-		syslog(LOG_ERR, "Unable to enable port device %s: %s",
-		       port->name, gensio_err_to_str(err));
+	    eout->out(eout, "Unable to enable port device %s: %s",
+		      port->name, gensio_err_to_str(err));
 	    if (gensio_acc_shutdown(port->accepter, finish_startup_port_err,
 				    port))
 		/* Shouldn't happen, but just in case... */
@@ -3018,7 +3013,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 		ports = new;
 	    }
 	    if (new->enabled) {
-		err = startup_port(NULL, new);
+		err = startup_port(&syslog_absout, new);
 		if (err)
 		    new->enabled = false;
 	    }
@@ -3962,7 +3957,7 @@ errout:
 }
 
 void
-apply_new_ports(void)
+apply_new_ports(struct absout *eout)
 {
     port_info_t *new, *curr, *next, *prev, *new_prev;
     int err;
@@ -4111,7 +4106,7 @@ apply_new_ports(void)
 		}
 	    } else {
 		if (curr->enabled) {
-		    err = startup_port(NULL, curr);
+		    err = startup_port(eout, curr);
 		    if (err)
 			curr->enabled = false;
 		}

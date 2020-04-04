@@ -95,6 +95,20 @@ str_endswith(const char *str, const char *end)
     return false;
 }
 
+static int
+syslog_eout(struct absout *e, const char *str, ...)
+{
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    syslog(LOG_ERR, "%s", buf);
+    return 0;
+}
+struct absout syslog_absout = { .out = syslog_eout };
+
 static FILE *
 fopen_config_file(bool *is_yaml)
 {
@@ -143,7 +157,7 @@ reread_config_file(void)
 	fclose(instream);
 
 	if (!rv)
-	    apply_new_ports();
+	    apply_new_ports(&syslog_absout);
     }
  out:
     return;
@@ -845,7 +859,7 @@ main(int argc, char *argv[])
 	    exit(1);
 	fclose(instream);
     }
-    apply_new_ports();
+    apply_new_ports(&syslog_absout);
 
     if (detach) {
 	int pid;

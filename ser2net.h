@@ -59,4 +59,6 @@ int scan_int(const char *str);
  */
 int handle_acc_auth_event(const char *authdir, int event, void *data);
 
+extern struct absout syslog_absout;
+
 #endif /* SER2NET_H */
