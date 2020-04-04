@@ -438,6 +438,7 @@ struct default_data defaults[] = {
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "connback",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
 						DATAROOT "/ser2net/auth" },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =

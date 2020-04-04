@@ -260,9 +260,8 @@ struct port_info
     struct gensio_accepter *accepter;	/* Used to receive new connections. */
     bool accepter_stopped;
 
-    bool               remaddr_set;	/* Did a remote address get set? */
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
-    bool has_connect_back;		/* We have connect back addresses. */
+    struct port_remaddr *connbacks;	/* Connect back addresses */
     unsigned int num_waiting_connect_backs;
 
     unsigned int max_connections;	/* Maximum number of connections
@@ -406,23 +405,25 @@ struct port_remaddr
     char *str;
     gaddrinfo *ai;
     bool is_port_set;
-    bool is_connect_back;
     struct port_remaddr *next;
 };
 
 /* Add a remaddr to the given list, return 0 on success or errno on fail. */
 static int
-remaddr_append(struct port_remaddr **list, const char *str)
+remaddr_append(struct port_remaddr **list, struct port_remaddr **cblist,
+	       const char *str, bool is_connect_back)
 {
-    struct port_remaddr *r, *r2;
+    struct port_remaddr *r = NULL, *r2, *rcb = NULL;
     gaddrinfo *ai = NULL;
-    bool is_port_set = false, is_connect_back = false;
+    bool is_port_set = false;
     int err = 0;
 
-    if (*str == '!') {
-	str++;
-	is_connect_back = true;
-    } else {
+    if (!is_connect_back) {
+	if (*str == '!') {
+	    str++;
+	    is_connect_back = true;
+	}
+
 #ifdef gensio_version_major
 	err = gensio_scan_network_port(so, str, false, &ai, NULL,
 				       &is_port_set, NULL, NULL);
@@ -435,39 +436,77 @@ remaddr_append(struct port_remaddr **list, const char *str)
 	if (err)
 	    return err;
 	/* FIXME - We currently ignore the protocol. */
+
+	r = malloc(sizeof(*r));
+	if (!r) {
+	    err = GE_NOMEM;
+	    goto out;
+	}
+	memset(r, 0, sizeof(*r));
+
+	r->str = strdup(str);
+	if (!r->str) {
+	    free(r);
+	    err = GE_NOMEM;
+	    goto out;
+	}
+	r->ai = ai;
+	ai = NULL;
+	r->is_port_set = is_port_set;
+	r->next = NULL;
+
+	r2 = *list;
+	if (!r2) {
+	    *list = r;
+	} else {
+	    while (r2->next)
+		r2 = r2->next;
+	    r2->next = r;
+	}
     }
 
-    r = malloc(sizeof(*r));
-    if (!r) {
-	err = GE_NOMEM;
-	goto out;
-    }
-    memset(r, 0, sizeof(*r));
+    if (is_connect_back) {
+	rcb = malloc(sizeof(*rcb));
+	if (!rcb) {
+	    err = GE_NOMEM;
+	    goto out;
+	}
+	memset(rcb, 0, sizeof(*rcb));
 
-    r->str = strdup(str);
-    if (!r->str) {
-	free(r);
-	err = GE_NOMEM;
-	goto out;
-    }
-    r->ai = ai;
-    r->is_port_set = is_port_set;
-    r->is_connect_back = is_connect_back;
-    r->next = NULL;
+	rcb->str = strdup(str);
+	if (!rcb->str) {
+	    free(rcb);
+	    err = GE_NOMEM;
+	    goto out;
+	}
+	rcb->next = NULL;
 
-    r2 = *list;
-    if (!r2) {
-	*list = r;
-    } else {
-	while (r2->next)
-	    r2 = r2->next;
-	r2->next = r;
+	r2 = *cblist;
+	if (!r2) {
+	    *cblist = rcb;
+	} else {
+	    while (r2->next)
+		r2 = r2->next;
+	    r2->next = rcb;
+	}
     }
-
  out:
-    if (err && ai)
-	gensio_free_addrinfo(so, ai);
-
+    if (err) {
+	if (r) {
+	    if (r->str)
+		free(r->str);
+	    if (r->ai)
+		gensio_free_addrinfo(so, r->ai);
+	    free(r);
+	}
+	if (rcb) {
+	    if (rcb->str)
+		free(rcb->str);
+	    free(rcb);
+	}
+	if (ai)
+	    gensio_free_addrinfo(so, ai);
+    }
     return err;
 }
 
@@ -500,8 +539,6 @@ remaddr_check(const struct port_remaddr *list,
 	return true;
 
     for (; r; r = r->next) {
-	if (r->is_connect_back)
-	    continue;
 	if (ai_check(r->ai, addr, len, r->is_port_set))
 	    return true;
     }
@@ -871,7 +908,7 @@ port_check_connect_backs(port_info_t *port)
     net_info_t *netcon;
     bool tried = false;
 
-    if (!port->has_connect_back)
+    if (!port->connbacks)
 	return 0;
 
     for_each_connection(port, netcon) {
@@ -941,7 +978,7 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for device on port %s: %s",
 	       port->name, gensio_err_to_str(err));
-	if (port->has_connect_back)
+	if (port->connbacks)
 	    port->enabled = false;
 	shutdown_port(port, "dev read error");
     }
@@ -1149,7 +1186,7 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->name, gensio_err_to_str(err));
-	if (port->has_connect_back)
+	if (port->connbacks)
 	    port->enabled = false;
 	shutdown_port(port, "dev write error");
 	return;
@@ -2410,7 +2447,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
     }
     netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
 
-    if (num_connected_net(port) == 1 && !port->has_connect_back) {
+    if (num_connected_net(port) == 1 && !port->connbacks) {
 	/* We are first, set things up on the device. */
 	err = port_dev_enable(port);
 	if (err) {
@@ -2862,7 +2899,7 @@ startup_port(struct absout *eout, port_info_t *port)
     port->dev_to_net_state = PORT_UNCONNECTED;
     port->net_to_dev_state = PORT_UNCONNECTED;
 
-    if (port->has_connect_back) {
+    if (port->connbacks) {
 	err = port_dev_enable(port);
 	if (err) {
 	    port->dev_to_net_state = PORT_CLOSING;
@@ -2900,6 +2937,12 @@ free_port(port_info_t *port)
 	r = port->remaddrs;
 	port->remaddrs = r->next;
 	gensio_free_addrinfo(so, r->ai);
+	free(r->str);
+	free(r);
+    }
+    while (port->connbacks) {
+	r = port->connbacks;
+	port->connbacks = r->next;
 	free(r->str);
 	free(r);
     }
@@ -3154,7 +3197,7 @@ netcon_finish_shutdown(net_info_t *netcon)
     if (num_connected_net(port) == 0) {
 	if (port->net_to_dev_state == PORT_CLOSING) {
 	    start_shutdown_port_io(port);
-	} else if (port->has_connect_back && port->enabled) {
+	} else if (port->connbacks && port->enabled) {
 	    /* Leave the device open for connect backs. */
 	    gensio_set_write_callback_enable(port->io, true);
 	    port->dev_to_net_state = PORT_WAITING_INPUT;
@@ -3292,7 +3335,7 @@ accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
     }
 
     if (!some_to_close) {
-	if (port->has_connect_back && port->enabled) {
+	if (port->connbacks && port->enabled) {
 	    /* Leave the device open for connect backs. */
 	    port->dev_to_net_state = PORT_UNCONNECTED;
 	    port->net_to_dev_state = PORT_UNCONNECTED;
@@ -3422,10 +3465,40 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
     remstr = strtok_r(str, ";", &strtok_data);
     /* Note that we ignore an empty remaddr. */
     while (remstr && *remstr) {
-	err = remaddr_append(&port->remaddrs, remstr);
+	err = remaddr_append(&port->remaddrs, &port->connbacks, remstr, false);
 	if (err) {
 	    eout->out(eout, "Error adding remote address '%s': %s\n", remstr,
 		      gensio_err_to_str(err));
+	    break;
+	}
+	remstr = strtok_r(NULL, ";", &strtok_data);
+    }
+    free(str);
+    return err;
+}
+
+static int
+port_add_connback(struct absout *eout, port_info_t *port, const char *istr)
+{
+    char *str;
+    char *strtok_data;
+    char *remstr;
+    int err = 0;
+
+    str = strdup(istr);
+    if (!str) {
+	eout->out(eout, "Out of memory handling connect back address '%s'",
+		  istr);
+	return ENOMEM;
+    }
+
+    remstr = strtok_r(str, ";", &strtok_data);
+    /* Note that we ignore an empty remaddr. */
+    while (remstr && *remstr) {
+	err = remaddr_append(NULL, &port->connbacks, remstr, true);
+	if (err) {
+	    eout->out(eout, "Error adding connect back address '%s': %s\n",
+		      remstr, gensio_err_to_str(err));
 	    break;
 	}
 	remstr = strtok_r(NULL, ";", &strtok_data);
@@ -3596,7 +3669,10 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	rv = port_add_remaddr(eout, port, val);
 	if (rv)
 	    return -1;
-	port->remaddr_set = true;
+    } else if (gensio_check_keyvalue(pos, "connback", &val) > 0) {
+	rv = port_add_connback(eout, port, val);
+	if (rv)
+	    return -1;
     } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
 	port->rs485 = find_rs485conf(val);
     } else if (check_keyvalue_default(pos, "banner", &val, "") > 0) {
@@ -3701,12 +3777,10 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 }
 
 static void
-process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r)
+process_connect_back(struct absout *eout, port_info_t *port,
+		     struct port_remaddr *r)
 {
     net_info_t *netcon;
-
-    if (!r->is_connect_back)
-	return;
 
     for_each_connection(port, netcon) {
         if (netcon->remote_fixed)
@@ -3714,7 +3788,6 @@ process_remaddr(struct absout *eout, port_info_t *port, struct port_remaddr *r)
 
 	netcon->remote_fixed = true;
 	netcon->remote_str = r->str;
-	port->has_connect_back = true;
 	netcon->connect_back = true;
 	return;
     }
@@ -3914,16 +3987,28 @@ portconfig(struct absout *eout,
     }
 
     /*
-     * Don't handle the remaddr default until here, we don't want to
-     * mess with it if the user has set it, because the user may set
-     * it to an empty string.
+     * Don't handle the remaddr/connect back defaults until here, we
+     * don't want to mess with it if the user has set it, because the
+     * user may set it to an empty string.
      */
-    if (!new_port->remaddr_set) {
+    if (!new_port->remaddrs) {
 	char *remaddr;
 	if (find_default_str("remaddr", &remaddr)) {
 	    eout->out(eout, "Out of memory processing default remote address");
 	} else if (remaddr) {
 	    err = port_add_remaddr(eout, new_port, remaddr);
+	    free(remaddr);
+	    if (err)
+		goto errout;
+	}
+    }
+    if (!new_port->connbacks) {
+	char *remaddr;
+	if (find_default_str("connback", &remaddr)) {
+	    eout->out(eout, "Out of memory processing default connect back "
+		      "address");
+	} else if (remaddr) {
+	    err = port_add_connback(eout, new_port, remaddr);
 	    free(remaddr);
 	    if (err)
 		goto errout;
@@ -3940,8 +4025,8 @@ portconfig(struct absout *eout,
     for_each_connection(new_port, netcon)
 	netcon->port = new_port;
 
-    for (r = new_port->remaddrs; r; r = r->next)
-	process_remaddr(eout, new_port, r);
+    for (r = new_port->connbacks; r; r = r->next)
+	process_connect_back(eout, new_port, r);
 
     /* Link it on the end of new_ports for now. */
     if (new_ports_end)

@@ -214,6 +214,7 @@ define: &confver 1.0
 #     max-connections: 1
 #     #authdir: <authentication directory>
 #     #remaddr: <remote address>
+#     #connback: <remote connector string>
 #     #rs485: <rs485 alias>
 #     banner:
 #     signature:
