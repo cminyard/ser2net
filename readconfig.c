@@ -448,6 +448,7 @@ struct default_data defaults[] = {
     { "closestr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "closeon",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "banner",		GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "sendon",		GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { NULL }
 };
 

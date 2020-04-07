@@ -273,6 +273,12 @@ sets the maximum delay that ser2net will wait, in microseconds, before
 sending the data.  The default value is 20000.  This keeps the connection
 working smoothly at slow speeds.
 
+.I sendon: <sendon string>
+If the given string is seen coming from the connector side of the connection,
+sends buffered data up to and including the string. Disabled by default. As an
+example, this can be set to \r\n with appropriate chardelay settings to send
+one line at a time.
+
 .I dev-to-net-bufsize: <number>
 sets the size of the buffer reading from the connecting gensio and writing
 to the accepted gensio.

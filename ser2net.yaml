@@ -225,6 +225,7 @@ define: &confver 1.0
 #     chardelay-scale: 20
 #     chardelay-min: 1000
 #     chardelay-max: 20000
+#     sendon: ""
 #     dev-to-net-bufsize: 64
 #     net-to-dev-bufsize: 64
 #     max-connections: 1
