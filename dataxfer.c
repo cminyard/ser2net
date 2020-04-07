@@ -388,6 +388,13 @@ struct port_info
      * Directory that has authentication info.
      */
     char *authdir;
+
+    /*
+     * Delimiter for sending.
+     */
+    char *sendon;
+    gensiods sendon_pos;
+    gensiods sendon_len;
 };
 
 static void setup_port(port_info_t *port, net_info_t *netcon);
@@ -634,6 +641,8 @@ init_port_data(port_info_t *port)
     if (find_default_str("closestr", &port->closestr))
 	return ENOMEM;
     if (find_default_str("closeon", &port->closeon))
+	return ENOMEM;
+    if (find_default_str("sendon", &port->sendon))
 	return ENOMEM;
 
     port->led_tx = NULL;
@@ -1033,6 +1042,23 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
  do_send:
     if (nr_handlers < 0) /* Nobody to handle the data. */
 	goto out_unlock;
+
+    if (port->sendon_len != 0) {
+	int i;
+
+	for (i = 0; i < count; i++) {
+	    if (buf[i] == port->sendon[port->sendon_pos]) {
+		port->sendon_pos++;
+		if (port->sendon_pos >= port->sendon_len) {
+		    count = i + 1;
+		    send_now = true;
+		    break;
+		}
+	    } else {
+		port->sendon_pos = 0;
+	    }
+	}
+    }
 
     gbuf_append(&port->dev_to_net, buf, count);
     port->dev_bytes_received += count;
@@ -2990,6 +3016,8 @@ free_port(port_info_t *port)
 	free(port->netcons);
     if (port->orig_devname)
 	free(port->orig_devname);
+    if (port->sendon)
+	free(port->sendon);
     free(port);
 }
 
@@ -3724,6 +3752,19 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->signaturestr)
 	    free(port->signaturestr);
 	port->signaturestr = fval;
+    } else if (gensio_check_keyvalue(pos, "sendon", &val) > 0) {
+	struct timeval tv =  { 0, 0 };
+	gensiods len;
+
+	fval= process_str_to_str(port, NULL, val, &tv, &len, false);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating sendon");
+	    return -1;
+	}
+	if (port->sendon)
+	    free(port->sendon);
+	port->sendon = fval;
+	port->sendon_len = len;
 
     /* Everything from here down to the banner, etc is deprecated. */
     } else if (strcmp(pos, "remctl") == 0) {
