@@ -205,6 +205,10 @@ empty string.
 Send the given string to the device on final close.  This may be an
 empty string.
 
+.I closeon: <closeon string>
+If the given string is seen coming from the connector side of the
+connection, close the connection.
+
 .I tr: <filename>
 When the acceptor is opened, open the given tracefile and store all data read
 from the physical device (and thus written to the client's TCP port) in
