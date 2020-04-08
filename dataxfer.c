@@ -3711,6 +3711,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->closeon)
 	    free(port->closeon);
 	port->closeon = fval;
+	port->closeon_len = strlen(port->closeon);
     } else if (check_keyvalue_default(pos, "signature", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
