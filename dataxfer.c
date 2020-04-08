@@ -3703,7 +3703,10 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	    free(port->closestr);
 	port->closestr = fval;
     } else if (gensio_check_keyvalue(pos, "closeon", &val) > 0) {
-	fval = strdup(val);
+	struct timeval tv = { 0, 0 };
+	gensiods len;
+
+	fval = process_str_to_str(port, NULL, val, &tv, &len, false);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating closeon");
 	    return -1;
@@ -3711,7 +3714,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->closeon)
 	    free(port->closeon);
 	port->closeon = fval;
-	port->closeon_len = strlen(port->closeon);
+	port->closeon_len = len;
     } else if (check_keyvalue_default(pos, "signature", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
