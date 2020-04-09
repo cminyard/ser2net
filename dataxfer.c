@@ -2148,15 +2148,15 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
 	len++;
     bufop.pos = 0;
     if (len == 0)
-	/* malloc(0) sometimes return NULL */
 	bufop.str = malloc(1);
     else
-	bufop.str = malloc(len);
+	bufop.str = malloc(len + 1);
     if (!bufop.str) {
 	syslog(LOG_ERR, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
     process_str(port, netcon, &now, tv, str, buffer_op, &bufop, isfilename);
+    bufop.str[len] = '\0';
 
     if (lenrv)
 	*lenrv = len;
