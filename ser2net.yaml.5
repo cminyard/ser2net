@@ -190,7 +190,7 @@ shouldn't be too hard.
 sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
 
-banner: <banner string>
+.I banner: <banner string>
 displays the given banner when a client connects.
 
 .I signature: <signature string>
@@ -561,8 +561,11 @@ done or the triggers will not work, they require the transient trigger.
 You also probably need root access to access LED settings.
 
 .SH FILENAME, BANNER, AND STRING FORMATTING
-Filenames, banners, and open/close string may contain normal "C"
-escape sequences and a large number of other escape sequences, too:
+NOTE: yaml has it's own quoting mechanism, see below for more details.
+
+Filenames, banners, open/close strings, and closeon string may contain
+normal "C" escape sequences and a large number of other escape
+sequences, too:
 
 .RS 2
 \ea - bell
@@ -645,6 +648,12 @@ filenames when using \ed or \eo, everything up to and including last /
 in the device name is removed, because you can't have a / in a
 filename.  So in a filename /dev/ttyS0 would become just ttyS0.
 
+.SS HANDLING QUOTING AND STRING FORMATTING
+yaml will process "\e" escape sequences in double quotes, so use of
+double quotes is note recommended for the above.  If you put the
+values in single quotes, yaml will not process them and instead pass
+them through where they can be processed by ser2net.
+
 .SH SPACES, QUOTING AND PUTTING SPACES IN STRINGS
 YAML and the accepter/connector processing interact when dealing with
 quoting.  By default, YAML ignores the number of spaces between
@@ -686,19 +695,24 @@ accepter: ssl(CA="/etc/ser2net/my CA/"),tcp,3000
 because YAML will remove the quotes, this is functionally equivalent to
 the previous example. And
 .IP
-accepter: ssl(CA="/etc/ser2net/my\\ CA/"),tcp,3000
+accepter: ssl(CA="/etc/ser2net/my\e CA/"),tcp,3000
 .PP
-also will not work, inside of quotes YAML will convert the "\\ " to a
-space.  You have a couple of options.  You can do:
+also will not work, inside of double quotes YAML will convert "\e "
+to a space.  You have a couple of options.  You can do:
 .IP
-accepter: ssl(CA=/etc/ser2net/my\\ CA/),tcp,3000
+accepter: ssl(CA=/etc/ser2net/my\e CA/),tcp,3000
 .PP
-because outside of quotes YAML will not process the "\\ ".  Or if you
-have a lot of spaces or colons, too, you can do:
+or
 .IP
-accepter: ssl(CA="\\"/etc/ser2net/my CA/\\""),tcp,3000
+accepter: ssl(CA='/etc/ser2net/my\e CA/'),tcp,3000
 .PP
-because inside the outside quotes YAML will convert the '\\"' into a '"'
+because outside of quotes YAML will not process the "\e " and it will
+not process it in single quotes.  Or if you have a lot of spaces or
+colons, too, you can do:
+.IP
+accepter: ssl(CA="\e"/etc/ser2net/my CA/\e""),tcp,3000
+.PP
+because inside the outside quotes YAML will convert the '\e"' into a '"'
 and pass it on to the accepter processing which will interpret
 the quotes as you would expect.
 

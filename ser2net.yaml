@@ -183,11 +183,27 @@ define: &confver 1.0
 #     openstr: hello
 #     banner: *banner1
 
+# # The following shows how to quote some strings.  Notice they are all
+# # in single quotes.  If you put them in double quotes, yaml will interpret
+# # the '\' sequences on it's own, and thus ser2net will not be able to
+# # process them.  The yaml rules are complex, and the single quotes are
+# # not necessar in all the instance below, but it's good practice to use
+# # them to avoid confusion.  Notice that you can do '' in a single quote
+# # string to add one single quote.
+# connection: &con6
+#   accepter: tcp,2007
+#   connector: echo
+#   options:
+#     openstr: 'Hello\x20there'
+#     closestr: 'Goodbye\nnow'
+#     banner: '''a Special Banner \d'''
+#     closeon: 'ctrl-a\001nil\000'
+
 # # An example showing all options and their defaults.  Note that empty
 # # strings are ok for most strings, but not for things that take filesname
 # # or are required to be aliases.
-# connection: &con6
-#   accepter: tcp,2007
+# connection: &con7
+#   accepter: tcp,2008
 #   connector: echo
 #   options:
 #     kickolduser: false
@@ -220,3 +236,4 @@ define: &confver 1.0
 #     signature:
 #     openstr:
 #     closestr:
+#     closeon:
