@@ -1052,6 +1052,7 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 		if (port->sendon_pos >= port->sendon_len) {
 		    count = i + 1;
 		    send_now = true;
+		    port->sendon_pos = 0;
 		    break;
 		}
 	    } else {
