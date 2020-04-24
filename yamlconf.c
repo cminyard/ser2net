@@ -1011,7 +1011,7 @@ yhandle_mapping_end(struct yconf *y)
 	    err = gensio_argv_copy(so, (const char **) y->connections,
 				   &argc, &argv);
 	    if (err) {
-		eout->out(eout, "Unable to allocat rotator connections");
+		eout->out(eout, "Unable to allocate rotator connections");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
