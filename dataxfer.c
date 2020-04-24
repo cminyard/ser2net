@@ -1885,13 +1885,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    op(data, *t);
 		break;
 
-	    case 's':
-		if (isfilename)
-		    goto seconds;
-		goto serparms;
-
 	    case 'B':
-	    serparms:
 		/* ser2net serial parms. */
 		{
 		    char str[1024];
@@ -2053,7 +2047,6 @@ process_str(port_info_t *port, net_info_t *netcon,
 
 	    /* \S -> second */
 	    case 'S':
-	    seconds:
 	    {
 		char d[10], *dp;
 		snprintf(d, sizeof(d), "%2.2d", time->tm_sec);
