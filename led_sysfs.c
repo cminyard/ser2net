@@ -86,7 +86,7 @@ led_write(const char *led, const char *property, const char *buf, int lineno)
 
     if ((fd = open(filename, O_WRONLY | O_TRUNC)) == -1) {
 	if (lineno)
-	    snprintf(linestr, sizeof(linestr), " on line %d", lineno);
+	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
 	syslog(LOG_ERR, "Unable to open to LED %s%s: %s", linestr, led,
 	       strerror(errno));
 	return -1;
@@ -94,7 +94,7 @@ led_write(const char *led, const char *property, const char *buf, int lineno)
 
     if (write(fd, buf, strlen(buf)) != strlen(buf)) {
 	if (lineno)
-	    snprintf(linestr, sizeof(linestr), " on line %d", lineno);
+	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
 	syslog(LOG_ERR, "Unable to write to LED %s%s: %s", linestr, led,
 	       strerror(errno));
 	close(fd);
