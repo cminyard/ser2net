@@ -184,6 +184,92 @@ if you need to use it from a program, it's easy with gensio.  There is
 even python support.  Adding support for other scripting languages
 shouldn't be too hard.
 
+.SS "SPECIAL STRING HANDLING"
+
+Some string values, like banners, have special formatting for
+inserting various values.  These are all prepended with '\'.  This
+takes the standard "C" \x characters (\r is carriage return, \n is
+newline, \001 is ctrl-a, etc.).
+
+.RS 2
+\ea - bell
+.br
+\eb - backspace
+.br
+\ef - form feed
+.br
+\en - newline
+.br
+\er - carriage return
+.br
+\et - tab
+.br
+\ev - vertical tab
+.br
+\e\e - \e
+.br
+\e? - ?
+.br
+\e' - '
+.br
+\e" - "
+.br
+\ennn - octal value for nnn
+.br
+\exXX - hex value for XX
+.br
+\ed - The device name (/dev/ttyS0, etc.)
+.br
+\eo - The device as specified on the config line (before DEVICE subsitution)
+.br
+\ep - Network port number
+.br
+\eB - The serial port parameters (eg 9600N81)
+.br
+\eY -> year
+.br
+\ey -> day of the year (days since Jan 1)
+.br
+\eM -> month (Jan, Feb, Mar, etc.)
+.br
+\em -> month (as a number)
+.br
+\eA -> day of the week (Mon, Tue, etc.)
+.br
+\eD -> day of the month
+.br
+\ee -> epoc (seconds since Jan 1, 1970)
+.br
+\eU -> microseconds in the current second
+.br
+\ep -> local port number
+.br
+\eI -> remote IP address (in dot format)
+.br
+\eH -> hour (24-hour time)
+.br
+\eh -> hour (12-hour time)
+.br
+\ei -> minute
+.br
+\eS -> second
+.br
+\eq -> am/pm
+.br
+\eP -> AM/PM
+.RE
+
+These sequences may be used to make the filename unique per open and
+identify which port/device the filename was for.  Note that in
+filenames when using \ed or \eo, everything up to and including last /
+in the device name is removed, because you can't have a / in a
+filename.  So in a filename /dev/ttyS0 would become just ttyS0.
+
+Note that in banners and other strings going out (not filenames) you
+.B must
+use \er\en to send a new line; this is raw handling and \en will only go
+down one line, it will not return to the beginning of the line.
+
 .SS "CONNECTION SPECIFICATION OPTIONS"
 
 .I kickolduser: true|false
@@ -191,7 +277,8 @@ sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
 
 .I banner: <banner string>
-displays the given banner when a client connects.
+displays the given banner when a client connects.  It uses string
+handling as described in "SPECIAL STRING HANDLING" above.
 
 .I signature: <signature string>
 sends RFC2217 signature on clients request.  This may be an empty
@@ -199,47 +286,49 @@ string.
 
 .I openstr: <openstr name string>
 Send the given string to the device on first open.  This may be an
-empty string.
+empty string.  It uses string handling as described in "SPECIAL STRING
+HANDLING" above.
 
 .I closestr: <closestr name>
 Send the given string to the device on final close.  This may be an
-empty string.
+empty string.  It uses string handling as described in "SPECIAL STRING
+HANDLING" above.
 
 .I closeon: <closeon string>
 If the given string is seen coming from the connector side of the
 connection, close the connection.
 
-.I tr: <filename>
-When the acceptor is opened, open the given tracefile and store all data read
-from the physical device (and thus written to the client's TCP port) in
-the file.  The actual filename is specified in the TRACEFILE directive.
-If the file already exists, it is appended.  The file is closed
-when the port is closed.
+.I trace-read: <filename>
+When the acceptor is opened, open the given file and store all data
+read from the physical device (and thus written to the client's
+network/acceptor port) in the file.  If the file already exists, it is
+appended.  The file is closed when the port is closed.  The filename
+uses string handling as described in "SPECIAL STRING HANDLING" above.
 
-.I tw: <filename>
+.I trace-write: <filename>
 Like tr, but traces data written to the connecting gensio.
 
-.I tb: <filename>
+.I trace-both: <filename>
 trace both read and written data to the same file.  Note that this is
 independent of tr and tw, so you may be tracing read, write, and both
 to different files.
 
-.I hexdump: true|false
+.I trace-hexdump: true|false
 turns on/off hexdump output to all trace files.  Each line in the
 trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
 useful for debugging a binary protocol.
 
-.I timestamp: true|false
+.I trace-timestamp: true|false
 adds/removes a timestamp to all of the trace files. A timestamp
 is prepended to each line if hexdump is active for the trace file.  A
 timestamped line is also recorded in the trace file when a remote client
 connects or disconnects from the port.
 
-.I [tr-|tw-|tb-]hexdump: true|false
+.I [trace-read-|trace-write-|trace-both-]hexdump: true|false
 turns on/off hexdump output for only one trace file.
 May be combined with hexdump.  Order is important.
 
-.I [tr-|tw-|tb-]timestamp: true|false
+.I [trace-read-|trace-write-|trace-both-]timestamp: true|false
 adds/removes a timestamp to only one the trace files
 May be combined with [-]timestamp.  Order is important.
 
@@ -274,10 +363,11 @@ sending the data.  The default value is 20000.  This keeps the connection
 working smoothly at slow speeds.
 
 .I sendon: <sendon string>
-If the given string is seen coming from the connector side of the connection,
-sends buffered data up to and including the string. Disabled by default. As an
-example, this can be set to \r\n with appropriate chardelay settings to send
-one line at a time.
+If the given string is seen coming from the connector side of the
+connection, sends buffered data up to and including the
+string. Disabled by default. As an example, this can be set to \r\n
+with appropriate chardelay settings to send one line at a time.  It
+uses string handling as described in "SPECIAL STRING HANDLING" above.
 
 .I dev-to-net-bufsize: <number>
 sets the size of the buffer reading from the connecting gensio and writing

@@ -3599,6 +3599,22 @@ check_keyvalue_default(const char *str, const char *name, const char **value,
 }
 
 static int
+update_str_val(const char *str, char **outstr, const char *name,
+	       struct absout *eout)
+{
+    char *fval = strdup(str);
+
+    if (!fval) {
+	eout->out(eout, "Out of memory allocating %s", name);
+	return -1;
+    }
+    if (*outstr)
+	free(*outstr);
+    *outstr = fval;
+    return 0;
+}
+
+static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
     enum str_type stype;
@@ -3620,35 +3636,39 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	}
     } else if (gensio_check_keybool(pos, "kickolduser",
 				    &port->kickolduser_mode) > 0) {
-    } else if (gensio_check_keybool(pos, "hexdump",
+    } else if (gensio_check_keybool(pos, "trace-hexdump",
 				    &port->trace_read.hexdump) > 0) {
 	port->trace_write.hexdump = port->trace_read.hexdump;
 	port->trace_both.hexdump = port->trace_read.hexdump;
-    } else if (gensio_check_keybool(pos, "timestamp",
+    } else if (gensio_check_keybool(pos, "trace-timestamp",
 				    &port->trace_read.timestamp) > 0) {
 	port->trace_write.timestamp = port->trace_read.timestamp;
 	port->trace_both.timestamp = port->trace_read.timestamp;
-    } else if (gensio_check_keybool(pos, "tr-hexdump",
+    } else if (gensio_check_keybool(pos, "trace-read-hexdump",
 				    &port->trace_read.hexdump) > 0) {
-    } else if (gensio_check_keybool(pos, "tr-timestamp",
+    } else if (gensio_check_keybool(pos, "trace-read-timestamp",
 				    &port->trace_read.timestamp) > 0) {
-    } else if (gensio_check_keybool(pos, "tw-hexdump",
+    } else if (gensio_check_keybool(pos, "trace-write-hexdump",
 				    &port->trace_write.hexdump) > 0) {
-    } else if (gensio_check_keybool(pos, "tw-timestamp",
+    } else if (gensio_check_keybool(pos, "trace-write-timestamp",
 				    &port->trace_write.timestamp) > 0) {
-    } else if (gensio_check_keybool(pos, "tb-hexdump",
+    } else if (gensio_check_keybool(pos, "trace-both-hexdump",
 				    &port->trace_both.hexdump) > 0) {
-    } else if (gensio_check_keybool(pos, "tb-timestamp",
+    } else if (gensio_check_keybool(pos, "trace-both-timestamp",
 				    &port->trace_both.timestamp) > 0) {
-    } else if (gensio_check_keyvalue(pos, "tr", &val) > 0) {
+    } else if (gensio_check_keyvalue(pos, "trace-read", &val) > 0) {
 	/* trace read, data from the port to the socket */
-	port->trace_read.filename = find_tracefile(val);
-    } else if (gensio_check_keyvalue(pos, "tw", &val) > 0) {
+	if (update_str_val(val, &port->trace_read.filename, "trace-read", eout))
+	    return -1;
+    } else if (gensio_check_keyvalue(pos, "trace-write", &val) > 0) {
 	/* trace write, data from the socket to the port */
-	port->trace_write.filename = find_tracefile(val);
-    } else if (gensio_check_keyvalue(pos, "tb", &val) > 0) {
+	if (update_str_val(val, &port->trace_write.filename, "trace-write",
+			   eout))
+	    return -1;
+    } else if (gensio_check_keyvalue(pos, "trace-both", &val) > 0) {
 	/* trace both directions. */
-	port->trace_both.filename = find_tracefile(val);
+	if (update_str_val(val, &port->trace_both.filename, "trace-both", eout))
+	    return -1;
     } else if (gensio_check_keyvalue(pos, "led-rx", &val) > 0) {
 	/* LED for UART RX traffic */
 	port->led_rx = find_led(val);
@@ -3702,8 +3722,6 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	rv = port_add_connback(eout, port, val);
 	if (rv)
 	    return -1;
-    } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
-	port->rs485 = find_rs485conf(val);
     } else if (check_keyvalue_default(pos, "banner", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {
@@ -3794,6 +3812,17 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	port->trace_both.hexdump = false;
     } else if (strcmp(pos, "-tb-timestamp") == 0) {
 	port->trace_both.timestamp = false;
+    } else if (gensio_check_keyvalue(pos, "tr", &val) > 0) {
+	/* trace read, data from the port to the socket */
+	port->trace_read.filename = find_tracefile(val);
+    } else if (gensio_check_keyvalue(pos, "tw", &val) > 0) {
+	/* trace write, data from the socket to the port */
+	port->trace_write.filename = find_tracefile(val);
+    } else if (gensio_check_keyvalue(pos, "tb", &val) > 0) {
+	/* trace both directions. */
+	port->trace_both.filename = find_tracefile(val);
+    } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
+	port->rs485 = find_rs485conf(val);
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
     } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {

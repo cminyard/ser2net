@@ -18,9 +18,12 @@ define: &confver 1.0
 # # to when a connection comes in, in this case serial device /dev/ttyS0
 # # with the given serial parameters.  local means to ignore modem
 # # control lines, and is generally what you want.
+# # Tracing is added here, note the \p, see the ser2net.yaml.5 man page
+# # for details on special string handling.
 # connection: &con00
 #   accepter: tcp,2012
 #   connector: serialdev,/dev/ttyS0,9600n81,local
+#   trace-both: '/var/log/trace-\p'
 
 # # Like the above, but with telnet and rfc2217 enabled.  With the
 # # gensio library that ser2net uses, protocols stack, so this stacks
@@ -215,11 +218,11 @@ define: &confver 1.0
 #     tw-timestamp: false
 #     tb-hexdump: false
 #     tb-timestamp: false
-#     #tr: <trace read file>
-#     #t2: <trace write file>
-#     #tb: <trace both file>
-#     #led-rx: <led alias>
-#     #led-tx: <led alias>
+#     trace-read: <trace read file>
+#     trace-write: <trace write file>
+#     trace-both: <trace both file>
+#     led-rx: <led alias>
+#     led-tx: <led alias>
 #     telnet-brk-on-sync: false
 #     chardelay: false
 #     chardelay-scale: 20
@@ -229,10 +232,9 @@ define: &confver 1.0
 #     dev-to-net-bufsize: 64
 #     net-to-dev-bufsize: 64
 #     max-connections: 1
-#     #authdir: <authentication directory>
-#     #remaddr: <remote address>
-#     #connback: <remote connector string>
-#     #rs485: <rs485 alias>
+#     authdir: <authentication directory>
+#     remaddr: <remote address>
+#     connback: <remote connector string>
 #     banner:
 #     signature:
 #     openstr:
