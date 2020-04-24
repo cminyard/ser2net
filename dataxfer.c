@@ -1857,6 +1857,8 @@ process_str(port_info_t *port, net_info_t *netcon,
 		/* ser2net device name. */
 		if (*s == 'o' && port->orig_devname)
 		    s2 = port->orig_devname;
+		else if (*s == 'o')
+		    s2 = port->name;
 		else
 		    s2 = port->devname;
 
@@ -3947,7 +3949,6 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    /* Errors from here on out must goto errout. */
     init_port_data(new_port);
 
     if (!new_port->name) {

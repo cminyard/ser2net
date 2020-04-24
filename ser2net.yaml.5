@@ -187,9 +187,8 @@ shouldn't be too hard.
 .SS "SPECIAL STRING HANDLING"
 
 Some string values, like banners, have special formatting for
-inserting various values.  These are all prepended with '\'.  This
-takes the standard "C" \x characters (\r is carriage return, \n is
-newline, \001 is ctrl-a, etc.).
+inserting various values.  These are all prepended with '\e'.  This
+takes the standard "C" \ex characters.
 
 .RS 2
 \ea - bell
@@ -218,13 +217,13 @@ newline, \001 is ctrl-a, etc.).
 .br
 \exXX - hex value for XX
 .br
-\ed - The device name (/dev/ttyS0, etc.)
+\ed - The connector string (/dev/ttyS0, etc.)
 .br
-\eo - The device as specified on the config line (before DEVICE subsitution)
+\eo - The name of the connection.
 .br
 \ep - Network port number
 .br
-\eB - The serial port parameters (eg 9600N81)
+\eB - The serial port parameters (eg 9600N81) if applicable
 .br
 \eY -> year
 .br
