@@ -844,12 +844,18 @@ main(int argc, char *argv[])
 	handle_config_line(config_lines[i], strlen(config_lines[i]));
     free(config_lines);
     if (config_file) {
-	bool is_yaml;
-	FILE *instream = fopen_config_file(&is_yaml);
 	int rv;
+	FILE *instream;
+	bool is_yaml;
 
-	if (!instream)
-	    exit(1);
+	if (strcmp(config_file, "-") == 0) {
+	    instream = stdin;
+	    is_yaml = true;
+	} else {
+	    instream = fopen_config_file(&is_yaml);
+	    if (!instream)
+		exit(1);
+	}
 
 	if (is_yaml)
 	    rv = yaml_readconfig(instream);
@@ -857,7 +863,8 @@ main(int argc, char *argv[])
 	    rv = readconfig(instream);
 	if (rv == -1)
 	    exit(1);
-	fclose(instream);
+	if (instream != stdin)
+	    fclose(instream);
     }
     apply_new_ports(&syslog_absout);
 
