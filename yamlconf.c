@@ -1070,14 +1070,142 @@ yhandle_mapping_end(struct yconf *y)
     return 0;
 }
 
+struct yaml_read_handler_data {
+    FILE *f;
+    char **config_lines;
+    unsigned int num_config_lines;
+    unsigned int curr;
+    unsigned int pos;
+    char in_quote;
+    bool in_escape;
+};
+
+/*
+ * Copy characters from input to buffer, up to either buffer_size or
+ * input_size.  Upon return buffer_size and input_size are updated to
+ * the actual number of each processed.
+ *
+ * "#" characters outside of quotes are converted to newlines.
+ *
+ * Returns 0 on an error or 1 on success.
+ */
+static int
+process_buffer(struct yaml_read_handler_data *d,
+	       unsigned char *buffer, size_t *buffer_size,
+	       char *input, unsigned int *input_size)
+{
+    unsigned int in_len = 0;
+    size_t out_len = 0;
+
+    while (in_len < *input_size && out_len < *buffer_size) {
+	char c = *input++;
+
+	switch(c) {
+	case '\'':
+	case '"':
+	    if (d->in_quote == '"' && d->in_escape)
+		/* \" in "" doens't end the quotes. */
+		goto normal_char;
+	    if (d->in_quote == c)
+		d->in_quote = 0;
+	    else if (!d->in_quote)
+		d->in_quote = c;
+	    goto normal_char;
+
+	case '#':
+	    if (!d->in_quote)
+		c = '\n';
+	    goto normal_char;
+
+	case '\\':
+	    d->in_escape = !d->in_escape;
+	    goto normal_char_skip_escape;
+
+	default:
+	normal_char:
+	    d->in_escape = false;
+	normal_char_skip_escape:
+	    *buffer++ = c;
+	    in_len++;
+	    out_len++;
+	    break;
+	}
+    }
+
+    *input_size = in_len;
+    *buffer_size = out_len;
+
+    return 1;
+}
+
+static int
+yaml_read_handler(void *data, unsigned char *buffer, size_t size,
+		  size_t *size_read)
+{
+    struct yaml_read_handler_data *d = data;
+
+    *size_read = 0;
+
+    if (d->f) {
+	*size_read = fread(buffer, 1, size, d->f);
+	if (*size_read < size) {
+	    if (ferror(d->f)) {
+		syslog(LOG_ERR, "Error reading input file: %m");
+		return 0;
+	    }
+	    /* End of file */
+	    d->f = NULL;
+	    size -= *size_read;
+	    buffer += *size_read;
+	} else {
+	    return 1;
+	}
+    }
+
+    while (d->curr < d->num_config_lines && size > 1) {
+	unsigned int len = strlen(d->config_lines[d->curr]);
+
+	size--; /* leave space for the terminating newline. */
+	if (d->pos < len) {
+	    unsigned int input_processed = len - d->pos;
+	    size_t output_processed = size;
+
+	    if (!process_buffer(d, buffer, &output_processed,
+				d->config_lines[d->curr] + d->pos,
+				&input_processed)) {
+		syslog(LOG_ERR, "Invalid yaml config string");
+		return 0;
+	    }
+	    size -= output_processed;
+	    buffer += output_processed;
+	    *size_read += output_processed;
+	    d->pos += input_processed;
+	    if (d->pos >= len) {
+		d->pos = 0;
+		d->curr++;
+		*buffer++ = '\n'; /* Put a newline after each -Y */
+		(*size_read)++;
+	    }
+	}
+    }
+
+    /*
+     * We could check d->in_quote and d->in_escape, but normal yaml
+     * processing should catch those errors.
+     */
+
+    return 1;
+}
+
 int
-yaml_readconfig(FILE *f)
+yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 {
     bool done = false;
     struct yconf y;
     struct absout yeout = { .out = syslog_eprint, .data = &y };
     struct absout *eout = &yeout;
     int err = 0;
+    struct yaml_read_handler_data d;
 
     memset(&y, 0, sizeof(y));
     y.enable = true;
@@ -1098,7 +1226,12 @@ yaml_readconfig(FILE *f)
     y.eout = eout;
 
     yaml_parser_initialize(&y.parser);
-    yaml_parser_set_input_file(&y.parser, f);
+
+    memset(&d, 0, sizeof(d));
+    d.f = f;
+    d.config_lines = config_lines;
+    d.num_config_lines = num_config_lines;
+    yaml_parser_set_input(&y.parser, yaml_read_handler, &d);
 
     while (!done && !err) {
 	if (!yaml_parser_parse(&y.parser, &y.e)) {

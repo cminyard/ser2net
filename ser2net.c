@@ -68,7 +68,7 @@ static char *help_string =
 "     specified multiple times for multiple lines.  This is just like a\n"
 "     line in the config file.  This disables the default config file,\n"
 "     you must specify a -c after the last -C to have it read a config\n"
-"     file, too.\n"
+"     file, too.  The config file must not be yaml.\n"
 "  -p <controller port> - Start a controller session on the given TCP port\n"
 "  -P <file> - set location of pid file\n"
 "  -n - Don't detach from the controlling terminal\n"
@@ -80,7 +80,18 @@ static char *help_string =
 #endif
 "  -b - unused (was Do CISCO IOS baud-rate negotiation, instead of RFC2217)\n"
 "  -v - print the program's version and exit\n"
-"  -s - specify a default signature for RFC2217 protocol\n";
+"  -s - specify a default signature for RFC2217 protocol\n"
+"  -Y - Handle a yaml configuration string.  This may be specified multiple\n"
+"       times; these strings are strung together as if they were one input\n"
+"       string.  This disables the defalt config file, you must specify -c\n"
+"       after the last -Y.  The config file will be processed first, if it\n"
+"       is specified, then the -Y strings in order, as if they are one\n"
+"       continguous file.  '#' characters outside of quotes will be converted\n"
+"       to newlines to make things easier to handle.  Each -Y will be\n"
+"       terminated with a newline automatically.";
+
+static char **config_lines;
+static unsigned int num_config_lines;
 
 static bool
 str_endswith(const char *str, const char *end)
@@ -130,6 +141,15 @@ fopen_config_file(bool *is_yaml)
     } else {
 	*is_yaml = str_endswith(config_file, ".yaml");
     }
+
+    if (!*is_yaml) {
+	char in_buf[100];
+
+	in_buf[0] = '\0';
+	if (fgets(in_buf, sizeof(in_buf) - 1, instream) != NULL)
+	    *is_yaml = strncmp(in_buf, "%YAML", 5) == 0;
+	fseek(instream, 0, SEEK_SET);
+    }
     return instream;
 }
 
@@ -151,7 +171,7 @@ reread_config_file(void)
 	if (!admin_port_from_cmdline)
 	    controller_shutdown();
 	if (is_yaml)
-	    rv = yaml_readconfig(instream);
+	    rv = yaml_readconfig(instream, config_lines, num_config_lines);
 	else
 	    rv = readconfig(instream);
 	fclose(instream);
@@ -641,9 +661,9 @@ main(int argc, char *argv[])
 #ifdef USE_PTHREADS
     char *end;
 #endif
-    char **config_lines;
-    int num_config_lines = 0;
     int print_when_ready = 0;
+    FILE *instream = NULL;
+    enum { CONFIG_NONE, CONFIG_YAML, CONFIG_OLD } config_type = CONFIG_NONE;
 
     gensio_set_progname("ser2net");
 
@@ -689,10 +709,26 @@ main(int argc, char *argv[])
 	    break;
 
 	case 'C':
+	case 'Y':
+	    if (argv[i][1] == 'C') {
+		if (config_type == CONFIG_YAML) {
+		mixed_config_lines:
+		    fprintf(stderr,
+			    "You cannot mix yaml and old config lines.\n");
+		    arg_error(argv[0]);
+		}
+		config_type = CONFIG_OLD;
+	    } else {
+		if (config_type == CONFIG_OLD)
+		    goto mixed_config_lines;
+		config_type = CONFIG_YAML;
+	    }
+
 	    /* Get a config line. */
 	    i++;
 	    if (i == argc) {
-		fprintf(stderr, "No config line specified with -C\n");
+		fprintf(stderr, "No config line specified with -%c\n",
+			argv[i][1]);
 		arg_error(argv[0]);
 	    }
 	    num_config_lines++;
@@ -840,12 +876,11 @@ main(int argc, char *argv[])
     if (admin_port)
 	controller_init(admin_port, NULL, NULL);
 
-    for (i = 0; i < num_config_lines; i++)
-	handle_config_line(config_lines[i], strlen(config_lines[i]));
-    free(config_lines);
+    if (config_type == CONFIG_OLD) {
+	for (i = 0; i < num_config_lines; i++)
+	    handle_config_line(config_lines[i], strlen(config_lines[i]));
+    }
     if (config_file) {
-	int rv;
-	FILE *instream;
 	bool is_yaml;
 
 	if (strcmp(config_file, "-") == 0) {
@@ -856,14 +891,33 @@ main(int argc, char *argv[])
 	    if (!instream)
 		exit(1);
 	}
+	if (is_yaml) {
+	    if (config_type == CONFIG_OLD) {
+		fprintf(stderr, "You cannot mix old style config lines "
+			"and a yaml config file.\n");
+		exit(1);
+	    }
+	    config_type = CONFIG_YAML;
+	} else {
+	    if (config_type == CONFIG_YAML) {
+		fprintf(stderr, "You cannot mix yaml config lines "
+			"and an old style config file.\n");
+		exit(1);
+	    }
+	    config_type = CONFIG_OLD;
+	}
+    }
 
-	if (is_yaml)
-	    rv = yaml_readconfig(instream);
+    if (config_type == CONFIG_YAML || instream)	{
+	int rv;
+
+	if (config_type == CONFIG_YAML)
+	    rv = yaml_readconfig(instream, config_lines, num_config_lines);
 	else
 	    rv = readconfig(instream);
 	if (rv == -1)
 	    exit(1);
-	if (instream != stdin)
+	if (instream && instream != stdin)
 	    fclose(instream);
     }
     apply_new_ports(&syslog_absout);

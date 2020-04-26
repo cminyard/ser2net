@@ -30,7 +30,8 @@ int readconfig_init(void);
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int readconfig(FILE *instream);
-int yaml_readconfig(FILE *f);
+int yaml_readconfig(FILE *f, char **config_lines,
+		    unsigned int num_config_lines);
 
 /*
  * Search for a banner/open/close string by name.  Note that the

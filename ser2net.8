@@ -43,8 +43,26 @@ file, too.
 Note that this is the old-style configuration lines and is likely
 to go away when old style configuration is removed.
 .TP
+.I "\-Y yaml-config-string"
+Add a yaml config string to the end of strings to be processed.  This
+may be specified multiple times for multiple strings.  These are
+appended onto the end of a yaml config file; though if this is
+specified, the default config file is disabled and you have to enable
+it with the -c option.
+
+To make things easier to handle, any # in the config string that is
+not inside quote (what would normally start a comment in yaml) is
+converted to a new line.  Plus a new line is added after each
+separate config string.  So, for instance:
+
+  -Y 'connection: &con01#  accepter: tcp,2013'
+  -Y '  connector: serialdev,/dev/ttyEcho0,9600n81,local'
+  -Y '  options:#    banner: "### A Banner ###\r\n"'
+
+can be put on the ser2net command line.
+.TP
 .I \-n
-Stops  the  daemon  from  forking  and  detaching  from the controlling
+Stops  the  daemon  from  forking  and  detaching from the controlling
 terminal. This is useful for running from init.
 .TP
 .I \-d

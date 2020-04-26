@@ -398,7 +398,7 @@ class Ser2netDaemon:
     to run ser2net with a specific path.
 
     For testing stdio handling for ser2net, you may use the io
-    attribute for it but you must set it's handler's ignore_input
+    attribute for it but you must set its handler's ignore_input
     attribute to False or you won't get any data, and you must
     set it back to True when done.
     """

@@ -923,8 +923,6 @@ readconfig(FILE *instream)
     while (fgets(inbuf + pos, linesize - pos, instream) != NULL) {
 	int len = strlen(inbuf);
 	lineno++;
-	if (lineno == 1 && strncmp(inbuf, "%YAML", 5) == 0)
-	    goto process_yaml;
 	if (len >= (linesize - 1) && inbuf[len - 1] != '\n') {
 	    char *new_inbuf;
 
@@ -954,10 +952,5 @@ readconfig(FILE *instream)
  out_err:
     free(inbuf);
     return rv;
-
- process_yaml:
-    free(inbuf);
-    fseek(instream, 0, SEEK_SET);
-    return yaml_readconfig(instream);
 }
 
