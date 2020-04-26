@@ -88,7 +88,7 @@ static char *help_string =
 "       is specified, then the -Y strings in order, as if they are one\n"
 "       continguous file.  '#' characters outside of quotes will be converted\n"
 "       to newlines to make things easier to handle.  Each -Y will be\n"
-"       terminated with a newline automatically.";
+"       terminated with a newline automatically.\n";
 
 static char **config_lines;
 static unsigned int num_config_lines;
