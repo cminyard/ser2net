@@ -7,7 +7,9 @@ from dataxfer import test_transfer
 rb = os.urandom(1048576)
 
 test_transfer("tcp large random", rb,
-              "3023:raw:100:/dev/ttyPipeA0:115200N81\n",
+              ("connection: &con",
+               "  accepter: tcp,3023",
+               "  connector: serialdev,/dev/ttyPipeA0,115200n81"),
               "tcp,localhost,3023",
               "serialdev,/dev/ttyPipeB0,115200N81",
               timeout=150000)

@@ -7,7 +7,9 @@ from dataxfer import test_transfer
 rb = os.urandom(512)
 
 test_transfer("sctp small random", rb,
-              "sctp,3023:raw:100:/dev/ttyPipeA0:9600N81\n",
+              ("connection: &con",
+               "  accepter: sctp,3023",
+               "  connector: serialdev,/dev/ttyPipeA0,9600n81"),
               "sctp,localhost,3023",
               "serialdev,/dev/ttyPipeB0,9600N81",
               timeout=5000)

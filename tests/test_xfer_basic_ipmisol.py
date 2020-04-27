@@ -9,7 +9,9 @@ o = utils.o
 isim = ipmisimdaemon.IPMISimDaemon(o)
 
 test_transfer("basic ipmisol", "This is a test!",
-              "3023:raw:100:ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600\n",
+              ("connection: &con",
+               "  accepter: tcp,3023",
+               "  connector: ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600"),
               "tcp,localhost,3023",
               "serialdev,/dev/ttyPipeA0,9600N81",)
 
@@ -19,7 +21,9 @@ test_transfer("basic ipmisol", "This is a test!",
 # ipmi_sim and set things up.  Otherwise it would often lose the first
 # couple of characters going from io2 to io1.
 test_write_drain("basic tcp", "This is a write drain test!",
-                 "3023:raw:100:ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600\n",
+              ("connection: &con",
+               "  accepter: tcp,3023",
+               "  connector: ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600"),
                  "tcp,localhost,3023",
                  "serialdev,/dev/ttyPipeA0,9600N81,LOCAL",
                  switch_delay = 0.25)

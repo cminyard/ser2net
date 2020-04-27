@@ -7,7 +7,11 @@ class basehandler:
         return termioschk.dup_base_termios()
 
 termioschk.test_ser2net_termios("base termios settings", basehandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -17,7 +21,11 @@ class cs5handler:
                                            cflags_mask=termios.CSIZE)
 
 termioschk.test_ser2net_termios("cs5 termios settings", cs5handler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N51\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n51",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -27,7 +35,11 @@ class cs6handler:
                                            cflags_mask=termios.CSIZE)
 
 termioschk.test_ser2net_termios("cs6 termios settings", cs6handler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N61\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n61",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -37,7 +49,11 @@ class cs7handler:
                                            cflags_mask=termios.CSIZE)
 
 termioschk.test_ser2net_termios("cs7 termios settings", cs7handler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N71\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n71",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -47,7 +63,11 @@ class cs8handler:
                                            cflags_mask=termios.CSIZE)
 
 termioschk.test_ser2net_termios("cs8 termios settings", cs8handler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -58,7 +78,11 @@ class parevenhandler:
 
 termioschk.test_ser2net_termios("even parity termios settings",
                                 parevenhandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600E81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600E81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -69,7 +93,11 @@ class paroddhandler:
 
 termioschk.test_ser2net_termios("odd parity termios settings",
                                 paroddhandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600O81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600o81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -79,7 +107,11 @@ class twostophandler:
 
 termioschk.test_ser2net_termios("2 stop bit termios settings",
                                 twostophandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N82\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n82",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -91,7 +123,11 @@ class xonhandler:
 
 termioschk.test_ser2net_termios("xon/xoff termios settings",
                                 xonhandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81 XONXOFF\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81,xonxoff",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -101,7 +137,11 @@ class rtshandler:
 
 termioschk.test_ser2net_termios("rts/cts termios settings",
                                 rtshandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81 RTSCTS\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81,rtscts",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -111,7 +151,11 @@ class clocalhandler:
 
 termioschk.test_ser2net_termios("clocal termios settings",
                                 clocalhandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81 LOCAL\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81,local",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -121,8 +165,11 @@ class hupclhandler:
 
 termioschk.test_ser2net_termios("hupcl termios settings",
                                 hupclhandler(),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81 " +
-                                "HANGUP_WHEN_DONE\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81,hangup-when-done",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
@@ -140,67 +187,111 @@ class baudhandler:
 
 termioschk.test_ser2net_termios("300 baud serialdev settings",
                                 baudhandler(termios.B300),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 300N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,300n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("600 baud serialdev settings",
                                 baudhandler(termios.B600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 600N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,600n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("1200 baud serialdev settings",
                                 baudhandler(termios.B1200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 1200N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,1200n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("2400 baud serialdev settings",
                                 baudhandler(termios.B2400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 2400N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,2400n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("4800 baud serialdev settings",
                                 baudhandler(termios.B4800),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 4800N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,4800n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("9600 baud serialdev settings",
                                 baudhandler(termios.B9600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 9600N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,9600n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("19200 baud serialdev settings",
                                 baudhandler(termios.B19200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 19200N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,19200n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("38400 baud serialdev settings",
                                 baudhandler(termios.B38400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 38400N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,38400n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("57600 baud serialdev settings",
                                 baudhandler(termios.B57600),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 57600N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,57600n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("115200 baud serialdev settings",
                                 baudhandler(termios.B115200),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 115200N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,115200n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 
 termioschk.test_ser2net_termios("230400 baud serialdev settings",
                                 baudhandler(termios.B230400),
-        "BANNER:b:12345\n    3023:telnet:100:/dev/ttyPipeA0:b 230400N81\n",
+        ("connection: &con",
+         "  accepter: telnet,tcp,3023",
+         "  connector: serialdev,/dev/ttyPipeA0,230400n81",
+         "  options:",
+         "    banner: 12345"),
         "telnet,tcp,localhost,3023",
         "serialdev,/dev/ttyPipeB0,9600N81")
 

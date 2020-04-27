@@ -390,6 +390,20 @@ class HandleData:
         self.waiter.wake()
         return
 
+import collections
+
+PY3 = sys.version_info[0] == 3
+
+if PY3:
+    string_types = str
+else:
+    string_types = basestring
+
+def is_nonstr_sequence(obj):
+    if isinstance(obj, string_types):
+        return False
+    return isinstance(obj, collections.Sequence)
+
 class Ser2netDaemon:
     """Create a ser2net daemon instance and start it up
 
@@ -414,12 +428,17 @@ class Ser2netDaemon:
         prog = os.getenv("SER2NET_EXEC")
         if (not prog):
             prog = "ser2net"
-        self.cfile = tempfile.NamedTemporaryFile(mode="w+")
-        self.cfile.write(configdata)
-        self.cfile.flush()
+        configstr = ""
+        if is_nonstr_sequence(configdata):
+            # yaml config information
+            for i in configdata:
+                configstr += " -Y '" + i + "'"
+        else:
+            raise Exception("config data must be a sequence of strings")
         self.o = o
 
-        args = "stdio," + prog + " -t 4 -r -d -c " + self.cfile.name + " " + extra_args
+        args = "stdio," + prog + " -t 4 -r -d" + configstr + " " + extra_args
+        print("Running: " + args)
         if (debug):
             print("Running: " + args)
         self.handler = HandleData(o, args, name="ser2net daemon")

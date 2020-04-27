@@ -7,7 +7,9 @@ from dataxfer import test_transfer
 rb = os.urandom(512)
 
 test_transfer("stdio small random", rb,
-              "0:raw:100:/dev/ttyPipeA0:9600N81\n",
+              ("connection: &con",
+               "  accepter: stdio",
+               "  connector: serialdev,/dev/ttyPipeA0,9600n81"),
               None,
               "serialdev,/dev/ttyPipeB0,9600N81",
               timeout=5000)
