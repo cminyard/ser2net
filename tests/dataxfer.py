@@ -75,3 +75,20 @@ def test_write_drain(name, data, config, io1str, io2str, timeout=3000,
 
     print("  Success!")
     return
+
+def test_one_xfer(name, data1, data2, config, io1str, io2str, timeout=1000,
+                  extra_args="", compare1 = None, compare2 = None):
+
+    print("  " + name)
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
+                                              extra_args = extra_args)
+    try:
+        if data1:
+            utils.test_dataxfer(io1, io2, data1, timeout=timeout,
+                                compare = compare1)
+        if data2:
+            utils.test_dataxfer(io2, io1, data2, timeout=timeout,
+                                compare = compare2)
+    finally:
+        utils.finish_2_ser2net(ser2net, io1, io2)
+    return

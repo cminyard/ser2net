@@ -62,6 +62,7 @@ class HandleData:
         self.expected_server_value = 0
         self.expected_server_return = 0
         self.ignore_input = False
+        self.expected_err = None
         if (io):
             self.io = io
             io.set_cbs(self)
@@ -110,6 +111,10 @@ class HandleData:
             self.io.write_cb_enable(True)
         return
 
+    def set_expected_err(self, err):
+        self.expected_err = err;
+        return;
+
     def close(self):
         self.ignore_input = True
         self.io.close(self)
@@ -137,13 +142,23 @@ class HandleData:
                                                         self.compared, iolen))
         if (debug >= 2 or self.debug >= 2):
             s = ""
-            for i in buf:
-                if curses.ascii.isprint(i):
-                    s = s + i
-                else:
-                    s = s + "\\x%2.2x" % ord(i)
+            buflen = 0
+            if buf is not None:
+                buflen = len(buf)
+                for i in buf:
+                    if curses.ascii.isprint(i):
+                        s = s + chr(i)
+                    else:
+                        s = s + "\\x%2.2x" % i
             print("%s: Got data: (err %s %d bytes) %s" % (self.name, str(err),
-                                                          len(buf), s))
+                                                          buflen, s))
+
+        if err is not None and self.expected_err is not None:
+            if self.expected_err != err:
+                raise HandlerException(self.name + ": err: " + err)
+            self.waiter.wake()
+            return 0
+
         if (err):
             raise HandlerException(self.name + ": read: " + err)
         if (self.ignore_input):
@@ -525,14 +540,16 @@ def alloc_io(o, iostr, do_open = True, chunksize = 10240):
         h.io.open_s()
     return h.io
 
-def test_dataxfer(io1, io2, data, timeout = 1000):
+def test_dataxfer(io1, io2, data, timeout = 1000, compare = None):
     """Test a transfer of data from io1 to io2
 
     If the transfer does not complete by "timeout" milliseconds, raise
     an exception.
     """
+    if compare is None:
+        compare = data
     io1.handler.set_write_data(data)
-    io2.handler.set_compare(data)
+    io2.handler.set_compare(compare)
     if (io1.handler.wait_timeout(timeout) == 0):
         raise Exception(("%s: %s: " % ("test_dataxfer", io1.handler.name)) +
 
@@ -592,6 +609,7 @@ def io_close(io, timeout = 1000):
 
     If it does not succeed in timeout milliseconds, raise and exception.
     """
+    io.closeme = False
     io.handler.close()
     if (io.handler.wait_timeout(timeout) == 0):
         raise Exception("%s: %s: Timed out waiting for close" %

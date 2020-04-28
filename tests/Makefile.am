@@ -19,7 +19,7 @@ TESTS = test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
 	test_xfer_basic_ssl_tcp.py test_xfer_basic_telnet.py \
 	test_xfer_basic_ipmisol.py test_xfer_basic_sctp.py \
 	test_tty_base.py test_rfc2217.py \
-	test_tracing.py \
+	test_tracing.py test_opstrings.py \
 	test_xfer_small_tcp.py test_xfer_small_udp.py test_xfer_small_stdio.py \
 	test_xfer_small_ssl_tcp.py test_xfer_small_telnet.py \
 	test_xfer_small_ipmisol.py test_xfer_small_sctp.py \
