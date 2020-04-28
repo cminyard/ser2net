@@ -295,7 +295,14 @@ HANDLING" above.
 
 .I closeon: <closeon string>
 If the given string is seen coming from the connector side of the
-connection, close the connection.
+connection, close the connection.  The comparison here is, for
+simplicity, simplistic.  Complex expressions with repetative things
+may not compare correctly.  For instance, if your closeon strings is
+"ababc" and your input strings is "abababc", the comparison will fail
+because the comparison algorithm will see "ababa" and will fail on the
+final "a" and start over at "abc", which won't match.  This shouldn't
+cause a problem most cases, but if it does, contact the authors and it
+can be improved.
 
 .I trace-read: <filename>
 When the acceptor is opened, open the given file and store all data
@@ -367,6 +374,8 @@ connection, sends buffered data up to and including the
 string. Disabled by default. As an example, this can be set to \r\n
 with appropriate chardelay settings to send one line at a time.  It
 uses string handling as described in "SPECIAL STRING HANDLING" above.
+See the notes on the closeon string for important information on how
+the comparison is done.
 
 .I dev-to-net-bufsize: <number>
 sets the size of the buffer reading from the connecting gensio and writing
