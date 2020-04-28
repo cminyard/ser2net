@@ -7,7 +7,6 @@
 
 import os
 import gensio
-import tempfile
 import signal
 import time
 import curses.ascii
@@ -438,7 +437,6 @@ class Ser2netDaemon:
         self.o = o
 
         args = "stdio," + prog + " -t 4 -r -d" + configstr + " " + extra_args
-        print("Running: " + args)
         if (debug):
             print("Running: " + args)
         self.handler = HandleData(o, args, name="ser2net daemon")
