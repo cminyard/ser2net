@@ -30,6 +30,17 @@ class HandlerException(Exception):
     def __str__(self):
         return str(self.value)
 
+def buf_to_prstr(buf):
+    if buf is None:
+        return (0, "")
+    s = ""
+    for i in buf:
+        if curses.ascii.isprint(i):
+            s = s + chr(i)
+        else:
+            s = s + "\\x%2.2x" % i
+    return (len(buf), s)
+
 class HandleData:
     """Data handler for testing gensio.
 
@@ -141,17 +152,14 @@ class HandleData:
             print("%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
                                                         self.compared, iolen))
         if (debug >= 2 or self.debug >= 2):
-            s = ""
             buflen = 0
-            if buf is not None:
-                buflen = len(buf)
-                for i in buf:
-                    if curses.ascii.isprint(i):
-                        s = s + chr(i)
-                    else:
-                        s = s + "\\x%2.2x" % i
+            s = ""
+            (buflen, s) = buf_to_prstr(buf)
             print("%s: Got data: (err %s %d bytes) %s" % (self.name, str(err),
                                                           buflen, s))
+            if self.to_compare is not None:
+                (buflen, s) = buf_to_prstr(self.to_compare[self.compared:])
+                print("%s: Waiting: (%d bytes) %s" % (self.name, buflen, s))
 
         if err is not None and self.expected_err is not None:
             if self.expected_err != err:
