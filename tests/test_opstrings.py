@@ -19,6 +19,28 @@ test_one_xfer("banner", None, "Testing banner!",
               "serialdev,/dev/ttyPipeB0,9600N81",
               compare2 = "banner1\r\nTesting banner!")
 
+print("  banner 100 times")
+ser2net, io1, io2 = utils.setup_2_ser2net(utils.o,
+              ("connection: &con",
+               "  accepter: tcp,3023",
+               "  connector: serialdev,/dev/ttyPipeA0,9600N81",
+               "  options:",
+               "    banner: \"banner2\\\\r\\\\n\""),
+              "tcp,localhost,3023",
+              "serialdev,/dev/ttyPipeB0,9600N81")
+try:
+    for i in range(0, 100):
+        io1.handler.set_compare("banner2\r\n")
+        if io1.handler.wait_timeout(1000) == 0:
+            raise Exception("banner 100 times: Didn't receive data")
+        utils.io_close(io1)
+        # This is not ideal, but give time for ser2net to close its side
+        io1.handler.wait_timeout(50)
+        io1.open_s()
+        io1.handler.ignore_input = False
+finally:
+    utils.finish_2_ser2net(ser2net, io1, io2)
+
 test_one_xfer("openstr", "Testing openstr!", None,
               ("connection: &con",
                "  accepter: tcp,3023",
