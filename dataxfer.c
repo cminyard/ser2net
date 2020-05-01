@@ -1176,7 +1176,7 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 	return 0;
 
     default:
-	return ENOTSUP;
+	return GE_NOTSUP;
     }
 }
 
@@ -1775,7 +1775,7 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 	return 0;
 
     default:
-	return ENOTSUP;
+	return GE_NOTSUP;
     }
 }
 
