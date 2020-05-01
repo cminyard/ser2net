@@ -23,7 +23,7 @@ test_write_drain("basic ssl tcp", "This is a write drain test!",
 # certificate and private key are set by defaults in ser2net; if they
 # cannot load then they will fail.  This avoids runtime failures if
 # the default certificate is not present.
-test_connect_back("basic tcp", "SSL Connect back test!",
+test_connect_back("basic ssl tcp", "SSL Connect back test!",
                   ("connection: &con",
                    "  accepter: ssl(key=%s/key.pem,cert=%s/cert.pem),tcp,3023"
                        % (utils.keydir, utils.keydir),
