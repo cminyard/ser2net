@@ -1053,7 +1053,21 @@ Rotators are a special case.  BE CAREFUL.  A rotator has its own
 authentication.  If you set up authentication on a port that is
 part of a rotator, that port's authentication is not used.  Only
 the rotator's authentication is used.
+.SS "ENCRYPTION, AUTHENTICATION, AND DEFAULT CERTIFICATES"
+.B ser2net
+expects default certificates and public keys in /etc/ser2net, and
+these are set as gensio defaults.  This means that any outgoing
+connection from ser2net, whether in a connector or in a connback, will
+use these keys.  If they aren't there or have expired or something you
+will get confusing errors about not being able to open the
+certificates.
 
+To solve this, you can disable the certificates by adding "cert=" to
+the gensio specification for ssl and certauth on outgoing connections.
+This will disable the certificates for the specific gensio, and is
+probably what you want.  If you are making connections and
+authenticating to the remote server, the default certificate and
+private key are probably not what you want, either.
 .SH "SIGNALS"
 .TP 0.5i
 .B SIGHUP
