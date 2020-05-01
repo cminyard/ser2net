@@ -29,9 +29,21 @@ ser2net, io1, io2 = utils.setup_2_ser2net(utils.o,
               "tcp,localhost,3023",
               "serialdev,/dev/ttyPipeB0,9600N81")
 try:
+    errcount = 0
     for i in range(0, 100):
         io1.handler.set_compare("banner2\r\n")
-        if io1.handler.wait_timeout(1000) == 0:
+        try:
+            timeleft = io1.handler.wait_timeout(1000)
+        except utils.HandlerException as e:
+            s = str(e)
+            if (s == 'tcp,localhost,3023: compare failure on byte 0, expected 62, got 44' or
+                s == 'tcp,localhost,3023: compare failure on byte 0, expected 62, got 50'):
+                # Got a "Device open failure" or "Port in use"
+                timeleft = 1
+                errcount += 1
+            else:
+                raise
+        if timeleft == 0:
             raise Exception("banner 100 times: Didn't receive data")
         utils.io_close(io1)
         # This is not ideal, but give time for ser2net to close its side
@@ -40,6 +52,8 @@ try:
         io1.handler.ignore_input = False
 finally:
     utils.finish_2_ser2net(ser2net, io1, io2)
+    if errcount:
+        print("    non-fatal error count: %d" % errcount)
 
 test_one_xfer("openstr", "Testing openstr!", None,
               ("connection: &con",
