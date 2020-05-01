@@ -57,7 +57,7 @@ class HandleData:
     """
 
     def __init__(self, o, iostr, name = None, chunksize=10240,
-                 io = None):
+                 io = None, io_is_accepter = False):
         """Start a gensio object with this handler"""
         if (name):
             self.name = name
@@ -74,12 +74,24 @@ class HandleData:
         self.expected_server_return = 0
         self.ignore_input = False
         self.expected_err = None
-        if (io):
-            self.io = io
+        self.io = None
+        self.acc = None
+        if io:
+            if io_is_accepter:
+                self.acc = io
+            else:
+                self.io = io
             io.set_cbs(self)
         else:
-            self.io = gensio.gensio(o, iostr, self)
-        self.io.handler = self
+            if io_is_accepter:
+                self.acc = gensio.gensio_accepter(o, iostr, self)
+            else:
+                self.io = gensio.gensio(o, iostr, self)
+
+        if io_is_accepter:
+            self.acc.handler = self
+        else:
+            self.io.handler = self
         self.chunksize = chunksize
         self.debug = 0
         return
@@ -129,6 +141,10 @@ class HandleData:
     def close(self):
         self.ignore_input = True
         self.io.close(self)
+        return
+
+    def shutdown(self):
+        self.acc.shutdown(self)
         return
 
     def wait(self):
@@ -412,6 +428,31 @@ class HandleData:
         self.waiter.wake()
         return
 
+    # Accepter things below
+
+    def log(self, acc, level, logval):
+        raise HandlerException(
+            "%s: Got accepter log: %s:%s:%s" % (name, acc, level, logval))
+        return
+
+    def new_connection(self, acc, io):
+        if self.io is not None:
+            raise HandlerException("%s: Got connection while connected" % name)
+        io.handler = self
+        io.is_accepter = False
+        self.io = io
+        io.set_cbs(self)
+        if (debug or self.debug):
+            print(self.name + ": New connection")
+        self.waiter.wake()
+        return
+
+    def shutdown_done(self, acc):
+        if (debug or self.debug):
+            print(self.name + ": Shutdown")
+        self.waiter.wake()
+        return
+
 import collections
 
 PY3 = sys.version_info[0] == 3
@@ -538,15 +579,25 @@ class Ser2netDaemon:
             count -= 1
         raise Exception("ser2net did not terminate");
 
-def alloc_io(o, iostr, do_open = True, chunksize = 10240):
+def alloc_io(o, iostr, do_open = True, chunksize = 10240,
+             io_is_accepter = False):
     """Allocate an io instance with a HandlerData handler
 
     If do_open is True (default), open it, too.
     """
-    h = HandleData(o, iostr, chunksize = chunksize)
+    h = HandleData(o, iostr, chunksize = chunksize,
+                   io_is_accepter = io_is_accepter)
     if (do_open):
-        h.io.open_s()
-    return h.io
+        if io_is_accepter:
+            h.acc.startup()
+        else:
+            h.io.open_s()
+    if io_is_accepter:
+        h.acc.is_accepter = True
+        return h.acc
+    else:
+        h.io.is_accepter = False
+        return h.io
 
 def test_dataxfer(io1, io2, data, timeout = 1000, compare = None):
     """Test a transfer of data from io1 to io2
@@ -618,14 +669,17 @@ def io_close(io, timeout = 1000):
     If it does not succeed in timeout milliseconds, raise and exception.
     """
     io.closeme = False
-    io.handler.close()
+    if io.is_accepter:
+        io.handler.shutdown()
+    else:
+        io.handler.close()
     if (io.handler.wait_timeout(timeout) == 0):
         raise Exception("%s: %s: Timed out waiting for close" %
                         ("io_close", io.handler.name))
     return
 
 def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True,
-                    extra_args = ""):
+                    extra_args = "", io1_is_accepter = False):
     """Setup a ser2net daemon and two gensio connections
 
     Create a ser2net daemon instance with the given config and two
@@ -642,9 +696,10 @@ def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True,
     io2 = None
     ser2net = Ser2netDaemon(o, config, extra_args = extra_args)
     try:
-        if (io1str):
-            io1 = alloc_io(o, io1str, do_io1_open)
-            io1.closeme = True
+        if io1str:
+            io1 = alloc_io(o, io1str, do_io1_open,
+                           io_is_accepter = io1_is_accepter)
+            io1.closeme = do_io1_open
         else:
             io1 = ser2net.io
             io1.handler.ignore_input = False
@@ -663,6 +718,11 @@ def setup_2_ser2net(o, config, io1str, io2str, do_io1_open = True,
 
 def finish_2_ser2net(ser2net, io1, io2, handle_except = True):
     if io1.closeme:
+        if io1.is_accepter and io1.handler.io is not None:
+            try:
+                io_close(io1.handler.io)
+            except Exception as E:
+                pass
         try:
             io_close(io1)
         except:
