@@ -92,3 +92,29 @@ def test_one_xfer(name, data1, data2, config, io1str, io2str, timeout=1000,
     finally:
         utils.finish_2_ser2net(ser2net, io1, io2)
     return
+
+def test_connect_back(name, data, config, io1str, io2str, timeout=3000,
+                      extra_args = ""):
+    print("Connect back %s:\n  config=%s  io1=%s\n  io2=%s" %
+          (name, config, io1str, io2str))
+    ser2net, acc1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
+                                               extra_args = extra_args,
+                                               io1_is_accepter = True)
+    try:
+        # Send some data to start the connection.
+        io2.handler.set_write_data(data)
+
+        # Now wait for the connect back.
+        if (acc1.handler.wait_timeout(timeout) == 0):
+            raise Exception(
+                "%s: Timed out on connect back" % acc1.handler.name)
+
+        acc1.handler.set_compare(data)
+        if (acc1.handler.wait_timeout(timeout) == 0):
+            raise Exception(
+                "%s: Timed out on connect back data" % acc1.handler.name)
+
+    finally:
+        utils.finish_2_ser2net(ser2net, acc1, io2)
+    print("  Success!")
+    return

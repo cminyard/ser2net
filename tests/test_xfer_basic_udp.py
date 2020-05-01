@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from dataxfer import test_transfer, test_write_drain
+from dataxfer import test_transfer, test_write_drain, test_connect_back
 
 test_transfer("basic udp", "This is a test!",
               ("connection: &con",
@@ -19,3 +19,12 @@ test_write_drain("basic udp", "This is a write drain test!",
                  "udp,localhost,3023",
                  "serialdev,/dev/ttyPipeB0,9600N81",
                  initial_write_io1 = "A")
+
+test_connect_back("basic udp", "UCP Connect back test!",
+                 ("connection: &con",
+                  "  accepter: udp,3023",
+                  "  connector: serialdev,/dev/ttyPipeA0,9600N81",
+                  "  options:",
+                  "    connback: udp,localhost,3024"),
+                 "udp,localhost,3024",
+                 "serialdev,/dev/ttyPipeB0,9600N81")
