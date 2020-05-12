@@ -980,9 +980,6 @@ port_check_connect_backs(port_info_t *port)
 	 * connects, but failed.  Shut down the read enable for a while.
 	 */
 	port->nocon_read_enable_time_left = 10;
-	gensio_set_read_callback_enable(port->io, false);
-    } else if (port->num_waiting_connect_backs) {
-	gensio_set_read_callback_enable(port->io, false);
     }
 
     return port->num_waiting_connect_backs;
