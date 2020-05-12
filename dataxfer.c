@@ -584,6 +584,19 @@ cntrl_abserrout(struct absout *o, const char *str, ...)
 }
 
 static int
+all_net_connectbacks_done(port_info_t *port)
+{
+    net_info_t *netcon;
+
+    for_each_connection(port, netcon) {
+	if (port->connbacks && !netcon->net)
+	    return false;
+    }
+
+    return true;
+}
+
+static int
 num_connected_net(port_info_t *port)
 {
     net_info_t *netcon;
@@ -902,8 +915,8 @@ connect_back_done(struct gensio *net, int err, void *cb_data)
     assert(port->num_waiting_connect_backs > 0);
     port->num_waiting_connect_backs--;
     if (port->num_waiting_connect_backs == 0) {
-	if (num_connected_net(port) == 0)
-	    /* No connections could be made. */
+	if (!all_net_connectbacks_done(port))
+	    /* Not all connections back could be made. */
 	    port->nocon_read_enable_time_left = 10;
 	else
 	    gensio_set_read_callback_enable(port->io, true);
@@ -987,14 +1000,14 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	/* Got an error on the read, shut down the port. */
 	syslog(LOG_ERR, "dev read error for device on port %s: %s",
 	       port->name, gensio_err_to_str(err));
-	if (port->connbacks)
-	    port->enabled = false;
 	shutdown_port(port, "dev read error");
     }
 
     nr_handlers = port_check_connect_backs(port);
-    if (nr_handlers > 0)
+    if (nr_handlers > 0) {
+	gensio_set_read_callback_enable(port->io, false);
 	goto out_unlock;
+    }
 
     if (gbuf_room_left(&port->dev_to_net) < buflen)
 	buflen = gbuf_room_left(&port->dev_to_net);
@@ -1213,8 +1226,6 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
     if (err) {
 	syslog(LOG_ERR, "The dev write for port %s had error: %s",
 	       port->name, gensio_err_to_str(err));
-	if (port->connbacks)
-	    port->enabled = false;
 	shutdown_port(port, "dev write error");
 	return;
     }
@@ -1309,9 +1320,10 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 
     err = gbuf_write(port, &port->net_to_dev);
     if (err) {
-	syslog(LOG_ERR, "The dev write for port %s had error: %s",
+	syslog(LOG_ERR, "The dev write(2) for port %s had error: %s",
 	       port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
+	rv = buflen;
 	goto out_unlock;
     } else {
 	if (port->led_tx)
@@ -2402,6 +2414,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	    netcon->net = NULL;
 	}
 	port->dev_to_net_state = PORT_UNCONNECTED;
+	port->io_open = false;
 	goto out_unlock;
     }
 
@@ -2476,7 +2489,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
     }
     netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
 
-    if (num_connected_net(port) == 1 && !port->connbacks) {
+    if (num_connected_net(port) == 1 && (!port->connbacks || !port->io_open)) {
 	/* We are first, set things up on the device. */
 	err = port_dev_enable(port);
 	if (err) {
@@ -3096,7 +3109,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 	}
 	so->unlock(ports_lock);
 	return; /* We have to return here because we no longer have a port. */
-    } else {
+    } else if (port->enabled) {
 	net_info_t *netcon;
 
 	gensio_acc_set_accept_callback_enable(port->accepter, true);
@@ -3170,7 +3183,7 @@ handle_dev_fd_close_write(port_info_t *port)
 	goto closeit;
 
     if (err) {
-	syslog(LOG_ERR, "The dev write for port %s had error: %s",
+	syslog(LOG_ERR, "The dev write(3) for port %s had error: %s",
 	       port->name, gensio_err_to_str(err));
 	goto closeit;
     }
@@ -3365,19 +3378,11 @@ accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
 	}
     }
 
-    if (!some_to_close) {
-	if (port->connbacks && port->enabled) {
-	    /* Leave the device open for connect backs. */
-	    port->dev_to_net_state = PORT_UNCONNECTED;
-	    port->net_to_dev_state = PORT_UNCONNECTED;
-	    goto out_unlock;
-	} else {
-	    start_shutdown_port_io(port);
-	}
-    }
-
     port->dev_to_net_state = PORT_CLOSING;
     port->net_to_dev_state = PORT_CLOSING;
+
+    if (!some_to_close)
+	start_shutdown_port_io(port);
 
  out_unlock:
     so->unlock(port->lock);
