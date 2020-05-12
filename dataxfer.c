@@ -2368,11 +2368,25 @@ extract_bps_bpc(port_info_t *port)
 }
 
 static void
+port_start_timer(port_info_t *port)
+{
+    gensio_time timeout;
+
+#ifdef gensio_version_major
+    timeout.secs = 1;
+    timeout.nsecs = 0;
+#else
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+#endif
+    so->start_timer(port->timer, &timeout);
+}
+
+static void
 port_dev_open_done(struct gensio *io, int err, void *cb_data)
 {
     port_info_t *port = cb_data;
     net_info_t *netcon;
-    gensio_time timeout;
 
     so->lock(port->lock);
     if (err) {
@@ -2411,14 +2425,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     setup_trace(port);
 
-#ifdef gensio_version_major
-    timeout.secs = 1;
-    timeout.nsecs = 0;
-#else
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-#endif
-    so->start_timer(port->timer, &timeout);
+    port_start_timer(port);
 
     for_each_connection(port, netcon) {
 	if (!netcon->net)
@@ -3420,7 +3427,6 @@ void
 got_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
-    gensio_time timeout;
     net_info_t *netcon;
 
     so->lock(port->lock);
@@ -3461,14 +3467,7 @@ got_timeout(struct gensio_timer *timer, void *data)
     }
 
  out:
-#ifdef gensio_version_major
-    timeout.secs = 1;
-    timeout.nsecs = 0;
-#else
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-#endif
-    so->start_timer(port->timer, &timeout);
+    port_start_timer(port);
     so->unlock(port->lock);
 }
 
