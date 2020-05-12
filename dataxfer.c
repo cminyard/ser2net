@@ -3301,19 +3301,6 @@ shutdown_all_netcons(port_info_t *port)
     return some_to_close;
 }
 
-static bool
-handle_shutdown_timeout(port_info_t *port)
-{
-    /* Something wasn't able to do any writes and locked up the shutdown. */
-
-    /* Check the network connections first. */
-    if (shutdown_all_netcons(port))
-	return true;
-
-    shutdown_port_io(port);
-    return false;
-}
-
 static void
 accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
 {
@@ -3426,6 +3413,19 @@ shutdown_port(port_info_t *port, const char *errreason)
     }
     gensio_set_read_callback_enable(port->io, false);
     return 0;
+}
+
+static bool
+handle_shutdown_timeout(port_info_t *port)
+{
+    /* Something wasn't able to do any writes and locked up the shutdown. */
+
+    /* Check the network connections first. */
+    if (shutdown_all_netcons(port))
+	return true;
+
+    shutdown_port_io(port);
+    return false;
 }
 
 void
