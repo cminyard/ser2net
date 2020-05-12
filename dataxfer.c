@@ -2393,12 +2393,16 @@ static void
 port_start_timer(port_info_t *port)
 {
     gensio_time timeout;
+    unsigned int timeout_sec = 1;
+
+    if (port->dev_to_net_state == PORT_UNCONNECTED)
+	timeout_sec = 10;
 
 #ifdef gensio_version_major
-    timeout.secs = 1;
+    timeout.secs = timeout_sec;
     timeout.nsecs = 0;
 #else
-    timeout.tv_sec = 1;
+    timeout.tv_sec = timeout_sec;
     timeout.tv_usec = 0;
 #endif
     so->start_timer(port->timer, &timeout);
@@ -2414,6 +2418,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
     if (err) {
 	char errstr[200];
 
+	port->io_open = false;
 	snprintf(errstr, sizeof(errstr), "Device open failure: %s\r\n",
 		 gensio_err_to_str(err));
 	for_each_connection(port, netcon) {
@@ -2443,7 +2448,6 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
     if (port->devstr)
 	gensio_set_write_callback_enable(port->io, true);
     gensio_set_read_callback_enable(port->io, true);
-    port->dev_to_net_state = PORT_WAITING_INPUT;
 
     setup_trace(port);
 
@@ -2468,6 +2472,7 @@ port_dev_enable(port_info_t *port)
     err = gensio_open(port->io, port_dev_open_done, port);
     if (err)
 	return err;
+    port->dev_to_net_state = PORT_WAITING_INPUT;
     port->io_open = true;
 
     err = gensio_control(port->io, GENSIO_CONTROL_DEPTH_ALL, false,
@@ -2945,6 +2950,7 @@ startup_port(struct absout *eout, port_info_t *port)
 	    eout->out(eout, "Unable to enable port device %s: %s",
 		      port->name, gensio_err_to_str(err));
 	    shutdown_port(port, "Error enabling port connector");
+	    err = 0; /* Don't report an error here, let the shutdown run. */
 	}
     }
 
@@ -3080,6 +3086,8 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
     if (port->enabled) {
 	port->net_to_dev_state = PORT_UNCONNECTED;
 	port->dev_to_net_state = PORT_UNCONNECTED;
+	if (port->connbacks)
+	    port_start_timer(port);
     } else {
 	port->net_to_dev_state = PORT_CLOSED;
 	port->dev_to_net_state = PORT_CLOSED;
@@ -3465,8 +3473,20 @@ got_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
     net_info_t *netcon;
+    int err;
 
     so->lock(port->lock);
+    if (port->dev_to_net_state == PORT_CLOSED)
+	goto out_unlock;
+
+    if (port->dev_to_net_state == PORT_UNCONNECTED) {
+	if (port->connbacks && !port->io_open) {
+	    err = port_dev_enable(port);
+	    if (err)
+		goto out;
+	}
+	goto out_unlock;
+    }
 
     if (port->dev_to_net_state == PORT_CLOSING) {
 	if (port->shutdown_timeout_count <= 1) {
@@ -3503,6 +3523,7 @@ got_timeout(struct gensio_timer *timer, void *data)
 
  out:
     port_start_timer(port);
+ out_unlock:
     so->unlock(port->lock);
 }
 
