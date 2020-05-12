@@ -3193,10 +3193,12 @@ handle_dev_fd_close_write(port_info_t *port)
 
 closeit:
     if (port->shutdown_timeout_count) {
-	port->shutdown_timeout_count = 0;
 	gensio_set_write_callback_enable(port->io, false);
-	if (so->stop_timer_with_done(port->timer, timer_shutdown_done, port))
+	err = so->stop_timer_with_done(port->timer, timer_shutdown_done, port);
+	if (err == GE_TIMEDOUT) {
+	    port->shutdown_timeout_count = 0;
 	    shutdown_port_io(port);
+	}
     }
 }
 
@@ -3435,12 +3437,10 @@ got_timeout(struct gensio_timer *timer, void *data)
 
     if (port->dev_to_net_state == PORT_CLOSING) {
 	if (port->shutdown_timeout_count <= 1) {
-	    int count = port->shutdown_timeout_count;
 	    bool dotimer = false;
 
 	    port->shutdown_timeout_count = 0;
-	    if (count == 1)
-		dotimer = handle_shutdown_timeout(port);
+	    dotimer = handle_shutdown_timeout(port);
 	    so->unlock(port->lock);
 	    if (dotimer)
 		goto out;
