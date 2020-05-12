@@ -4742,6 +4742,7 @@ shutdown_ports(void)
 		prev->next = port->next;
 	    else
 		ports = port->next;
+	    so->unlock(port->lock);
 	    free_port(port);
 	}
     }
