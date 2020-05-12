@@ -196,6 +196,9 @@ struct port_info
     /* The port has been deleted, but still has connections in use. */
     bool deleted;
 
+    /* Used to count operations (timer stops) during free. */
+    unsigned int free_count;
+
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
 					   we shut the port down. */
@@ -397,6 +400,7 @@ struct port_info
     gensiods sendon_len;
 };
 
+static void free_port(port_info_t *port);
 static void setup_port(port_info_t *port, net_info_t *netcon);
 static int handle_net_event(struct gensio *net, void *user_data,
 			    int event, int err,
@@ -2967,22 +2971,19 @@ startup_port(struct absout *eout, port_info_t *port)
     return err;
 }
 
+/* Must be called with port->lock held. */
 static void
-free_port(port_info_t *port)
+finish_free_port(port_info_t *port)
 {
-    net_info_t *netcon;
     struct port_remaddr *r;
 
-    if (port->netcons) {
-	for_each_connection(port, netcon) {
-	    char *err = "Port was deleted\n\r";
-	    if (netcon->new_net) {
-		gensio_write(netcon->new_net, NULL, err, strlen(err), NULL);
-		gensio_free(netcon->new_net);
-	    }
-	}
+    assert(port->free_count > 0);
+    port->free_count--;
+    if (port->free_count != 0) {
+	so->unlock(port->lock);
+	return;
     }
-
+    so->unlock(port->lock);
     so->free_lock(port->lock);
     while (port->remaddrs) {
 	r = port->remaddrs;
@@ -3044,6 +3045,48 @@ free_port(port_info_t *port)
     if (port->sendon)
 	free(port->sendon);
     free(port);
+}
+
+static void
+gen_timer_shutdown_done(struct gensio_timer *timer, void *cb_data)
+{
+    port_info_t *port = cb_data;
+
+    so->lock(port->lock);
+    finish_free_port(port); /* Releases lock */
+}
+
+static void
+free_port(port_info_t *port)
+{
+    net_info_t *netcon;
+    int err;
+
+    if (port->netcons) {
+	for_each_connection(port, netcon) {
+	    char *err = "Port was deleted\n\r";
+	    if (netcon->new_net) {
+		gensio_write(netcon->new_net, NULL, err, strlen(err), NULL);
+		gensio_free(netcon->new_net);
+	    }
+	}
+    }
+
+    so->lock(port->lock);
+    port->free_count = 1;
+
+    /* Make sure all the timers are stopped. */
+    err = so->stop_timer_with_done(port->send_timer,
+				   gen_timer_shutdown_done, port);
+    if (err != GE_TIMEDOUT)
+	port->free_count++;
+
+    err = so->stop_timer_with_done(port->timer,
+				   gen_timer_shutdown_done, port);
+    if (err != GE_TIMEDOUT)
+	port->free_count++;
+
+    finish_free_port(port); /* Releases lock */
 }
 
 static void
