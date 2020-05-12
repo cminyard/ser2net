@@ -2888,6 +2888,9 @@ port_new_con(port_info_t *port, struct gensio *net)
     if (!err && is_device_already_inuse(port))
 	err = "Port's device already in use\r\n";
 
+    if (port->connbacks && !port->io_open)
+	err = "Port's device failed open\r\n";
+
     if (err) {
     out_err:
 	so->unlock(port->lock);
