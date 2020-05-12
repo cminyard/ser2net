@@ -2615,6 +2615,9 @@ typedef struct rotator
 
     char *authdir;
 
+    /* If the rotator fails startup, start time timer to retry it. */
+    struct gensio_timer *restart_timer;
+
     struct rotator *next;
 } rotator_t;
 
@@ -2680,13 +2683,33 @@ handle_rot_shutdown_done(struct gensio_accepter *accepter, void *cb_data)
 }
 
 static void
+rot_timer_shutdown_done(struct gensio_timer *timer, void *cb_data)
+{
+    so->wake(rotator_shutdown_wait);
+}
+
+static void
 free_rotator(rotator_t *rot)
 {
+    int err;
+    unsigned int free_count = 0;
+
     if (rot->accepter) {
-	gensio_acc_shutdown(rot->accepter, handle_rot_shutdown_done, NULL);
-	so->wait(rotator_shutdown_wait, 1, NULL);
-	gensio_acc_free(rot->accepter);
+	err = gensio_acc_shutdown(rot->accepter, handle_rot_shutdown_done, rot);
+	if (!err)
+	    free_count++;
     }
+
+    err = so->stop_timer_with_done(rot->restart_timer,
+				   rot_timer_shutdown_done, rot);
+    if (err != GE_TIMEDOUT)
+	free_count++;
+
+    if (free_count)
+	so->wait(rotator_shutdown_wait, free_count, NULL);
+
+    if (rot->accepter)
+	gensio_acc_free(rot->accepter);
     if (rot->authdir)
 	free(rot->authdir);
     if (rot->name)
@@ -2695,6 +2718,8 @@ free_rotator(rotator_t *rot)
 	free(rot->accstr);
     if (rot->portv)
 	gensio_argv_free(so, rot->portv);
+    if (rot->restart_timer)
+	so->free_timer(rot->restart_timer);
     free(rot);
 }
 
@@ -2710,6 +2735,21 @@ free_rotators(void)
 	rot = next;
     }
     rotators = NULL;
+}
+
+void
+rot_timeout(struct gensio_timer *timer, void *cb_data)
+{
+    rotator_t *rot = cb_data;
+    int rv;
+
+    rv = gensio_acc_startup(rot->accepter);
+    if (rv) {
+	gensio_time timeout = { 10, 0 };
+
+	syslog(LOG_ERR, "Failed to start rotator: %s", gensio_err_to_str(rv));
+	so->start_timer(rot->restart_timer, &timeout);
+    }
 }
 
 int
@@ -2765,6 +2805,13 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 	}
     }
 
+    rot->restart_timer = so->alloc_timer(so, rot_timeout, rot);
+    if (!rot->restart_timer) {
+	syslog(LOG_ERR, "Unable to allocate timer on line %d", lineno);
+	rv = ENOMEM;
+	goto out;
+    }
+
     rot->portc = portc;
     rot->portv = ports;
 
@@ -2780,9 +2827,12 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 
     rv = gensio_acc_startup(rot->accepter);
     if (rv) {
+	gensio_time timeout = { 10, 0 };
+
 	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
 	       gensio_err_to_str(rv));
-	goto out;
+	so->start_timer(rot->restart_timer, &timeout);
+	rv = 0; /* Don't error out, retry. */
     }
 
  out:
