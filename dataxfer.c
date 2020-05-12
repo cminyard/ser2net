@@ -593,7 +593,7 @@ all_net_connectbacks_done(port_info_t *port)
     net_info_t *netcon;
 
     for_each_connection(port, netcon) {
-	if (port->connbacks && !netcon->net)
+	if (netcon->connect_back && !netcon->net)
 	    return false;
     }
 
