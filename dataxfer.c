@@ -3335,15 +3335,8 @@ accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
     /* FIXME - this should be calculated somehow, not a raw number .*/
     port->shutdown_timeout_count = 4;
 
-    if (port->shutdown_reason)
-	footer_trace(port, "port", port->shutdown_reason);
-    else
-	footer_trace(port, "port", "All users disconnected");
+    footer_trace(port, "port", port->shutdown_reason);
 
-    /*
-     * If close_on_output_done is already set, the netcons are all set to
-     * close, anyway.  No need to kick that off.
-     */
     for_each_connection(port, netcon) {
 	if (netcon->net) {
 	    some_to_close = true;
@@ -3395,10 +3388,13 @@ shutdown_port(port_info_t *port, const char *errreason)
 		port->shutdown_started)
 	return GE_INUSE;
 
-    port->shutdown_reason = errreason;
-    if (errreason)
+    if (errreason) {
 	/* It's an error, force a shutdown.  Don't set dev_to_net_state yet. */
+	port->shutdown_reason = errreason;
 	port->net_to_dev_state = PORT_CLOSING;
+    } else {
+	port->shutdown_reason = "All users disconnected";
+    }
 
     port->shutdown_started = true;
 
