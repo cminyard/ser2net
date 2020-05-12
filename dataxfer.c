@@ -1435,7 +1435,6 @@ handle_net_fd_write_ready(net_info_t *netcon, struct gensio *net)
 	    goto out_unlock;
 
 	if (netcon->close_on_output_done) {
-	    netcon->close_on_output_done = false;
 	    shutdown_one_netcon(netcon, "port closing");
 	    rv = -1;
 	}
@@ -3277,6 +3276,7 @@ shutdown_one_netcon(net_info_t *netcon, const char *reason)
     netcon->write_pos = 0;
     footer_trace(netcon->port, "netcon", reason);
 
+    netcon->close_on_output_done = false;
     netcon->closing = true;
     err = gensio_close(netcon->net, handle_net_fd_closed, netcon);
     if (err)
@@ -3284,15 +3284,16 @@ shutdown_one_netcon(net_info_t *netcon, const char *reason)
 }
 
 static bool
-shutdown_all_netcons(port_info_t *port)
+shutdown_all_netcons(port_info_t *port, bool close_on_output_only)
 {
     net_info_t *netcon;
     bool some_to_close = false;
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
+	    if (close_on_output_only && !netcon->close_on_output_done)
+		continue;
 	    some_to_close = true;
-	    netcon->close_on_output_done = false;
 	    netcon->write_pos = port->dev_to_net.cursize;
 	    shutdown_one_netcon(netcon, "port closing");
 	}
@@ -3417,7 +3418,7 @@ handle_shutdown_timeout(port_info_t *port)
     /* Something wasn't able to do any writes and locked up the shutdown. */
 
     /* Check the network connections first. */
-    if (shutdown_all_netcons(port))
+    if (shutdown_all_netcons(port, true))
 	return true;
 
     shutdown_port_io(port);
@@ -4159,7 +4160,7 @@ apply_new_ports(struct absout *eout)
 		if (port_in_use(curr)) {
 		    /* If we are disabling, kick off old users. */
 		    if (!new->enabled && curr->enabled)
-			shutdown_all_netcons(curr);
+			shutdown_all_netcons(curr, false);
 		} else {
 		    if (strcmp(curr->accstr, new->accstr) == 0 &&
 					curr->enabled) {
