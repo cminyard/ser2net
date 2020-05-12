@@ -933,6 +933,15 @@ port_check_connect_backs(port_info_t *port)
     if (!port->connbacks)
 	return 0;
 
+    if (port->net_to_dev_state == PORT_CLOSING) {
+	/*
+	 * Some data came in while we were shutting down the port.
+	 * Just ignore it for now, when the port is opened back up we
+	 * wills tart the connections.
+	 */
+	return 1;
+    }
+
     for_each_connection(port, netcon) {
 	if (netcon->connect_back && !netcon->net) {
 	    int err;
