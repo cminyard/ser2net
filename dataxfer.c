@@ -4518,7 +4518,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "  device to tcp state: %s\r\n",
 		      state_str[port->dev_to_net_state]);
 
-    controller_outputf(cntlr, "  bytes read from device: %u\r\n",
+    controller_outputf(cntlr, "  bytes read from device: %lu\r\n",
 		       (unsigned long) port->dev_bytes_received);
 
     controller_outputf(cntlr, "  bytes written to device: %lu\r\n",
