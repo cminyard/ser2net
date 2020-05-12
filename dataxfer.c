@@ -2395,7 +2395,9 @@ port_start_timer(port_info_t *port)
     gensio_time timeout;
     unsigned int timeout_sec = 1;
 
-    if (port->dev_to_net_state == PORT_UNCONNECTED)
+    if (port->dev_to_net_state == PORT_UNCONNECTED ||
+		port->dev_to_net_state == PORT_CLOSED)
+	/* Retry a connect back connector or accepter start. */
 	timeout_sec = 10;
 
 #ifdef gensio_version_major
@@ -2942,6 +2944,8 @@ startup_port(struct absout *eout, port_info_t *port)
     if (err) {
 	eout->out(eout, "Unable to startup network port %s: %s",
 		  port->name, gensio_err_to_str(err));
+	/* Retry in a bit. */
+	port_start_timer(port);
 	return err;
     }
     port->dev_to_net_state = PORT_UNCONNECTED;
@@ -3133,8 +3137,6 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 
 	/* Start the replacement port if it was set. */
 	if (new) {
-	    int err;
-
 	    so->lock(new->lock);
 	    if (prev) {
 		new->next = prev->next;
@@ -3143,11 +3145,8 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 		new->next = ports;
 		ports = new;
 	    }
-	    if (new->enabled) {
-		err = startup_port(&syslog_absout, new);
-		if (err)
-		    new->enabled = false;
-	    }
+	    if (new->enabled)
+		startup_port(&syslog_absout, new);
 	    so->unlock(new->lock);
 	}
 	so->unlock(ports_lock);
@@ -3479,8 +3478,11 @@ got_timeout(struct gensio_timer *timer, void *data)
     int err;
 
     so->lock(port->lock);
-    if (port->dev_to_net_state == PORT_CLOSED)
+    if (port->dev_to_net_state == PORT_CLOSED) {
+	if (port->enabled)
+	    startup_port(&syslog_absout, port);
 	goto out_unlock;
+    }
 
     if (port->dev_to_net_state == PORT_UNCONNECTED) {
 	if (port->connbacks && !port->io_open) {
@@ -4173,7 +4175,6 @@ void
 apply_new_ports(struct absout *eout)
 {
     port_info_t *new, *curr, *next, *prev, *new_prev;
-    int err;
 
     so->lock(ports_lock);
     /* First turn off all the accepters. */
@@ -4318,11 +4319,8 @@ apply_new_ports(struct absout *eout)
 		    gensio_acc_disable(curr->accepter);
 		}
 	    } else {
-		if (curr->enabled) {
-		    err = startup_port(eout, curr);
-		    if (err)
-			curr->enabled = false;
-		}
+		if (curr->enabled)
+		    startup_port(eout, curr);
 	    }
 	}
 	so->unlock(curr->lock);
