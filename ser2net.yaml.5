@@ -424,6 +424,14 @@ Connect back addresses must match the format of the accepter address.
 So, for instance, if your accepter is "telnet,tcp,1234" your connect
 back address must be something like "telnet,tcp,hostname,1123".
 
+The port will send no data to any connect back unless all the connect
+backs are connected.
+
+A connect back port can also have connections made to it if you set
+the number of connections larger than the number of connect backs
+specified.  However, those connections will receive no data from the
+port uness all connect backs have been established.
+
 .I authdir: <directory string>
 specified the authentication directory to use for this connection.
 
