@@ -462,6 +462,7 @@ remaddr_append(struct port_remaddr **list, struct port_remaddr **cblist,
 	r->str = strdup(str);
 	if (!r->str) {
 	    free(r);
+	    r = NULL;
 	    err = GE_NOMEM;
 	    goto out;
 	}
@@ -491,6 +492,7 @@ remaddr_append(struct port_remaddr **list, struct port_remaddr **cblist,
 	rcb->str = strdup(str);
 	if (!rcb->str) {
 	    free(rcb);
+	    rcb = NULL;
 	    err = GE_NOMEM;
 	    goto out;
 	}
