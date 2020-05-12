@@ -2426,8 +2426,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
 	}
-	port->dev_to_net_state = PORT_UNCONNECTED;
-	port->io_open = false;
+	shutdown_port(port, "Device open failure");
 	goto out_unlock;
     }
 
@@ -2926,17 +2925,6 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
     }
 }
 
-static void
-finish_startup_port_err(struct gensio_accepter *acc, void *cb_data)
-{
-    port_info_t *port = cb_data;
-
-    so->lock(port->lock);
-    port->dev_to_net_state = PORT_CLOSED;
-    port->net_to_dev_state = PORT_CLOSED;
-    so->unlock(port->lock);
-}
-
 static int
 startup_port(struct absout *eout, port_info_t *port)
 {
@@ -2957,14 +2945,9 @@ startup_port(struct absout *eout, port_info_t *port)
     if (port->connbacks) {
 	err = port_dev_enable(port);
 	if (err) {
-	    port->dev_to_net_state = PORT_CLOSING;
-	    port->net_to_dev_state = PORT_CLOSING;
 	    eout->out(eout, "Unable to enable port device %s: %s",
 		      port->name, gensio_err_to_str(err));
-	    if (gensio_acc_shutdown(port->accepter, finish_startup_port_err,
-				    port))
-		/* Shouldn't happen, but just in case... */
-		finish_startup_port_err(NULL, port);
+	    shutdown_port(port, "Error enabling port connector");
 	}
     }
 
