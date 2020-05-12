@@ -866,12 +866,13 @@ send_timeout(struct gensio_timer *timer, void *data)
 
     so->lock(port->lock);
 
-    if (port->dev_to_net_state == PORT_CLOSING) {
+    port->send_timer_running = false;
+    if (port->dev_to_net_state == PORT_CLOSING ||
+		port->dev_to_net_state == PORT_CLOSED) {
 	so->unlock(port->lock);
 	return;
     }
 
-    port->send_timer_running = false;
     if (port->dev_to_net.cursize)
 	start_net_send(port);
     so->unlock(port->lock);
