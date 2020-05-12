@@ -240,3 +240,5 @@ define: &confver 1.0
 #     openstr:
 #     closestr:
 #     closeon:
+#     connector-retry-time: 10
+#     accepter-retry-time: 10

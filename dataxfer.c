@@ -213,6 +213,10 @@ struct port_info
 					   as possible. */
     bool send_timer_running;
 
+    /* Time to retry if the connector/accepter fails to come up. */
+    unsigned int connector_retry_time;
+    unsigned int accepter_retry_time;
+
     unsigned int nocon_read_enable_time_left;
     /* Used if a connect back is requested an no connections could
        be made, to try again. */
@@ -647,6 +651,8 @@ init_port_data(port_info_t *port)
     port->dev_to_net.maxsize = find_default_int("dev-to-net-bufsize");
     port->net_to_dev.maxsize = find_default_int("net-to-dev-bufsize");
     port->max_connections = find_default_int("max-connections");
+    port->connector_retry_time = find_default_int("connector-retry-time");
+    port->accepter_retry_time = find_default_int("accepter-retry-time");
     if (find_default_str("authdir", &port->authdir))
 	return ENOMEM;
     if (find_default_str("signature", &port->signaturestr))
@@ -922,7 +928,7 @@ connect_back_done(struct gensio *net, int err, void *cb_data)
     if (port->num_waiting_connect_backs == 0) {
 	if (!all_net_connectbacks_done(port))
 	    /* Not all connections back could be made. */
-	    port->nocon_read_enable_time_left = 10;
+	    port->nocon_read_enable_time_left = port->accepter_retry_time;
 	else
 	    gensio_set_read_callback_enable(port->io, true);
     }
@@ -979,7 +985,7 @@ port_check_connect_backs(port_info_t *port)
 	 * This is kind of a bad situation.  We got some data, attempted
 	 * connects, but failed.  Shut down the read enable for a while.
 	 */
-	port->nocon_read_enable_time_left = 10;
+	port->nocon_read_enable_time_left = port->accepter_retry_time;
     }
 
     return port->num_waiting_connect_backs;
@@ -2395,10 +2401,11 @@ port_start_timer(port_info_t *port)
     gensio_time timeout;
     unsigned int timeout_sec = 1;
 
-    if (port->dev_to_net_state == PORT_UNCONNECTED ||
-		port->dev_to_net_state == PORT_CLOSED)
-	/* Retry a connect back connector or accepter start. */
-	timeout_sec = 10;
+    if (port->dev_to_net_state == PORT_UNCONNECTED)
+	timeout_sec = port->connector_retry_time;
+
+    if (port->dev_to_net_state == PORT_CLOSED)
+	timeout_sec = port->accepter_retry_time;
 
 #ifdef gensio_version_major
     timeout.secs = timeout_sec;
@@ -2615,6 +2622,8 @@ typedef struct rotator
 
     char *authdir;
 
+    unsigned int accepter_retry_time;
+
     /* If the rotator fails startup, start time timer to retry it. */
     struct gensio_timer *restart_timer;
 
@@ -2745,7 +2754,7 @@ rot_timeout(struct gensio_timer *timer, void *cb_data)
 
     rv = gensio_acc_startup(rot->accepter);
     if (rv) {
-	gensio_time timeout = { 10, 0 };
+	gensio_time timeout = { rot->accepter_retry_time, 0 };
 
 	syslog(LOG_ERR, "Failed to start rotator: %s", gensio_err_to_str(rv));
 	so->start_timer(rot->restart_timer, &timeout);
@@ -2781,6 +2790,8 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 	return ENOMEM;
     }
 
+    rot->accepter_retry_time = find_default_int("accepter-retry-time");
+
     if (options) {
 	unsigned int i;
 	const char *str;
@@ -2796,6 +2807,11 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 			   " authdir on line %d\n", lineno);
 		    return ENOMEM;
 		}
+		continue;
+	    } else if (gensio_check_keyuint(options[i], "accepter-retry-time",
+					    &rot->accepter_retry_time) > 0) {
+		if (rot->accepter_retry_time < 1)
+		    rot->accepter_retry_time = 1;
 		continue;
 	    }
 	    free_rotator(rot);
@@ -2827,7 +2843,7 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 
     rv = gensio_acc_startup(rot->accepter);
     if (rv) {
-	gensio_time timeout = { 10, 0 };
+	gensio_time timeout = { rot->accepter_retry_time, 0 };
 
 	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
 	       gensio_err_to_str(rv));
@@ -3810,6 +3826,14 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 				   &port->max_connections) > 0) {
 	if (port->max_connections < 1)
 	    port->max_connections = 1;
+    } else if (gensio_check_keyuint(pos, "accepter-retry-time",
+				   &port->accepter_retry_time) > 0) {
+	if (port->accepter_retry_time < 1)
+	    port->accepter_retry_time = 1;
+    } else if (gensio_check_keyuint(pos, "connector-retry-time",
+				   &port->connector_retry_time) > 0) {
+	if (port->connector_retry_time < 1)
+	    port->connector_retry_time = 1;
     } else if (gensio_check_keyvalue(pos, "authdir", &val) > 0) {
 	fval = strdup(val);
 	if (!fval) {

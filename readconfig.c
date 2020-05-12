@@ -437,6 +437,10 @@ struct default_data defaults[] = {
 					.def.intval = PORT_BUFSIZE },
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
+    { "connector-retry-time", GENSIO_DEFAULT_INT, .min=1, .max=10000000,
+					.def.intval = 10 },
+    { "accepter-retry-time", GENSIO_DEFAULT_INT, .min=1, .max=10000000,
+					.def.intval = 10 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "connback",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =

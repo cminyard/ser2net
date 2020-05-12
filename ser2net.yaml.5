@@ -304,6 +304,14 @@ final "a" and start over at "abc", which won't match.  This shouldn't
 cause a problem most cases, but if it does, contact the authors and it
 can be improved.
 
+.I accepter-retry-time: <time in seconds>
+If the accepter does not come up at startup, wait this many seconds
+and retry it.
+
+.I connector-retry-time: <time in seconds>
+On a connect-back port, if the connector does not come up or goes
+down.  wait this many seconds and retry it.
+
 .I trace-read: <filename>
 When the acceptor is opened, open the given file and store all data
 read from the physical device (and thus written to the client's
@@ -462,7 +470,8 @@ options:
 .RE
 .RE
 
-A rotator only has one option, "authdir", same as connections.
+A rotator two possible options, "authdir", and "accepter-retry-time",
+both same as connections.
 
 You should use YAML aliases for the connections.
 
