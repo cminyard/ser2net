@@ -532,11 +532,6 @@ init_port_data(port_info_t *port)
     port->net_to_dev_bufsize = find_default_int("net-to-dev-bufsize");
     port->max_connections = find_default_int("max-connections");
 
-    if (buffer_init(&port->net_to_dev, NULL, port->net_to_dev_bufsize))
-	return ENOMEM;
-    if (buffer_init(&port->dev_to_net, NULL, port->dev_to_net_bufsize))
-	return ENOMEM;
-
     port->led_tx = NULL;
     port->led_rx = NULL;
 
@@ -3408,6 +3403,11 @@ myconfig(void *data, struct absout *eout, const char *pos)
 	eout->out(eout, "Unknown config item: %s", pos);
 	return -1;
     }
+
+    if (buffer_init(&port->net_to_dev, NULL, port->net_to_dev_bufsize))
+	return ENOMEM;
+    if (buffer_init(&port->dev_to_net, NULL, port->dev_to_net_bufsize))
+	return ENOMEM;
 
     return 0;
 }
