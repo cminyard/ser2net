@@ -129,8 +129,7 @@ gbuf_init(struct gbuf *buf, gensiods size)
 	return ENOMEM;
 
     buf->maxsize = size;
-    buf->cursize = 0;
-    buf->pos = 0;
+    gbuf_reset(buf);
     return 0;
 }
 
@@ -1225,10 +1224,8 @@ gbuf_write(port_info_t *port, struct gbuf *buf)
 
     buf->pos += written;
     port->dev_bytes_sent += written;
-    if (buf->pos >= buf->cursize) {
-	buf->pos = 0;
-	buf->cursize = 0;
-    }
+    if (buf->pos >= buf->cursize)
+	gbuf_reset(buf);
 
     return 0;
 }
