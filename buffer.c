@@ -88,6 +88,13 @@ lbuffer_write(struct devio *io, int fd, struct sbuf *buf, int *buferr,
 	buf->cursize -= write_count;
     }
 
+    /*
+     * If the buffer is empty, reset to avoid wrap-around as much as possible.
+     * This keeps fragmented sends to a minimum.
+     */
+    if (buf->cursize == 0)
+	buf->pos = 0;
+
     return 0;
 }
 
