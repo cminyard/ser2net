@@ -460,8 +460,8 @@ options:
 .RE
 .RE
 
-A rotator two possible options, "authdir", and "accepter-retry-time",
-both same as connections.
+A rotator has two possible options, "authdir", and
+"accepter-retry-time", both same as connections.
 
 You should use YAML aliases for the connections.
 
@@ -990,7 +990,7 @@ put keyname.crt in ser2net's <authdir>/username/allowed_certs.  By
 default <authdir> is /usr/share/ser2net/auth, but you can change
 that with the authdir default in the ser2net config file or by
 setting authdir on individual connections (in case you want differet
-ones for different ports).  You then much rehash the allowed_certs
+ones for different ports).  You then must rehash the allowed_certs
 directory:
 .IP
 gtlssh-keygen rehash <authdir>/username/allowed_certs
@@ -1003,9 +1003,9 @@ gensiot telnet,ssl(CA=ser2net.crt,cert=username.crt,key=username.key),<server>,1
 telnet -z ssl,secure,cacert=ser2net.crt,cert=username.crt,key=username.key server 1234
 .PP
 .SS "AUTHENTICATION WITH CERTAUTH (GTLSSH)"
-All of the above is a big pain.  Fortunately there is an easier
-way.  gtlssh is a ssh-like program, but runs over TLS and it
-implements a custom ssh-like authentication protocol.
+All of the above is a big pain.  Fortunately there is an easier way.
+gtlssh is a ssh-like program, but runs over TLS and it implements a
+ssh-like authentication protocol using the certauth gensio.
 
 ser2net supports this authentication system running on top of the
 ssl and certauth gensios.  Those gensios provide the framework
@@ -1039,7 +1039,7 @@ gtlssh --nosctp --telnet username@server 1234
 .PP
 The --nosctp thing keep gtlssh from trying sctp, which will fail
 because we put tcp in the port line.  You could use sctp there and
-get all it's advantages for free!  Then --nosctp would no longer
+get all its advantages for free!  Then --nosctp would no longer
 be required to avoid the nagging.
 
 The username is optional if it's the same as your current user.
