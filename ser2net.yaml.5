@@ -1082,7 +1082,7 @@ If ser2net receives a SIGHUP, it will reread it configuration file
 and make the appropriate changes.  If an inuse port is changed or deleted,
 the actual change will not occur until the port is disconnected.
 
-.SH "Error"
+.SH "ERRORS"
 Almost all error output goes to syslog, not standard output.
 
 .SH "FILES"
@@ -1093,8 +1093,7 @@ Almost all error output goes to syslog, not standard output.
 ser2net(8) telnet(1), hosts_access(5), gensio(5), gtlssh(1), gtlssh-keygen(1)
 
 .SH "KNOWN PROBLEMS"
-Using serial ports with fork() and UUCP locking can result in wrong
-behavior.  See the serialdev section for details.
+If they were known, they would be fixed :).
 
 .SH AUTHOR
 .PP
