@@ -60,8 +60,6 @@ An accepter specification looks like:
 .RS
 connection: &<alias>
 .RS
-name: <name>
-.br
 accepter: <accepter>
 .br
 timeout: <number>
@@ -80,7 +78,7 @@ options:
 .RE
 
 An <accepter> is an accepting gensio specification.  When ser2net
-receive a connection on the accepter, it attempts to make a connection
+receives a connection on the accepter, it attempts to make a connection
 to the <connector> gensio.  The alias is required, it sets the name
 that is used for the connection in the admin interface and for
 referencing from rotators.
@@ -95,9 +93,9 @@ disabling port by setting enable to off and sending a SIGHUP.  If
 there are users connected and you disable a port and send a SIGHUP,
 the users will be kicked off.
 
-An is a configuration setting that doesn't have anything to do
-with specific gensios, they are controls for ser2net in general.
-The option section is optional.
+An option is a configuration setting that doesn't have anything to do
+with specific gensios, they are controls for ser2net in general.  The
+option section is optional.
 
 See gensio(5) for a lot of information about the specific gensios
 available.
@@ -105,10 +103,8 @@ available.
 To allow a TCP connection to a serial port and ignore modem control,
 you can do:
 .RS
-connection:
+connection: &toS0tcp
 .RS
-name: connection to /dev/ttyS0
-.br
 accepter: tcp,1234
 .br
 connector: serialdev,/dev/ttyS0,local
@@ -119,10 +115,8 @@ connector: serialdev,/dev/ttyS0,local
 Both accepting and connecting gensios stack, so if you want to add
 telnet with RFC2217 support, you can do:
 .RS
-connection:
+connection: &toS0telnet
 .RS
-name: connection to /dev/ttyS0
-.br
 accepter: telnet(rfc2217)tcp,1234
 .br
 connector: serialdev,/dev/ttyS0,local
@@ -133,10 +127,8 @@ If you want to accept a telnet over SCTP connection only on IPv6
 localhost and connect to a telnet connection with SSL over tcp, you
 can do:
 .RS
-connection:
+connection: &tomyhost
 .RS
-name: connection to myhost.domain.org,1234
-.br
 accepter: telnet,sctp,::1,1234
 .br
 connector: telnet,ssl,tcp,myhost.domain.org,1234
@@ -155,10 +147,8 @@ You could create a secure login with telnet RFC2217 support that then
 connects to an IPMI sol connection.  Notice how splitting the connector
 line is done with YAML.
 .RS
-connection:
+connection: &authsol
 .RS
-.br
-name: connection to ipimsol on ipmiserver.domain.org
 .br
 accepter: telnet(rfc2217),mux,certauth,ssl,sctp,1234
 .br
@@ -379,7 +369,7 @@ working smoothly at slow speeds.
 .I sendon: <sendon string>
 If the given string is seen coming from the connector side of the
 connection, sends buffered data up to and including the
-string. Disabled by default. As an example, this can be set to \r\n
+string. Disabled by default. As an example, this can be set to \er\en
 with appropriate chardelay settings to send one line at a time.  It
 uses string handling as described in "SPECIAL STRING HANDLING" above.
 See the notes on the closeon string for important information on how
@@ -449,7 +439,7 @@ number of connections.
 
 A rotator specification looks like:
 .RS
-connection: [&<alias>]
+rotator: &<alias>
 .RS
 accepter: <accepter>
 .br

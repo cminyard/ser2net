@@ -24,10 +24,11 @@ or serial port, the connection is refused with an error message.
 .TP
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
-.BR "/etc/ser2net/ser2net.yaml".  If the filename does not end in
+.BR "/etc/ser2net/ser2net.yaml".
+If the filename does not end in
 ".yaml" or the first line in the file does not begin with "%YAML", the
 configuration file is parsed as an old-style configuration file, which
-is not supported any more.  If the
+should work but is no longer supported.  If the
 .B config-file
 is
 .B "-"
@@ -36,7 +37,7 @@ then standard input is read as the config file.  This only supports yaml.
 .I "\-C config-line"
 Handle a single configuration line.  This may be
 specified multiple times for multiple lines.  This is just like a
-line in the config file.  This disables the default config file,
+line in the old style config file.  This disables the default config file,
 you must specify a -c after the last -C to have it read a config
 file, too.
 
@@ -57,7 +58,7 @@ separate config string.  So, for instance:
 
   -Y 'connection: &con01#  accepter: tcp,2013'
   -Y '  connector: serialdev,/dev/ttyEcho0,9600n81,local'
-  -Y '  options:#    banner: "### A Banner ###\\r\\n"'
+  -Y '  options:#    banner: "### A Banner ###\er\en"'
 
 can be put on the ser2net command line.
 .TP
