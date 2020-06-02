@@ -57,7 +57,7 @@ separate config string.  So, for instance:
 
   -Y 'connection: &con01#  accepter: tcp,2013'
   -Y '  connector: serialdev,/dev/ttyEcho0,9600n81,local'
-  -Y '  options:#    banner: "### A Banner ###\r\n"'
+  -Y '  options:#    banner: "### A Banner ###\\r\\n"'
 
 can be put on the ser2net command line.
 .TP
@@ -75,7 +75,6 @@ replacing whatever was in that file previously.  A pidfile is not created
 by default, you must specify this to create one.  Note also that this
 filename must be specific with the full path, as ser2net will change
 directory to "/" when it becomes a daemon.
-when it
 .TP
 .I \-u
 If UUCP locking is enabled, this will disable the use of UUCP locks.
