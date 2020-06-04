@@ -961,16 +961,29 @@ gtlssh-keygen --keydir /etc/ser2net --commonname "`hostname`-ser2net" serverkey 
 .PP
 to generate the default keys in /etc/ser2net (or wherever).  The
 certificate/key will be named /etc/ser2net/ser2net.crt|key.
+
+.B NOTE:
+If you compile ser2net yourself, by default autoconf sets the system
+configuration directory (normally /etc) as /usr/etc.  This is a major
+annoyance with autoconf.  So if you don't change it, you would need
+/usr/etc above where it says /etc.  However, generally the right way to
+do this is to add "--sysconfdir=/etc" to the configure command line
+when you configure ser2net.  If a distro has compiled ser2net for you,
+that should have done that by default, so no worries in that case.
+
 Then copy ser2net.crt over to the user system and provide it to connection
 commands, like:
 .IP
 gensiot telnet,ssl(CA=ser2net.crt),<server>,1234
+.PP
+or
+.IP
 telnet -z ssl,secure,cacert=ser2net.crt 1234
 .PP
 Then you will have an encrypted connection.  Just make sure your
 certificates are valid.
 .PP
-Note that the "-<server>" at the end of the key is important because it
+Note that the "-ser2net" at the end of the key is important because it
 make the subject name of the certificate more unique.  You can really
 put anything you want for what you provide to keygen, as long as you
 rename it properly.  That will be the subject name of the certificate.
