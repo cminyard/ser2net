@@ -125,6 +125,9 @@ struct net_info {
     telnet_data_t tn_data;
     bool sending_tn_data; /* Are we sending tn data at the moment? */
 
+    /* A copy of telnet_cmds so we can modify it. */
+    struct telnet_cmd *working_telnet_cmds;
+
     int            timeout_left;	/* The amount of time left (in
 					   seconds) before the timeout
 					   goes off. */
@@ -1902,6 +1905,23 @@ recalc_port_chardelay(port_info_t *port)
 	port->chardelay = port->chardelay_min;
 }
 
+static struct telnet_cmd *
+telnet_cmds_copy(const struct telnet_cmd *in)
+{
+    unsigned int i;
+    struct telnet_cmd *out;
+
+    for (i = 0; in[i].option != TELNET_CMD_END_OPTION; i++)
+	;
+    i++;
+
+    out = malloc(i * sizeof(*out));
+    if (!out)
+	return NULL;
+    memcpy(out, in, i * sizeof(*out));
+    return out;
+}
+
 /* Called to set up a new connection's file descriptor. */
 static int
 setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
@@ -1909,6 +1929,7 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     int options;
     struct timeval then;
     bool i_am_first = false;
+    const char *errstr = NULL;
 
     if (fcntl(netcon->fd, F_SETFL, O_NONBLOCK) == -1) {
 	close(netcon->fd);
@@ -1949,16 +1970,10 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
 
     if (num_connected_net(port, true) == 1) {
 	/* We are first, set things up on the device. */
-	const char *errstr = NULL;
 
 	if (port->io.f->setup(&port->io, port->portname, &errstr,
-			      &port->bps, &port->bpc) == -1) {
-	    if (errstr)
-		write_ignore_fail(netcon->fd, errstr, strlen(errstr));
-	    close(netcon->fd);
-	    netcon->fd = -1;
-	    return -1;
-	}
+			      &port->bps, &port->bpc) == -1)
+	    goto out_fail;
 	recalc_port_chardelay(port);
 	port->is_2217 = 0;
 
@@ -2000,12 +2015,21 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     port->net_to_dev_state = PORT_WAITING_INPUT;
 
     if (port->enabled == PORT_TELNET) {
+	struct telnet_cmd *cmds = telnet_cmds_copy(telnet_cmds);
+
+	if (!cmds) {
+	    errstr = "Out of memory";
+	    goto out_fail;
+	}
+	if (netcon->working_telnet_cmds)
+	    free(netcon->working_telnet_cmds);
+	netcon->working_telnet_cmds = cmds;
 	telnet_init(&netcon->tn_data, netcon, telnet_output_ready,
 		    telnet_cmd_handler,
-		    telnet_cmds,
+		    netcon->working_telnet_cmds,
 		    telnet_init_seq, sizeof(telnet_init_seq));
 	sel_set_fd_write_handler(ser2net_sel, netcon->fd,
-				 SEL_FD_HANDLER_ENABLED);
+				     SEL_FD_HANDLER_ENABLED);
     } else {
 	buffer_init(&netcon->tn_data.out_telnet_cmd,
 		    netcon->tn_data.out_telnet_cmdbuf, 0);
@@ -2029,6 +2053,12 @@ setup_port(port_info_t *port, net_info_t *netcon, bool is_reconfig)
     reset_timer(netcon);
 
     return 0;
+ out_fail:
+    if (errstr)
+	write_ignore_fail(netcon->fd, errstr, strlen(errstr));
+    close(netcon->fd);
+    netcon->fd = -1;
+    return -1;
 }
 
 static bool
@@ -3062,6 +3092,9 @@ netcon_finish_shutdown(net_info_t *netcon)
 	free(netcon->banner);
 	netcon->banner = NULL;
     }
+
+    if (netcon->working_telnet_cmds)
+	free(netcon->working_telnet_cmds);
 
     if (num_connected_net(port, true) == 0) {
 	start_shutdown_port(port, "All network connections free");
