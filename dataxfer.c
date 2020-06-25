@@ -675,6 +675,16 @@ init_port_data(port_info_t *port)
     return 0;
 }
 
+static gensiods
+net_raddr_str(struct gensio *io, char *buf, gensiods buflen)
+{
+    int err = gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
+			     GENSIO_CONTROL_RADDR, buf, &buflen);
+    if (err)
+	buflen = 0;
+    return buflen;
+}
+
 static void
 reset_timer(net_info_t *netcon)
 {
@@ -816,7 +826,7 @@ header_trace(port_info_t *port, net_info_t *netcon)
     len += timestamp(&tr, buf, sizeof(buf));
     if (sizeof(buf) > len)
 	len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    gensio_raddr_to_str(netcon->net, &len, buf, sizeof(buf));
+    len = net_raddr_str(netcon->net, buf, sizeof(buf));
     if (sizeof(buf) > len)
 	len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
@@ -1918,10 +1928,8 @@ process_str(port_info_t *port, net_info_t *netcon,
 		/* ser2net serial parms. */
 		{
 		    char str[1024];
-		    int err;
 
-		    err = gensio_raddr_to_str(port->io, NULL, str, sizeof(str));
-		    if (err)
+		    if (net_raddr_str(port->io, str, sizeof(str)) == 0)
 			break;
 		    t = strchr(str, ',');
 		    if (!t)
@@ -2144,7 +2152,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    netcon = first_live_net_con(port);
 		if (!netcon)
 		    break;
-		if (gensio_raddr_to_str(netcon->net, NULL, ip, sizeof(ip)))
+		if (net_raddr_str(netcon->net, ip, sizeof(ip)) == 0)
 		    break;
 		for (ipp = ip; *ipp; ipp++)
 		    op(data, *ipp);
@@ -2349,11 +2357,9 @@ finish_setup_net(port_info_t *port, net_info_t *netcon)
 static void
 extract_bps_bpc(port_info_t *port)
 {
-    int err;
     char buf[1024], *s, *speed;
 
-    err = gensio_raddr_to_str(port->io, NULL, buf, sizeof(buf));
-    if (err)
+    if (net_raddr_str(port->io, buf, sizeof(buf)) == 0)
 	goto out_broken;
 
     s = strchr(buf, ',');
@@ -2549,7 +2555,9 @@ find_rotator_port(const char *portname, struct gensio *net,
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
 	    socklen = sizeof(addr);
-	    err = gensio_get_raddr(net, &addr, &socklen);
+	    err = gensio_control(net, GENSIO_CONTROL_DEPTH_FIRST, true,
+				 GENSIO_CONTROL_RADDR_BIN,
+				 (char *) &addr, &socklen);
 	    if (err)
 		goto next;
 	    if (!remaddr_check(port->remaddrs,
@@ -2927,7 +2935,8 @@ port_new_con(port_info_t *port, struct gensio *net)
     }
 
     socklen = sizeof(addr);
-    if (!gensio_get_raddr(net, &addr, &socklen)) {
+    if (!gensio_control(net, GENSIO_CONTROL_DEPTH_FIRST, true,
+			GENSIO_CONTROL_RADDR_BIN, (char *) &addr, &socklen)) {
 	if (!remaddr_check(port->remaddrs,
 			   (struct sockaddr *) &addr, socklen)) {
 	    err = "Accessed denied due to your net address\r\n";
@@ -4409,8 +4418,7 @@ static void
 showshortport(struct controller_info *cntlr, port_info_t *port)
 {
     char buffer[NI_MAXHOST + NI_MAXSERV + 2];
-    int count;
-    int err;
+    int count = 0;
     net_info_t *netcon = NULL;
 
     controller_outputf(cntlr, "%-22s ", port->name);
@@ -4425,8 +4433,8 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 	netcon = &(port->netcons[0]);
 
     if (port_in_use(port)) {
-	gensio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
-	count = controller_outputf(cntlr, "%s", buffer);
+	if (net_raddr_str(netcon->net, buffer, sizeof(buffer)) != 0)
+	    count = controller_outputf(cntlr, "%s", buffer);
     } else {
 	count = controller_outputf(cntlr, "unconnected");
     }
@@ -4445,8 +4453,7 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     controller_outputf(cntlr, "%9lu ", (unsigned long)port->dev_bytes_received);
     controller_outputf(cntlr, "%9lu ", (unsigned long) port->dev_bytes_sent);
 
-    err = gensio_raddr_to_str(port->io, NULL, buffer, sizeof(buffer));
-    if (!err)
+    if (net_raddr_str(port->io, buffer, sizeof(buffer)) != 0)
 	controller_outputf(cntlr, "%s", buffer);
 
     controller_outs(cntlr, "\r\n");
@@ -4458,7 +4465,6 @@ showport(struct controller_info *cntlr, port_info_t *port)
 {
     char buffer[NI_MAXHOST + NI_MAXSERV + 2], *cfg, *oth = NULL;
     net_info_t *netcon;
-    int err;
 
     controller_outputf(cntlr, "Port %s\r\n", port->name);
     controller_outputf(cntlr, "  accepter: %s\r\n", port->accstr);
@@ -4468,7 +4474,8 @@ showport(struct controller_info *cntlr, port_info_t *port)
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
-	    gensio_raddr_to_str(netcon->net, NULL, buffer, sizeof(buffer));
+	    buffer[0] = '\0';
+	    net_raddr_str(netcon->net, buffer, sizeof(buffer));
 	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
 	    controller_outputf(cntlr, "    bytes read from TCP: %lu\r\n",
 			       (unsigned long) netcon->bytes_received);
@@ -4485,8 +4492,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
     else
 	controller_outputf(cntlr, "  device: %s\r\n", port->devname);
 
-    err = gensio_raddr_to_str(port->io, NULL, buffer, sizeof(buffer));
-    if (!err) {
+    if (net_raddr_str(port->io, buffer, sizeof(buffer)) != 0) {
 	cfg = strchr(buffer, ',');
 	if (cfg) {
 	    cfg++;
