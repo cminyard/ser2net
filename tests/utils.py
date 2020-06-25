@@ -514,7 +514,7 @@ class Ser2netDaemon:
         self.err.open_s()
         self.err.closeme = True
 
-        self.pid = self.io.remote_id()
+        self.pid = remote_id_int(self.io)
         self.handler.set_waitfor("Ready\n")
         if (self.handler.wait_timeout(2000) == 0):
             raise Exception("Timeout waiting for ser2net to start")
@@ -754,3 +754,6 @@ if not srcdir:
     srcdir = os.path.dirname(sys.argv[0])
     if (not srcdir):
         srcdir = "."
+
+def remote_id_int(io):
+    return int(io.control(0, True, gensio.GENSIO_CONTROL_REMOTE_ID, None))

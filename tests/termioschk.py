@@ -80,7 +80,7 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
 
         expected_termios = handler.op(io1, io2)
 
-        io2_rem_termios = get_remote_termios(io2.remote_id())
+        io2_rem_termios = get_remote_termios(utils.remote_id_int(io2))
 
         c = compare_termios(expected_termios, io2_rem_termios)
         if (c != -1):
