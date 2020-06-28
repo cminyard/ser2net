@@ -678,11 +678,31 @@ init_port_data(port_info_t *port)
 static gensiods
 net_raddr_str(struct gensio *io, char *buf, gensiods buflen)
 {
+#if (defined(gensio_version_major) && (gensio_version_major > 2 || \
+	       (gensio_version_major == 2 && gensio_version_minor > 0)))
     int err = gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
 			     GENSIO_CONTROL_RADDR, buf, &buflen);
+#else
+    int err = gensio_raddr_to_str(io, &buflen, buf, buflen);
+#endif
     if (err)
 	buflen = 0;
+
     return buflen;
+}
+
+static gensiods
+net_raddr(struct gensio *io, struct sockaddr_storage *addr, gensiods *socklen)
+{
+    *socklen = sizeof(*addr);
+#if (defined(gensio_version_major) && (gensio_version_major > 2 || \
+	       (gensio_version_major == 2 && gensio_version_minor > 0)))
+    return gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
+			  GENSIO_CONTROL_RADDR_BIN,
+			  (char *) addr, socklen);
+#else
+    return gensio_get_raddr(io, (char *) addr, socklen);
+#endif
 }
 
 static void
@@ -826,7 +846,8 @@ header_trace(port_info_t *port, net_info_t *netcon)
     len += timestamp(&tr, buf, sizeof(buf));
     if (sizeof(buf) > len)
 	len += snprintf(buf + len, sizeof(buf) - len, "OPEN (");
-    len = net_raddr_str(netcon->net, buf, sizeof(buf));
+    if (sizeof(buf) > len)
+	len += net_raddr_str(netcon->net, buf + len, sizeof(buf) - len);
     if (sizeof(buf) > len)
 	len += snprintf(buf + len, sizeof(buf) - len, ")\n");
 
@@ -2554,10 +2575,7 @@ find_rotator_port(const char *portname, struct gensio *net,
 		goto next;
 	    if (port->dev_to_net_state == PORT_CLOSING)
 		goto next;
-	    socklen = sizeof(addr);
-	    err = gensio_control(net, GENSIO_CONTROL_DEPTH_FIRST, true,
-				 GENSIO_CONTROL_RADDR_BIN,
-				 (char *) &addr, &socklen);
+	    err = net_raddr(net, &addr, &socklen);
 	    if (err)
 		goto next;
 	    if (!remaddr_check(port->remaddrs,
@@ -2935,9 +2953,7 @@ port_new_con(port_info_t *port, struct gensio *net)
 	goto out_err;
     }
 
-    socklen = sizeof(addr);
-    if (!gensio_control(net, GENSIO_CONTROL_DEPTH_FIRST, true,
-			GENSIO_CONTROL_RADDR_BIN, (char *) &addr, &socklen)) {
+    if (!net_raddr(net, &addr, &socklen)) {
 	if (!remaddr_check(port->remaddrs,
 			   (struct sockaddr *) &addr, socklen)) {
 	    err = "Accessed denied due to your net address\r\n";
