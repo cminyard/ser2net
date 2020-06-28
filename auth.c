@@ -23,6 +23,7 @@
 #include <limits.h>
 #include <errno.h>
 #include <gensio/gensio.h>
+#include "ser2net.h"
 
 /*
  * The next few functions are for authentication handling.

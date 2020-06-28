@@ -32,6 +32,7 @@
 #include <syslog.h>
 #include <limits.h>
 #include "led.h"
+#include "led_sysfs.h"
 
 #define SYSFS_LED_BASE "/sys/class/leds"
 

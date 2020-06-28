@@ -302,7 +302,7 @@ static char *help_str =
 
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
-int
+static int
 process_input_line(controller_info_t *cntlr)
 {
     char *strtok_data;

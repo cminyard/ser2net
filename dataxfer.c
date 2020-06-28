@@ -718,7 +718,7 @@ trace_write_end(char *out, int size, const unsigned char *start, int col)
     return pos;
 }
 
-int
+static int
 trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	    gensiods buf_len, const char *prefix)
 {
@@ -880,7 +880,7 @@ start_net_send(port_info_t *port)
     port->dev_to_net_state = PORT_WAITING_OUTPUT_CLEAR;
 }
 
-void
+static void
 send_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
@@ -2591,7 +2591,8 @@ handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon)
     setup_port(port, netcon);
 }
 
-int gensio_log_level_to_syslog(int gloglevel)
+static int
+gensio_log_level_to_syslog(int gloglevel)
 {
     switch (gloglevel) {
     case GENSIO_LOG_FATAL:
@@ -2753,7 +2754,7 @@ free_rotators(void)
     rotators = NULL;
 }
 
-void
+static void
 rot_timeout(struct gensio_timer *timer, void *cb_data)
 {
     rotator_t *rot = cb_data;
@@ -3544,7 +3545,7 @@ handle_shutdown_timeout(port_info_t *port)
     return false;
 }
 
-void
+static void
 got_timeout(struct gensio_timer *timer, void *data)
 {
     port_info_t *port = (port_info_t *) data;
