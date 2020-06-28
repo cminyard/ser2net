@@ -490,8 +490,6 @@ remaddr_append(struct port_remaddr **list, struct port_remaddr **cblist,
 
 	rcb->str = strdup(str);
 	if (!rcb->str) {
-	    free(rcb);
-	    rcb = NULL;
 	    err = GE_NOMEM;
 	    goto out;
 	}
@@ -515,11 +513,9 @@ remaddr_append(struct port_remaddr **list, struct port_remaddr **cblist,
 		gensio_free_addrinfo(so, r->ai);
 	    free(r);
 	}
-	if (rcb) {
-	    if (rcb->str)
-		free(rcb->str);
+	if (rcb)
+	    /* rcb->str cannot be set, the last failure is its allocation. */
 	    free(rcb);
-	}
 	if (ai)
 	    gensio_free_addrinfo(so, ai);
     }
