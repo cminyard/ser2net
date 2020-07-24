@@ -1577,6 +1577,8 @@ s2n_modemstate(net_info_t *netcon, struct sergensio *sio,
 {
     port_info_t *port = netcon->port;
 
+    if (!sio)
+	return;
     netcon->modemstate_mask = modemstate;
     sergensio_modemstate(sio, port->last_modemstate & netcon->modemstate_mask);
 }
@@ -1586,6 +1588,8 @@ s2n_linestate(net_info_t *netcon, struct sergensio *sio, unsigned int linestate)
 {
     port_info_t *port = netcon->port;
 
+    if (!sio)
+	return;
     netcon->linestate_mask = linestate;
     sergensio_linestate(sio, port->last_linestate & netcon->linestate_mask);
 }
@@ -1713,6 +1717,8 @@ s2n_signature(net_info_t *netcon, struct sergensio *sio, char *sig,
 {
     port_info_t *port = netcon->port;
 
+    if (!sio)
+	return;
     sig = port->signaturestr;
     if (!sig)
 	sig = rfc2217_signature;
