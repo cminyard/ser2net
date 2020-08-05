@@ -29,6 +29,7 @@
 #include <syslog.h>
 #include <stdarg.h>
 #include <limits.h>
+#include <errno.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 
@@ -919,7 +920,7 @@ readconfig(FILE *instream)
 
     if (!inbuf) {
 	syslog(LOG_ERR, "Unable to allocate input buffer");
-	return -1;
+	return ENOMEM;
     }
 
     lineno = 0;
@@ -936,7 +937,7 @@ readconfig(FILE *instream)
 	    new_inbuf = realloc(inbuf, linesize);
 	    if (!new_inbuf) {
 		syslog(LOG_ERR, "Unable to reallocate input buffer");
-		rv = -1;
+		rv = ENOMEM;
 		goto out_err;
 	    }
 	    inbuf = new_inbuf;

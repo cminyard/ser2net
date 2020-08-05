@@ -1212,14 +1212,14 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
     y.options = malloc(sizeof(char *) * 10);
     if (!y.options) {
 	syslog(LOG_ERR, "Out of memory allocating options array");
-	return -1;
+	return ENOMEM;
     }
     y.options_len = 10;
     y.connections = malloc(sizeof(char *) * 10);
     if (!y.connections) {
 	free(y.options);
 	syslog(LOG_ERR, "Out of memory allocating connection array");
-	return -1;
+	return ENOMEM;
     }
     y.connections_len = 10;
     y.state = BEGIN_DOC;
@@ -1239,7 +1239,7 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 		   (unsigned long) y.parser.problem_mark.line,
 		   (unsigned long) y.parser.problem_mark.column,
 		   y.parser.problem);
-	    err = -1;
+	    err = EINVAL;
 	    break;
 	}
 
@@ -1254,7 +1254,7 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 	    if (y.state != END_DOC) {
 		syslog(LOG_ERR, "yaml file ended in invalid state: %d",
 		       y.state);
-		err = -1;
+		err = EINVAL;
 	    }
 	    done = true;
 	    break;
@@ -1269,9 +1269,10 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 	    if (!a) {
 		eout->out(eout, "Unable to find alias '%s'",
 			  y.e.data.alias.anchor);
-		err = -1;
+		err = EINVAL;
 	    } else {
-		err = yhandle_scalar(&y, NULL, a->value);
+		if (yhandle_scalar(&y, NULL, a->value))
+		    err = EINVAL;
 	    }
 	    break;
 	}
@@ -1283,8 +1284,9 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 	    printf(" tag: '%s'\n", y.e.data.scalar.tag);
 	    printf(" val: '%s'\n", y.e.data.scalar.value);
 #endif
-	    err = yhandle_scalar(&y, (char *) y.e.data.scalar.anchor,
-				 (char *) y.e.data.scalar.value);
+	    if (yhandle_scalar(&y, (char *) y.e.data.scalar.anchor,
+			       (char *) y.e.data.scalar.value))
+		err = EINVAL;
 	    break;
 
 	case YAML_SEQUENCE_START_EVENT:
@@ -1293,14 +1295,16 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 	    printf(" anc: '%s'\n", y.e.data.sequence_start.anchor);
 	    printf(" tag: '%s'\n", y.e.data.sequence_start.tag);
 #endif
-	    err = yhandle_seq_start(&y);
+	    if (yhandle_seq_start(&y))
+		err = EINVAL;
 	    break;
 
 	case YAML_SEQUENCE_END_EVENT:
 #if DEBUG
 	    printf("YAML_SEQUENCE_END_EVENT\n");
 #endif
-	    err = yhandle_seq_end(&y);
+	    if (yhandle_seq_end(&y))
+		err = EINVAL;
 	    break;
 
 	case YAML_MAPPING_START_EVENT:
@@ -1309,14 +1313,16 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 	    printf(" anc: '%s'\n", y.e.data.mapping_start.anchor);
 	    printf(" tag: '%s'\n", y.e.data.mapping_start.tag);
 #endif
-	    err = yhandle_mapping_start(&y);
+	    if (yhandle_mapping_start(&y))
+		err = EINVAL;
 	    break;
 
 	case YAML_MAPPING_END_EVENT:
 #if DEBUG
 	    printf("YAML_MAPPING_END_EVENT\n");
 #endif
-	    err = yhandle_mapping_end(&y);
+	    if (yhandle_mapping_end(&y))
+		err = EINVAL;
 	    break;
 	}
 

@@ -153,15 +153,16 @@ fopen_config_file(bool *is_yaml)
     return instream;
 }
 
-static void
-reread_config_file(void)
+int
+reread_config_file(const char *reqtype)
 {
+    int rv = ENOENT;
+
     if (config_file) {
 	FILE *instream = NULL;
 	bool is_yaml;
-	int rv;
 
-	syslog(LOG_INFO, "Got SIGHUP, re-reading configuration");
+	syslog(LOG_INFO, "Got %s, re-reading configuration", reqtype);
 	readconfig_init();
 
 	instream = fopen_config_file(&is_yaml);
@@ -180,7 +181,7 @@ reread_config_file(void)
 	    apply_new_ports(&syslog_absout);
     }
  out:
-    return;
+    return rv;
 }
 
 void
@@ -352,7 +353,7 @@ config_reread_thread(void *dummy)
 {
     pthread_detach(pthread_self());
     start_maint_op();
-    reread_config_file();
+    reread_config_file("SIGHUP");
     end_maint_op();
     so->lock(config_lock);
     in_config_read = 0;
@@ -583,7 +584,9 @@ sig_fd_read_handler(int fd, void *cb_data)
 #ifdef USE_PTHREADS
 	thread_reread_config_file();
 #else
-	reread_config_file();
+	start_maint_op();
+	reread_config_file("SIGHUP");
+	end_maint_op();
 #endif
     }
 }

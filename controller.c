@@ -256,9 +256,9 @@ controller_outputf(struct controller_info *cntlr, const char *str, ...)
     return rv;
 }
 
-void controller_outs(struct controller_info *cntlr, char *s)
+void controller_outs(struct controller_info *cntlr, const char *s)
 {
-    controller_output (cntlr, s, strlen(s));
+    controller_output(cntlr, s, strlen(s));
 }
 
 
@@ -298,7 +298,8 @@ static char *help_str =
 "setportenable <tcp port> <enable state> - Sets the port operation state.\r\n"
 "       Valid states are:\r\n"
 "         off - The port is shut down\r\n"
-"         on - The port is up and all I/O is transferred\r\n";
+"         on - The port is up and all I/O is transferred\r\n"
+"reload - Reload the configuration file.\r\n";
 
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
@@ -339,8 +340,7 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "monitor") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No monitor type given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No monitor type given\r\n");
 	    goto out;
 	}
 	if (strcmp(tok, "stop") == 0) {
@@ -352,15 +352,13 @@ process_input_line(controller_info_t *cntlr)
 	    }
 	} else {
 	    if (cntlr->monitor_port_id != NULL) {
-		char *err = "Already monitoring a port\r\n";
-		controller_outs(cntlr, err);
+		controller_outs(cntlr, "Already monitoring a port\r\n");
 		goto out;
 	    }
 
 	    str = strtok_r(NULL, " \t", &strtok_data);
 	    if (str == NULL) {
-		char *err = "No tcp port given\r\n";
-		controller_outs(cntlr, err);
+		controller_outs(cntlr, "No tcp port given\r\n");
 		goto out;
 	    }
 	    start_maint_op();
@@ -370,8 +368,7 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "disconnect") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No port given\r\n");
 	    goto out;
 	}
 	start_maint_op();
@@ -380,14 +377,12 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setporttimeout") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No port given\r\n");
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No timeout given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No timeout given\r\n");
 	    goto out;
 	}
 	start_maint_op();
@@ -396,14 +391,12 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setportenable") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No port given\r\n");
 	    goto out;
 	}
 	str = strtok_r(NULL, " \t", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No timeout given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No timeout given\r\n");
 	    goto out;
 	}
 	start_maint_op();
@@ -412,23 +405,36 @@ process_input_line(controller_info_t *cntlr)
     } else if (strcmp(tok, "setportcontrol") == 0) {
 	tok = strtok_r(NULL, " \t", &strtok_data);
 	if (tok == NULL) {
-	    char *err = "No port given\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No port given\r\n");
 	    goto out;
 	}
 
 	str = strtok_r(NULL, "", &strtok_data);
 	if (str == NULL) {
-	    char *err = "No device controls\r\n";
-	    controller_outs(cntlr, err);
+	    controller_outs(cntlr, "No device controls\r\n");
 	    goto out;
 	}
 	start_maint_op();
 	setportcontrol(cntlr, tok, str);
 	end_maint_op();
+    } else if (strcmp(tok, "reload") == 0) {
+	int rv;
+
+	start_maint_op();
+	so->unlock(cntlr->lock);
+	rv = reread_config_file("admin request");
+	end_maint_op();
+	so->lock(cntlr->lock);
+
+	if (!rv) {
+	    controller_outs(cntlr, "reload done\r\n");
+	} else {
+	    controller_outs(cntlr, "reload error: ");
+	    controller_outs(cntlr, strerror(rv));
+	    controller_outs(cntlr, "\r\n");
+	}
     } else {
-	char *err = "Unknown command: ";
-	controller_outs(cntlr, err);
+	controller_outs(cntlr, "Unknown command: ");
 	controller_outs(cntlr, tok);
 	controller_outs(cntlr, "\r\n");
     }

@@ -57,6 +57,6 @@ void controller_write(struct controller_info *cntlr,
 		      const char *data, gensiods count);
 
 /*  output a string  */
-void controller_outs (struct controller_info *cntlr, char *s);
+void controller_outs(struct controller_info *cntlr, const char *s);
 
 #endif /* CONTROLLER */

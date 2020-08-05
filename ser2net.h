@@ -37,6 +37,7 @@ extern int ser2net_wake_sig;
 
 void start_maint_op(void);
 void end_maint_op(void);
+int reread_config_file(const char *reqtype);
 
 int init_dataxfer(void);
 void shutdown_dataxfer(void);
