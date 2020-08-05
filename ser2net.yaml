@@ -210,14 +210,14 @@ define: &confver 1.0
 #   connector: echo
 #   options:
 #     kickolduser: false
-#     hexdump: false
-#     timestamp: false
-#     tr-hexdump: false
-#     tr-timestamp: false
-#     tw-hexdump: false
-#     tw-timestamp: false
-#     tb-hexdump: false
-#     tb-timestamp: false
+#     trace-hexdump: false
+#     trace-timestamp: false
+#     trace-read-hexdump: false
+#     trace-read-timestamp: false
+#     trace-write-hexdump: false
+#     trace-write-timestamp: false
+#     trace-both-hexdump: false
+#     trace-both-timestamp: false
 #     trace-read: <trace read file>
 #     trace-write: <trace write file>
 #     trace-both: <trace both file>
