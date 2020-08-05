@@ -120,6 +120,21 @@ syslog_eout(struct absout *e, const char *str, ...)
 }
 struct absout syslog_absout = { .out = syslog_eout };
 
+static int
+stderr_eout(struct absout *e, const char *str, ...)
+{
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    syslog(LOG_ERR, "%s", buf);
+    fprintf(stderr, "%s\n", buf);
+    return 0;
+}
+static struct absout stderr_absout = { .out = stderr_eout };
+
 static FILE *
 fopen_config_file(bool *is_yaml)
 {
@@ -154,7 +169,7 @@ fopen_config_file(bool *is_yaml)
 }
 
 int
-reread_config_file(const char *reqtype)
+reread_config_file(const char *reqtype, struct absout *eout)
 {
     int rv = ENOENT;
 
@@ -172,7 +187,8 @@ reread_config_file(const char *reqtype)
 	if (!admin_port_from_cmdline)
 	    controller_shutdown();
 	if (is_yaml)
-	    rv = yaml_readconfig(instream, config_lines, num_config_lines);
+	    rv = yaml_readconfig(instream, config_lines, num_config_lines,
+				 eout);
 	else
 	    rv = readconfig(instream);
 	fclose(instream);
@@ -353,7 +369,7 @@ config_reread_thread(void *dummy)
 {
     pthread_detach(pthread_self());
     start_maint_op();
-    reread_config_file("SIGHUP");
+    reread_config_file("SIGHUP", &syslog_absout);
     end_maint_op();
     so->lock(config_lock);
     in_config_read = 0;
@@ -585,7 +601,7 @@ sig_fd_read_handler(int fd, void *cb_data)
 	thread_reread_config_file();
 #else
 	start_maint_op();
-	reread_config_file("SIGHUP");
+	reread_config_file("SIGHUP", &syslog_absout);
 	end_maint_op();
 #endif
     }
@@ -915,7 +931,8 @@ main(int argc, char *argv[])
 	int rv;
 
 	if (config_type == CONFIG_YAML)
-	    rv = yaml_readconfig(instream, config_lines, num_config_lines);
+	    rv = yaml_readconfig(instream, config_lines, num_config_lines,
+				 &stderr_absout);
 	else
 	    rv = readconfig(instream);
 	if (rv == -1)

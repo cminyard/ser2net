@@ -301,6 +301,22 @@ static char *help_str =
 "         on - The port is up and all I/O is transferred\r\n"
 "reload - Reload the configuration file.\r\n";
 
+static int
+cntlr_eout(struct absout *e, const char *str, ...)
+{
+    controller_info_t *cntlr = e->data;
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    syslog(LOG_ERR, "%s", buf);
+    controller_outs(cntlr, buf);
+    controller_outs(cntlr, "\r\n");
+    return 0;
+}
+
 /* Process a line of input.  This scans for commands, reads any
    parameters, then calls the actual code to handle the command. */
 static int
@@ -419,10 +435,11 @@ process_input_line(controller_info_t *cntlr)
 	end_maint_op();
     } else if (strcmp(tok, "reload") == 0) {
 	int rv;
+	struct absout eout = { cntlr_eout, cntlr };
 
 	start_maint_op();
 	so->unlock(cntlr->lock);
-	rv = reread_config_file("admin request");
+	rv = reread_config_file("admin request", &eout);
 	end_maint_op();
 	so->lock(cntlr->lock);
 

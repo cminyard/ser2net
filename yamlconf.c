@@ -184,8 +184,40 @@ struct yconf {
 
     yaml_parser_t parser;
     yaml_event_t e;
-    struct absout *eout;
+    struct absout *errout;
+    struct absout sub_errout;
 };
+
+static int
+errout(struct yconf *y, const char *str, ...)
+{
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    y->errout->out(y->errout, "%s on line %lu column %lu", buf,
+		   (unsigned long) y->e.start_mark.line,
+		   (unsigned long) y->e.start_mark.column);
+    return 0;
+}
+
+static int
+sub_errout(struct absout *e, const char *str, ...)
+{
+    struct yconf *y = e->data;
+    va_list ap;
+    char buf[1024];
+
+    va_start(ap, str);
+    vsnprintf(buf, sizeof(buf), str, ap);
+    va_end(ap);
+    y->errout->out(y->errout, "%s on line %lu column %lu", buf,
+		   (unsigned long) y->e.start_mark.line,
+		   (unsigned long) y->e.start_mark.column);
+    return 0;
+}
 
 static void
 dofree(char **val)
@@ -227,22 +259,6 @@ yconf_cleanup_main(struct yconf *y)
     y->curr_connection = 0;
 }
 
-static int
-syslog_eprint(struct absout *e, const char *str, ...)
-{
-    va_list ap;
-    char buf[1024];
-    struct yconf *y = e->data;
-
-    va_start(ap, str);
-    vsnprintf(buf, sizeof(buf), str, ap);
-    va_end(ap);
-    syslog(LOG_ERR, "%s on line %lu column %lu", buf,
-	   (unsigned long) y->e.start_mark.line,
-	   (unsigned long) y->e.start_mark.column);
-    return 0;
-}
-
 static struct alias *
 lookup_alias_len(struct yconf *y, const char *name, unsigned int len)
 {
@@ -268,13 +284,13 @@ add_alias(struct yconf *y, const char *iname, const char *ivalue)
 
     name = strdup(iname);
     if (!name) {
-	y->eout->out(y->eout, "Out of memory allocating alias name");
+	errout(y, "Out of memory allocating alias name");
 	return -1;
     }
     value = strdup(ivalue);
     if (!value) {
 	free(name);
-	y->eout->out(y->eout, "Out of memory allocating alias value");
+	errout(y, "Out of memory allocating alias value");
 	return -1;
     }
 
@@ -287,7 +303,7 @@ add_alias(struct yconf *y, const char *iname, const char *ivalue)
 	if (!a) {
 	    free(name);
 	    free(value);
-	    y->eout->out(y->eout, "Out of memory allocating alias");
+	    errout(y, "Out of memory allocating alias");
 	    return -1;
 	}
 	a->next = y->aliases;
@@ -314,39 +330,38 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 
     name = strndup(filename, len);
     if (!name) {
-	y->eout->out(y->eout, "Out of memory allocating alias name");
+	errout(y, "Out of memory allocating alias name");
 	return NULL;
     }
 
     infd = open(name, O_RDONLY);
     if (infd == -1) {
-	y->eout->out(y->eout, "Error opening %s: %s", name, strerror(errno));
+	errout(y, "Error opening %s: %s", name, strerror(errno));
 	goto out_err;
     }
 
     rv = fstat(infd, &stat);
     if (rv == -1) {
-	y->eout->out(y->eout, "Error stat-ing %s: %s", name, strerror(errno));
+	errout(y, "Error stat-ing %s: %s", name, strerror(errno));
 	goto out_err;
     }
 
     value = malloc(stat.st_size + 1);
     if (!value) {
-	y->eout->out(y->eout, "Error allocating memory for file %s", name);
+	errout(y, "Error allocating memory for file %s", name);
 	goto out_err;
     }
 
     rv = read(infd, value, stat.st_size);
     if (rv == -1) {
-	y->eout->out(y->eout, "Error reading %s: %s", name, strerror(errno));
+	errout(y, "Error reading %s: %s", name, strerror(errno));
 	goto out_err;
     }
     value[stat.st_size] = '\0';
 
     f = malloc(sizeof(*f));
     if (!f) {
-	y->eout->out(y->eout, "Error allocating memory for file struct %s",
-		     name);
+	errout(y, "Error allocating memory for file struct %s", name);
 	goto out_err;
     }
     close(infd);
@@ -377,8 +392,7 @@ add_option(struct yconf *y, const char *name, const char *option,
 	char **new_options = malloc(sizeof(char *) * new_len);
 
 	if (!new_options) {
-	    y->eout->out(y->eout,
-			 "Out of memory allocating option array for %s", place);
+	    errout(y, "Out of memory allocating option array for %s", place);
 	    return -1;
 	}
 	memcpy(new_options, y->options, sizeof(char *) * y->options_len);
@@ -398,8 +412,8 @@ add_option(struct yconf *y, const char *name, const char *option,
 	    s = strdup(name);
 	}
 	if (!s) {
-	    y->eout->out(y->eout, "Out of memory allocating option %s for %s",
-			 option, place);
+	    errout(y, "Out of memory allocating option %s for %s",
+		   option, place);
 	    return -1;
 	}
 	y->options[y->curr_option] = s;
@@ -418,9 +432,8 @@ add_connection(struct yconf *y, const char *connection, const char *place)
 	char **new_connections = malloc(sizeof(char *) * new_len);
 
 	if (!new_connections) {
-	    y->eout->out(y->eout,
-			 "Out of memory allocating connection array for %s",
-			 place);
+	    errout(y, "Out of memory allocating connection array for %s",
+		   place);
 	    return -1;
 	}
 	memcpy(new_connections, y->connections,
@@ -434,9 +447,8 @@ add_connection(struct yconf *y, const char *connection, const char *place)
     if (connection) {
 	y->connections[y->curr_connection] = strdup(connection);
 	if (!y->connections[y->curr_connection]) {
-	    y->eout->out(y->eout,
-			 "Out of memory allocating connection %s for %s",
-			 connection, place);
+	    errout(y, "Out of memory allocating connection %s for %s",
+		   connection, place);
 	    return -1;
 	}
     } else {
@@ -588,19 +600,19 @@ static struct scalar_next_state sc_main[] = {
 
 static int
 setstr(char **oval, const char *ival, const char *mapname, const char *keyname,
-       struct absout *eout)
+       struct yconf *y)
 {
     if (!ival || strlen(ival) == 0) {
-	eout->out(eout, "Empty %s %s not permitted", mapname, keyname);
+	errout(y, "Empty %s %s not permitted", mapname, keyname);
 	return -1;
     }	
     if (*oval) {
-	eout->out(eout, "%s %s already set in connection", mapname, keyname);
+	errout(y, "%s %s already set in connection", mapname, keyname);
 	return -1;
     }
     *oval = strdup(ival);
     if (!*oval) {
-	eout->out(eout, "Unable to allocate %s %s", mapname, keyname);
+	errout(y, "Unable to allocate %s %s", mapname, keyname);
 	return -1;
     }
     return 0;
@@ -633,7 +645,6 @@ scalar_next_state(struct yconf *y,
 static char *
 process_scalar(struct yconf *y, const char *iscalar)
 {
-    struct absout *eout = y->eout;
     const char *s, *start = NULL;
     char *rv = NULL, *out = NULL;
     unsigned int len = 0, alen;
@@ -680,12 +691,12 @@ process_scalar(struct yconf *y, const char *iscalar)
 		len += 2;
 		state = 0;
 	    } else if (!*s) {
-		eout->out(eout, "Missing ')' for alias at '%s'", start - 2);
+		errout(y, "Missing ')' for alias at '%s'", start - 2);
 		goto out_err;
 	    } else if (*s == ')') {
 		struct alias *a = lookup_alias_len(y, start, s - start);
 		if (!a) {
-		    eout->out(eout, "unknown alias at '%s'", start - 2);
+		    errout(y, "unknown alias at '%s'", start - 2);
 		    goto out_err;
 		}
 		alen = strlen(a->value);
@@ -707,7 +718,7 @@ process_scalar(struct yconf *y, const char *iscalar)
 		len += 2;
 		state = 0;
 	    } else if (!*s) {
-		eout->out(eout, "Missing '}' for filename at '%s'", start - 2);
+		errout(y, "Missing '}' for filename at '%s'", start - 2);
 		goto out_err;
 	    } else if (*s == '}') {
 		struct yfile *f = lookup_filename_len(y, start, s - start);
@@ -726,7 +737,7 @@ process_scalar(struct yconf *y, const char *iscalar)
     if (!out) {
 	out = malloc(len + 1);
 	if (!out) {
-	    eout->out(eout, "Out of memory processing string '%s'", iscalar);
+	    errout(y, "Out of memory processing string '%s'", iscalar);
 	    return NULL;
 	}
 	rv = out;
@@ -745,7 +756,6 @@ process_scalar(struct yconf *y, const char *iscalar)
 static int
 yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 {
-    struct absout *eout = y->eout;
     bool anchor_allowed = false;
     char *end;
     char *scalar;
@@ -758,7 +768,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case MAIN_LEVEL:
 	scalar_next_state(y, sc_main, scalar);
 	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token at the main level: %s\n", scalar);
+	    errout(y, "Invalid token at the main level: %s\n", scalar);
 	    goto out_err;
 	}
 	break;
@@ -766,7 +776,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_DEFINE:
 	anchor_allowed = true;
 	if (!anchor)
-	    eout->out(eout, "No anchor for define, define ignored\n");
+	    errout(y, "No anchor for define, define ignored\n");
 	else {
 	    if (add_alias(y, anchor, scalar))
 		goto out_err;
@@ -777,7 +787,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_MAIN_MAP:
 	scalar_next_state(y, y->map_info->states, scalar);
 	if (y->state == PARSE_ERR) {
-	    eout->out(eout, "Invalid token in the %s: %s",
+	    errout(y, "Invalid token in the %s: %s",
 		      y->map_info->name, scalar);
 	    goto out_err;
 	}
@@ -785,7 +795,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	    
     case IN_MAIN_MAP_KEYVAL:
 	if (setstr(KEYVAL_OFFSET(y), scalar, y->map_info->name,
-		   y->keyval_info->name, eout))
+		   y->keyval_info->name, y))
 	    goto out_err;
 	y->state = IN_MAIN_MAP;
 	break;
@@ -793,7 +803,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_CONNSPEC_TIMEOUT:
 	y->timeout = strtoul(scalar, &end, 0);
 	if (end == scalar || *end != '\0') {
-	    eout->out(eout, "Invalid number in connection timeout");
+	    errout(y, "Invalid number in connection timeout");
 	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
@@ -805,7 +815,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	} else if (strcasecmp(scalar, "off") == 0) {
 	    y->enable = false;
 	} else {
-	    eout->out(eout, "enable must be 'on' or 'off'");
+	    errout(y, "enable must be 'on' or 'off'");
 	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
@@ -813,7 +823,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 
     case IN_OPTIONS_MAP:
 	if (setstr(&y->optionname, scalar, y->option_info->name, "option name",
-		   eout))
+		   y))
 	    goto out_err;
 	y->state = IN_OPTIONS_NAME;
 	break;
@@ -831,12 +841,12 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	break;
 
     default:
-	eout->out(eout, "Unexpected scalar value");
+	errout(y, "Unexpected scalar value");
 	goto out_err;
     }
 
     if (anchor && !anchor_allowed)
-	eout->out(eout, "Anchor on non-scalar ignored\n");
+	errout(y, "Anchor on non-scalar ignored\n");
 
     free(scalar);
     return 0;
@@ -855,7 +865,7 @@ yhandle_seq_start(struct yconf *y)
 	break;
 
     default:
-	y->eout->out(y->eout, "Unexpected sequence start: %d", y->state);
+	errout(y, "Unexpected sequence start: %d", y->state);
 	return -1;
     }
 
@@ -871,7 +881,7 @@ yhandle_seq_end(struct yconf *y)
 	break;
 
     default:
-	y->eout->out(y->eout, "Unexpected sequence end: %d", y->state);
+	errout(y, "Unexpected sequence end: %d", y->state);
 	return -1;
     }
 
@@ -881,8 +891,6 @@ yhandle_seq_end(struct yconf *y)
 static int
 yhandle_mapping_start(struct yconf *y)
 {
-    struct absout *eout = y->eout;
-
     switch (y->state) {
     case BEGIN_DOC:
 	y->state = MAIN_LEVEL;
@@ -893,12 +901,12 @@ yhandle_mapping_start(struct yconf *y)
 	    char *anchor = (char *) y->e.data.mapping_start.anchor;
 
 	    if (!anchor) {
-		eout->out(eout, "Main mapping requires an anchor for the name");
+		errout(y, "Main mapping requires an anchor for the name");
 		return -1;
 	    }
 	    y->name = strdup(anchor);
 	    if (!y->name) {
-		eout->out(eout, "Out of memory allocating name");
+		errout(y, "Out of memory allocating name");
 		return -1;
 	    }
 	    if (add_alias(y, anchor, anchor))
@@ -912,7 +920,7 @@ yhandle_mapping_start(struct yconf *y)
 	break;
 
     default:
-	eout->out(eout, "Unexpected mapping start: %d", y->state);
+	errout(y, "Unexpected mapping start: %d", y->state);
 	return -1;
     }
 
@@ -922,7 +930,6 @@ yhandle_mapping_start(struct yconf *y)
 static int
 yhandle_mapping_end(struct yconf *y)
 {
-    struct absout *eout = y->eout;
     int err, argc;
     const char **argv;
 
@@ -935,12 +942,12 @@ yhandle_mapping_end(struct yconf *y)
 	switch (y->map_info->map_type) {
 	case MAIN_MAP_DEFAULT:
 	    if (!y->name) {
-		eout->out(eout, "No name given in default");
+		errout(y, "No name given in default");
 		return -1;
 	    }
 	    err = gensio_set_default(so, y->class, y->name, y->value, 0);
 	    if (err) {
-		eout->out(eout, "Unable to set default name %s:%s:%s: %s",
+		errout(y, "Unable to set default name %s:%s:%s: %s",
 			  y->class ? y->class : "",
 			  y->name, y->value, gensio_err_to_str(err));
 		return -1;
@@ -951,16 +958,16 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_DELDEFAULT:
 	    if (!y->name) {
-		eout->out(eout, "No name given in delete_default");
+		errout(y, "No name given in delete_default");
 		return -1;
 	    }
 	    if (!y->class) {
-		eout->out(eout, "No class given in delete_default");
+		errout(y, "No class given in delete_default");
 		return -1;
 	    }
 	    err = gensio_del_default(so, y->class, y->name, false);
 	    if (err) {
-		eout->out(eout, "Unable to set default name %s:%s:%s: %s",
+		errout(y, "Unable to set default name %s:%s:%s: %s",
 			  y->class ? y->class : "",
 			  y->name, y->value, gensio_err_to_str(err));
 		return -1;
@@ -971,21 +978,21 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_CONNECTION:
 	    if (!y->name) {
-		eout->out(eout, "No name given in connection");
+		errout(y, "No name given in connection");
 		return -1;
 	    }
 	    if (!y->accepter) {
-		eout->out(eout, "No accepter given in connection");
+		errout(y, "No accepter given in connection");
 		return -1;
 	    }
 	    if (!y->connector) {
-		eout->out(eout, "No connector given in connection");
+		errout(y, "No connector given in connection");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "connection"))
 		return -1;
-	    portconfig(eout, y->name, y->accepter,
+	    portconfig(&y->sub_errout, y->name, y->accepter,
 		       y->enable ? "raw" : "off", y->timeout,
 		       y->connector, (const char **) y->options);
 	    y->state = MAIN_LEVEL;
@@ -994,15 +1001,15 @@ yhandle_mapping_end(struct yconf *y)
 	
 	case MAIN_MAP_ROTATOR:
 	    if (!y->name) {
-		eout->out(eout, "No name given in rotator");
+		errout(y, "No name given in rotator");
 		return -1;
 	    }
 	    if (!y->accepter) {
-		eout->out(eout, "No accepter given in rotator");
+		errout(y, "No accepter given in rotator");
 		return -1;
 	    }
 	    if (y->curr_connection == 0) {
-		eout->out(eout, "No connections given in rotator");
+		errout(y, "No connections given in rotator");
 		return -1;
 	    }
 	    /* NULL terminate the connections. */
@@ -1011,7 +1018,7 @@ yhandle_mapping_end(struct yconf *y)
 	    err = gensio_argv_copy(so, (const char **) y->connections,
 				   &argc, &argv);
 	    if (err) {
-		eout->out(eout, "Unable to allocate rotator connections");
+		errout(y, "Unable to allocate rotator connections");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
@@ -1027,11 +1034,11 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_LED:
 	    if (!y->name) {
-		eout->out(eout, "No name given in led");
+		errout(y, "No name given in led");
 		return -1;
 	    }
 	    if (!y->driver) {
-		eout->out(eout, "No driver given in led");
+		errout(y, "No driver given in led");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
@@ -1045,13 +1052,14 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_ADMIN:
 	    if (!y->accepter) {
-		eout->out(eout, "No accepter given in admin");
+		errout(y, "No accepter given in admin");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "admin"))
 		return -1;
-	    controller_init(y->accepter, (const char **) y->options, eout);
+	    controller_init(y->accepter, (const char **) y->options,
+			    &y->sub_errout);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
 	    break;
@@ -1063,7 +1071,7 @@ yhandle_mapping_end(struct yconf *y)
 	break;
 
     default:
-	eout->out(eout, "Unexpected mapping end: %d", y->state);
+	errout(y, "Unexpected mapping end: %d", y->state);
 	return -1;
     }
 
@@ -1198,12 +1206,11 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 }
 
 int
-yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
+yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines,
+		struct absout *errout)
 {
     bool done = false;
     struct yconf y;
-    struct absout yeout = { .out = syslog_eprint, .data = &y };
-    struct absout *eout = &yeout;
     int err = 0;
     struct yaml_read_handler_data d;
 
@@ -1211,19 +1218,21 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
     y.enable = true;
     y.options = malloc(sizeof(char *) * 10);
     if (!y.options) {
-	syslog(LOG_ERR, "Out of memory allocating options array");
+	errout->out(errout, "Out of memory allocating options array");
 	return ENOMEM;
     }
     y.options_len = 10;
     y.connections = malloc(sizeof(char *) * 10);
     if (!y.connections) {
 	free(y.options);
-	syslog(LOG_ERR, "Out of memory allocating connection array");
+	errout->out(errout, "Out of memory allocating connection array");
 	return ENOMEM;
     }
     y.connections_len = 10;
     y.state = BEGIN_DOC;
-    y.eout = eout;
+    y.errout = errout;
+    y.sub_errout.out = sub_errout;
+    y.sub_errout.data = &y;
 
     yaml_parser_initialize(&y.parser);
 
@@ -1235,7 +1244,7 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 
     while (!done && !err) {
 	if (!yaml_parser_parse(&y.parser, &y.e)) {
-	    syslog(LOG_ERR, "yaml parsing error at line %lu column %lu: %s",
+	    errout->out(errout, "yaml parsing error at line %lu column %lu: %s",
 		   (unsigned long) y.parser.problem_mark.line,
 		   (unsigned long) y.parser.problem_mark.column,
 		   y.parser.problem);
@@ -1252,8 +1261,8 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 
 	case YAML_STREAM_END_EVENT:
 	    if (y.state != END_DOC) {
-		syslog(LOG_ERR, "yaml file ended in invalid state: %d",
-		       y.state);
+		errout->out(errout, "yaml file ended in invalid state: %d",
+			    y.state);
 		err = EINVAL;
 	    }
 	    done = true;
@@ -1267,8 +1276,8 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines)
 #endif
 	    a = lookup_alias(&y, (char *) y.e.data.alias.anchor);
 	    if (!a) {
-		eout->out(eout, "Unable to find alias '%s'",
-			  y.e.data.alias.anchor);
+		errout->out(errout, "Unable to find alias '%s'",
+			    y.e.data.alias.anchor);
 		err = EINVAL;
 	    } else {
 		if (yhandle_scalar(&y, NULL, a->value))

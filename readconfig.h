@@ -20,6 +20,7 @@
 #ifndef READCONFIG
 #define READCONFIG
 #include <stdio.h>
+#include "absout.h"
 
 /* Handle one line of configuration. */
 int handle_config_line(char *inbuf, int len);
@@ -31,7 +32,8 @@ int readconfig_init(void);
    create the ports. */
 int readconfig(FILE *instream);
 int yaml_readconfig(FILE *f, char **config_lines,
-		    unsigned int num_config_lines);
+		    unsigned int num_config_lines,
+		    struct absout *errout);
 
 /*
  * Search for a banner/open/close string by name.  Note that the
