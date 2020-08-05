@@ -3250,6 +3250,9 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 	gensio_acc_set_accept_callback_enable(port->accepter, true);
 	for_each_connection(port, netcon)
 	    check_port_new_net(port, netcon);
+    } else {
+	/* Port was disabled, shut it down. */
+	gensio_acc_shutdown(port->accepter, NULL, NULL);
     }
     so->unlock(port->lock);
     so->unlock(ports_lock);
