@@ -405,6 +405,10 @@ cntlr_report_conchange(const char *type, const char *con, const char *remaddr)
 {
     controller_info_t *cntlr;
 
+    /* No controller port set up. */
+    if (!cntlr_lock)
+	return;
+
     so->lock(cntlr_lock);
     for (cntlr = controllers; cntlr; cntlr = cntlr->next) {
 	if (!cntlr->yaml)
