@@ -23,6 +23,7 @@
 #include <string.h>
 #include <errno.h>
 #include <syslog.h>
+#include <yaml.h>
 
 #include <gensio/selector.h>
 #include <gensio/gensio.h>
@@ -52,7 +53,7 @@ static int max_controller_ports = 4;	/* How many control connections
 static int num_controller_ports = 0;	/* How many control connections
 					   are currently active. */
 
-#define INBUF_SIZE 255	/* The size of the maximum input command. */
+#define INBUF_SIZE 2048	/* The size of the maximum input command or YAML doc. */
 
 char *prompt = "-> ";
 
@@ -66,7 +67,10 @@ typedef struct controller_info {
     unsigned char inbuf[INBUF_SIZE + 1];/* Buffer to receive command on. */
     int  inbuf_count;			/* The number of bytes currently
 					   in the inbuf. */
+    bool echo_off;
 
+    struct gensio_lock *outlock;
+    bool yaml;				/* Am I in YAML output mode? */
     char *outbuf;			/* The output buffer, NULL if
 					   no output. */
     int  outbufsize;			/* Total size of the memory
@@ -76,6 +80,14 @@ typedef struct controller_info {
     int  outbuf_count;			/* The number of bytes
 					   (starting at outbuf_pos)
 					   left to transmit. */
+    unsigned int indent;
+
+    bool yamlin;			/* Am I in YAML input mode? */
+    yaml_parser_t parser;
+    size_t parse_pos;
+    size_t read_pos;
+    unsigned int match_len;
+    yaml_document_t doc;
 
     void *monitor_port_id;		/* When port monitoring, this is
 					   the id given when the monitoring
@@ -107,6 +119,7 @@ controller_close_done(struct gensio *net, void *cb_data)
     gensio_free(net);
 
     so->free_lock(cntlr->lock);
+    so->free_lock(cntlr->outlock);
 
     if (cntlr->outbuf != NULL) {
 	free(cntlr->outbuf);
@@ -163,13 +176,18 @@ shutdown_controller(controller_info_t *cntlr)
     gensio_close(cntlr->net, controller_close_done, NULL);
 }
 
+void
+controller_indent(struct controller_info *cntlr, int amount)
+{
+    cntlr->indent += amount;
+}
+
 /* Send some output to the control connection.  This allocates and
    free a buffer in blocks of 1024 and increases the size of the
    buffer as necessary. */
-void
-controller_output(struct controller_info *cntlr,
-		  const char             *data,
-		  int                    count)
+static void
+controller_raw_output(struct controller_info *cntlr,
+		      const char *data, int count)
 {
     if (cntlr->outbuf != NULL) {
 	/* Already outputting data, just add more onto it. */
@@ -233,32 +251,95 @@ controller_output(struct controller_info *cntlr,
     }
 }
 
-int
-controller_voutputf(struct controller_info *cntlr, const char *str, va_list ap)
+static void
+controller_output(struct controller_info *cntlr,
+		  const char *field, const char *tag,
+		  const char *data, int count)
 {
-    char buffer[1024];
+    so->lock(cntlr->outlock);
+    if (field) {
+	unsigned int i;
+
+	for (i = 0; i < cntlr->indent; i++)
+	    controller_raw_output(cntlr, "  ", 2);
+	controller_raw_output(cntlr, field, strlen(field));
+	controller_raw_output(cntlr, ": ", 2);
+	if (cntlr->yaml && tag)
+	    controller_raw_output(cntlr, tag, strlen(tag));
+    }
+    controller_raw_output(cntlr, data, count);
+    if (field)
+	controller_raw_output(cntlr, "\r\n", 2);
+    so->unlock(cntlr->outlock);
+}
+
+static unsigned int
+expand_quotes(char *out, const char *in, unsigned int outsize)
+{
+    unsigned int outpos = 1;
+
+    *out++ = '\'';
+    while (*in) {
+	if (*in == '\'') {
+	    if (outpos + 2 >= outsize)
+		break;
+	    *out++ = '\\';
+	    outpos++;
+	}
+	if (outpos + 1 >= outsize)
+	    break;
+	*out++ = *in++;
+	outpos++;
+    }
+    *out++ = '\'';
+    return outpos + 1;
+}
+
+int
+controller_voutputf(struct controller_info *cntlr,
+		    const char *field, const char *str, va_list ap)
+{
+    char buffer[1024], buffer2[2048 + 2];
     int rv;
 
-    rv = vsnprintf(buffer, sizeof(buffer), str, ap);
-    controller_output(cntlr, buffer, rv);
+    rv = vsnprintf(buffer, sizeof(buffer) / 2, str, ap);
+    if (strcmp(str, "%d") == 0 || strcmp(str, "%lu") == 0) {
+	controller_output(cntlr, field, "!!int ", buffer, rv);
+    } else if (cntlr->yaml && field) {
+	unsigned int len = expand_quotes(buffer2, buffer, sizeof(buffer2));
+	controller_output(cntlr, field, "!!str ", buffer2, len);
+    } else {
+	controller_output(cntlr, field, "!!str ", buffer, rv);
+    }
     return rv;
 }
 
 int
-controller_outputf(struct controller_info *cntlr, const char *str, ...)
+controller_outputf(struct controller_info *cntlr,
+		   const char *field, const char *str, ...)
 {
     va_list ap;
     int rv;
 
     va_start(ap, str);
-    rv = controller_voutputf(cntlr, str, ap);
+    rv = controller_voutputf(cntlr, field, str, ap);
     va_end(ap);
     return rv;
 }
 
-void controller_outs(struct controller_info *cntlr, const char *s)
+void controller_outs(struct controller_info *cntlr,
+		     const char *field, const char *s)
 {
-    controller_output(cntlr, s, strlen(s));
+    if (!s) {
+	controller_output(cntlr, field, NULL, "", 0);
+    } else if (cntlr->yaml && field) {
+	char buffer[2048 + 2];
+	unsigned int len = expand_quotes(buffer, s, sizeof(buffer));
+
+	controller_output(cntlr, field, "!!str ", buffer, len);
+    } else {
+	controller_output(cntlr, field, "!!str ", s, strlen(s));
+    }
 }
 
 
@@ -274,6 +355,10 @@ static char *help_str =
 "exit - leave the program.\r\n"
 "help - display this help.\r\n"
 "version - display the version of this program.\r\n"
+"yaml - Go into yaml output mode.  In this mode there is no echo or\r\n"
+"       line processing is done.  Some commands are disabled.  Output\r\n"
+"       is yaml, beginning with --- and ending with ... for each\r\n"
+"       response to a command.\r\n"
 "monitor <type> <tcp port> - display all the input for a given port on\r\n"
 "       the calling control port.  Only one direction may be monitored\r\n"
 "       at a time.  The type field may be 'tcp' or 'term' and specifies\r\n"
@@ -312,8 +397,137 @@ cntlr_eout(struct absout *e, const char *str, ...)
     vsnprintf(buf, sizeof(buf), str, ap);
     va_end(ap);
     syslog(LOG_ERR, "%s", buf);
-    controller_outs(cntlr, buf);
-    controller_outs(cntlr, "\r\n");
+    return controller_outputf(cntlr, "error", "%s", buf);
+}
+
+static int
+process_command(controller_info_t *cntlr, const char *cmd, const char *id,
+		int nparms, char * const parms[])
+{
+    bool yaml = cntlr->yaml;
+
+    if (yaml) {
+	controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+	controller_outs(cntlr, "response", NULL);
+	controller_indent(cntlr, 1);
+	controller_outputf(cntlr, "name", cmd);
+	if (id)
+	    controller_outputf(cntlr, "id", id);
+    }
+    if (strcmp(cmd, "exit") == 0) {
+	shutdown_controller(cntlr);
+	return 1; /* We don't want a prompt any more. */
+    } else if (strcmp(cmd, "quit") == 0) {
+	shutdown_controller(cntlr);
+	return 1; /* We don't want a prompt any more. */
+    } else if (!cntlr->yaml && strcmp(cmd, "help") == 0) {
+	controller_outs(cntlr, NULL, help_str);
+    } else if (strcmp(cmd, "version") == 0) {
+	controller_outputf(cntlr, "version", "%s", VERSION);
+    } else if (!cntlr->yaml && strcmp(cmd, "yaml") == 0) {
+	cntlr->yaml = true;
+    } else if (strcmp(cmd, "showport") == 0) {
+	start_maint_op();
+	showports(cntlr, parms[0], cntlr->yaml);
+	end_maint_op();
+    } else if (!cntlr->yaml && strcmp(cmd, "showshortport") == 0) {
+	start_maint_op();
+	showshortports(cntlr, parms[0]);
+	end_maint_op();
+    } else if (!cntlr->yaml && strcmp(cmd, "monitor") == 0) {
+	if (parms[0] == NULL) {
+	    controller_outs(cntlr, "error", "No monitor type given\r\n");
+	    goto out;
+	}
+	if (strcmp(parms[0], "stop") == 0) {
+	    if (cntlr->monitor_port_id != NULL) {
+		start_maint_op();
+		data_monitor_stop(cntlr, cntlr->monitor_port_id);
+		end_maint_op();
+		cntlr->monitor_port_id = NULL;
+	    }
+	} else {
+	    if (cntlr->monitor_port_id != NULL) {
+		controller_outs(cntlr, "error", "Already monitoring a port");
+		goto out;
+	    }
+	    if (parms[1] == NULL) {
+		controller_outs(cntlr, "error", "No monitor port given");
+		goto out;
+	    }
+	    start_maint_op();
+	    cntlr->monitor_port_id = data_monitor_start(cntlr,
+							parms[0], parms[1]);
+	    end_maint_op();
+	}
+    } else if (strcmp(cmd, "disconnect") == 0) {
+	if (parms[0] == NULL) {
+	    controller_outs(cntlr, "error", "No port given");
+	    goto out;
+	}
+	start_maint_op();
+	disconnect_port(cntlr, parms[0]);
+	end_maint_op();
+    } else if (strcmp(cmd, "setporttimeout") == 0) {
+	if (parms[0] == NULL) {
+	    controller_outs(cntlr, "error", "No port given");
+	    goto out;
+	}
+	if (parms[1] == NULL) {
+	    controller_outs(cntlr, "error", "No timeout given");
+	    goto out;
+	}
+	start_maint_op();
+	setporttimeout(cntlr, parms[0], parms[1]);
+	end_maint_op();
+    } else if (strcmp(cmd, "setportenable") == 0) {
+	if (parms[0] == NULL) {
+	    controller_outs(cntlr, "error", "No port given");
+	    goto out;
+	}
+	if (parms[1] == NULL) {
+	    controller_outs(cntlr, "error", "No enable given");
+	    goto out;
+	}
+	start_maint_op();
+	setportenable(cntlr, parms[0], parms[1]);
+	end_maint_op();
+    } else if (strcmp(cmd, "setportcontrol") == 0) {
+	if (parms[0] == NULL) {
+	    controller_outs(cntlr, "error", "No port given");
+	    goto out;
+	}
+	if (parms[1] == NULL) {
+	    controller_outs(cntlr, "error", "No device controls");
+	    goto out;
+	}
+	start_maint_op();
+	setportcontrol(cntlr, parms[0], parms + 1);
+	end_maint_op();
+    } else if (strcmp(cmd, "reload") == 0) {
+	int rv;
+	struct absout eout = { cntlr_eout, cntlr };
+
+	start_maint_op();
+	rv = reread_config_file("admin request", &eout);
+	end_maint_op();
+
+	if (!rv) {
+	    controller_outs(cntlr, "error", "reload done");
+	} else {
+	    controller_outputf(cntlr, "error", "reload error - %s",
+			       strerror(rv));
+	}
+    } else {
+	controller_outputf(cntlr, "error", "Unknown command - %s", cmd);
+    }
+
+ out:
+    if (yaml) {
+	controller_indent(cntlr, -1);
+	controller_outputf(cntlr, NULL, "...\r\n");
+    }
+
     return 0;
 }
 
@@ -324,141 +538,27 @@ process_input_line(controller_info_t *cntlr)
 {
     char *strtok_data;
     char *tok;
-    char *str;
+    char *parms[4];
+    int nparms;
+    int rv = 0;
 
     tok = strtok_r((char *) cntlr->inbuf, " \t", &strtok_data);
-    if (tok == NULL) {
+    if (tok == NULL)
 	/* Empty line, just ignore it. */
-    } else if (strcmp(tok, "exit") == 0) {
-	shutdown_controller(cntlr);
-	return 1; /* We don't want a prompt any more. */
-    } else if (strcmp(tok, "quit") == 0) {
-	shutdown_controller(cntlr);
-	return 1; /* We don't want a prompt any more. */
-    } else if (strcmp(tok, "help") == 0) {
-	controller_outs(cntlr, help_str);
-    } else if (strcmp(tok, "version") == 0) {
-	str = "ser2net version ";
-	controller_outs(cntlr, str);
-	str = VERSION;
-	controller_outs(cntlr, str);
-	controller_outs(cntlr, "\r\n");
-    } else if (strcmp(tok, "showport") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	start_maint_op();
-	showports(cntlr, tok);
-	end_maint_op();
-    } else if (strcmp(tok, "showshortport") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	start_maint_op();
-	showshortports(cntlr, tok);
-	end_maint_op();
-    } else if (strcmp(tok, "monitor") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    controller_outs(cntlr, "No monitor type given\r\n");
-	    goto out;
-	}
-	if (strcmp(tok, "stop") == 0) {
-	    if (cntlr->monitor_port_id != NULL) {
-		start_maint_op();
-		data_monitor_stop(cntlr, cntlr->monitor_port_id);
-		end_maint_op();
-		cntlr->monitor_port_id = NULL;
-	    }
-	} else {
-	    if (cntlr->monitor_port_id != NULL) {
-		controller_outs(cntlr, "Already monitoring a port\r\n");
-		goto out;
-	    }
+	goto out_noend;
 
-	    str = strtok_r(NULL, " \t", &strtok_data);
-	    if (str == NULL) {
-		controller_outs(cntlr, "No tcp port given\r\n");
-		goto out;
-	    }
-	    start_maint_op();
-	    cntlr->monitor_port_id = data_monitor_start(cntlr, tok, str);
-	    end_maint_op();
-	}
-    } else if (strcmp(tok, "disconnect") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    controller_outs(cntlr, "No port given\r\n");
-	    goto out;
-	}
-	start_maint_op();
-	disconnect_port(cntlr, tok);
-	end_maint_op();
-    } else if (strcmp(tok, "setporttimeout") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    controller_outs(cntlr, "No port given\r\n");
-	    goto out;
-	}
-	str = strtok_r(NULL, " \t", &strtok_data);
-	if (str == NULL) {
-	    controller_outs(cntlr, "No timeout given\r\n");
-	    goto out;
-	}
-	start_maint_op();
-	setporttimeout(cntlr, tok, str);
-	end_maint_op();
-    } else if (strcmp(tok, "setportenable") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    controller_outs(cntlr, "No port given\r\n");
-	    goto out;
-	}
-	str = strtok_r(NULL, " \t", &strtok_data);
-	if (str == NULL) {
-	    controller_outs(cntlr, "No timeout given\r\n");
-	    goto out;
-	}
-	start_maint_op();
-	setportenable(cntlr, tok, str);
-	end_maint_op();
-    } else if (strcmp(tok, "setportcontrol") == 0) {
-	tok = strtok_r(NULL, " \t", &strtok_data);
-	if (tok == NULL) {
-	    controller_outs(cntlr, "No port given\r\n");
-	    goto out;
-	}
-
-	str = strtok_r(NULL, "", &strtok_data);
-	if (str == NULL) {
-	    controller_outs(cntlr, "No device controls\r\n");
-	    goto out;
-	}
-	start_maint_op();
-	setportcontrol(cntlr, tok, str);
-	end_maint_op();
-    } else if (strcmp(tok, "reload") == 0) {
-	int rv;
-	struct absout eout = { cntlr_eout, cntlr };
-
-	start_maint_op();
-	so->unlock(cntlr->lock);
-	rv = reread_config_file("admin request", &eout);
-	end_maint_op();
-	so->lock(cntlr->lock);
-
-	if (!rv) {
-	    controller_outs(cntlr, "reload done\r\n");
-	} else {
-	    controller_outs(cntlr, "reload error: ");
-	    controller_outs(cntlr, strerror(rv));
-	    controller_outs(cntlr, "\r\n");
-	}
-    } else {
-	controller_outs(cntlr, "Unknown command: ");
-	controller_outs(cntlr, tok);
-	controller_outs(cntlr, "\r\n");
+    for (nparms = 0; nparms < 4; nparms++) {
+	parms[nparms] = strtok_r(NULL, " \t", &strtok_data);
+	if (!parms[nparms])
+	    break;
     }
+    parms[nparms] = NULL;
+    rv = process_command(cntlr, tok, NULL, nparms, parms);
 
-out:
-    controller_outs(cntlr, prompt);
-    return 0;
+ out_noend:
+    if (!cntlr->yaml && !rv)
+	controller_outs(cntlr, NULL, prompt);
+    return rv;
 }
 
 /* Removes one or more characters starting at pos and going backwards.
@@ -469,13 +569,238 @@ static int
 remove_chars(controller_info_t *cntlr, int pos, int count) {
     int j;
 
-    for (j = pos-count + 1; j < (cntlr->inbuf_count - count); j++) {
+    for (j = pos-count + 1; j < (cntlr->inbuf_count - count); j++)
 	cntlr->inbuf[j] = cntlr->inbuf[j + count];
-    }
     cntlr->inbuf_count -= count;
     pos -= count;
 
     return pos;
+}
+
+//#define YAML_DEBUG
+#ifdef YAML_DEBUG
+static void
+print_node(yaml_document_t *doc, yaml_node_t *n, unsigned int indent)
+{
+    unsigned int i;
+    yaml_node_pair_t *p;
+    yaml_node_item_t *t;
+    yaml_node_t *key, *value;
+
+    switch(n->type) {
+    case YAML_SCALAR_NODE:
+	printf("!!str ");
+	printf("%s", n->data.scalar.value);
+	break;
+    case YAML_SEQUENCE_NODE:
+	printf("!!seq ");
+	for (t = n->data.sequence.items.start; t < n->data.sequence.items.top;
+		t++) {
+	    printf("\n");
+	    for (i = 0; i < indent; i++)
+		printf("  ");
+	    value = yaml_document_get_node(doc, *t);
+	    print_node(doc, value, indent + 1);
+	}
+	break;
+    case YAML_MAPPING_NODE:
+	printf("!!map ");
+	for (p = n->data.mapping.pairs.start; p < n->data.mapping.pairs.top;
+		p++) {
+	    printf("\n");
+	    for (i = 0; i < indent; i++)
+		printf("  ");
+	    key = yaml_document_get_node(doc, p->key);
+	    value = yaml_document_get_node(doc, p->value);
+	    print_node(doc, key, indent + 1);
+	    printf(": ");
+	    print_node(doc, value, indent + 1);
+	}
+	break;
+    default:
+	printf("?");
+    }
+}
+#endif
+
+static int
+handle_yaml_doc(struct controller_info *cntlr)
+{
+    yaml_document_t *doc = &cntlr->doc;
+    yaml_node_t *n, *n2, *n3, *k, *v;
+    yaml_node_pair_t *p;
+    yaml_node_item_t *t;
+    char *name = NULL, *parms[4], *id = NULL;
+    int nparms = 0;
+    int rv;
+
+    memset(parms, 0, sizeof(parms));
+
+#ifdef YAML_DEBUG
+    printf("Got yaml doc\n");
+#endif
+    n = yaml_document_get_root_node(doc);
+    if (!n || n->type == YAML_NO_NODE ||
+		(n->type == YAML_SCALAR_NODE && !n->data.scalar.value[0])) {
+#ifdef YAML_DEBUG
+	printf("Empty document\n");
+#endif
+	return 1;
+    }
+
+#ifdef YAML_DEBUG
+    printf("Root node: ");
+    print_node(doc, n, 1);
+    printf("\n");
+#endif
+
+    if (n->type != YAML_MAPPING_NODE)
+	goto out_err;
+
+    k = yaml_document_get_node(doc, n->data.mapping.pairs.start->key);
+    if (k->type != YAML_SCALAR_NODE)
+	goto out_err;
+    if (strcmp((char *) k->data.scalar.value, "command") != 0)
+	goto out_err;
+    
+    n2 = yaml_document_get_node(doc, n->data.mapping.pairs.start->value);
+    if (n2->type != YAML_MAPPING_NODE)
+	goto out_err;
+
+    for (p = n2->data.mapping.pairs.start; p < n2->data.mapping.pairs.top;
+		p++) {
+	k = yaml_document_get_node(doc, p->key);
+	if (k->type != YAML_SCALAR_NODE)
+	    goto out_err;
+	if (strcmp((char *) k->data.scalar.value, "name") == 0) {
+	    v = yaml_document_get_node(doc, p->value);
+	    if (v->type != YAML_SCALAR_NODE)
+		goto out_err;
+	    name = (char *) v->data.scalar.value;
+	} else if (strcmp((char *) k->data.scalar.value, "parms") == 0) {
+	    n3 = yaml_document_get_node(doc, p->value);
+	    if (n3->type != YAML_SEQUENCE_NODE)
+		goto out_err;
+	    for (t = n3->data.sequence.items.start;
+		 t < n3->data.sequence.items.top;
+		 t++) {
+		v = yaml_document_get_node(doc, *t);
+		if (nparms < 4) {
+		    if (v->type != YAML_SCALAR_NODE)
+			goto out_err;
+		    parms[nparms] = (char *) v->data.scalar.value;
+		    nparms++;
+		}
+	    }
+	} else if (strcmp((char *) k->data.scalar.value, "id") == 0) {
+	    v = yaml_document_get_node(doc, p->value);
+	    if (v->type != YAML_SCALAR_NODE)
+		goto out_err;
+	    id = (char *) v->data.scalar.value;
+	} else {
+	    goto out_err;
+	}
+    }
+
+    if (!name)
+	goto out_err;
+
+    rv = !process_command(cntlr, name, id, nparms, parms);
+    
+    yaml_document_delete(doc);
+    return rv;
+
+ out_err:
+    controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+    controller_outs(cntlr, "response", NULL);
+    controller_indent(cntlr, 1);
+    if (name)
+	controller_outputf(cntlr, "name", name);
+    if (id)
+	controller_outputf(cntlr, "id", id);
+    controller_outputf(cntlr, "error", "Invalid yaml command");
+    controller_indent(cntlr, -1);
+    yaml_document_delete(doc);
+    return 1;
+}
+
+static int
+yaml_cntlr_read(void *data, unsigned char *buffer, size_t size,
+		size_t *size_read)
+{
+    struct controller_info *cntlr = data;
+    size_t left = cntlr->parse_pos - cntlr->read_pos;
+
+    if (left == 0)
+	/* This shouldn't happen, we supplied a whole document. */
+	return 0;
+
+    if (size > left)
+	size = left;
+    memcpy(buffer, cntlr->inbuf + cntlr->read_pos, size);
+    cntlr->read_pos += size;
+    *size_read = size;
+    return 1;
+}
+
+static int
+parse_yaml(struct controller_info *cntlr)
+{
+    if (!yaml_parser_load(&cntlr->parser, &cntlr->doc))
+	return 0;
+    return handle_yaml_doc(cntlr);
+}
+
+static int
+process_yaml(struct controller_info *cntlr)
+{
+    int rv = 1;
+
+    while (cntlr->parse_pos < cntlr->inbuf_count) {
+	char c = cntlr->inbuf[cntlr->parse_pos];
+
+	cntlr->parse_pos++;
+
+	/* Looking for \n...\n to mark a document end. */
+	if (cntlr->match_len == 4) {
+	    if (c == '\n' || c == '\r') {
+		if (!parse_yaml(cntlr)) {
+		    shutdown_controller(cntlr);
+		    rv = 0;
+		} else {
+		    /* Copy the rest of the buffer to the beginning. */
+		    cntlr->inbuf_count -= cntlr->parse_pos;
+		    memmove(cntlr->inbuf, cntlr->inbuf + cntlr->parse_pos,
+			    cntlr->inbuf_count);
+		    cntlr->parse_pos = 0;
+		    cntlr->match_len = 0;
+		    cntlr->read_pos = 0;
+		}
+		break;
+	    }
+	    cntlr->match_len = 0;
+	}
+	if (c == '\n' || c == '\r') {
+	    cntlr->match_len = 1;
+	} else if (cntlr->match_len > 0 && c == '.') {
+	    cntlr->match_len++;
+	} else {
+	    cntlr->match_len = 0;
+	}
+    }
+
+    return rv;
+}
+
+static int
+init_yaml(struct controller_info *cntlr)
+{
+    cntlr->yaml = true;
+    cntlr->yamlin = true;
+
+    yaml_parser_initialize(&cntlr->parser);
+    yaml_parser_set_input(&cntlr->parser, yaml_cntlr_read, cntlr);
+    return 1;
 }
 
 /* Data is ready to read on the TCP port. */
@@ -504,7 +829,7 @@ controller_read(struct gensio *net, int err,
     buflen = *ibuflen;
 
     if (cntlr->inbuf_count == INBUF_SIZE) {
-	controller_outs(cntlr, "Input line too long\r\n");
+	controller_outs(cntlr, NULL, "Input line too long\r\n");
 	cntlr->inbuf_count = 0;
 	goto out_unlock;
     }
@@ -513,16 +838,21 @@ controller_read(struct gensio *net, int err,
     if (buflen > INBUF_SIZE - read_start)
 	buflen = INBUF_SIZE - read_start;
     memcpy(cntlr->inbuf + read_start, buf, buflen);
-
     cntlr->inbuf_count += buflen;
+
+    if (cntlr->yamlin) {
+    handle_yaml:
+	if (!process_yaml(cntlr))
+	    goto out;
+	goto out_unlock;
+    }
+
     for (i = read_start; i < cntlr->inbuf_count; i++) {
 	if (cntlr->inbuf[i] == 0x0) {
 	    /* Ignore nulls. */
 	    i = remove_chars(cntlr, i, 1);
-	} else if (cntlr->inbuf[i] == '\n') {
-	    /* Ignore newlines. */
-	    i = remove_chars(cntlr, i, 1);
-	} else if ((cntlr->inbuf[i] == '\b') || (cntlr->inbuf[i] == 0x7f)) {
+	} else if (!cntlr->yaml &&
+		   (cntlr->inbuf[i] == '\b' || cntlr->inbuf[i] == 0x7f)) {
 	    /* Got a backspace. */
 
 	    if (i == 0) {
@@ -530,17 +860,31 @@ controller_read(struct gensio *net, int err,
 		i = remove_chars(cntlr, i, 1);
 	    } else {
 		i = remove_chars(cntlr, i, 2);
-		controller_outs(cntlr, "\b \b");
+		if (!cntlr->echo_off)
+		    controller_outs(cntlr, NULL, "\b \b");
 	    }
-	} else if (cntlr->inbuf[i] == '\r') {
+	} else if (i == 0 && cntlr->inbuf[i] == '%') {
+	    /* Turn off echo for this command. */
+	    cntlr->echo_off = true;
+	} else if (cntlr->inbuf[i] == '\r' || cntlr->inbuf[i] == '\n') {
 	    /* We got a newline, process the command. */
 	    int j;
 
-	    controller_outs(cntlr, "\r\n");
+	    if (strncmp((char *) cntlr->inbuf, "%YAML", 5) == 0) {
+		if (!init_yaml(cntlr))
+		    goto out;
+		goto handle_yaml;
+	    }
 
-	    cntlr->inbuf[i] ='\0';
+	    cntlr->inbuf[i] = '\0';
+
+	    if (!cntlr->yaml)
+		controller_outs(cntlr, NULL, "\r\n");
+
 	    if (process_input_line(cntlr))
 		goto out; /* Controller was shut down. */
+
+	    cntlr->echo_off = false;
 
 	    /* Now copy any leftover data to the beginning of the buffer. */
 	    /* Don't use memcpy or strcpy because the memory might
@@ -551,9 +895,10 @@ controller_read(struct gensio *net, int err,
 		cntlr->inbuf[j] = cntlr->inbuf[i];
 	    }
 	    i = -1;
-	} else {
+	} else if (!cntlr->echo_off && !cntlr->yaml) {
 	    /* It's a normal character, just echo it. */
-	    controller_output(cntlr, (char *) &(cntlr->inbuf[i]), 1);
+	    controller_output(cntlr, NULL, NULL,
+			      (char *) &(cntlr->inbuf[i]), 1);
 	}
     }
  out_unlock:
@@ -574,7 +919,7 @@ controller_write_ready(struct gensio *net)
     int err;
     gensiods write_count;
 
-    so->lock(cntlr->lock);
+    so->lock(cntlr->outlock);
     if (cntlr->in_shutdown)
 	goto out;
 
@@ -604,11 +949,14 @@ controller_write_ready(struct gensio *net)
 	gensio_set_write_callback_enable(net, false);
     }
  out:
-    so->unlock(cntlr->lock);
+    so->unlock(cntlr->outlock);
     return;
 
  out_fail:
-    shutdown_controller(cntlr); /* Releases the lock */
+    /* Let the read handle the error. */
+    gensio_set_read_callback_enable(net, true);
+    gensio_set_write_callback_enable(net, false);
+    so->unlock(cntlr->outlock);
 }
 
 static int
@@ -655,6 +1003,14 @@ controller_acc_new_child(struct gensio *net)
 	goto errout;
     }
 
+    cntlr->outlock = so->alloc_lock(so);
+    if (!cntlr->outlock) {
+	so->free_lock(cntlr->lock);
+	free(cntlr);
+	err = "Out of memory allocating lock";
+	goto errout;
+    }
+
     cntlr->net = net;
 
     gensio_set_callback(net, controller_io_event, cntlr);
@@ -662,8 +1018,9 @@ controller_acc_new_child(struct gensio *net)
     cntlr->inbuf_count = 0;
     cntlr->outbuf = NULL;
     cntlr->monitor_port_id = NULL;
+    cntlr->parse_pos = 1; /* Assume we start with a \n. */
 
-    controller_outs(cntlr, prompt);
+    controller_outs(cntlr, NULL, prompt);
 
     cntlr->next = controllers;
     controllers = cntlr;

@@ -192,6 +192,9 @@ struct port_info
 
     const char *shutdown_reason;
 
+    void (*port_op_done)(struct port_info *, void *);
+    void *port_op_data;
+
     /* The port has been deleted, but still has connections in use. */
     bool deleted;
 
@@ -576,16 +579,16 @@ static int shutdown_port(port_info_t *port, const char *errreason);
  * for error output.
  */
 static int
-cntrl_abserrout(struct absout *o, const char *str, ...)
+cntrl_abserrout(struct absout *e, const char *str, ...)
 {
+    struct controller_info *cntlr = e->data;
     va_list ap;
-    int rv;
+    char buf[1024];
 
     va_start(ap, str);
-    rv = controller_voutputf(o->data, str, ap);
+    vsnprintf(buf, sizeof(buf), str, ap);
     va_end(ap);
-    rv += controller_outputf(o->data, "\r\n");
-    return rv;
+    return controller_outputf(cntlr, "error", "%s", buf);
 }
 
 static int
@@ -3176,6 +3179,17 @@ free_port(port_info_t *port)
 }
 
 static void
+call_port_op_done(port_info_t *port)
+{
+    void (*port_op_done)(struct port_info *, void *) = port->port_op_done;
+
+    if (port_op_done) {
+	port->port_op_done = NULL;
+	port_op_done(port, port->port_op_data);
+    }
+}
+
+static void
 finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 {
     port_info_t *port = cb_data;
@@ -3253,6 +3267,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
     } else {
 	/* Port was disabled, shut it down. */
 	gensio_acc_shutdown(port->accepter, NULL, NULL);
+	call_port_op_done(port);
     }
     so->unlock(port->lock);
     so->unlock(ports_lock);
@@ -4443,12 +4458,12 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
     int count = 0;
     net_info_t *netcon = NULL;
 
-    controller_outputf(cntlr, "%-22s ", port->name);
+    controller_outputf(cntlr, NULL, "%-22s ", port->name);
     if (port->deleted)
-	controller_outputf(cntlr, "%-6s ", "DEL");
+	controller_outputf(cntlr, NULL, "%-6s ", "DEL");
     else
-	controller_outputf(cntlr, "%-6s ", enabled_str[port->enabled]);
-    controller_outputf(cntlr, "%7d ", port->timeout);
+	controller_outputf(cntlr, NULL, "%-6s ", enabled_str[port->enabled]);
+    controller_outputf(cntlr, NULL, "%7d ", port->timeout);
 
     netcon = first_live_net_con(port);
     if (!netcon)
@@ -4456,63 +4471,81 @@ showshortport(struct controller_info *cntlr, port_info_t *port)
 
     if (port_in_use(port)) {
 	if (net_raddr_str(netcon->net, buffer, sizeof(buffer)) != 0)
-	    count = controller_outputf(cntlr, "%s", buffer);
+	    count = controller_outputf(cntlr, NULL, "%s", buffer);
     } else {
-	count = controller_outputf(cntlr, "unconnected");
+	count = controller_outputf(cntlr, NULL, "unconnected");
     }
 
     while (count < REMOTEADDR_COLUMN_WIDTH + 1) {
-	controller_outs(cntlr, " ");
+	controller_outs(cntlr, NULL, " ");
 	count++;
     }
 
-    controller_outputf(cntlr, "%-22s ", port->accstr);
-    controller_outputf(cntlr, "%-22s ", port->devname);
-    controller_outputf(cntlr, "%-14s ", state_str[port->net_to_dev_state]);
-    controller_outputf(cntlr, "%-14s ", state_str[port->dev_to_net_state]);
-    controller_outputf(cntlr, "%9lu ", (unsigned long) netcon->bytes_received);
-    controller_outputf(cntlr, "%9lu ", (unsigned long) netcon->bytes_sent);
-    controller_outputf(cntlr, "%9lu ", (unsigned long)port->dev_bytes_received);
-    controller_outputf(cntlr, "%9lu ", (unsigned long) port->dev_bytes_sent);
+    controller_outputf(cntlr, NULL, "%-22s ", port->accstr);
+    controller_outputf(cntlr, NULL, "%-22s ", port->devname);
+    controller_outputf(cntlr, NULL, "%-14s ",
+		       state_str[port->net_to_dev_state]);
+    controller_outputf(cntlr, NULL, "%-14s ",
+		       state_str[port->dev_to_net_state]);
+    controller_outputf(cntlr, NULL, "%9lu ",
+		       (unsigned long) netcon->bytes_received);
+    controller_outputf(cntlr, NULL, "%9lu ",
+		       (unsigned long) netcon->bytes_sent);
+    controller_outputf(cntlr, NULL, "%9lu ",
+		       (unsigned long)port->dev_bytes_received);
+    controller_outputf(cntlr, NULL, "%9lu ",
+		       (unsigned long) port->dev_bytes_sent);
 
     if (net_raddr_str(port->io, buffer, sizeof(buffer)) != 0)
-	controller_outputf(cntlr, "%s", buffer);
+	controller_outputf(cntlr, NULL, "%s", buffer);
 
-    controller_outs(cntlr, "\r\n");
+    controller_outs(cntlr, NULL, "\r\n");
 }
 
 /* Print information about a port to the control port given in cntlr. */
 static void
-showport(struct controller_info *cntlr, port_info_t *port)
+showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 {
-    char buffer[NI_MAXHOST + NI_MAXSERV + 2], *cfg, *oth = NULL;
+    char buffer[NI_MAXHOST + NI_MAXSERV + 2], *cfg, *oth = NULL, *tstr;
     net_info_t *netcon;
 
-    controller_outputf(cntlr, "Port %s\r\n", port->name);
-    controller_outputf(cntlr, "  accepter: %s\r\n", port->accstr);
-    controller_outputf(cntlr, "  enable state: %s\r\n",
-		       enabled_str[port->enabled]);
-    controller_outputf(cntlr, "  timeout: %d\r\n", port->timeout);
+    if (yaml) {
+	controller_outs(cntlr, "port", NULL);
+	controller_indent(cntlr, 1);
+	controller_outputf(cntlr, "name", "%s", port->name);
+    } else {
+	controller_outputf(cntlr, "port", "%s", port->name);
+	controller_indent(cntlr, 1);
+    }
+    controller_outputf(cntlr, "accepter", "%s", port->accstr);
+    controller_outputf(cntlr, "enable state", "%s", enabled_str[port->enabled]);
+    controller_outputf(cntlr, "timeout", "%d", port->timeout);
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
 	    buffer[0] = '\0';
 	    net_raddr_str(netcon->net, buffer, sizeof(buffer));
-	    controller_outputf(cntlr, "  connected to: %s\r\n", buffer);
-	    controller_outputf(cntlr, "    bytes read from TCP: %lu\r\n",
+	    if (yaml) {
+		controller_outs(cntlr, "connected", NULL);
+		controller_indent(cntlr, 1);
+		controller_outputf(cntlr, "name", "%s", buffer);
+	    } else {
+		controller_outputf(cntlr, "connected to", "%s", buffer);
+		controller_indent(cntlr, 1);
+	    }
+	    controller_outputf(cntlr, "bytes read from TCP", "%lu",
 			       (unsigned long) netcon->bytes_received);
-	    controller_outputf(cntlr, "    bytes written to TCP: %lu\r\n",
+	    controller_outputf(cntlr, "bytes written to TCP", "%lu",
 			       (unsigned long) netcon->bytes_sent);
-	} else {
-	    controller_outputf(cntlr, "  unconnected\r\n");
+	    controller_indent(cntlr, -1);
 	}
     }
 
     if (port->orig_devname)
-	controller_outputf(cntlr, "  device: %s (%s)\r\n", port->devname,
+	controller_outputf(cntlr, "device", "%s (%s)", port->devname,
 			   port->orig_devname);
     else
-	controller_outputf(cntlr, "  device: %s\r\n", port->devname);
+	controller_outputf(cntlr, "device", "%s", port->devname);
 
     if (net_raddr_str(port->io, buffer, sizeof(buffer)) != 0) {
 	cfg = strchr(buffer, ',');
@@ -4526,36 +4559,58 @@ showport(struct controller_info *cntlr, port_info_t *port)
 	if (oth) {
 	    *oth = '\0';
 	    oth++;
+	    tstr = oth;
+	    while (*tstr) {
+		if (*tstr == ' ')
+		    *tstr = ',';
+		tstr++;
+	    }
 	} else {
 	    oth = "";
 	}
 
-	controller_outputf(cntlr, "  device config: %s\r\n", cfg);
-	controller_outputf(cntlr, "  device controls: %s\r\n", oth);
+	controller_outputf(cntlr, "device config", "%s", cfg);
+	if (strcmp(oth, "offline") != 0) {
+	    if (yaml)
+		controller_outputf(cntlr, "device controls", "[ %s ]", oth);
+	    else
+		controller_outputf(cntlr, "device controls", "%s", oth);
+	}
     } else {
-	controller_outputf(cntlr, "  device config: ?\r\n");
-	controller_outputf(cntlr, "  device controls: ?\r\n");
+	controller_outputf(cntlr, "device config", "?");
+	controller_outputf(cntlr, "device controls", "?");
     }
 
-    controller_outputf(cntlr, "  tcp to device state: %s\r\n",
-		      state_str[port->net_to_dev_state]);
+    controller_outputf(cntlr, "tcp to device state", "%s",
+		       state_str[port->net_to_dev_state]);
 
-    controller_outputf(cntlr, "  device to tcp state: %s\r\n",
-		      state_str[port->dev_to_net_state]);
+    controller_outputf(cntlr, "device to tcp state", "%s",
+		       state_str[port->dev_to_net_state]);
 
-    controller_outputf(cntlr, "  bytes read from device: %lu\r\n",
+    controller_outputf(cntlr, "bytes read from device", "%lu",
 		       (unsigned long) port->dev_bytes_received);
 
-    controller_outputf(cntlr, "  bytes written to device: %lu\r\n",
+    controller_outputf(cntlr, "bytes written to device", "%lu",
 		       (unsigned long) port->dev_bytes_sent);
 
-    if (port->new_config != NULL) {
-	controller_outputf(cntlr, "  Port will be reconfigured when current"
-			   " session closes.\r\n");
-    } else if (port->deleted) {
-	controller_outputf(cntlr, "  Port will be deleted when current"
-			   " session closes.\r\n");
+    if (!yaml) {
+	if (port->new_config != NULL) {
+	    controller_outputf(cntlr, NULL,
+			       "Port will be reconfigured when current"
+			       " session closes.\r\n");
+	} else if (port->deleted) {
+	    controller_outputf(cntlr, NULL, "Port will be deleted when current"
+			       " session closes.\r\n");
+	}
+    } else {
+	char *infostr = "retained";
+	if (port->new_config != NULL)
+	    infostr = "reconfigured";
+	else if (port->deleted)
+	    infostr = "deleted";
+	controller_outputf(cntlr, "close state", "%s", infostr);
     }
+    controller_indent(cntlr, -1);
 }
 
 /*
@@ -4563,7 +4618,7 @@ showport(struct controller_info *cntlr, port_info_t *port)
  * held, if it returns a non-NULL port.
  */
 static port_info_t *
-find_port_by_name(char *name, bool allow_deleted)
+find_port_by_name(const char *name, bool allow_deleted)
 {
     port_info_t *port;
 
@@ -4588,7 +4643,7 @@ find_port_by_name(char *name, bool allow_deleted)
 
 /* Handle a showport command from the control port. */
 void
-showports(struct controller_info *cntlr, char *portspec)
+showports(struct controller_info *cntlr, const char *portspec, bool yaml)
 {
     port_info_t *port;
 
@@ -4598,7 +4653,7 @@ showports(struct controller_info *cntlr, char *portspec)
 	port = ports;
 	while (port != NULL) {
 	    so->lock(port->lock);
-	    showport(cntlr, port);
+	    showport(cntlr, port, yaml);
 	    so->unlock(port->lock);
 	    port = port->next;
 	}
@@ -4606,9 +4661,10 @@ showports(struct controller_info *cntlr, char *portspec)
     } else {
 	port = find_port_by_name(portspec, true);
 	if (port == NULL) {
-	    controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
+	    controller_outputf(cntlr, "error", "Invalid port number - %s",
+			       portspec);
 	} else {
-	    showport(cntlr, port);
+	    showport(cntlr, port, yaml);
 	    so->unlock(port->lock);
 	}
     }
@@ -4616,11 +4672,11 @@ showports(struct controller_info *cntlr, char *portspec)
 
 /* Handle a showport command from the control port. */
 void
-showshortports(struct controller_info *cntlr, char *portspec)
+showshortports(struct controller_info *cntlr, const char *portspec)
 {
     port_info_t *port;
 
-    controller_outputf(cntlr,
+    controller_outputf(cntlr, NULL,
 	    "%-22s %-6s %7s %-*s %-22s %-22s %-14s %-14s %9s %9s %9s %9s %s\r\n",
 	    "Port name",
 	    "Type",
@@ -4650,7 +4706,8 @@ showshortports(struct controller_info *cntlr, char *portspec)
     } else {
 	port = find_port_by_name(portspec, true);
 	if (port == NULL) {
-	    controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
+	    controller_outputf(cntlr, "error", "Invalid port number: %s",
+			       portspec);
 	} else {
 	    showshortport(cntlr, port);
 	    so->unlock(port->lock);
@@ -4662,19 +4719,20 @@ showshortports(struct controller_info *cntlr, char *portspec)
    in as strings, this code will convert them, return any errors, and
    perform the operation. */
 void
-setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
+setporttimeout(struct controller_info *cntlr, const char *portspec,
+	       const char *timeout)
 {
     port_info_t *port;
     net_info_t *netcon;
 
     port = find_port_by_name(portspec, true);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
+	controller_outputf(cntlr, "error", "Invalid port number - %s", portspec);
     } else {
 	int timeout_num = scan_int(timeout);
 
 	if (timeout_num == -1) {
-	    controller_outputf(cntlr, "Invalid timeout: %s\r\n", timeout);
+	    controller_outputf(cntlr, "error", "Invalid timeout - %s", timeout);
 	} else {
 	    port->timeout = timeout_num;
 
@@ -4691,37 +4749,38 @@ setporttimeout(struct controller_info *cntlr, char *portspec, char *timeout)
    are passed in as strings, this code will get the port and then call
    the code to control the device. */
 void
-setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
+setportcontrol(struct controller_info *cntlr, const char *portspec,
+	       char * const controls[])
 {
     port_info_t *port;
+    unsigned int i;
 
     port = find_port_by_name(portspec, false);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port number: %s\r\n", portspec);
+	controller_outputf(cntlr, "error", "Invalid port number - %s",
+			   portspec);
 	goto out;
     } else if (!port_in_use(port)) {
-	controller_outputf(cntlr, "Port is not currently connected: %s\r\n",
-			   portspec);
+	controller_outputf(cntlr, "error",
+			   "Port is not currently connected - %s", portspec);
     } else {
-	char *pos, *strtok_data;
 	struct sergensio *sio = gensio_to_sergensio(port->io);
 
 	if (!sio)
 	    goto out_unlock;
-	pos = strtok_r(controls, " \t", &strtok_data);
-	while (pos) {
-	    if (strcmp(pos, "RTSHI") == 0)
+
+	for (i = 0; controls[i]; i++) {
+	    if (strcmp(controls[i], "RTSHI") == 0)
 		sergensio_rts(sio, SERGENSIO_RTS_ON, NULL, NULL);
-	    else if (strcmp(pos, "RTSLO") == 0)
+	    else if (strcmp(controls[i], "RTSLO") == 0)
 		sergensio_rts(sio, SERGENSIO_RTS_OFF, NULL, NULL);
-	    else if (strcmp(pos, "DTRHI") == 0)
+	    else if (strcmp(controls[i], "DTRHI") == 0)
 		sergensio_rts(sio, SERGENSIO_DTR_ON, NULL, NULL);
-	    else if (strcmp(pos, "DTRLO") == 0)
+	    else if (strcmp(controls[i], "DTRLO") == 0)
 		sergensio_rts(sio, SERGENSIO_DTR_OFF, NULL, NULL);
 	    else
-		controller_outputf(cntlr, "Invalid device control: %s\r\n",
-				   pos);
-	    pos = strtok_r(NULL, " \t", &strtok_data);
+		controller_outputf(cntlr, "error",
+				   "Invalid device control - %s", controls[i]);
 	}
     }
  out_unlock:
@@ -4730,18 +4789,28 @@ setportcontrol(struct controller_info *cntlr, char *portspec, char *controls)
     return;
 }
 
+static void
+port_op_finished(struct port_info *port, void *data)
+{
+    struct gensio_waiter *waiter = data;
+
+    so->wake(waiter);
+}
+
 /* Set the enable state of a port. */
 void
-setportenable(struct controller_info *cntlr, char *portspec, char *enable)
+setportenable(struct controller_info *cntlr, const char *portspec,
+	      const char *enable)
 {
     port_info_t *port;
     bool new_enable;
     struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
     int rv;
+    struct gensio_waiter *waiter = NULL;
 
     port = find_port_by_name(portspec, false);
     if (port == NULL) {
-	controller_outputf(cntlr, "Invalid port: %s\r\n", portspec);
+	controller_outputf(cntlr, "error", "Invalid port - %s", portspec);
 	return;
     }
 
@@ -4752,22 +4821,34 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
     } else if (strcmp(enable, "raw") == 0) {
 	new_enable = true;
     } else {
-	controller_outputf(cntlr, "Invalid enable: %s\r\n", enable);
+	controller_outputf(cntlr, "error", "Invalid enable - %s", enable);
 	goto out_unlock;
     }
 
 
     if (port->enabled == new_enable) {
-	controller_outputf(cntlr, "port was already in the given state");
+	controller_outputf(cntlr, "error",
+			   "port was already in the given state");
 	goto out_unlock;
     }
 
     port->enabled = new_enable;
     if (!new_enable) {
-	rv = shutdown_port(port, "admin disable");
-	if (rv)
-	    controller_outputf(cntlr, "Error disabling port: %s",
-			       gensio_err_to_str(rv));
+	waiter = so->alloc_waiter(so);
+	if (!waiter) {
+	    controller_outputf(cntlr, "error", "Out of memory");
+	    rv = ENOMEM;
+	} else {
+	    port->port_op_done = port_op_finished;
+	    port->port_op_data = waiter;
+	    rv = shutdown_port(port, "admin disable");
+	    if (rv) {
+		controller_outputf(cntlr, "error", "disabling port: %s",
+				   gensio_err_to_str(rv));
+		so->free_waiter(waiter);
+		waiter = NULL;
+	    }
+	}
     } else {
 	rv = startup_port(&eout, port);
     }
@@ -4776,31 +4857,31 @@ setportenable(struct controller_info *cntlr, char *portspec, char *enable)
 
  out_unlock:
     so->unlock(port->lock);
+
+    if (waiter) {
+	so->wait(waiter, 1, NULL);
+	so->free_waiter(waiter);
+    }
 }
 
 /* Start data monitoring on the given port, type may be either "tcp" or
    "term" and only one direction may be monitored.  This return NULL if
    the monitor fails.  The monitor output will go to "fd". */
 void *
-data_monitor_start(struct controller_info *cntlr,
-		   char                   *type,
-		   char                   *portspec)
+data_monitor_start(struct controller_info *cntlr, const char *type,
+		   const char *portspec)
 {
     port_info_t *port;
 
     port = find_port_by_name(portspec, true);
     if (port == NULL) {
-	char *err = "Invalid port number: ";
-	controller_outs(cntlr, err);
-	controller_outs(cntlr, portspec);
-	controller_outs(cntlr, "\r\n");
+	controller_outputf(cntlr, "error", "Invalid port number - %s",
+			   portspec);
 	goto out;
     }
 
     if ((port->net_monitor != NULL) || (port->dev_monitor != NULL)) {
-	char *err = "Port is already being monitored";
-	controller_outs(cntlr, err);
-	controller_outs(cntlr, "\r\n");
+	controller_outputf(cntlr, "error", "Port is already being monitored");
 	goto out_unlock;
     }
 
@@ -4809,10 +4890,7 @@ data_monitor_start(struct controller_info *cntlr,
     } else if (strcmp(type, "term") == 0) {
 	port->dev_monitor = cntlr;
     } else {
-	char *err = "invalid monitor type: ";
-	controller_outs(cntlr, err);
-	controller_outs(cntlr, type);
-	controller_outs(cntlr, "\r\n");
+	controller_outs(cntlr, "invalid monitor type - %s", type);
 	so->unlock(port->lock);
 	port = NULL;
 	goto out;
@@ -4847,23 +4925,18 @@ data_monitor_stop(struct controller_info *cntlr,
 }
 
 void
-disconnect_port(struct controller_info *cntlr,
-		char *portspec)
+disconnect_port(struct controller_info *cntlr, const char *portspec)
 {
     port_info_t *port;
 
     port = find_port_by_name(portspec, true);
     if (port == NULL) {
-	char *err = "Invalid port number: ";
-	controller_outs(cntlr, err);
-	controller_outs(cntlr, portspec);
-	controller_outs(cntlr, "\r\n");
+	controller_outputf(cntlr, "error", "Invalid port number - %s",
+			   portspec);
 	goto out;
     } else if (!port_in_use(port)) {
-	char *err = "Port not connected: ";
-	controller_outs(cntlr, err);
-	controller_outs(cntlr, portspec);
-	controller_outs(cntlr, "\r\n");
+	controller_outputf(cntlr, "error", "Port not connected - %s",
+			   portspec);
 	goto out_unlock;
     }
 

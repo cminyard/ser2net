@@ -56,37 +56,37 @@ void dataxfer_init(void);
 /* Show information about a port (or all ports if portspec is NULL).
    The parameters are all strings that the routine will convert to
    integers.  Error output will be generated on invalid data. */
-void showports(struct controller_info *cntlr, char *portspec);
+void showports(struct controller_info *cntlr, const char *portspec, bool yaml);
 
 /* Show information about a port (as above) but in a one-line format. */
-void showshortports(struct controller_info *cntlr, char *portspec);
+void showshortports(struct controller_info *cntlr, const char *portspec);
 
 /* Set the port's timeout.  The parameters are all strings that the
    routine will convert to integers.  Error output will be generated
    on invalid data. */
 void setporttimeout(struct controller_info *cntlr,
-		    char *portspec,
-		    char *timeout);
+		    const char *portspec,
+		    const char *timeout);
 
 /* Modify the DTR and RTS lines for the port. */
 void setportcontrol(struct controller_info *cntlr,
-		    char *portspec,
-		    char *controls);
+		    const char *portspec,
+		    char * const controls[]);
 
 /* Set the enable state of a port (off, raw, telnet).  The parameters
    are all strings that the routine will convert to integers.  Error
    output will be generated on invalid data. */
 void setportenable(struct controller_info *cntlr,
-		   char *portspec,
-		   char *enable);
+		   const char *portspec,
+		   const char *enable);
 
 /* Start data monitoring on the given port, type may be either "tcp" or
    "term" and only one direction may be monitored.  This return NULL if
    the monitor fails.  The monitor output will go to the controller
    via the controller_write() call. */
 void *data_monitor_start(struct controller_info *cntlr,
-			 char *type,
-			 char *portspec);
+			 const char *type,
+			 const char *portspec);
 
 /* Stop monitoring the given id. */
 void data_monitor_stop(struct controller_info *cntlr,
@@ -94,7 +94,7 @@ void data_monitor_stop(struct controller_info *cntlr,
 
 /* Shut down the port, if it is connected. */
 void disconnect_port(struct controller_info *cntlr,
-		     char *portspec);
+		     const char *portspec);
 
 struct devio;
 

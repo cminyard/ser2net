@@ -39,24 +39,23 @@ struct controller_info;
 
 /* Send some output to a controller port.  The data field is the data
    to write, the count field is the number of bytes to write. */
-void controller_output(struct controller_info *cntlr,
-		       const char *data, int count);
-
-/* Send some output to a controller port.  The data field is the data
-   to write, the count field is the number of bytes to write. */
 int controller_outputf(struct controller_info *cntlr,
-		       const char *str, ...);
+		       const char *field, const char *str, ...);
 
 /* Send some output to a controller port.  The data field is the data
    to write, the count field is the number of bytes to write. */
 int controller_voutputf(struct controller_info *cntlr,
-			const char *str, va_list ap);
+			const char *field, const char *str, va_list ap);
 
 /* Write some data directly to the controllers output port. */
 void controller_write(struct controller_info *cntlr,
 		      const char *data, gensiods count);
 
 /*  output a string  */
-void controller_outs(struct controller_info *cntlr, const char *s);
+void controller_outs(struct controller_info *cntlr,
+		     const char *field, const char *s);
+
+/* increase or decrease the indent with 1, or -1 */
+void controller_indent(struct controller_info *cntlr, int amount);
 
 #endif /* CONTROLLER */
