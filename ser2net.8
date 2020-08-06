@@ -120,6 +120,9 @@ Display a short list and summary of commands.
 .B exit
 Disconnect from the control port.
 .TP
+.B yaml
+Go into yaml output mode.  See YAML MODES below.
+.TP
 .B version
 Display the version of this program.
 .TP
@@ -194,8 +197,50 @@ to enable the network port transfer all I/O as-is,
 .I rawlp
 to enable the network port input and device output without termios setting, and
 .I telnet
-to enable the network port is up run the telnet negotiation protocol on the port.
+to enable the network port is up run the telnet negotiation protocol on the
+port.
+.TP
+.B reload
+Causes ser2net to reload its configuration.  Any error output will
+come out in the output, along with going to syslog.
+.SS YAML MODES
+If the "yaml" command is issued, echo is turned off and all output is
+YAML compliant.  The form is basically the same as the non-YAML
+output, with some minor adjustments to make it YAML compliant.  In
+addition, all responses are in the form:
 
+  %YAML 1.1
+  ---
+  response:
+    <response info here>
+  ...
+
+If there is an error, it is returned in the response with the "error"
+key.  If the command succeeded, no "error" key will be present in the
+response mapping.  The "..." will be at the end of all responses.
+
+The following commands are available in yaml output mode: exit,
+version, showport, disconnect, setporttimeout, setportenable,
+setportcontrol, reload,
+
+If "%YAML" is seen in the input, YAML input and output modes are
+activated, echo is disabled, and all input is expected to be in the
+form:
+
+  ---
+  command:
+    name: <command name>
+    id: <optional id>
+    parms: [ parm1 [, parm2 [...]]]
+  ...
+
+The id is optional and will just be returned in the reponse.  The
+parms are optional, too, unless the command requires them.  Extra
+parms are ignored, along with unknown keys in the main mapping.
+
+Note that you have to deal with the "->" that is issued when the
+connection is made, before going into YAML mode, YAML doesn't handle
+that well.
 .SH CONFIGURATION
 Configuration is accomplished through the file
 .BR /etc/ser2net/ser2net.yaml .
