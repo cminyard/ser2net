@@ -1202,6 +1202,7 @@ shutdown_controller_done(void *cb_data)
 void
 free_controllers(void)
 {
+    controller_shutdown();
     while (controllers) {
 	controllers->shutdown_complete = shutdown_controller_done;
 	controllers->shutdown_complete_cb_data = controller_shutdown_waiter;
@@ -1209,7 +1210,6 @@ free_controllers(void)
 	shutdown_controller(controllers); /* Releases the lock. */
 	so->wait(controller_shutdown_waiter, 1, NULL);
     }
-    controller_shutdown();
     if (controller_shutdown_waiter)
 	so->free_waiter(controller_shutdown_waiter);
     if (accept_waiter)
