@@ -241,6 +241,23 @@ parms are ignored, along with unknown keys in the main mapping.
 Note that you have to deal with the "->" that is issued when the
 connection is made, before going into YAML mode, YAML doesn't handle
 that well.
+
+In YAML output mode, you will get asynchronous reports of connections
+and disconnections in the form:
+
+  %YAML 1.1
+  ---
+  new connection: 
+    name: !!str 'con1'
+    remaddr: !!str 'ipv6,::1,59072'
+  ...
+
+  %YAML 1.1
+  ---
+  disconnect: 
+    name: !!str 'con1'
+    remaddr: !!str 'ipv6,::1,59072'
+  ...
 .SH CONFIGURATION
 Configuration is accomplished through the file
 .BR /etc/ser2net/ser2net.yaml .
