@@ -400,6 +400,31 @@ cntlr_eout(struct absout *e, const char *str, ...)
     return controller_outputf(cntlr, "error", "%s", buf);
 }
 
+void
+cntlr_report_conchange(const char *type, const char *con, const char *remaddr)
+{
+    controller_info_t *cntlr;
+
+    so->lock(cntlr_lock);
+    for (cntlr = controllers; cntlr; cntlr = cntlr->next) {
+	if (!cntlr->yaml)
+	    continue;
+
+	so->lock(cntlr->lock);
+	start_maint_op();
+	controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+	controller_outs(cntlr, type, NULL);
+	controller_indent(cntlr, 1);
+	controller_outputf(cntlr, "name", con);
+	controller_outputf(cntlr, "remaddr", remaddr);
+	controller_indent(cntlr, -1);
+	controller_outputf(cntlr, NULL, "...\r\n");
+	end_maint_op();
+	so->unlock(cntlr->lock);
+    }
+    so->unlock(cntlr_lock);
+}
+
 static int
 process_command(controller_info_t *cntlr, const char *cmd, const char *id,
 		int nparms, char * const parms[])

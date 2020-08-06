@@ -175,6 +175,8 @@ struct net_info {
     bool modemstate_sent;	/* Has a modemstate been sent? */
     bool linestate_sent;	/* Has a linestate been sent? */
 
+    char remaddr[NI_MAXHOST + NI_MAXSERV + 2];
+
     /*
      * If a user gets kicked, store the information for the new user
      * here since we have already accepted the connection or received
@@ -942,6 +944,20 @@ enable_all_net_read(port_info_t *port)
 }
 
 static void
+report_newcon(port_info_t *port, net_info_t *netcon)
+{
+    if (!net_raddr_str(netcon->net, netcon->remaddr, sizeof(netcon->remaddr)))
+	strcpy(netcon->remaddr, "*unknown*");
+    cntlr_report_conchange("new connection", port->name, netcon->remaddr);
+}
+
+static void
+report_disconnect(port_info_t *port, net_info_t *netcon)
+{
+    cntlr_report_conchange("disconnect", port->name, netcon->remaddr);
+}
+
+static void
 connect_back_done(struct gensio *net, int err, void *cb_data)
 {
     net_info_t *netcon = cb_data;
@@ -952,6 +968,7 @@ connect_back_done(struct gensio *net, int err, void *cb_data)
 	netcon->net = NULL;
 	gensio_free(net);
     } else {
+	report_newcon(port, netcon);
 	setup_port(port, netcon);
     }
     assert(port->num_waiting_connect_backs > 0);
@@ -2465,6 +2482,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	    if (!netcon->net)
 		continue;
 	    gensio_write(netcon->net, NULL, errstr, strlen(errstr), NULL);
+	    report_disconnect(port, netcon);
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
 	}
@@ -2552,6 +2570,7 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	    snprintf(errstr, sizeof(errstr), "Device open failure: %s\r\n",
 		     gensio_err_to_str(err));
 	    gensio_write(netcon->net, NULL, errstr, strlen(errstr), NULL);
+	    report_disconnect(port, netcon);
 	    gensio_free(netcon->net);
 	    netcon->net = NULL;
 	}
@@ -2609,6 +2628,8 @@ static void
 handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon)
 {
     netcon->net = net;
+
+    report_newcon(port, netcon);
 
     /* XXX log netcon->remote */
     setup_port(port, netcon);
@@ -3379,6 +3400,7 @@ netcon_finish_shutdown(net_info_t *netcon)
     port_info_t *port = netcon->port;
 
     if (netcon->net) {
+	report_disconnect(port, netcon);
 	gensio_free(netcon->net);
 	netcon->net = NULL;
     }
@@ -4569,8 +4591,9 @@ showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 	    oth = "";
 	}
 
-	controller_outputf(cntlr, "device config", "%s", cfg);
-	if (strcmp(oth, "offline") != 0) {
+	if (cfg[0])
+	    controller_outputf(cntlr, "device config", "%s", cfg);
+	if (oth[0] && strcmp(oth, "offline") != 0) {
 	    if (yaml)
 		controller_outputf(cntlr, "device controls", "[ %s ]", oth);
 	    else

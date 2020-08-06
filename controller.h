@@ -58,4 +58,7 @@ void controller_outs(struct controller_info *cntlr,
 /* increase or decrease the indent with 1, or -1 */
 void controller_indent(struct controller_info *cntlr, int amount);
 
+void cntlr_report_conchange(const char *type,
+			    const char *con, const char *remaddr);
+
 #endif /* CONTROLLER */
