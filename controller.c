@@ -567,7 +567,7 @@ process_input_line(controller_info_t *cntlr)
 {
     char *strtok_data;
     char *tok;
-    char *parms[4];
+    char *parms[5];
     int nparms;
     int rv = 0;
 
@@ -659,7 +659,7 @@ handle_yaml_doc(struct controller_info *cntlr)
     yaml_node_t *n, *n2, *n3, *k, *v;
     yaml_node_pair_t *p;
     yaml_node_item_t *t;
-    char *name = NULL, *parms[4], *id = NULL;
+    char *name = NULL, *parms[5], *id = NULL;
     int nparms = 0;
     int rv;
 
