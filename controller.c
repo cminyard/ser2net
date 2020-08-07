@@ -416,7 +416,7 @@ cntlr_report_conchange(const char *type, const char *con, const char *remaddr)
 
 	so->lock(cntlr->lock);
 	start_maint_op();
-	controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+	controller_outs(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
 	controller_outs(cntlr, type, NULL);
 	controller_indent(cntlr, 1);
 	controller_outputf(cntlr, "name", con);
@@ -436,7 +436,7 @@ process_command(controller_info_t *cntlr, const char *cmd, const char *id,
     bool yaml = cntlr->yaml;
 
     if (yaml) {
-	controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+	controller_outs(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
 	controller_outs(cntlr, "response", NULL);
 	controller_indent(cntlr, 1);
 	controller_outputf(cntlr, "name", cmd);
@@ -740,7 +740,7 @@ handle_yaml_doc(struct controller_info *cntlr)
     return rv;
 
  out_err:
-    controller_outputf(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
+    controller_outs(cntlr, NULL, "\r\n%YAML 1.1\r\n---\r\n");
     controller_outs(cntlr, "response", NULL);
     controller_indent(cntlr, 1);
     if (name)
