@@ -542,7 +542,11 @@ class Ser2netDaemon:
         return
 
     def read_callback(self, io, err, buf, auxdata):
-        print("Error from ser2net: " + str(buf, "utf8"));
+        if err:
+            print("Error from ser2net: " + err);
+            return 0
+
+        print("Error output from ser2net: " + str(buf, 'utf8'));
         return len(buf)
 
     def terminate(self):
