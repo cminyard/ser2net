@@ -688,15 +688,21 @@ init_port_data(port_info_t *port)
 static gensiods
 net_raddr_str(struct gensio *io, char *buf, gensiods buflen)
 {
-#if (defined(gensio_version_major) && (gensio_version_major > 2 || \
+    int err;
+
+    buf[0] = '0';
+    buf[1] = '\n';
+#if (defined(gensio_version_major) && (gensio_version_major > 2 ||	\
 	       (gensio_version_major == 2 && gensio_version_minor > 0)))
-    int err = gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
-			     GENSIO_CONTROL_RADDR, buf, &buflen);
+    err = gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
+			 GENSIO_CONTROL_RADDR, buf, &buflen);
 #else
-    int err = gensio_raddr_to_str(io, &buflen, buf, buflen);
+    err = gensio_raddr_to_str(io, &buflen, buf, buflen);
 #endif
-    if (err)
+    if (err) {
+	buf[0] = '\0';
 	buflen = 0;
+    }
 
     return buflen;
 }
