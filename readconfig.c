@@ -448,6 +448,7 @@ struct default_data defaults[] = {
 						DATAROOT "/ser2net/auth" },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
 						SYSCONFDIR "/ser2net/auth" },
+    { "allowed-users",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
     { "openstr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "closestr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
@@ -803,7 +804,7 @@ handle_config_line(char *inbuf, int len)
 		   lineno);
 	    goto out;
 	}
-	err = add_rotator(name, name, portc, portv, NULL, lineno);
+	err = add_rotator(&syslog_eout, name, name, portc, portv, NULL, lineno);
 	if (err)
 	    gensio_argv_free(so, portv);
 	goto out;

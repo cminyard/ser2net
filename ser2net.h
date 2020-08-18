@@ -22,6 +22,7 @@
 
 #include <gensio/gensio_selector.h>
 #include <gensio/gensio.h>
+#include <gensio/gensio_list.h>
 
 #include "absout.h"
 
@@ -58,7 +59,16 @@ int scan_int(const char *str);
 /*
  * Handle authorization events from accepters.
  */
-int handle_acc_auth_event(const char *authdir, int event, void *data);
+int handle_acc_auth_event(const char *authdir,
+			  const struct gensio_list *allowed_users,
+			  int event, void *data);
+
+/*
+ * Add to/free the list of allowed users.
+ */
+int add_allowed_users(struct gensio_list **users, const char *str,
+		      struct absout *eout);
+void free_user_list(struct gensio_list *users);
 
 extern struct absout syslog_absout;
 

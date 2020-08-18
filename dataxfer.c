@@ -401,6 +401,13 @@ struct port_info
     char *authdir;
 
     /*
+     * List of authorized users.  If NULL, all users are authorized.
+     * If no allowed users are specified, the default is taken.
+     */
+    struct gensio_list *allowed_users;
+    char *default_allowed_users;
+
+    /*
      * Delimiter for sending.
      */
     char *sendon;
@@ -656,6 +663,8 @@ init_port_data(port_info_t *port)
     port->connector_retry_time = find_default_int("connector-retry-time");
     port->accepter_retry_time = find_default_int("accepter-retry-time");
     if (find_default_str("authdir", &port->authdir))
+	return ENOMEM;
+    if (find_default_str("allowed-users", &port->default_allowed_users))
 	return ENOMEM;
     if (find_default_str("signature", &port->signaturestr))
 	return ENOMEM;
@@ -2673,6 +2682,8 @@ typedef struct rotator
     struct gensio_accepter *accepter;
 
     char *authdir;
+    struct gensio_list *allowed_users;
+    char *default_allowed_users;
 
     unsigned int accepter_retry_time;
 
@@ -2731,7 +2742,8 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
 	return rot_new_con(rot, data);
 
     default:
-	return handle_acc_auth_event(rot->authdir, event, data);
+	return handle_acc_auth_event(rot->authdir, rot->allowed_users,
+				     event, data);
     }
 }
 
@@ -2773,6 +2785,9 @@ free_rotator(rotator_t *rot)
 	gensio_acc_free(rot->accepter);
     if (rot->authdir)
 	free(rot->authdir);
+    free_user_list(rot->allowed_users);
+    if (rot->default_allowed_users)
+	free(rot->default_allowed_users);
     if (rot->name)
 	free(rot->name);
     if (rot->accstr)
@@ -2814,8 +2829,8 @@ rot_timeout(struct gensio_timer *timer, void *cb_data)
 }
 
 int
-add_rotator(const char *name, const char *accstr, int portc, const char **ports,
-	    const char **options, int lineno)
+add_rotator(struct absout *eout, const char *name, const char *accstr,
+	    int portc, const char **ports, const char **options, int lineno)
 {
     rotator_t *rot;
     int rv;
@@ -2826,21 +2841,18 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
     memset(rot, 0, sizeof(*rot));
 
     rot->name = strdup(name);
-    if (!rot->name) {
-	free_rotator(rot);
-	return ENOMEM;
-    }
+    if (!rot->name)
+	goto out_nomem;
 
     rot->accstr = strdup(accstr);
-    if (!rot->accstr) {
-	free_rotator(rot);
-	return ENOMEM;
-    }
+    if (!rot->accstr)
+	goto out_nomem;
 
-    if (find_default_str("authdir", &rot->authdir)) {
-	free_rotator(rot);
-	return ENOMEM;
-    }
+    if (find_default_str("authdir", &rot->authdir))
+	goto out_nomem;
+
+    if (find_default_str("allowed-users", &rot->default_allowed_users))
+	goto out_nomem;
 
     rot->accepter_retry_time = find_default_int("accepter-retry-time");
 
@@ -2854,11 +2866,16 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 		    free(rot->authdir);
 		rot->authdir = strdup(str);
 		if (!rot->authdir) {
-		    free_rotator(rot);
-		    syslog(LOG_ERR, "Out of memory allocating rotator"
-			   " authdir on line %d\n", lineno);
-		    return ENOMEM;
+		    eout->out(eout, "Out of memory allocating rotator"
+			      " authdir on line %d\n", lineno);
+		    goto out_nomem;
 		}
+		continue;
+	    } else if (gensio_check_keyvalue(options[i],
+					     "allowed-users", &str) > 0) {
+		rv = add_allowed_users(&rot->allowed_users, str, eout);
+		if (rv)
+		    goto out_err;
 		continue;
 	    } else if (gensio_check_keyuint(options[i], "accepter-retry-time",
 					    &rot->accepter_retry_time) > 0) {
@@ -2867,17 +2884,16 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
 		continue;
 	    }
 	    free_rotator(rot);
-	    syslog(LOG_ERR, "Invalid option %s for rotator on line %d\n",
-		   options[i], lineno);
+	    eout->out(eout, "Invalid option %s for rotator on line %d\n",
+		      options[i], lineno);
 	    return EINVAL;
 	}
     }
 
     rot->restart_timer = so->alloc_timer(so, rot_timeout, rot);
     if (!rot->restart_timer) {
-	syslog(LOG_ERR, "Unable to allocate timer on line %d", lineno);
-	rv = ENOMEM;
-	goto out;
+	eout->out(eout, "Unable to allocate timer on line %d", lineno);
+	goto out_nomem;
     }
 
     rot->portc = portc;
@@ -2886,9 +2902,21 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
     rv = str_to_gensio_accepter(rot->accstr, so,
 				handle_rot_child_event, rot, &rot->accepter);
     if (rv) {
-	syslog(LOG_ERR, "accepter was invalid on line %d", lineno);
-	goto out;
+	eout->out(eout, "accepter was invalid on line %d", lineno);
+	goto out_err;
     }
+
+    if (!rot->allowed_users && rot->default_allowed_users) {
+	rv = add_allowed_users(&rot->allowed_users, rot->default_allowed_users,
+			       eout);
+	if (rv)
+	    goto out_err;
+    }
+    if (rot->default_allowed_users) {
+	free(rot->default_allowed_users);
+	rot->default_allowed_users = NULL;
+    }
+
 
     rot->next = rotators;
     rotators = rot;
@@ -2897,18 +2925,22 @@ add_rotator(const char *name, const char *accstr, int portc, const char **ports,
     if (rv) {
 	gensio_time timeout = { rot->accepter_retry_time, 0 };
 
-	syslog(LOG_ERR, "Failed to start rotator on line %d: %s", lineno,
-	       gensio_err_to_str(rv));
+	eout->out(eout, "Failed to start rotator on line %d: %s", lineno,
+		  gensio_err_to_str(rv));
 	so->start_timer(rot->restart_timer, &timeout);
-	rv = 0; /* Don't error out, retry. */
+	/* Don't error out, retry. */
     }
 
- out:
-    if (rv) {
-	rot->portc = 0;
-	rot->portv = NULL;
-	free_rotator(rot);
-    }
+    return 0;
+
+ out_nomem:
+    rv = ENOMEM;
+ out_err:
+    /* If we fail, the user should free these. */
+    rot->portc = 0;
+    rot->portv = NULL;
+
+    free_rotator(rot);
     return rv;
 }
 
@@ -3045,7 +3077,8 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 	return port_new_con(port, data);
 
     default:
-	return handle_acc_auth_event(port->authdir, event, data);
+	return handle_acc_auth_event(port->authdir, port->allowed_users,
+				     event, data);
     }
 }
 
@@ -3142,6 +3175,9 @@ finish_free_port(port_info_t *port)
 	free(port->signaturestr);
     if (port->authdir)
 	free(port->authdir);
+    free_user_list(port->allowed_users);
+    if (port->default_allowed_users)
+	free(port->default_allowed_users);
     if (port->openstr)
 	free(port->openstr);
     if (port->closestr)
@@ -3910,6 +3946,10 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->authdir)
 	    free(port->authdir);
 	port->authdir = fval;
+    } else if (gensio_check_keyvalue(pos, "allowed-users", &val) > 0) {
+	rv = add_allowed_users(&port->allowed_users, val, eout);
+	if (rv)
+	    return -1;
     } else if (gensio_check_keyvalue(pos, "remaddr", &val) > 0) {
 	rv = port_add_remaddr(eout, port, val);
 	if (rv)
@@ -4211,6 +4251,18 @@ portconfig(struct absout *eout,
 	    eout->out(eout, "Out of memory appending to devname");
 	    goto errout;
 	}
+    }
+
+    if (!new_port->allowed_users && new_port->default_allowed_users) {
+	err = add_allowed_users(&new_port->allowed_users,
+				new_port->default_allowed_users,
+				eout);
+	if (err)
+	    goto errout;
+    }
+    if (new_port->default_allowed_users) {
+	free(new_port->default_allowed_users);
+	new_port->default_allowed_users = NULL;
     }
 
     err = str_to_gensio(new_port->devname, so, handle_dev_event, new_port,

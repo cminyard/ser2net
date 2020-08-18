@@ -433,6 +433,13 @@ port uness all connect backs have been established.
 .I authdir: <directory string>
 specified the authentication directory to use for this connection.
 
+.I allowed-users: <space separated list of names>
+The users that are allowed to use this connections.  This has no
+meaning if authentication is not enabled on the connections.  If this
+is not set or defaulted, all users are allowed.  If this is set to an
+empty set of users, then no users are allowed.  This may be specified
+more than once, each one adds more users.
+
 .SH "ROTATOR"
 A rotator allows a single network connection to connect to one of a
 number of connections.
@@ -460,7 +467,7 @@ options:
 .RE
 .RE
 
-A rotator has two possible options, "authdir", and
+A rotator has three possible options, "authdir", "allowed-users", and
 "accepter-retry-time", both same as connections.
 
 You should use YAML aliases for the connections.

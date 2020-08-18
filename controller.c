@@ -1076,7 +1076,7 @@ controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
 	return controller_acc_new_child(data);
 
     default:
-	return handle_acc_auth_event(controller_authdir, event, data);
+	return handle_acc_auth_event(controller_authdir, NULL, event, data);
     }
 }
 

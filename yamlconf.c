@@ -1024,7 +1024,7 @@ yhandle_mapping_end(struct yconf *y)
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "rotator"))
 		return -1;
-	    err = add_rotator(y->name, y->accepter, argc, argv,
+	    err = add_rotator(&y->sub_errout, y->name, y->accepter, argc, argv,
 			      (const char **) y->options, y->e.start_mark.line);
 	    if (err)
 		gensio_argv_free(so, argv);

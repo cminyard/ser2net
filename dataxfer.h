@@ -104,7 +104,7 @@ int devcfg_init(struct devio *io, struct absout *eout, const char *instr,
 				   const char *item),
 		void *data);
 
-int add_rotator(const char *name, const char *accstr,
+int add_rotator(struct absout *eout, const char *name, const char *accstr,
 		int portc, const char **ports,
 		const char **options, int lineno);
 
