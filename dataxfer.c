@@ -2779,10 +2779,12 @@ free_rotator(rotator_t *rot)
 	    free_count++;
     }
 
-    err = so->stop_timer_with_done(rot->restart_timer,
-				   rot_timer_shutdown_done, rot);
-    if (err != GE_TIMEDOUT)
-	free_count++;
+    if (rot->restart_timer) {
+	err = so->stop_timer_with_done(rot->restart_timer,
+				       rot_timer_shutdown_done, rot);
+	if (err != GE_TIMEDOUT)
+	    free_count++;
+    }
 
     if (free_count)
 	so->wait(rotator_shutdown_wait, free_count, NULL);
