@@ -33,14 +33,6 @@
 #include "dataxfer.h"
 #include "readconfig.h"
 
-/** BASED ON sshd.c FROM openssh.com */
-#ifdef HAVE_TCPD_H
-#include <tcpd.h>
-int allow_severity = LOG_INFO;
-int deny_severity = LOG_WARNING;
-static char *progname = "ser2net-control";
-#endif /* HAVE_TCPD_H */
-
 /* This file holds the code that runs the control port. */
 
 static struct gensio_lock *cntlr_lock;
@@ -1094,6 +1086,10 @@ controller_init(char *controller_port, const char * const *options,
     unsigned int i;
     const char *val;
     int rv;
+#ifdef GENSIO_ACC_CONTROL_TCPDNAME
+    char progname[1];
+    gensiods len;
+#endif
 
     if (controller_accepter) {
 	if (eout)
@@ -1155,6 +1151,30 @@ controller_init(char *controller_port, const char * const *options,
 	goto out;
     }
 
+#ifdef GENSIO_ACC_CONTROL_TCPDNAME
+    len = 0;
+    rv = gensio_acc_control(controller_accepter, GENSIO_CONTROL_DEPTH_FIRST,
+			    true, GENSIO_ACC_CONTROL_TCPDNAME, progname, &len);
+    if (rv == ENOTSUP) {
+	/* No TCP in the stack, doesn't matter. */
+	rv = 0;
+    } else {
+	if (rv == GE_NODATA) { /* The user didn't set it. */
+	    rv = gensio_acc_control(controller_accepter,
+				    GENSIO_CONTROL_DEPTH_FIRST,
+				    false, GENSIO_ACC_CONTROL_TCPDNAME,
+				    "ser2net-control", NULL);
+	}
+    }
+    if (rv) {
+	if (eout)
+	    eout->out(eout, "Error setting controller tcpdname: %s",
+		      gensio_err_to_str(rv));
+	else
+	    syslog(LOG_ERR, "Error setting controller tcpdname: %s",
+		      gensio_err_to_str(rv));
+    }
+#endif
     rv = gensio_acc_startup(controller_accepter);
     if (rv) {
 	if (eout)

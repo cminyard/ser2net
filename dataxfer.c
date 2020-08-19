@@ -56,12 +56,6 @@ typedef struct addrinfo gaddrinfo;
 #define SERIAL "term"
 #define NET    "tcp "
 
-/** BASED ON sshd.c FROM openssh.com */
-#ifdef HAVE_TCPD_H
-#include <tcpd.h>
-static char *progname = "ser2net";
-#endif /* HAVE_TCPD_H */
-
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_CLOSED			0 /* The accepter is disabled. */
 #define PORT_UNCONNECTED		1 /* The TCP port is not connected
