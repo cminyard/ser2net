@@ -640,51 +640,6 @@ first_live_net_con(port_info_t *port)
     return NULL;
 }
 
-static int
-init_port_data(port_info_t *port)
-{
-    port->enabled = false;
-
-    port->net_to_dev_state = PORT_CLOSED;
-    port->dev_to_net_state = PORT_CLOSED;
-    port->trace_read.fd = -1;
-    port->trace_write.fd = -1;
-    port->trace_both.fd = -1;
-
-    port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
-    port->kickolduser_mode = find_default_bool("kickolduser");
-    port->enable_chardelay = find_default_int("chardelay");
-    port->chardelay_scale = find_default_int("chardelay-scale");
-    port->chardelay_min = find_default_int("chardelay-min");
-    port->chardelay_max = find_default_int("chardelay-max");
-    port->dev_to_net.maxsize = find_default_int("dev-to-net-bufsize");
-    port->net_to_dev.maxsize = find_default_int("net-to-dev-bufsize");
-    port->max_connections = find_default_int("max-connections");
-    port->connector_retry_time = find_default_int("connector-retry-time");
-    port->accepter_retry_time = find_default_int("accepter-retry-time");
-    if (find_default_str("authdir", &port->authdir))
-	return ENOMEM;
-    if (find_default_str("allowed-users", &port->default_allowed_users))
-	return ENOMEM;
-    if (find_default_str("signature", &port->signaturestr))
-	return ENOMEM;
-    if (find_default_str("banner", &port->bannerstr))
-	return ENOMEM;
-    if (find_default_str("openstr", &port->openstr))
-	return ENOMEM;
-    if (find_default_str("closestr", &port->closestr))
-	return ENOMEM;
-    if (find_default_str("closeon", &port->closeon))
-	return ENOMEM;
-    if (find_default_str("sendon", &port->sendon))
-	return ENOMEM;
-
-    port->led_tx = NULL;
-    port->led_rx = NULL;
-
-    return 0;
-}
-
 static gensiods
 net_raddr_str(struct gensio *io, char *buf, gensiods buflen)
 {
@@ -4114,6 +4069,51 @@ process_connect_back(struct absout *eout, port_info_t *port,
     if (eout)
 	eout->out(eout, "Too many connect back remote addresses specified"
 		  " for the max-connections given");
+}
+
+static int
+init_port_data(port_info_t *port)
+{
+    port->enabled = false;
+
+    port->net_to_dev_state = PORT_CLOSED;
+    port->dev_to_net_state = PORT_CLOSED;
+    port->trace_read.fd = -1;
+    port->trace_write.fd = -1;
+    port->trace_both.fd = -1;
+
+    port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
+    port->kickolduser_mode = find_default_bool("kickolduser");
+    port->enable_chardelay = find_default_int("chardelay");
+    port->chardelay_scale = find_default_int("chardelay-scale");
+    port->chardelay_min = find_default_int("chardelay-min");
+    port->chardelay_max = find_default_int("chardelay-max");
+    port->dev_to_net.maxsize = find_default_int("dev-to-net-bufsize");
+    port->net_to_dev.maxsize = find_default_int("net-to-dev-bufsize");
+    port->max_connections = find_default_int("max-connections");
+    port->connector_retry_time = find_default_int("connector-retry-time");
+    port->accepter_retry_time = find_default_int("accepter-retry-time");
+    if (find_default_str("authdir", &port->authdir))
+	return ENOMEM;
+    if (find_default_str("allowed-users", &port->default_allowed_users))
+	return ENOMEM;
+    if (find_default_str("signature", &port->signaturestr))
+	return ENOMEM;
+    if (find_default_str("banner", &port->bannerstr))
+	return ENOMEM;
+    if (find_default_str("openstr", &port->openstr))
+	return ENOMEM;
+    if (find_default_str("closestr", &port->closestr))
+	return ENOMEM;
+    if (find_default_str("closeon", &port->closeon))
+	return ENOMEM;
+    if (find_default_str("sendon", &port->sendon))
+	return ENOMEM;
+
+    port->led_tx = NULL;
+    port->led_rx = NULL;
+
+    return 0;
 }
 
 /* Create a port based on a set of parameters passed in. */
