@@ -25,7 +25,7 @@
 #include <gensio/argvutils.h>
 #include "ser2net.h"
 #include "port.h"
-#include "readconfig.h"
+#include "defaults.h"
 
 typedef struct rotator
 {

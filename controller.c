@@ -31,7 +31,7 @@
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
-#include "readconfig.h"
+#include "defaults.h"
 
 /* This file holds the code that runs the control port. */
 

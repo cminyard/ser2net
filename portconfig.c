@@ -27,6 +27,7 @@
 #include "port.h"
 #include "absout.h"
 #include "readconfig.h"
+#include "defaults.h"
 #include "led.h"
 
 #ifdef gensio_version_major
