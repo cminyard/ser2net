@@ -59,3 +59,11 @@ gbuf_init(struct gbuf *buf, gensiods size)
     gbuf_reset(buf);
     return 0;
 }
+
+void
+gbuf_free(struct gbuf *buf)
+{
+    if (buf->buf)
+	free(buf->buf);
+    free(buf);
+}

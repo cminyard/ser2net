@@ -39,4 +39,6 @@ void gbuf_reset(struct gbuf *buf);
 
 int gbuf_init(struct gbuf *buf, gensiods size);
 
+void gbuf_free(struct gbuf *buf);
+
 #endif /* GBUF */

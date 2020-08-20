@@ -21,9 +21,7 @@
    ports and the TCP ports. */
 
 #include <stdlib.h>
-#include <stdbool.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <errno.h>
 #include <syslog.h>
 #include <string.h>
@@ -31,12 +29,10 @@
 #include <fcntl.h>
 #include <assert.h>
 #include <time.h>
-#include <limits.h>
 #include <sys/time.h>
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
-#include <gensio/argvutils.h>
 
 #include "port.h"
 #include "ser2net.h"
@@ -53,11 +49,6 @@ static int handle_net_event(struct gensio *net, void *user_data,
 			    int event, int err,
 			    unsigned char *buf, gensiods *buflen,
 			    const char *const *auxdata);
-
-struct gensio_lock *ports_lock;
-port_info_t *ports = NULL; /* Linked list of ports. */
-port_info_t *new_ports = NULL; /* New ports during config/reconfig. */
-port_info_t *new_ports_end = NULL;
 
 static void shutdown_one_netcon(net_info_t *netcon, const char *reason);
 
@@ -87,40 +78,6 @@ num_connected_net(port_info_t *port)
 
     return count;
 }
-
-net_info_t *
-first_live_net_con(port_info_t *port)
-{
-    net_info_t *netcon;
-
-    for_each_connection(port, netcon) {
-	if (netcon->net)
-	    return netcon;
-    }
-
-    return NULL;
-}
-
-gensiods
-net_raddr(struct gensio *io, struct sockaddr_storage *addr, gensiods *socklen)
-{
-    *socklen = sizeof(*addr);
-#if (defined(gensio_version_major) && (gensio_version_major > 2 || \
-	       (gensio_version_major == 2 && gensio_version_minor > 0)))
-    return gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST, true,
-			  GENSIO_CONTROL_RADDR_BIN,
-			  (char *) addr, socklen);
-#else
-    return gensio_get_raddr(io, (char *) addr, socklen);
-#endif
-}
-
-void
-reset_timer(net_info_t *netcon)
-{
-    netcon->timeout_left = netcon->port->timeout;
-}
-
 
 static int
 timestamp(trace_info_t *t, char *buf, int size)
@@ -723,8 +680,7 @@ handle_dev_fd_devstr_write(port_info_t *port)
     dev_fd_write(port, port->devstr);
     if (gbuf_cursize(port->devstr) == 0) {
 	port->dev_write_handler = handle_dev_fd_normal_write;
-	free(port->devstr->buf);
-	free(port->devstr);
+	gbuf_free(port->devstr);
 	port->devstr = NULL;
 
 	/* Send out any data we got on the TCP port. */
@@ -894,8 +850,7 @@ handle_net_fd_write_ready(net_info_t *netcon, struct gensio *net)
 	if (rv <= 0)
 	    goto out_unlock;
 
-	free(netcon->banner->buf);
-	free(netcon->banner);
+	gbuf_free(netcon->banner);
 	netcon->banner = NULL;
     }
 
@@ -1270,33 +1225,6 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 
 static void handle_net_fd_closed(struct gensio *net, void *cb_data);
 
-bool
-port_in_use(port_info_t *port)
-{
-    return (port->net_to_dev_state != PORT_UNCONNECTED &&
-	    port->net_to_dev_state != PORT_CLOSED);
-}
-
-/* Checks to see if some other port has the same device in use.  Must
-   be called with ports_lock held. */
-int
-is_device_already_inuse(port_info_t *check_port)
-{
-    port_info_t *port = ports;
-
-    while (port != NULL) {
-	if (port != check_port) {
-	    if ((strcmp(port->devname, check_port->devname) == 0)
-				&& port_in_use(port)) {
-		return 1;
-	    }
-	}
-	port = port->next;
-    }
-
-    return 0;
-}
-
 static void
 open_trace_file(port_info_t *port,
                 trace_info_t *t,
@@ -1493,10 +1421,8 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
     extract_bps_bpc(port);
     recalc_port_chardelay(port);
 
-    if (port->devstr) {
-	free(port->devstr->buf);
-	free(port->devstr);
-    }
+    if (port->devstr)
+	gbuf_free(port->devstr);
     port->devstr = process_str_to_buf(port, NULL, port->openstr);
     if (port->devstr)
 	port->dev_write_handler = handle_dev_fd_devstr_write;
@@ -1555,10 +1481,8 @@ setup_port(port_info_t *port, net_info_t *netcon)
 	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %s",
 	       port->name, gensio_err_to_str(err));
 
-    if (netcon->banner) {
-	free(netcon->banner->buf);
-	free(netcon->banner);
-    }
+    if (netcon->banner)
+	gbuf_free(netcon->banner);
     netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
 
     if (num_connected_net(port) == 1 && (!port->connbacks || !port->io_open)) {
@@ -1791,8 +1715,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
     }
     gbuf_reset(&port->net_to_dev);
     if (port->devstr) {
-	free(port->devstr->buf);
-	free(port->devstr);
+	gbuf_free(port->devstr);
 	port->devstr = NULL;
     }
     gbuf_reset(&port->dev_to_net);
@@ -1947,10 +1870,8 @@ start_shutdown_port_io(port_info_t *port)
 	return;
     }
 
-    if (port->devstr) {
-	free(port->devstr->buf);
-	free(port->devstr);
-    }
+    if (port->devstr)
+	gbuf_free(port->devstr);
     port->devstr = process_str_to_buf(port, NULL, port->closestr);
     port->dev_write_handler = handle_dev_fd_close_write;
     gensio_set_write_callback_enable(port->io, true);
@@ -1972,8 +1893,7 @@ netcon_finish_shutdown(net_info_t *netcon)
     netcon->bytes_sent = 0;
     netcon->write_pos = 0;
     if (netcon->banner) {
-	free(netcon->banner->buf);
-	free(netcon->banner);
+	gbuf_free(netcon->banner);
 	netcon->banner = NULL;
     }
 

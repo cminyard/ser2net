@@ -330,19 +330,21 @@ struct port_info
 /* In dataxfer.c */
 int dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
 			bool do_telnet);
-net_info_t *first_live_net_con(port_info_t *port);
-bool port_in_use(port_info_t *port);
-void reset_timer(net_info_t *netcon);
 int startup_port(struct absout *eout, port_info_t *port);
 int shutdown_port(port_info_t *port, const char *errreason);
 void handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon);
-gensiods net_raddr(struct gensio *io, struct sockaddr_storage *addr,
-		   gensiods *socklen);
-int is_device_already_inuse(port_info_t *check_port);
+
+/* In port.c */
 extern struct gensio_lock *ports_lock;
 extern port_info_t *ports;
 extern port_info_t *new_ports;
 extern port_info_t *new_ports_end;
+net_info_t *first_live_net_con(port_info_t *port);
+bool port_in_use(port_info_t *port);
+int is_device_already_inuse(port_info_t *check_port);
+gensiods net_raddr(struct gensio *io, struct sockaddr_storage *addr,
+		   gensiods *socklen);
+void reset_timer(net_info_t *netcon);
 #define for_each_connection(port, netcon)			\
     for (netcon = port->netcons;				\
 	 netcon < &(port->netcons[port->max_connections]);	\
