@@ -72,4 +72,6 @@ void free_user_list(struct gensio_list *users);
 
 extern struct absout syslog_absout;
 
+void do_gensio_log(const char *name, struct gensio_loginfo *i);
+
 #endif /* SER2NET_H */

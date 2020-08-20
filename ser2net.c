@@ -135,6 +135,31 @@ stderr_eout(struct absout *e, const char *str, ...)
 }
 static struct absout stderr_absout = { .out = stderr_eout };
 
+static int
+gensio_log_level_to_syslog(int gloglevel)
+{
+    switch (gloglevel) {
+    case GENSIO_LOG_FATAL:
+	return LOG_EMERG;
+    case GENSIO_LOG_ERR:
+	return LOG_ERR;
+    case GENSIO_LOG_WARNING:
+	return LOG_WARNING;
+    case GENSIO_LOG_INFO:
+	return LOG_INFO;
+    }
+    return LOG_ERR;
+}
+
+void
+do_gensio_log(const char *name, struct gensio_loginfo *i)
+{
+    char buf[256];
+
+    vsnprintf(buf, sizeof(buf), i->str, i->args);
+    syslog(gensio_log_level_to_syslog(i->level), "%s: %s", name, buf);
+}
+
 static FILE *
 fopen_config_file(bool *is_yaml)
 {
