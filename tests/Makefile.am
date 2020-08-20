@@ -28,7 +28,8 @@ TESTS = test_xfer_basic_tcp.py test_xfer_basic_udp.py test_xfer_basic_stdio.py \
 	test_xfer_large_ipmisol.py test_xfer_large_sctp.py \
 	test_xfer_large_udp.py
 
-EXTRA_DIST = $(TESTS) utils.py dataxfer.py ipmisimdaemon.py termioschk.py
+EXTRA_DIST = $(TESTS) utils.py dataxfer.py ipmisimdaemon.py termioschk.py \
+	make_keys
 
 clean-local:
 	rm -rf ca
