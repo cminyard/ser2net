@@ -42,6 +42,7 @@
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "led.h"
+#include "gbuf.h"
 
 #ifdef gensio_version_major
 /* When the version info was added, the type was changed. */
@@ -81,51 +82,6 @@ typedef struct trace_info_s
 
 typedef struct port_info port_info_t;
 typedef struct net_info net_info_t;
-
-struct gbuf {
-    unsigned char *buf;
-    gensiods maxsize;
-    gensiods cursize;
-    gensiods pos;
-};
-
-static gensiods
-gbuf_room_left(struct gbuf *buf) {
-    return buf->maxsize - buf->cursize;
-}
-
-static void
-gbuf_append(struct gbuf *buf, unsigned char *data, gensiods len)
-{
-    memcpy(buf->buf + buf->pos, data, len);
-    buf->cursize += len;
-    buf->pos += len;
-}
-
-static gensiods
-gbuf_cursize(struct gbuf *buf)
-{
-    return buf->cursize;
-}
-
-static void
-gbuf_reset(struct gbuf *buf)
-{
-    buf->cursize = 0;
-    buf->pos = 0;
-}
-
-static int
-gbuf_init(struct gbuf *buf, gensiods size)
-{
-    buf->buf = malloc(size);
-    if (!buf->buf)
-	return ENOMEM;
-
-    buf->maxsize = size;
-    gbuf_reset(buf);
-    return 0;
-}
 
 struct net_info {
     port_info_t	   *port;		/* My port. */
