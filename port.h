@@ -328,11 +328,14 @@ struct port_info
 };
 
 /* In dataxfer.c */
-int dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
-			bool do_telnet);
-int startup_port(struct absout *eout, port_info_t *port);
-int shutdown_port(port_info_t *port, const char *errreason);
 void handle_new_net(port_info_t *port, struct gensio *net, net_info_t *netcon);
+int handle_dev_event(struct gensio *io, void *user_data, int event, int err,
+		     unsigned char *buf, gensiods *buflen,
+		     const char *const *auxdata);
+int port_dev_enable(port_info_t *port);
+int gbuf_write(port_info_t *port, struct gbuf *buf);
+void report_disconnect(port_info_t *port, net_info_t *netcon);
+void port_send_timeout(struct gensio_timer *timer, void *data);
 
 /* In port.c */
 extern struct gensio_lock *ports_lock;
@@ -342,6 +345,7 @@ extern port_info_t *new_ports_end;
 net_info_t *first_live_net_con(port_info_t *port);
 bool port_in_use(port_info_t *port);
 int is_device_already_inuse(port_info_t *check_port);
+int num_connected_net(port_info_t *port);
 gensiods net_raddr(struct gensio *io, struct sockaddr_storage *addr,
 		   gensiods *socklen);
 void reset_timer(net_info_t *netcon);
@@ -349,6 +353,12 @@ void reset_timer(net_info_t *netcon);
     for (netcon = port->netcons;				\
 	 netcon < &(port->netcons[port->max_connections]);	\
 	 netcon++)
+void shutdown_one_netcon(net_info_t *netcon, const char *reason);
+int dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
+			bool do_telnet);
+int startup_port(struct absout *eout, port_info_t *port);
+int shutdown_port(port_info_t *port, const char *errreason);
+void port_start_timer(port_info_t *port);
 
 /* In portconfig.c */
 bool remaddr_check(const struct port_remaddr *list,
