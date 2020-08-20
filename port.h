@@ -368,4 +368,12 @@ gensiods net_raddr_str(struct gensio *io, char *buf, gensiods buflen);
 void shutdown_rotators(void);
 int init_rotators(void);
 
+/* In trace.c */
+void header_trace(port_info_t *port, net_info_t *netcon);
+void footer_trace(port_info_t *port, char *type, const char *reason);
+void do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
+	      gensiods buf_len, const char *prefix);
+void setup_trace(port_info_t *port);
+void shutdown_trace(port_info_t *port);
+
 #endif /* PORT */
