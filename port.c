@@ -1,3 +1,9 @@
+/*
+ *  ser2net - A program for allowing telnet connection to serial ports
+ *  Copyright (C) 2020  Corey Minyard <minyard@acm.org>
+ *
+ *  SPDX-License-Identifier: GPL-2.0-only
+ */
 
 #include <stdlib.h>
 #include <string.h>

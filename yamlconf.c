@@ -1,20 +1,8 @@
 /*
  *  ser2net - A program for allowing telnet connection to serial ports
- *  Copyright (C) 2019  Corey Minyard <minyard@acm.org>
+ *  Copyright (C) 2001-2020  Corey Minyard <minyard@acm.org>
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *  SPDX-License-Identifier: GPL-2.0-only
  */
 
 #include <stdio.h>
@@ -399,7 +387,6 @@ add_option(struct yconf *y, const char *name, const char *option,
 	free(y->options);
 	y->options = new_options;
 	y->options_len = new_len;
-	    
     }
 
     if (name) {
@@ -441,7 +428,6 @@ add_connection(struct yconf *y, const char *connection, const char *place)
 	free(y->connections);
 	y->connections = new_connections;
 	y->connections_len = new_len;
-	    
     }
 
     if (connection) {
@@ -792,7 +778,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	    goto out_err;
 	}
 	break;
-	    
+
     case IN_MAIN_MAP_KEYVAL:
 	if (setstr(KEYVAL_OFFSET(y), scalar, y->map_info->name,
 		   y->keyval_info->name, y))
