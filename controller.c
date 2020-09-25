@@ -1143,7 +1143,7 @@ controller_init(char *controller_port, const char * const *options,
     len = 0;
     rv = gensio_acc_control(controller_accepter, GENSIO_CONTROL_DEPTH_FIRST,
 			    true, GENSIO_ACC_CONTROL_TCPDNAME, progname, &len);
-    if (rv == ENOTSUP) {
+    if (rv == GE_NOTSUP) {
 	/* No TCP in the stack, doesn't matter. */
 	rv = 0;
     } else {
