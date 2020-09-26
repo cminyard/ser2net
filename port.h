@@ -9,6 +9,7 @@
 #define PORT
 
 #include <netdb.h>
+#include <sys/time.h>
 #include "gbuf.h"
 #include "absout.h"
 
