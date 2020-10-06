@@ -57,6 +57,6 @@ PKG_CHECK_MODULES(GENSIO, libgensio, [LIBS=$GENSIO_LIBS],
 AC_CHECK_HEADER(yaml.h, [],
    [AC_MSG_ERROR([yaml.h not found, please install libyaml dev package])])
 AC_CHECK_LIB(yaml, yaml_document_initialize, [],
-   [AC_MSG_ERROR([libyaml won't link, please install gensio dev package])])
+   [AC_MSG_ERROR([libyaml won't link, please install libyaml dev package])])
 
 AC_OUTPUT([Makefile tests/Makefile])
