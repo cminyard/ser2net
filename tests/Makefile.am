@@ -5,7 +5,7 @@ utst_builddir = $(shell readlink -f $(top_builddir))
 utst_srcdir = $(shell readlink -f $(top_srcdir))
 
 AM_TESTS_ENVIRONMENT = \
-    LD_LIBRARY_PATH=$(prefix)/lib; export LD_LIBRARY_PATH; \
+    LD_LIBRARY_PATH=$(prefix)/lib:$(LD_LIBRARY_PATH); export LD_LIBRARY_PATH; \
     TESTPATH=$(utst_srcdir)/tests; export TESTPATH; \
     SER2NET_EXEC=$(utst_builddir)/ser2net; export SER2NET_EXEC; \
     if [ ! -e ca ]; then \
