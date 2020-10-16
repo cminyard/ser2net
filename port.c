@@ -294,10 +294,6 @@ derive_mdns_type(port_info_t *port)
 	    ntype = "_iostream._udp";
 	    break;
 	}
-	if (strcmp(type, "sctp") == 0) {
-	    ntype = "_iostream._sctp";
-	    break;
-	}
 	type = gensio_acc_get_type(port->accepter, i);
     }
     return strdup(ntype);
