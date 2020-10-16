@@ -848,6 +848,7 @@ init_port_data(port_info_t *port)
     port->led_rx = NULL;
 
 #ifdef DO_MDNS
+    port->mdns = find_default_bool("mdns");
     port->mdns_interface = find_default_int("mdns-interface");
     if (find_default_str("mdns-type", &port->mdns_type))
 	return ENOMEM;
