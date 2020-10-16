@@ -440,6 +440,36 @@ is not set or defaulted, all users are allowed.  If this is set to an
 empty set of users, then no users are allowed.  This may be specified
 more than once, each one adds more users.
 
+.I mdns: true|false
+Enables/disables mdns support for the connection.
+
+.I mdns-interface: <num>
+Sets the specific network interface to advertise the device.  Defaults
+to -1, which means all network interfaces.
+
+.I mdns-nettype: unspec|ipv4|ipv6
+Sets which network type to provide for the device advertisement.
+Defaults to unspec, which means do ipv4 and ipv6.
+
+.I mdns-name: <string>
+Sets the name in the mDNS advertisement.  Defaults to the connection name.
+
+.I mdns-type: <string>
+Sets the type in the mDNS advertisement.  Defaults to "_iostream._xxx"
+where xxx is either tcp, udp # # or sctp base on the gensio type.
+
+.I mdns-domain: <string>
+Sets the name in the mDNS advertisement.  Defaults to the system
+setting.  Don't set this unless you really know what you are doing.
+
+.I mdns-host: <string>
+Sets the host in the mDNS advertisement.  Defaults to the system
+setting.  Don't set this unless you really know what you are doing.
+
+.I mdns-txt: <string>
+Adds a text string to the mDNS advertisement.  The string should be in
+the form "name=value".  You can put anything you want in the strings.
+
 .SH "ROTATOR"
 A rotator allows a single network connection to connect to one of a
 number of connections.
@@ -543,18 +573,15 @@ You must supply the class, you cannot delete base defaults.
 
 The following default values are specific to ser2net, given with their
 default values:
-
 .TP
 .B telnet_brk_on_sync: false
 If a telnet is received, send a break on the connected gensio (if
 applicable).  By default data is flushed until the data mark, but no
 break is sent.
-
 .TP
 .B kickolduser: false
 If a new user comes in on a connection that already has a user, kick
 off the previous user.
-
 .TP
 .B chardelay: true
 Enable asmall wait after each character received on the serial
@@ -563,7 +590,6 @@ the time it takes to receive 2 serial port characters, or at least
 1000us, before sending on the TCP port.  This allows more efficient
 use of network resources when receiving large amounts of data, but
 gives reasonable interactivity.
-
 .TP
 .B chardelay-scale: 20
 sets the number of serial port characters, in tenths of a character,
@@ -577,17 +603,14 @@ sets the minimum delay that ser2net will wait, in microseconds.  If
 the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.  This can range from 1-100000.
-
 .TP
 .B net-to-dev-bufsize: 64
 sets the size of the buffer reading from the network port and writing to the
 serial device.
-
 .TP
 .B dev-to-net-bufsize: 64
 sets the size of the buffer reading from the serial device and writing
 to the network port.
-
 .TP
 .B max-connections: 1
 set the maximum number of connections that can be made on this
@@ -595,7 +618,6 @@ particular TCP port.  If you make more than one connection to the same
 port, each ports output goes to the device, and the device output goes
 to all ports simultaneously.  See "MULTIPLE CONNECTIONS" below.
 for details.
-
 .TP
 .B remaddr: [!]<addr>[;[!]<addr>[;...]]
 specifies the allowed remote connections, where the addr is a standard
@@ -608,17 +630,26 @@ address.  If a connect back address is specified, one of the network
 connections (see max-connections) is reserved for that address.  If
 data comes in on the device, ser2net will attempt to connect to the
 address.  This works on TCP and UDP.
-
 .TP
 .B authdir: /usr/share/ser2net/auth
 The authentication directory for ser2net.  The AUTHENTICATION for more
 details.
-
 .TP
 .B authdir-admin: /etc/ser2net/auth
 The authentication directory for ser2net for admin connections.  The
 "ADMIN_CONNECTIONS" for more details.
-
+.TP
+.B mdns-interface: -1
+The default mDNS interface.
+.TP
+.B mdns-type: <NULL>
+The default mDNS type.
+.TP
+.B mdns-domain: <NULL>
+The default mDNS domain.
+.TP
+.B mdns-host: <NULL>
+The default mDNS host.
 .SH ADMIN CONNECTIONS
 There is an admin accepter that you can define for ser2net, it lets you
 log in, look at status, and change some things.  See "ADMIN INTERFACE"

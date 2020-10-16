@@ -25,12 +25,16 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <errno.h>
 #include <syslog.h>
 #include <assert.h>
 #include "ser2net.h"
 #include "port.h"
 #include "gbuf.h"
+#include <gensio/gensio_mdns.h>
+#include <gensio/argvutils.h>
+#include <gensio/gensio_err.h>
 
 struct gensio_lock *ports_lock;
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -271,6 +275,109 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
     }
 }
 
+#ifdef DO_MDNS
+static struct gensio_mdns *mdns;
+
+static void
+mdns_setup(struct absout *eout, port_info_t *port)
+{
+    int err;
+    char portnum_str[20];
+    gensiods portnum_len = sizeof(portnum_str);
+
+    if (!mdns || !port->mdns)
+	return;
+
+    if (!port->mdns_port) {
+	err = gensio_acc_control(port->accepter, GENSIO_CONTROL_DEPTH_FIRST,
+				 true, GENSIO_ACC_CONTROL_LPORT, portnum_str,
+				 &portnum_len);
+	if (err) {
+	    eout->out(eout, "Can't get mdns port for device %d: %s",
+		      port->name, gensio_err_to_str(err));
+	    return;
+	}
+	port->mdns_port = strtoul(portnum_str, NULL, 0);
+    }
+
+    if (!port->mdns_type) {
+	/* Get a mdns type based on the gensio. */
+	unsigned int i;
+	const char *type, *mtype = "_iostream._tcp";
+
+	type = gensio_acc_get_type(port->accepter, 0);
+	for (i = 1; type; i++) {
+	    if (strcmp(type, "tcp") == 0)
+		break;
+	    if (strcmp(type, "udp") == 0) {
+		mtype = "_iostream._udp";
+		break;
+	    }
+	    if (strcmp(type, "sctp") == 0) {
+		mtype = "_iostream._sctp";
+		break;
+	    }
+	    type = gensio_acc_get_type(port->accepter, 0);
+	}
+	port->mdns_type = strdup(mtype);
+	if (!port->mdns_type) {
+	    eout->out(eout, "Can't alloc mdns type for %d: out of memory");
+	    return;
+	}
+    }
+
+    if (!port->mdns_name) {
+	port->mdns_name = strdup(port->name);
+	if (!port->mdns_name) {
+	    eout->out(eout, "Can't alloc mdns name for %d: out of memory");
+	    return;
+	}
+    }
+
+    /*
+     * Always stick on the NULL, that doesn't update argc so it's safe,
+     * a new txt will just write over the NULL we added.
+     */
+    err = gensio_argv_append(so, &port->mdns_txt, NULL,
+			     &port->mdns_txt_args, &port->mdns_txt_argc, true);
+    if (err) {
+	eout->out(eout, "Error terminating mdns-txt: %s",
+		  gensio_err_to_str(err));
+	return;
+    }
+
+    err = gensio_mdns_add_service(mdns, port->mdns_interface,
+				  port->mdns_nettype,
+				  port->mdns_name, port->mdns_type,
+				  port->mdns_domain, port->mdns_host,
+				  port->mdns_port, port->mdns_txt,
+				  &port->mdns_service);
+    if (err)
+	eout->out(eout, "Can't add mdns service for device %d: %s",
+		  port->name, gensio_err_to_str(err));
+}
+
+static void
+mdns_shutdown(port_info_t *port)
+{
+    if (port->mdns_service)
+	gensio_mdns_remove_service(port->mdns_service);
+    port->mdns_service = NULL;
+}
+
+#else
+
+static void
+mdns_setup(struct absout *eout, port_info_t *port)
+{
+}
+
+static void
+mdns_shutdown(port_info_t *port)
+{
+}
+#endif /* DO_MDNS */
+
 int
 startup_port(struct absout *eout, port_info_t *port)
 {
@@ -289,6 +396,8 @@ startup_port(struct absout *eout, port_info_t *port)
     }
     port->dev_to_net_state = PORT_UNCONNECTED;
     port->net_to_dev_state = PORT_UNCONNECTED;
+
+    mdns_setup(eout, port);
 
     if (port->connbacks) {
 	err = port_dev_enable(port);
@@ -390,6 +499,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 	    check_port_new_net(port, netcon);
     } else {
 	/* Port was disabled, shut it down. */
+	mdns_shutdown(port);
 	gensio_acc_shutdown(port->accepter, NULL, NULL);
 	call_port_op_done(port);
     }
@@ -1027,6 +1137,13 @@ init_dataxfer(void)
 	rv = ENOMEM;
 	goto out;
     }
+
+#ifdef DO_MDNS
+    rv = gensio_alloc_mdns(so, &mdns);
+    if (rv)
+	/* Not fatal */
+	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(rv));
+#endif /* DO_MDNS */
 
     rv = init_rotators();
 

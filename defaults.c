@@ -78,6 +78,11 @@ static struct default_data defaults[] = {
     { "closeon",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "banner",		GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "sendon",		GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "mdns-type",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "mdns-domain",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "mdns-host",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "mdns-interface",	GENSIO_DEFAULT_INT,	.min=-1, .max=100000,
+					.def.intval = -1},
     { NULL }
 };
 

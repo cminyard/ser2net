@@ -202,6 +202,26 @@ define: &confver 1.0
 #     banner: '''a Special Banner \d'''
 #     closeon: 'ctrl-a\001nil\000'
 
+# # An example showing mDNS support.  You must add "mdns: true" to enable
+# # mDNS on a port to enable it.  By default it uses the name for the mDNS
+# # name and "_iostream._xxx" for the type, where xxx is either tcp, udp
+# # or sctp base on the gensio type.  Everything else defaults.  Don't
+# # set mdns-host or mdns-domain unless you know what you are doing.
+# # mdns-txt can be specified multiple times to add multiple strings.
+# connection: &rack-3-slot-5
+#   accepter: tcp,2034
+#   connector: echo
+#   options:
+#     mdns: true
+#     mdns-interface: -1
+#     mdns-nettype: unspec
+#     mdns-name: rack-3-slot-5
+#     mdns-type: "_iostream._tcp"
+#     mdns-domain: "local"
+#     mdns-host: "myhost.local"
+#     mdns-txt: "server=ser2net"
+#     mdns-txt: "type=echo"
+
 # # An example showing all options and their defaults.  Note that empty
 # # strings are ok for most strings, but not for things that take filesname
 # # or are required to be aliases.
@@ -243,3 +263,11 @@ define: &confver 1.0
 #     closeon:
 #     connector-retry-time: 10
 #     accepter-retry-time: 10
+#     mdns: false
+#     mdns-interface: -1
+#     mdns-nettype: unspec
+#     mdns-name: con7
+#     mdns-type: "_iostream._tcp"
+#     mdns-domain: <NULL>
+#     mdns-host: <NULL>
+#     mdns-txt: <NULL>

@@ -30,6 +30,12 @@
 #include <sys/time.h>
 #include "gbuf.h"
 #include "absout.h"
+#include <gensio/gensio.h>
+
+#if (defined(gensio_version_major) && (gensio_version_major > 2 ||	\
+     (gensio_version_major == 2 && gensio_version_minor >= 2)))
+#define DO_MDNS
+#endif
 
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_CLOSED			0 /* The accepter is disabled. */
@@ -332,6 +338,24 @@ struct port_info
     char *sendon;
     gensiods sendon_pos;
     gensiods sendon_len;
+
+#ifdef DO_MDNS
+    /*
+     * mdns info
+     */
+    bool mdns;
+    unsigned int mdns_port;
+    int mdns_interface;
+    int mdns_nettype;
+    char *mdns_name;
+    char *mdns_type;
+    char *mdns_domain;
+    char *mdns_host;
+    const char **mdns_txt;
+    gensiods mdns_txt_argc;
+    gensiods mdns_txt_args;
+    struct gensio_mdns_service *mdns_service;
+#endif /* DO_MDNS */
 };
 
 /* In dataxfer.c */

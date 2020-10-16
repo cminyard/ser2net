@@ -29,6 +29,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <gensio/gensio.h>
+#include <gensio/argvutils.h>
 #include "ser2net.h"
 #include "port.h"
 #include "absout.h"
@@ -330,6 +331,18 @@ finish_free_port(port_info_t *port)
 	free(port->orig_devname);
     if (port->sendon)
 	free(port->sendon);
+#ifdef DO_MDNS
+    if (port->mdns_name)
+	free(port->mdns_name);
+    if (port->mdns_type)
+	free(port->mdns_type);
+    if (port->mdns_domain)
+	free(port->mdns_domain);
+    if (port->mdns_host)
+	free(port->mdns_host);
+    if (port->mdns_txt)
+	gensio_argv_free(so, port->mdns_txt);
+#endif /* DO_MDNS */
     free(port);
 }
 
@@ -362,16 +375,19 @@ free_port(port_info_t *port)
     port->free_count = 1;
 
     /* Make sure all the timers are stopped. */
-    err = so->stop_timer_with_done(port->send_timer,
-				   gen_timer_shutdown_done, port);
-    if (err != GE_TIMEDOUT)
-	port->free_count++;
+    if (port->send_timer) {
+	err = so->stop_timer_with_done(port->send_timer,
+				       gen_timer_shutdown_done, port);
+	if (err != GE_TIMEDOUT)
+	    port->free_count++;
+    }
 
-    err = so->stop_timer_with_done(port->timer,
-				   gen_timer_shutdown_done, port);
-    if (err != GE_TIMEDOUT)
-	port->free_count++;
-
+    if (port->timer) {
+	err = so->stop_timer_with_done(port->timer,
+				       gen_timer_shutdown_done, port);
+	if (err != GE_TIMEDOUT)
+	    port->free_count++;
+    }
     finish_free_port(port); /* Releases lock */
 }
 
@@ -452,6 +468,15 @@ update_str_val(const char *str, char **outstr, const char *name,
     *outstr = fval;
     return 0;
 }
+
+#ifdef DO_MDNS
+static struct gensio_enum_val mdns_nettypes[] = {
+    { "unspec", GENSIO_NETTYPE_UNSPEC },
+    { "ipv4", GENSIO_NETTYPE_IPV4 },
+    { "ipv6", GENSIO_NETTYPE_IPV6 },
+    { NULL }
+};
+#endif /* DO_MDNS */
 
 static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
@@ -635,6 +660,63 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	    free(port->sendon);
 	port->sendon = fval;
 	port->sendon_len = len;
+#ifdef DO_MDNS
+    } else if (gensio_check_keybool(pos, "mdns",
+				    &port->mdns) > 0) {
+    } else if (gensio_check_keyuint(pos, "mdns-port",
+				    &port->mdns_port) > 0) {
+    } else if (gensio_check_keyint(pos, "mdns-interface",
+				   &port->mdns_interface) > 0) {
+    } else if (gensio_check_keyenum(pos, "mdns-nettype",
+				    mdns_nettypes,
+				    &port->mdns_nettype) > 0) {
+    } else if (gensio_check_keyvalue(pos, "mdns-name", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating mdns-name");
+	    return -1;
+	}
+	if (port->mdns_name)
+	    free(port->mdns_name);
+	port->mdns_name = fval;
+    } else if (gensio_check_keyvalue(pos, "mdns-type", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating mdns-type");
+	    return -1;
+	}
+	if (port->mdns_type)
+	    free(port->mdns_type);
+	port->mdns_type = fval;
+    } else if (gensio_check_keyvalue(pos, "mdns-domain", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating mdns-domain");
+	    return -1;
+	}
+	if (port->mdns_domain)
+	    free(port->mdns_domain);
+	port->mdns_domain = fval;
+    } else if (gensio_check_keyvalue(pos, "mdns-host", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating mdns-host");
+	    return -1;
+	}
+	if (port->mdns_host)
+	    free(port->mdns_host);
+	port->mdns_host = fval;
+    } else if (gensio_check_keyvalue(pos, "mdns-txt", &val) > 0) {
+	int err = gensio_argv_append(so, &port->mdns_txt, val,
+				     &port->mdns_txt_args, &port->mdns_txt_argc,
+				     true);
+
+	if (err) {
+	    eout->out(eout, "Out of memory allocating mdns-txt: %s",
+		      gensio_err_to_str(err));
+	    return -1;
+	}
+#endif /* DO_MDNS */
 
     /* Everything from here down to the banner, etc is deprecated. */
     } else if (strcmp(pos, "remctl") == 0) {
@@ -764,6 +846,16 @@ init_port_data(port_info_t *port)
 
     port->led_tx = NULL;
     port->led_rx = NULL;
+
+#ifdef DO_MDNS
+    port->mdns_interface = find_default_int("mdns-interface");
+    if (find_default_str("mdns-type", &port->mdns_type))
+	return ENOMEM;
+    if (find_default_str("mdns-domain", &port->mdns_domain))
+	return ENOMEM;
+    if (find_default_str("mdns-host", &port->mdns_host))
+	return ENOMEM;
+#endif /* DO_MDNS */
 
     return 0;
 }
