@@ -441,7 +441,8 @@ empty set of users, then no users are allowed.  This may be specified
 more than once, each one adds more users.
 
 .I mdns: true|false
-Enables/disables mdns support for the connection.
+Enables/disables mdns support for the connection.  If you set this and
+mdns is available, ser2net will create a service on mdns for the port.
 
 .I mdns-interface: <num>
 Sets the specific network interface to advertise the device.  Defaults
@@ -469,7 +470,16 @@ setting.  Don't set this unless you really know what you are doing.
 .I mdns-txt: <string>
 Adds a text string to the mDNS advertisement.  The string should be in
 the form "name=value".  You can put anything you want in the strings.
+Two default strings are added by ser2net: "provider=ser2net" and
+"gensiostack=..." where the stack of gensios is added, like
+"telnet(rfc2217),tcp)".  The idea of gensiostack is you can just tack
+on the address to the end an make a connection using str_to_gensio().
 
+Note: Be *very* careful when using a gensiostack with str_to_gensio().
+Just blindly calling str_to_gensio() with it could result in
+significant security issues, as it can pass pty, stdio, trace,
+etc. gensios in it.  You must either validate that the stack is a safe
+set or just use it for information.  You have been warned.  Be careful.
 .SH "ROTATOR"
 A rotator allows a single network connection to connect to one of a
 number of connections.

@@ -35,6 +35,7 @@
 #include <gensio/gensio_mdns.h>
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
+#include <gensio/sergensio.h>
 
 struct gensio_lock *ports_lock;
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -278,6 +279,123 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 #ifdef DO_MDNS
 static struct gensio_mdns *mdns;
 
+static char *
+derive_mdns_type(port_info_t *port)
+{
+    /* Get a mdns type based on the gensio. */
+    unsigned int i;
+    const char *type, *ntype = "_iostream._tcp";
+
+    type = gensio_acc_get_type(port->accepter, 0);
+    for (i = 1; type; i++) {
+	if (strcmp(type, "tcp") == 0)
+	    break;
+	if (strcmp(type, "udp") == 0) {
+	    ntype = "_iostream._udp";
+	    break;
+	}
+	if (strcmp(type, "sctp") == 0) {
+	    ntype = "_iostream._sctp";
+	    break;
+	}
+	type = gensio_acc_get_type(port->accepter, i);
+    }
+    return strdup(ntype);
+}
+
+static void
+mdns_addprovider(struct absout *eout, port_info_t *port)
+{
+    gensiods i;
+    static char *provstr = "provider=";
+    char *tmps = NULL;
+
+    for (i = 0; i < port->mdns_txt_argc; i++) {
+	if (strncmp(port->mdns_txt[i], provstr, strlen(provstr)) == 0)
+	    /* User already specified it, don't override. */
+	    return;
+    }
+
+    tmps = gensio_alloc_sprintf(so, "%s%s", provstr, "ser2net");
+    if (!tmps)
+	goto out_nomem;
+
+    if (gensio_argv_append(so, &port->mdns_txt, tmps,
+			   &port->mdns_txt_args, &port->mdns_txt_argc,
+			   false))
+	goto out_nomem;
+    return;
+
+ out_nomem:
+    eout->out(eout, "Error allocation mdns provider for %s: out of memory",
+	      port->name);
+    if (tmps)
+	so->free(so, tmps);
+}
+
+static void
+mdns_addstack(struct absout *eout, port_info_t *port)
+{
+    gensiods i;
+    static char *stackstr = "gensiostack=";
+    const char *type;
+    char *stack = NULL, *tmps = NULL;
+
+    for (i = 0; i < port->mdns_txt_argc; i++) {
+	if (strncmp(port->mdns_txt[i], stackstr, strlen(stackstr)) == 0)
+	    /* User already specified it, don't override. */
+	    return;
+    }
+
+    for (i = 0; ; i++) {
+	type = gensio_acc_get_type(port->accepter, i);
+	if (!type)
+	    break;
+
+	if (strcmp(type, "telnet") == 0) {
+	    struct gensio_accepter *telnet_acc =
+		gensio_acc_get_child(port->accepter, i);
+	    const char *rfc2217 = "";
+
+	    if (gensio_acc_to_sergensio_acc(telnet_acc))
+		rfc2217 = "(rfc2217)";
+
+	    tmps = gensio_alloc_sprintf(so, "%s%s%s%s",
+					stack ? stack : "", stack ? "," : "",
+					type, rfc2217);
+	} else {
+	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
+					stack ? stack : "", stack ? "," : "",
+					type);
+	}
+	if (!tmps)
+	    goto out_nomem;
+	if (stack)
+	    so->free(so, stack);
+	stack = tmps;
+    }
+
+    if (!stack)
+	return;
+
+    tmps = gensio_alloc_sprintf(so, "%s%s", stackstr, stack);
+    if (!tmps)
+	goto out_nomem;
+    stack = tmps;
+
+    if (gensio_argv_append(so, &port->mdns_txt, stack,
+			   &port->mdns_txt_args, &port->mdns_txt_argc,
+			   false))
+	goto out_nomem;
+    return;
+
+ out_nomem:
+    eout->out(eout, "Error allocation mdns stack for %s: out of memory",
+	      port->name);
+    if (stack)
+	so->free(so, stack);
+}
+
 static void
 mdns_setup(struct absout *eout, port_info_t *port)
 {
@@ -301,25 +419,7 @@ mdns_setup(struct absout *eout, port_info_t *port)
     }
 
     if (!port->mdns_type) {
-	/* Get a mdns type based on the gensio. */
-	unsigned int i;
-	const char *type, *mtype = "_iostream._tcp";
-
-	type = gensio_acc_get_type(port->accepter, 0);
-	for (i = 1; type; i++) {
-	    if (strcmp(type, "tcp") == 0)
-		break;
-	    if (strcmp(type, "udp") == 0) {
-		mtype = "_iostream._udp";
-		break;
-	    }
-	    if (strcmp(type, "sctp") == 0) {
-		mtype = "_iostream._sctp";
-		break;
-	    }
-	    type = gensio_acc_get_type(port->accepter, 0);
-	}
-	port->mdns_type = strdup(mtype);
+	port->mdns_type = derive_mdns_type(port);
 	if (!port->mdns_type) {
 	    eout->out(eout, "Can't alloc mdns type for %d: out of memory");
 	    return;
@@ -333,6 +433,9 @@ mdns_setup(struct absout *eout, port_info_t *port)
 	    return;
 	}
     }
+
+    mdns_addprovider(eout, port);
+    mdns_addstack(eout, port);
 
     /*
      * Always stick on the NULL, that doesn't update argc so it's safe,
