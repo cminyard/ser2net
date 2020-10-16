@@ -407,11 +407,12 @@ mdns_setup(struct absout *eout, port_info_t *port)
 	return;
 
     if (!port->mdns_port) {
+	strcpy(portnum_str, "0");
 	err = gensio_acc_control(port->accepter, GENSIO_CONTROL_DEPTH_FIRST,
 				 true, GENSIO_ACC_CONTROL_LPORT, portnum_str,
 				 &portnum_len);
 	if (err) {
-	    eout->out(eout, "Can't get mdns port for device %d: %s",
+	    eout->out(eout, "Can't get mdns port for device %s: %s",
 		      port->name, gensio_err_to_str(err));
 	    return;
 	}
@@ -421,7 +422,8 @@ mdns_setup(struct absout *eout, port_info_t *port)
     if (!port->mdns_type) {
 	port->mdns_type = derive_mdns_type(port);
 	if (!port->mdns_type) {
-	    eout->out(eout, "Can't alloc mdns type for %d: out of memory");
+	    eout->out(eout, "Can't alloc mdns type for %s: out of memory",
+		      port->name);
 	    return;
 	}
     }
@@ -429,7 +431,8 @@ mdns_setup(struct absout *eout, port_info_t *port)
     if (!port->mdns_name) {
 	port->mdns_name = strdup(port->name);
 	if (!port->mdns_name) {
-	    eout->out(eout, "Can't alloc mdns name for %d: out of memory");
+	    eout->out(eout, "Can't alloc mdns name for %s: out of memory",
+		      port->name);
 	    return;
 	}
     }
@@ -444,8 +447,8 @@ mdns_setup(struct absout *eout, port_info_t *port)
     err = gensio_argv_append(so, &port->mdns_txt, NULL,
 			     &port->mdns_txt_args, &port->mdns_txt_argc, true);
     if (err) {
-	eout->out(eout, "Error terminating mdns-txt: %s",
-		  gensio_err_to_str(err));
+	eout->out(eout, "Error terminating mdns-txt for %s: %s",
+		  port->name, gensio_err_to_str(err));
 	return;
     }
 
@@ -456,7 +459,7 @@ mdns_setup(struct absout *eout, port_info_t *port)
 				  port->mdns_port, port->mdns_txt,
 				  &port->mdns_service);
     if (err)
-	eout->out(eout, "Can't add mdns service for device %d: %s",
+	eout->out(eout, "Can't add mdns service for device %s: %s",
 		  port->name, gensio_err_to_str(err));
 }
 
