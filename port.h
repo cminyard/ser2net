@@ -344,6 +344,7 @@ struct port_info
      * mdns info
      */
     bool mdns;
+    bool do_mdns_sysattrs;
     unsigned int mdns_port;
     int mdns_interface;
     int mdns_nettype;
@@ -416,5 +417,10 @@ void do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	      gensiods buf_len, const char *prefix);
 void setup_trace(port_info_t *port);
 void shutdown_trace(port_info_t *port);
+
+/* In addsyattrs.c */
+void add_sys_attrs(struct absout *eout, const char *portname,
+		   const char *devname,
+		   const char ***txt, gensiods *args, gensiods *argc);
 
 #endif /* PORT */

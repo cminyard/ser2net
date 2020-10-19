@@ -663,6 +663,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 #ifdef DO_MDNS
     } else if (gensio_check_keybool(pos, "mdns",
 				    &port->mdns) > 0) {
+    } else if (gensio_check_keybool(pos, "mdns-sysattrs",
+				    &port->do_mdns_sysattrs) > 0) {
     } else if (gensio_check_keyuint(pos, "mdns-port",
 				    &port->mdns_port) > 0) {
     } else if (gensio_check_keyint(pos, "mdns-interface",
@@ -849,6 +851,7 @@ init_port_data(port_info_t *port)
 
 #ifdef DO_MDNS
     port->mdns = find_default_bool("mdns");
+    port->do_mdns_sysattrs = find_default_bool("mdns-sysattrs");
     port->mdns_interface = find_default_int("mdns-interface");
     if (find_default_str("mdns-type", &port->mdns_type))
 	return ENOMEM;

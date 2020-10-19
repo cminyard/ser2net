@@ -448,6 +448,10 @@ mdns_setup(struct absout *eout, port_info_t *port)
 	return;
     }
 
+    if (port->do_mdns_sysattrs)
+	add_sys_attrs(eout, port->name, port->devname, &port->mdns_txt,
+		      &port->mdns_txt_args, &port->mdns_txt_argc);
+
     err = gensio_mdns_add_service(mdns, port->mdns_interface,
 				  port->mdns_nettype,
 				  port->mdns_name, port->mdns_type,
