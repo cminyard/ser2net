@@ -208,6 +208,25 @@ define: &confver 1.0
 # # or sctp base on the gensio type.  Everything else defaults.  Don't
 # # set mdns-host or mdns-domain unless you know what you are doing.
 # # mdns-txt can be specified multiple times to add multiple strings.
+# #
+# # mdns-sysattrs on Linux adds USB attributes to the txt data from
+# # sysfs.  If the serial port is a USB one, it will add the following
+# # txt fields:
+# #   devicetype=serialusb
+# #   bInterfaceNumber=...
+# #   interface=...
+# #   idProduct=...
+# #   idVendor=...
+# #   serial=...
+# #   manufacturer=...
+# #   product=...
+# # These fields are pulled straight from sysfs, see information on that
+# # for details on what these mean.  Not all the fields may be present
+# # depending on the specific USB device.  If you set this on a non-USB
+# # serial port, it will just add:
+# #   devicetype=serial
+# # This may be extended in the future for other OSes or other device
+# # interfaces.
 # connection: &rack-3-slot-5
 #   accepter: tcp,2034
 #   connector: echo
@@ -221,6 +240,7 @@ define: &confver 1.0
 #     mdns-host: "myhost.local"
 #     mdns-txt: "server=ser2net"
 #     mdns-txt: "type=echo"
+#     mdns-sysattrs: true
 
 # # An example showing all options and their defaults.  Note that empty
 # # strings are ok for most strings, but not for things that take filesname

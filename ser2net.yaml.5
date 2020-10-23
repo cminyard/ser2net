@@ -475,6 +475,15 @@ Two default strings are added by ser2net: "provider=ser2net" and
 "telnet(rfc2217),tcp)".  The idea of gensiostack is you can just tack
 on the address to the end an make a connection using str_to_gensio().
 
+.I mdns-sysattrs: true|false
+On Linux adds system attributes from sysfs for USB serial ports to the
+mDNS txt fields.  If the serial port is USB, it adds
+"devicetype=serialusb" and the following attributes from sysfs:
+bInterfaceNumber, interface, idProduct, idVendor, serial,
+manufacturer, product.  If they are not present in sysfs, they are not
+added.  If the serial port is not USB, then "devicetype=serial" is
+added.
+
 Note: Be *very* careful when using a gensiostack with str_to_gensio().
 Just blindly calling str_to_gensio() with it could result in
 significant security issues, as it can pass pty, stdio, trace,
