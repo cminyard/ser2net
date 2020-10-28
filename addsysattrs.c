@@ -95,7 +95,7 @@ add_attr(struct absout *eout, const char *portname,
 	eout->out(eout,
 		  "Device %s: Unable to read contents of %s: %s\n",
 		  portname, sysfsname, strerror(errno));
-	return;
+	goto out;
     }
     while (rv > 0 && isspace(buf[rv - 1]))
 	rv--;
@@ -106,6 +106,8 @@ add_attr(struct absout *eout, const char *portname,
 	eout->out(eout,
 		  "Device %s: Unable add txt contents for %s: %s\n",
 		  portname, sysfsname, gensio_err_to_str(rv));
+ out:
+    close(fd);
 }
 
 void
