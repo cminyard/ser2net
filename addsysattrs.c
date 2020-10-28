@@ -89,9 +89,11 @@ add_attr(struct absout *eout, const char *portname,
     if (fd < 0)
 	/* Some of these are options, just ignore open errors. */
 	return;
-
+ retry:
     rv = read(fd, buf, sizeof(buf) - 1);
     if (rv < 0) {
+	if (errno == EINTR)
+	    goto retry;
 	eout->out(eout,
 		  "Device %s: Unable to read contents of %s: %s\n",
 		  portname, sysfsname, strerror(errno));
