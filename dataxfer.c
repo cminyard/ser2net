@@ -820,11 +820,14 @@ s2n_flowcontrol_state(net_info_t *netcon, struct sergensio *sio, bool val)
 static void
 s2n_flush(net_info_t *netcon, struct sergensio *sio, int val)
 {
-    struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
+    struct sergensio *port_rsio = gensio_to_sergensio(netcon->port->io);
+    struct sergensio *net_rsio = gensio_to_sergensio(netcon->net);
 
-    if (!rsio)
-	return;
-    sergensio_flush(rsio, val);
+    if (port_rsio)
+        sergensio_flush(port_rsio, val);
+
+    if (net_rsio)
+        sergensio_flush(net_rsio, val);
 }
 
 static void
