@@ -117,9 +117,7 @@ termioschk.test_ser2net_termios("2 stop bit termios settings",
 
 class xonhandler:
     def op(self, io1, io2):
-        return termioschk.dup_base_termios(iflags=(termios.IXON |
-                                                   termios.IXANY |
-                                                   termios.IXOFF))
+        return termioschk.dup_base_termios(iflags=termios.IXON)
 
 termioschk.test_ser2net_termios("xon/xoff termios settings",
                                 xonhandler(),

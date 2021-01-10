@@ -169,7 +169,7 @@ class xonhandler:
     def op(self, io1, io2):
         sio1 = io1.cast_to_sergensio()
         sio1.sg_flowcontrol_s(gensio.SERGENSIO_FLOWCONTROL_XON_XOFF)
-        return termioschk.dup_base_termios(iflags=termios.IXON | termios.IXOFF)
+        return termioschk.dup_base_termios(iflags=termios.IXON)
 
 termioschk.test_ser2net_termios("xon/xoff rfc2217 settings",
                                 xonhandler(),
