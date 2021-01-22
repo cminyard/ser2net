@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import termioschk
 import termios
+import utils
 
 class basehandler:
     def op(self, io1, io2):
@@ -117,7 +118,11 @@ termioschk.test_ser2net_termios("2 stop bit termios settings",
 
 class xonhandler:
     def op(self, io1, io2):
-        return termioschk.dup_base_termios(iflags=termios.IXON)
+        if utils.gensio_version_ge("2.3.0-rc1"):
+            return termioschk.dup_base_termios(iflags=termios.IXON)
+        return termioschk.dup_base_termios(iflags=(termios.IXON |
+                                                   termios.IXANY |
+                                                   termios.IXOFF))
 
 termioschk.test_ser2net_termios("xon/xoff termios settings",
                                 xonhandler(),

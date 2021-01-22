@@ -14,6 +14,38 @@ import sys
 
 debug = 0
 
+def split_version(v):
+    vs = v.split(".")
+    vs2 = vs[2].split("-")
+    if len(vs2) > 1:
+        vs = (int(vs[0]), int(vs[1]), int(vs2[0]), vs2[1])
+    else:
+        vs = (int(vs[0]), int(vs[1]), int(vs[2]), "")
+    return vs
+
+def gensio_version_ge(v):
+    """Return True if the version v is >= the gensio version, false if not"""
+    try:
+        gv = gensio.version
+    except Exception as E:
+        return False
+
+    gvs = split_version(gv)
+    vs = split_version(v)
+    if vs[0] < gvs[0]:
+        return True
+    if vs[0] > gvs[0]:
+        return False
+    if vs[1] < gvs[1]:
+        return True
+    if vs[1] > gvs[1]:
+        return False
+    if vs[2] > gvs[2]:
+        return True
+    if vs[2] > gvs[2]:
+        return False
+    return vs[3] < gvs[3]
+
 class Logger:
     def gensio_log(self, level, log):
         print("***%s log: %s" % (level, log))
