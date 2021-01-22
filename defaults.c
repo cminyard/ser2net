@@ -109,6 +109,12 @@ setup_ser2net_defaults(void)
 			     SYSCONFDIR "/ser2net/ser2net.crt", 0);
     if (err)
 	return err;
+#ifdef gensio_version_ge /* gensio_version_ge came in with 2.2.3 and 2.3.0 */
+    /* Print out a message on the socket if tcpd denies a connection. */
+    err = gensio_set_default(so, "tcp", "tcpd", "print", 0);
+    if (err)
+	return err;
+#endif
     return 0;
 }
 
