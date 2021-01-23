@@ -112,7 +112,8 @@ setup_ser2net_defaults(void)
 #ifdef gensio_version_ge /* gensio_version_ge came in with 2.2.3 and 2.3.0 */
     /* Print out a message on the socket if tcpd denies a connection. */
     err = gensio_set_default(so, "tcp", "tcpd", "print", 0);
-    if (err)
+    /* If GE_NOTFOUND is returned, that means gensio doesn't have tcpd. */
+    if (err && err != GE_NOTFOUND)
 	return err;
 #endif
     return 0;
