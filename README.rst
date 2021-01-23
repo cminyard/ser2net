@@ -94,3 +94,105 @@ They require the gensio python module.
 
 They also require the ipmi_sim program from the OpenIPMI library at
 https://github.com/cminyard/openipmi to run the ipmisol tests.
+
+==================================
+A Complete Encrypted Example Setup
+==================================
+
+Lets suppose you have a server with serial port /dev/ttyUSB0 that you
+want to make available on the network, and you want the connection
+encrypted.  Here an example, after installing gensio and ser2net.
+
+Edit the ser2net configuration file::
+
+  sudo mkdir /etc/ser2net
+  sudo vi /etc/ser2net/ser2net.yaml
+
+The contents of ser2net.yaml should be::
+
+  %YAML 1.1
+  ---
+
+  define: &banner Connected to port \N(\d)\r\n
+
+  default:
+        name: local
+        value: true
+        class: serialdev
+
+  default:
+        name: mdns
+        value: true
+
+  default:
+        name: mdns-sysattrs
+        value: true
+
+  connection: &my-console
+        accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3001
+        connector: serialdev,/dev/ttyUSB0,115200N81
+        options:
+                banner: *banner
+
+Create a user for ser2net to run as::
+
+  sudo useradd -r -M -d /usr/share/ser2net -G dialout ser2net
+  sudo mkdir /usr/share/ser2net
+  sudo chown ser2net.ser2net /usr/share/ser2net
+
+You don't want to run ser2net as root, that's a bad security
+practice.  Now generate the server keys::
+
+  sudo gtlssh-keygen --keydir /etc/ser2net serverkey ser2net
+  sudo chown ser2net.ser2net /etc/ser2net/*
+
+ser2net's authentication directory is in /usr/share/ser2net/auth::
+
+  sudo -u ser2net mkdir /usr/share/ser2net/auth
+
+Now we must create the keys for logging in to the server.  You do this
+on your host system with gtlssh-keygen, assuming you haven't already
+done so.  Assume your userid is myuser, and you are logged in on the
+host system (not the server).  Generate the key::
+
+  gtlssh-keygen keygen
+
+And copy $HOME/.gtlssh/default.crt to the server.  You will put it in
+/usr/share/ser2net/auth/myuser/allowed_certs, and you want to give it
+a meaningful name.  General best practice is to have a separate key
+for every client system and put each key onto the target, so using the
+client name is good practice.
+
+Note: Do not copy the .key file anywhere else.  That is the file you
+need to keep secret.  Just copy the .crt file.
+
+So here we go (after the default.crt file is copied to the server)::
+
+  sudo -u ser2net mkdir -p /usr/share/ser2net/auth/myuser/allowed_certs
+  sudo -u ser2net cp default.crt \
+        /usr/share/ser2net/auth/myuser/allowed_certs/client.crt
+  sudo -u ser2net gtlssh-keygen rehash \
+        /usr/share/ser2net/auth/myuser/allowed_certs
+
+Don't forget the rehash step.  If you add or remove a key from
+allowed_certs, you have to rehash.
+
+Then start (or restart) ser2net and you should be set.  Make sure it
+runs as the user ser2net, like::
+
+  sudo -u ser2net ser2net
+
+From myuser on client, you can connect to the port::
+
+  gtlssh --telnet -p 3001 server
+
+If you have avahi enabled (it's usually on by default on modern
+systems) you can use mdns.  You may notice that mdns is configured in
+the ser2net configuration, so the name of the connection (my-console
+in this case) is available via mdns.  So you can just do::
+
+  gtlssh -m my-console
+
+and gtlssh will look up the mdns name, the port, if telnet is enabled,
+etc. and make the connection.  This only works on a local network,
+though, if you are bridged it won't work.
