@@ -187,7 +187,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 		    op(data, val);
 		    return;
 		}
-		if (!isdigit(*s))
+		if (!isxdigit(*s))
 		    continue;
 		val = (val * 16) + from_hex_digit(*s);
 		op(data, val);
