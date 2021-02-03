@@ -395,7 +395,7 @@ def test_rts():
     io1.handler.set_compare("12345")
     if (io1.handler.wait_timeout(1000) == 0):
         raise Exception("%s: %s: Timed out waiting for banner" %
-                        (name, io1.handler.name))
+                        (io1.handler.name))
 
     io1.read_cb_enable(True);
     io2.read_cb_enable(True);
