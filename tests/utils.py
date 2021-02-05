@@ -28,23 +28,23 @@ def gensio_version_ge(v):
     try:
         gv = gensio.version
     except Exception as E:
-        return False
+        return True # Versions with a version macro are older than we care about
 
     gvs = split_version(gv)
     vs = split_version(v)
-    if int(vs[0]) > int(gvs[0]):
-        return True
     if int(vs[0]) < int(gvs[0]):
-        return False
-    if int(vs[1]) > int(gvs[1]):
         return True
+    if int(vs[0]) > int(gvs[0]):
+        return False
     if int(vs[1]) < int(gvs[1]):
-        return False
-    if int(vs[2]) > int(gvs[2]):
         return True
-    if int(vs[2]) < int(gvs[2]):
+    if int(vs[1]) > int(gvs[1]):
         return False
-    return vs[3] >= gvs[3]
+    if int(vs[2]) < int(gvs[2]):
+        return True
+    if int(vs[2]) > int(gvs[2]):
+        return False
+    return vs[3] <= gvs[3]
 
 class Logger:
     def gensio_log(self, level, log):
