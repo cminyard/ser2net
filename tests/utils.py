@@ -24,7 +24,7 @@ def split_version(v):
     return vs
 
 def gensio_version_ge(v):
-    """Return True if the version v is >= the gensio version, false if not"""
+    """Return True if the gensio version is >= version v, False if not"""
     try:
         gv = gensio.version
     except Exception as E:
