@@ -196,6 +196,10 @@ fopen_config_file(bool *is_yaml)
 	    *is_yaml = strncmp(in_buf, "%YAML", 5) == 0;
 	fseek(instream, 0, SEEK_SET);
     }
+    if (!*is_yaml)
+	fprintf(stderr,
+	  "ser2net:WARNING: Using old config file format, this will go away\n"
+	  "soon.  Please switch to the yaml-based format.\n");
     return instream;
 }
 
