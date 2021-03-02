@@ -379,9 +379,9 @@ setportcontrol(struct controller_info *cntlr, const char *portspec,
 	    else if (strcmp(controls[i], "RTSLO") == 0)
 		sergensio_rts(sio, SERGENSIO_RTS_OFF, NULL, NULL);
 	    else if (strcmp(controls[i], "DTRHI") == 0)
-		sergensio_rts(sio, SERGENSIO_DTR_ON, NULL, NULL);
+		sergensio_dtr(sio, SERGENSIO_DTR_ON, NULL, NULL);
 	    else if (strcmp(controls[i], "DTRLO") == 0)
-		sergensio_rts(sio, SERGENSIO_DTR_OFF, NULL, NULL);
+		sergensio_dtr(sio, SERGENSIO_DTR_OFF, NULL, NULL);
 	    else
 		controller_outputf(cntlr, "error",
 				   "Invalid device control - %s", controls[i]);
