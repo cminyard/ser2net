@@ -13,7 +13,10 @@ test_transfer("basic ipmisol", "This is a test!",
                "  accepter: tcp,3023",
                "  connector: ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600"),
               "tcp,localhost,3023",
-              "serialdev,/dev/ttyPipeA0,9600N81",)
+              "serialdev,/dev/ttyPipeA0,9600N81")
+
+# Give the old ipmi_sim a little time to shut down.
+gensio.waiter(o).wait_timeout(1, 1000)
 
 # Note that ipmi_sim messes with the modem state lines, so adding
 # LOCAL is required on termios.  Also, we had to add a small delay
