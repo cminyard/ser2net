@@ -20,7 +20,7 @@ test_write_drain("basic udp", "This is a write drain test!",
                  "serialdev,/dev/ttyPipeB0,9600N81",
                  initial_write_io1 = "A")
 
-test_connect_back("basic udp", "UCP Connect back test!",
+test_connect_back("basic udp", "UDP Connect back test!",
                  ("connection: &con",
                   "  accepter: udp,3023",
                   "  connector: serialdev,/dev/ttyPipeA0,9600N81",
