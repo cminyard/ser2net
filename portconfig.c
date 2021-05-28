@@ -203,7 +203,8 @@ remaddr_list_free(struct port_remaddr *list)
     while (list) {
 	r = list;
 	list = r->next;
-	gensio_free_addrinfo(so, r->ai);
+	if (r->ai)
+	    gensio_free_addrinfo(so, r->ai);
 	free(r->str);
 	free(r);
     }
