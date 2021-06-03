@@ -552,6 +552,10 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 				    &port->telnet_brk_on_sync) > 0) {
     } else if (gensio_check_keybool(pos, "chardelay",
 				    &port->enable_chardelay) > 0) {
+    } else if (gensio_check_keybool(pos, "no-con-to-acc",
+				    &port->no_dev_to_net) > 0) {
+    } else if (gensio_check_keybool(pos, "no-acc-to-con",
+				    &port->no_net_to_dev) > 0) {
     } else if (gensio_check_keyuint(pos, "chardelay-scale",
 				   &port->chardelay_scale) > 0) {
     } else if (gensio_check_keyuint(pos, "chardelay-min",

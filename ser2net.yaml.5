@@ -407,6 +407,14 @@ more than once.
 If you set the port for an address to zero, ser2net will accept a
 connection from any port from the given network host.
 
+.I no-con-to-acc: true|false
+If true, do not transfer any data from the connector to the accepter.
+Throw any data recevied from the connecter away.
+
+.I no-acc-to-con: true|false
+If true, do not transfer any data from the accepter to the connecter.
+Throw any data recevied from the accepter away.
+
 .I connback: <connector>[;<connector>[;...]]
 specifies reverse connections that will be made when data comes in on
 the device.  When data comes in on the device side (the connection's

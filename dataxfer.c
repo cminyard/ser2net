@@ -250,6 +250,11 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	goto out_unlock;
     }
 
+    if (port->no_dev_to_net) {
+	count = buflen;
+	goto out_unlock;
+    }
+
     if (gbuf_room_left(&port->dev_to_net) < buflen)
 	buflen = gbuf_room_left(&port->dev_to_net);
     count = buflen;
@@ -542,6 +547,11 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 	    reason = "network read error";
 	}
 	goto out_shutdown;
+    }
+
+    if (port->no_net_to_dev) {
+	rv = buflen;
+	goto out_unlock;
     }
 
     if (buflen > port->net_to_dev.maxsize)

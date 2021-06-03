@@ -177,6 +177,10 @@ struct port_info
 
     bool enable_chardelay;
 
+    /* Disable data flowing in the given directions. */
+    bool no_dev_to_net;
+    bool no_net_to_dev;
+
     unsigned int chardelay_scale;	/* The number of character
 					   periods to wait for the
 					   next character, in tenths of
