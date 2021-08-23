@@ -32,7 +32,9 @@
 #include "ser2net.h"
 #include "port.h"
 #include "gbuf.h"
+#ifdef DO_MDNS
 #include <gensio/gensio_mdns.h>
+#endif
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
 #include <gensio/sergensio.h>
@@ -399,8 +401,14 @@ mdns_setup(struct absout *eout, port_info_t *port)
     char portnum_str[20];
     gensiods portnum_len = sizeof(portnum_str);
 
-    if (!mdns || !port->mdns)
+    if (!port->mdns)
 	return;
+
+    if (!mdns) {
+	eout->out(eout, "mdns requested for device %s, but mdns failed"
+		  " to start or is disabled in gensio\n", port->name);
+	return;
+    }
 
     if (!port->mdns_port) {
 	strcpy(portnum_str, "0");
@@ -1246,7 +1254,11 @@ init_dataxfer(void)
 
 #ifdef DO_MDNS
     rv = gensio_alloc_mdns(so, &mdns);
-    if (rv)
+    /*
+     * If gensio doesn't support MDNS, that's not reportable unless
+     * the user tries to use it.
+     */
+    if (rv && rv != GE_NOTSUP)
 	/* Not fatal */
 	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(rv));
 #endif /* DO_MDNS */
