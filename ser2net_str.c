@@ -227,8 +227,9 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    /* \m -> month (as a number) */
 	    case 'm':
 	    {
-		char d[10], *dp;
-		snprintf(d, sizeof(d), "%d", time->tm_mon);
+		char d[12], *dp;
+		/* tm_mon runs from 0-11, thus the "+ 1" */
+		snprintf(d, sizeof(d), "%d", time->tm_mon + 1);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -248,7 +249,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    /* \D -> day of the month */
 	    case 'D':
 	    {
-		char d[10], *dp;
+		char d[12], *dp;
 		snprintf(d, sizeof(d), "%d", time->tm_mday);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
