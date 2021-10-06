@@ -8,9 +8,33 @@ connections to serial ports or IPMI Serial Over Lan (SOL) connections,
 but there are lots of gensios and lots of options.  See gensio(5) for
 information on gensios.
 
-Note that the gensio library is required for ser2net.  It is available
-as a tarball in the ser2net sourceforge files, or you can get it from
-github at https://github.com/cminyard/gensio
+========
+Building
+========
+
+You need two libraries to build ser2net: libyaml and gensio.  On
+Ubuntu you can install libyaml with:
+
+  apt install libyaml-dev
+
+The gensio library may be available on your distro, or it may not, or
+it may be old and missing things you need.  It is available as a
+tarball in the ser2net sourceforge files, or you can get it from
+github at https://github.com/cminyard/gensio.  A lot of the
+capabilities of ser2net (crypto, mdns, IPMI) come from gensio, so it
+must be compiled correctly for those.
+
+This is a normal autoconf system, nothing special.  Note that if you
+get this directly from git, you won't have the build infrastructure
+included.  There is a script named "reconf" in the main directory
+that will create it for you.
+
+If you don't know about autoconf, the INSTALL file has some info,
+or google it.
+
+=====
+Using
+=====
 
 See the man page ser2net(8) for information about using the program.
 Also see ser2net.yaml(5) for information on the configuration file.
@@ -58,25 +82,10 @@ blocking things up.
 If you don't want to compile with threads, you can add
 "--with-pthreads=no" to the configure line.
 
-This is a normal autoconf system, nothing special.  Note that if you
-get this directly from git, you won't have the build infrastructure
-included.  There is a script named "reconf" in the main directory
-that will create it for you.
-
-If you don't know about autoconf, the INSTALL file has some info,
-or google it.
-
 If you want the opposite of ser2net (you want to connect to a "local"
 serial port device that is really remote) then Cyclades has provided
 a tool for this at https://sourceforge.net/projects/cyclades-serial/.
 It is capable of connecting to ser2net using RFC2217.
-
-If you check this out from git, you won't have all the configure
-programs and files, because those are generated.  Do::
-
-   autoreconf -i
-
-to generate everything first.  Then you can run configure.
 
 =============
 Running Tests
