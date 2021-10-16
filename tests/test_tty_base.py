@@ -121,7 +121,6 @@ class xonhandler:
         if utils.gensio_version_ge("2.3.0-rc1"):
             return termioschk.dup_base_termios(iflags=termios.IXON)
         return termioschk.dup_base_termios(iflags=(termios.IXON |
-                                                   termios.IXANY |
                                                    termios.IXOFF))
 
 termioschk.test_ser2net_termios("xon/xoff termios settings",
