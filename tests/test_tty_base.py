@@ -118,8 +118,6 @@ termioschk.test_ser2net_termios("2 stop bit termios settings",
 
 class xonhandler:
     def op(self, io1, io2):
-        if utils.gensio_version_ge("2.3.0-rc1"):
-            return termioschk.dup_base_termios(iflags=termios.IXON)
         return termioschk.dup_base_termios(iflags=(termios.IXON |
                                                    termios.IXOFF))
 
