@@ -25,6 +25,8 @@
  *  release a modified version which carries forward this exception.
  */
 
+#include <gensio/gensio.h>
+
 #ifdef linux
 
 #include <sys/types.h>
@@ -35,7 +37,6 @@
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
-#include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 #include "ser2net.h"
 #include "port.h"
