@@ -11,6 +11,8 @@ import utils
 import signal
 import time
 
+ipmisol_port = 9002
+
 default_ipmisim_emu = """
 mc_setbmc 0x20\n
 \n
@@ -26,7 +28,7 @@ name "ser2net_sim"\n
 set_working_mc 0x20\n
 \n
   startlan 1\n
-    addr localhost 9001\n
+    addr localhost %d\n
 \n
     # Maximum privilege limit on the channel.\n
     priv_limit admin\n
@@ -53,7 +55,7 @@ set_working_mc 0x20\n
   #    # valid name      passw  priv-lim max-sess allowed-auths (ignored)\n
   user 1 true  ""        "test" user     10       none md2 md5 straight\n
   user 2 true  "ipmiusr" "test" admin    10       none md2 md5 straight\n
-"""
+""" % (ipmisol_port)
 
 class IPMISimDaemon:
     """Create an IPMI Sim daemon instance and start it up

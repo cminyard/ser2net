@@ -14,6 +14,6 @@ rb = os.urandom(512)
 test_transfer("basic ipmisol", rb,
               ("connection: &con",
                "  accepter: tcp,3023",
-               "  connector: ipmisol,lan -U ipmiusr -P test -p 9001 localhost,9600"),
+               "  connector: ipmisol,lan -U ipmiusr -P test -p %d localhost,9600" % (ipmisimdaemon.ipmisol_port)),
               "tcp,localhost,3023",
               "serialdev,/dev/ttyPipeA0,9600N81", timeout=5000)
