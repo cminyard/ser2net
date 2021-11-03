@@ -3093,8 +3093,10 @@ netcon_finish_shutdown(net_info_t *netcon)
 	netcon->banner = NULL;
     }
 
-    if (netcon->working_telnet_cmds)
+    if (netcon->working_telnet_cmds) {
 	free(netcon->working_telnet_cmds);
+	netcon->working_telnet_cmds = NULL;
+    }
 
     if (num_connected_net(port, true) == 0) {
 	start_shutdown_port(port, "All network connections free");
