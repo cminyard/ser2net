@@ -1170,7 +1170,8 @@ dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
 				handle_port_child_event, new_port,
 				&new_port->accepter);
     if (err) {
-	eout->out(eout, "Invalid port name/number: %s", gensio_err_to_str(err));
+	eout->out(eout, "Invalid accepter port name/number '%s': %s",
+		  new_port->accstr, gensio_err_to_str(err));
 	return -1;
     }
 
