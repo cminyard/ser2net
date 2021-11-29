@@ -34,7 +34,12 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#if defined(HAVE_WORDEXP) && defined(HAVE_WORDEXP_H)
+#define DO_WORDEXP
+#endif
+#ifdef DO_WORDEXP
 #include <wordexp.h>
+#endif
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 #include "ser2net.h"
@@ -164,8 +169,10 @@ struct scalar_next_state {
  * information about the previous file so we can go back.
  */
 struct yaml_read_file {
+#ifdef DO_WORDEXP
     wordexp_t files;
     int curr_file;
+#endif
 
     bool closeme;
     yaml_parser_t parser;
@@ -265,6 +272,7 @@ sub_errout(struct absout *e, const char *str, ...)
     return rv;
 }
 
+#ifdef DO_WORDEXP
 static int
 yaml_errout_d_f(struct yaml_read_handler_data *d,
 		struct yaml_read_file *f,
@@ -278,6 +286,7 @@ yaml_errout_d_f(struct yaml_read_handler_data *d,
     va_end(ap);
     return rv;
 }
+#endif
 
 static void
 dofree(char **val)
@@ -384,10 +393,24 @@ cleanup_yaml_read_file(struct yaml_read_handler_data *d)
     yaml_parser_delete(&old_f->parser);
     if (old_f->closeme) {
 	fclose(old_f->f);
+#ifdef DO_WORDEXP
 	wordfree(&old_f->files);
+#endif
 	free(old_f);
 	d->include_depth--;
     }
+}
+
+static bool
+another_yaml_file_pending(struct yaml_read_handler_data *d)
+{
+#ifdef DO_WORDEXP
+    struct yaml_read_file *f = d->f;
+
+    return f->curr_file < f->files.we_wordc;
+#else
+    return false;
+#endif
 }
 
 static int yaml_read_handler(void *data, unsigned char *buffer, size_t size,
@@ -399,6 +422,7 @@ static int yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 static int
 next_yaml_read_file(struct yaml_read_handler_data *d)
 {
+#ifdef DO_WORDEXP
     struct yaml_read_file *f = d->f;
 
  retry:
@@ -415,11 +439,15 @@ next_yaml_read_file(struct yaml_read_handler_data *d)
     yaml_parser_set_input(&f->parser, yaml_read_handler, d);
     d->y->state = BEGIN_DOC;
     return 0;
+#else
+    return 1;
+#endif
 }
 
 static int
 do_include(struct yconf *y, const char *ivalue)
 {
+#ifdef DO_WORDEXP
     struct yaml_read_file *f;
     int rv;
 
@@ -469,6 +497,10 @@ do_include(struct yconf *y, const char *ivalue)
     if (next_yaml_read_file(y->d))
 	cleanup_yaml_read_file(y->d);
     return 0;
+#else
+    yaml_errout(y, "Include is not supported on this system");
+    return -1;
+#endif
 }
 
 static struct yfile *
@@ -1501,7 +1533,7 @@ yaml_readconfig(FILE *file, char *filename,
 
 	if (done) {
 	continue_clean:
-	    while (d.f && d.f->curr_file >= d.f->files.we_wordc)
+	    while (d.f && !another_yaml_file_pending(&d))
 		/* Done with this include directive. */
 		cleanup_yaml_read_file(&d);
 	    if (d.f) {

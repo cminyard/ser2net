@@ -47,6 +47,8 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 AC_CONFIG_MACRO_DIR([m4])
 AC_STDC_HEADERS
 AC_CHECK_LIB(nsl,main)
+AC_CHECK_HEADERS([wordexp.h])
+AC_CHECK_FUNCS(wordexp)
 
 PKG_CHECK_MODULES(GENSIO, libgensio, [LIBS=$GENSIO_LIBS],
    [AC_CHECK_HEADER(gensio/gensio.h, [],
