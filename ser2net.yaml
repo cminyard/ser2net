@@ -11,6 +11,13 @@
 # error doesn't happen.
 define: &confver 1.0
 
+# # You can include other files from here, only at the main level.
+# # These must be full yaml files, but are included in context at
+# # this point, with all the defines, connection names, etc.
+# # This can let you have individual connections in individual
+# # files to ease management.  globs are accepted.
+# include: /etc/ser2net/ser2net/*.yaml
+
 # # Just a basic serial port  The con0 is the name of the connection,
 # # each connection must be given a unique name.  The accepter is the
 # # information about how to receive connections, in this case it is

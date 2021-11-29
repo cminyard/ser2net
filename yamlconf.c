@@ -34,6 +34,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <wordexp.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 #include "ser2net.h"
@@ -56,6 +57,7 @@ enum ystate {
     MAIN_LEVEL,
 
     IN_DEFINE,
+    IN_INCLUDE,
 
     /*
      * We have read the type of the main mapping (connection, led, etc)
@@ -157,15 +159,34 @@ struct scalar_next_state {
     };
 };
 
-struct yaml_read_handler_data {
-    FILE *f;
+/*
+ * Used for processing include directives, stores the glob output and
+ * information about the previous file so we can go back.
+ */
+struct yaml_read_file {
+    wordexp_t files;
+    int curr_file;
+
+    bool closeme;
+    yaml_parser_t parser;
+    yaml_event_t e;
     char *filename;
+    FILE *f;
+
+    struct yaml_read_file *prev_f;
+};
+
+struct yaml_read_handler_data {
+    struct yaml_read_file *f;
     char **config_lines;
     unsigned int num_config_lines;
     unsigned int curr;
     unsigned int pos;
     char in_quote;
     bool in_escape;
+    unsigned int include_depth;
+    struct yconf *y;
+    struct absout *errout;
 };
 
 struct yconf {
@@ -199,28 +220,36 @@ struct yconf {
 
     struct yfile *files;
 
-    yaml_parser_t parser;
-    yaml_event_t e;
     struct yaml_read_handler_data *d;
-    struct absout *errout;
     struct absout sub_errout;
 };
 
 static int
-errout(struct yconf *y, const char *str, ...)
+yaml_verrout_d_f(struct yaml_read_handler_data *d,
+		 struct yaml_read_file *f,
+		 const char *str, va_list ap)
 {
-    va_list ap;
     char buf[1024];
 
-    va_start(ap, str);
     vsnprintf(buf, sizeof(buf), str, ap);
-    va_end(ap);
-    y->errout->out(y->errout, "%s:%lu(column %lu): %s",
-		   y->d->filename,
-		   (unsigned long) y->e.start_mark.line,
-		   (unsigned long) y->e.start_mark.column,
+    d->errout->out(d->errout, "%s:%lu(column %lu): %s",
+		   f->filename,
+		   (unsigned long) f->e.start_mark.line,
+		   (unsigned long) f->e.start_mark.column,
 		   buf);
     return 0;
+}
+
+static int
+yaml_errout(struct yconf *y, const char *str, ...)
+{
+    va_list ap;
+    int rv;
+
+    va_start(ap, str);
+    rv = yaml_verrout_d_f(y->d, y->d->f, str, ap);
+    va_end(ap);
+    return rv;
 }
 
 static int
@@ -228,15 +257,26 @@ sub_errout(struct absout *e, const char *str, ...)
 {
     struct yconf *y = e->data;
     va_list ap;
-    char buf[1024];
+    int rv;
 
     va_start(ap, str);
-    vsnprintf(buf, sizeof(buf), str, ap);
+    rv = yaml_verrout_d_f(y->d, y->d->f, str, ap);
     va_end(ap);
-    y->errout->out(y->errout, "%s on line %lu column %lu", buf,
-		   (unsigned long) y->e.start_mark.line,
-		   (unsigned long) y->e.start_mark.column);
-    return 0;
+    return rv;
+}
+
+static int
+yaml_errout_d_f(struct yaml_read_handler_data *d,
+		struct yaml_read_file *f,
+		const char *str, ...)
+{
+    va_list ap;
+    int rv;
+
+    va_start(ap, str);
+    rv = yaml_verrout_d_f(d, f, str, ap);
+    va_end(ap);
+    return rv;
 }
 
 static void
@@ -304,13 +344,13 @@ add_alias(struct yconf *y, const char *iname, const char *ivalue)
 
     name = strdup(iname);
     if (!name) {
-	errout(y, "Out of memory allocating alias name");
+	yaml_errout(y, "Out of memory allocating alias name");
 	return -1;
     }
     value = strdup(ivalue);
     if (!value) {
 	free(name);
-	errout(y, "Out of memory allocating alias value");
+	yaml_errout(y, "Out of memory allocating alias value");
 	return -1;
     }
 
@@ -323,7 +363,7 @@ add_alias(struct yconf *y, const char *iname, const char *ivalue)
 	if (!a) {
 	    free(name);
 	    free(value);
-	    errout(y, "Out of memory allocating alias");
+	    yaml_errout(y, "Out of memory allocating alias");
 	    return -1;
 	}
 	a->next = y->aliases;
@@ -332,6 +372,102 @@ add_alias(struct yconf *y, const char *iname, const char *ivalue)
     a->name = name;
     a->value = value;
     a->namelen = strlen(name);
+    return 0;
+}
+
+static void
+cleanup_yaml_read_file(struct yaml_read_handler_data *d)
+{
+    struct yaml_read_file *old_f = d->f;
+
+    d->f = d->f->prev_f;
+    yaml_parser_delete(&old_f->parser);
+    if (old_f->closeme) {
+	fclose(old_f->f);
+	wordfree(&old_f->files);
+	free(old_f);
+	d->include_depth--;
+    }
+}
+
+static int yaml_read_handler(void *data, unsigned char *buffer, size_t size,
+			     size_t *size_read);
+
+/*
+ * Returns 0 if it successfully opened a file, 1 if not.
+ */
+static int
+next_yaml_read_file(struct yaml_read_handler_data *d)
+{
+    struct yaml_read_file *f = d->f;
+
+ retry:
+    f->filename = f->files.we_wordv[f->curr_file++];
+    f->f = fopen(f->filename, "r");
+    if (!f->f) {
+	yaml_errout_d_f(d, f->prev_f,
+			"Unable to open file %s, skipping\n", f->filename);
+	if (f->curr_file < f->files.we_wordc)
+	    goto retry;
+	return 1;
+    }
+    yaml_parser_initialize(&f->parser);
+    yaml_parser_set_input(&f->parser, yaml_read_handler, d);
+    d->y->state = BEGIN_DOC;
+    return 0;
+}
+
+static int
+do_include(struct yconf *y, const char *ivalue)
+{
+    struct yaml_read_file *f;
+    int rv;
+
+    if (y->d->include_depth > 100) {
+	yaml_errout(y, "Too many nested includes, you probably have a"
+		    " circular include\n");
+	return -1;
+    }
+
+    f = calloc(1, sizeof(*f));
+    if (!f) {
+	yaml_errout(y, "Out of memory allocating include info");
+	return -1;
+    }
+
+    rv = wordexp(ivalue, &f->files, WRDE_NOCMD);
+    switch (rv) {
+    case 0:
+	break;
+
+    case WRDE_BADCHAR:
+	yaml_errout(y, "Bad character in include directive");
+	return -1;
+
+    case WRDE_CMDSUB:
+	yaml_errout(y, "Command substitution not allowed in include directive");
+	return -1;
+
+    case WRDE_NOSPACE:
+	yaml_errout(y, "Out of memory processing include directive");
+	return -1;
+
+    case WRDE_SYNTAX:
+	yaml_errout(y, "Syntax error in include directive");
+	return -1;
+
+    case WRDE_BADVAL:
+    default:
+	yaml_errout(y, "Unknown error in include directive");
+	return -1;
+    }
+
+    f->closeme = true;
+    f->prev_f = y->d->f;
+    y->d->f = f;
+    y->d->include_depth++;
+    if (next_yaml_read_file(y->d))
+	cleanup_yaml_read_file(y->d);
     return 0;
 }
 
@@ -350,38 +486,38 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 
     name = strndup(filename, len);
     if (!name) {
-	errout(y, "Out of memory allocating alias name");
+	yaml_errout(y, "Out of memory allocating alias name");
 	return NULL;
     }
 
     infd = open(name, O_RDONLY);
     if (infd == -1) {
-	errout(y, "Error opening %s: %s", name, strerror(errno));
+	yaml_errout(y, "Error opening %s: %s", name, strerror(errno));
 	goto out_err;
     }
 
     rv = fstat(infd, &stat);
     if (rv == -1) {
-	errout(y, "Error stat-ing %s: %s", name, strerror(errno));
+	yaml_errout(y, "Error stat-ing %s: %s", name, strerror(errno));
 	goto out_err;
     }
 
     value = malloc(stat.st_size + 1);
     if (!value) {
-	errout(y, "Error allocating memory for file %s", name);
+	yaml_errout(y, "Error allocating memory for file %s", name);
 	goto out_err;
     }
 
     rv = read(infd, value, stat.st_size);
     if (rv == -1) {
-	errout(y, "Error reading %s: %s", name, strerror(errno));
+	yaml_errout(y, "Error reading %s: %s", name, strerror(errno));
 	goto out_err;
     }
     value[stat.st_size] = '\0';
 
     f = malloc(sizeof(*f));
     if (!f) {
-	errout(y, "Error allocating memory for file struct %s", name);
+	yaml_errout(y, "Error allocating memory for file struct %s", name);
 	goto out_err;
     }
     close(infd);
@@ -412,7 +548,8 @@ add_option(struct yconf *y, const char *name, const char *option,
 	char **new_options = malloc(sizeof(char *) * new_len);
 
 	if (!new_options) {
-	    errout(y, "Out of memory allocating option array for %s", place);
+	    yaml_errout(y, "Out of memory allocating option array for %s",
+			place);
 	    return -1;
 	}
 	memcpy(new_options, y->options, sizeof(char *) * y->options_len);
@@ -431,8 +568,8 @@ add_option(struct yconf *y, const char *name, const char *option,
 	    s = strdup(name);
 	}
 	if (!s) {
-	    errout(y, "Out of memory allocating option %s for %s",
-		   option, place);
+	    yaml_errout(y, "Out of memory allocating option %s for %s",
+			option, place);
 	    return -1;
 	}
 	y->options[y->curr_option] = s;
@@ -451,8 +588,8 @@ add_connection(struct yconf *y, const char *connection, const char *place)
 	char **new_connections = malloc(sizeof(char *) * new_len);
 
 	if (!new_connections) {
-	    errout(y, "Out of memory allocating connection array for %s",
-		   place);
+	    yaml_errout(y, "Out of memory allocating connection array for %s",
+			place);
 	    return -1;
 	}
 	memcpy(new_connections, y->connections,
@@ -465,8 +602,8 @@ add_connection(struct yconf *y, const char *connection, const char *place)
     if (connection) {
 	y->connections[y->curr_connection] = strdup(connection);
 	if (!y->connections[y->curr_connection]) {
-	    errout(y, "Out of memory allocating connection %s for %s",
-		   connection, place);
+	    yaml_errout(y, "Out of memory allocating connection %s for %s",
+			connection, place);
 	    return -1;
 	}
     } else {
@@ -605,6 +742,7 @@ static struct map_info sc_admin_map = {
 
 static struct scalar_next_state sc_main[] = {
     { "define", IN_DEFINE },
+    { "include", IN_INCLUDE },
     { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map },
     { "delete_default", IN_MAIN_NAME, WHICH_INFO_MAP,
       .map_info = &sc_deldefault_map },
@@ -621,16 +759,16 @@ setstr(char **oval, const char *ival, const char *mapname, const char *keyname,
        struct yconf *y)
 {
     if (!ival || strlen(ival) == 0) {
-	errout(y, "Empty %s %s not permitted", mapname, keyname);
+	yaml_errout(y, "Empty %s %s not permitted", mapname, keyname);
 	return -1;
     }	
     if (*oval) {
-	errout(y, "%s %s already set in connection", mapname, keyname);
+	yaml_errout(y, "%s %s already set in connection", mapname, keyname);
 	return -1;
     }
     *oval = strdup(ival);
     if (!*oval) {
-	errout(y, "Unable to allocate %s %s", mapname, keyname);
+	yaml_errout(y, "Unable to allocate %s %s", mapname, keyname);
 	return -1;
     }
     return 0;
@@ -709,12 +847,12 @@ process_scalar(struct yconf *y, const char *iscalar)
 		len += 2;
 		state = 0;
 	    } else if (!*s) {
-		errout(y, "Missing ')' for alias at '%s'", start - 2);
+		yaml_errout(y, "Missing ')' for alias at '%s'", start - 2);
 		goto out_err;
 	    } else if (*s == ')') {
 		struct alias *a = lookup_alias_len(y, start, s - start);
 		if (!a) {
-		    errout(y, "unknown alias at '%s'", start - 2);
+		    yaml_errout(y, "unknown alias at '%s'", start - 2);
 		    goto out_err;
 		}
 		alen = strlen(a->value);
@@ -736,7 +874,7 @@ process_scalar(struct yconf *y, const char *iscalar)
 		len += 2;
 		state = 0;
 	    } else if (!*s) {
-		errout(y, "Missing '}' for filename at '%s'", start - 2);
+		yaml_errout(y, "Missing '}' for filename at '%s'", start - 2);
 		goto out_err;
 	    } else if (*s == '}') {
 		struct yfile *f = lookup_filename_len(y, start, s - start);
@@ -755,7 +893,7 @@ process_scalar(struct yconf *y, const char *iscalar)
     if (!out) {
 	out = malloc(len + 1);
 	if (!out) {
-	    errout(y, "Out of memory processing string '%s'", iscalar);
+	    yaml_errout(y, "Out of memory processing string '%s'", iscalar);
 	    return NULL;
 	}
 	rv = out;
@@ -786,7 +924,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case MAIN_LEVEL:
 	scalar_next_state(y, sc_main, scalar);
 	if (y->state == PARSE_ERR) {
-	    errout(y, "Invalid token at the main level: %s\n", scalar);
+	    yaml_errout(y, "Invalid token at the main level: %s\n", scalar);
 	    goto out_err;
 	}
 	break;
@@ -794,7 +932,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_DEFINE:
 	anchor_allowed = true;
 	if (!anchor)
-	    errout(y, "No anchor for define, define ignored\n");
+	    yaml_errout(y, "No anchor for define, define ignored\n");
 	else {
 	    if (add_alias(y, anchor, scalar))
 		goto out_err;
@@ -802,11 +940,17 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->state = MAIN_LEVEL;
 	break;
 
+    case IN_INCLUDE:
+	if (do_include(y, scalar))
+	    goto out_err;
+	/* do_include conditionally moves us to BEGIN_DOC. */
+	break;
+
     case IN_MAIN_MAP:
 	scalar_next_state(y, y->map_info->states, scalar);
 	if (y->state == PARSE_ERR) {
-	    errout(y, "Invalid token in the %s: %s",
-		      y->map_info->name, scalar);
+	    yaml_errout(y, "Invalid token in the %s: %s",
+			y->map_info->name, scalar);
 	    goto out_err;
 	}
 	break;
@@ -821,7 +965,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_CONNSPEC_TIMEOUT:
 	y->timeout = strtoul(scalar, &end, 0);
 	if (end == scalar || *end != '\0') {
-	    errout(y, "Invalid number in connection timeout");
+	    yaml_errout(y, "Invalid number in connection timeout");
 	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
@@ -833,7 +977,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	} else if (strcasecmp(scalar, "off") == 0) {
 	    y->enable = false;
 	} else {
-	    errout(y, "enable must be 'on' or 'off'");
+	    yaml_errout(y, "enable must be 'on' or 'off'");
 	    goto out_err;
 	}
 	y->state = IN_MAIN_MAP;
@@ -859,12 +1003,12 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	break;
 
     default:
-	errout(y, "Unexpected scalar value");
+	yaml_errout(y, "Unexpected scalar value");
 	goto out_err;
     }
 
     if (anchor && !anchor_allowed)
-	errout(y, "Anchor on non-scalar ignored\n");
+	yaml_errout(y, "Anchor on non-scalar ignored\n");
 
     free(scalar);
     return 0;
@@ -883,7 +1027,7 @@ yhandle_seq_start(struct yconf *y)
 	break;
 
     default:
-	errout(y, "Unexpected sequence start: %d", y->state);
+	yaml_errout(y, "Unexpected sequence start: %d", y->state);
 	return -1;
     }
 
@@ -899,7 +1043,7 @@ yhandle_seq_end(struct yconf *y)
 	break;
 
     default:
-	errout(y, "Unexpected sequence end: %d", y->state);
+	yaml_errout(y, "Unexpected sequence end: %d", y->state);
 	return -1;
     }
 
@@ -916,15 +1060,15 @@ yhandle_mapping_start(struct yconf *y)
 
     case IN_MAIN_NAME:
 	if (y->map_info->needs_anchor) {
-	    char *anchor = (char *) y->e.data.mapping_start.anchor;
+	    char *anchor = (char *) y->d->f->e.data.mapping_start.anchor;
 
 	    if (!anchor) {
-		errout(y, "Main mapping requires an anchor for the name");
+		yaml_errout(y, "Main mapping requires an anchor for the name");
 		return -1;
 	    }
 	    y->name = strdup(anchor);
 	    if (!y->name) {
-		errout(y, "Out of memory allocating name");
+		yaml_errout(y, "Out of memory allocating name");
 		return -1;
 	    }
 	    if (add_alias(y, anchor, anchor))
@@ -938,7 +1082,7 @@ yhandle_mapping_start(struct yconf *y)
 	break;
 
     default:
-	errout(y, "Unexpected mapping start: %d", y->state);
+	yaml_errout(y, "Unexpected mapping start: %d", y->state);
 	return -1;
     }
 
@@ -960,14 +1104,14 @@ yhandle_mapping_end(struct yconf *y)
 	switch (y->map_info->map_type) {
 	case MAIN_MAP_DEFAULT:
 	    if (!y->name) {
-		errout(y, "No name given in default");
+		yaml_errout(y, "No name given in default");
 		return -1;
 	    }
 	    err = gensio_set_default(so, y->class, y->name, y->value, 0);
 	    if (err) {
-		errout(y, "Unable to set default name %s:%s:%s: %s",
-			  y->class ? y->class : "",
-			  y->name, y->value, gensio_err_to_str(err));
+		yaml_errout(y, "Unable to set default name %s:%s:%s: %s",
+			    y->class ? y->class : "",
+			    y->name, y->value, gensio_err_to_str(err));
 		return -1;
 	    }
 	    y->state = MAIN_LEVEL;
@@ -976,18 +1120,18 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_DELDEFAULT:
 	    if (!y->name) {
-		errout(y, "No name given in delete_default");
+		yaml_errout(y, "No name given in delete_default");
 		return -1;
 	    }
 	    if (!y->class) {
-		errout(y, "No class given in delete_default");
+		yaml_errout(y, "No class given in delete_default");
 		return -1;
 	    }
 	    err = gensio_del_default(so, y->class, y->name, false);
 	    if (err) {
-		errout(y, "Unable to set default name %s:%s:%s: %s",
-			  y->class ? y->class : "",
-			  y->name, y->value, gensio_err_to_str(err));
+		yaml_errout(y, "Unable to set default name %s:%s:%s: %s",
+			    y->class ? y->class : "",
+			    y->name, y->value, gensio_err_to_str(err));
 		return -1;
 	    }
 	    y->state = MAIN_LEVEL;
@@ -996,15 +1140,15 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_CONNECTION:
 	    if (!y->name) {
-		errout(y, "No name given in connection");
+		yaml_errout(y, "No name given in connection");
 		return -1;
 	    }
 	    if (!y->accepter) {
-		errout(y, "No accepter given in connection");
+		yaml_errout(y, "No accepter given in connection");
 		return -1;
 	    }
 	    if (!y->connector) {
-		errout(y, "No connector given in connection");
+		yaml_errout(y, "No connector given in connection");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
@@ -1019,15 +1163,15 @@ yhandle_mapping_end(struct yconf *y)
 	
 	case MAIN_MAP_ROTATOR:
 	    if (!y->name) {
-		errout(y, "No name given in rotator");
+		yaml_errout(y, "No name given in rotator");
 		return -1;
 	    }
 	    if (!y->accepter) {
-		errout(y, "No accepter given in rotator");
+		yaml_errout(y, "No accepter given in rotator");
 		return -1;
 	    }
 	    if (y->curr_connection == 0) {
-		errout(y, "No connections given in rotator");
+		yaml_errout(y, "No connections given in rotator");
 		return -1;
 	    }
 	    /* NULL terminate the connections. */
@@ -1036,14 +1180,15 @@ yhandle_mapping_end(struct yconf *y)
 	    err = gensio_argv_copy(so, (const char **) y->connections,
 				   &argc, &argv);
 	    if (err) {
-		errout(y, "Unable to allocate rotator connections");
+		yaml_errout(y, "Unable to allocate rotator connections");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "rotator"))
 		return -1;
 	    err = add_rotator(&y->sub_errout, y->name, y->accepter, argc, argv,
-			      (const char **) y->options, y->e.start_mark.line);
+			      (const char **) y->options,
+			      y->d->f->e.start_mark.line);
 	    if (err)
 		gensio_argv_free(so, argv);
 	    y->state = MAIN_LEVEL;
@@ -1052,25 +1197,26 @@ yhandle_mapping_end(struct yconf *y)
 
 	case MAIN_MAP_LED:
 	    if (!y->name) {
-		errout(y, "No name given in led");
+		yaml_errout(y, "No name given in led");
 		return -1;
 	    }
 	    if (!y->driver) {
-		errout(y, "No driver given in led");
+		yaml_errout(y, "No driver given in led");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "led"))
 		return -1;
 	    err = add_led(y->name, y->driver,
-			  (const char **) y->options, y->e.start_mark.line);
+			  (const char **) y->options,
+			  y->d->f->e.start_mark.line);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
 	    break;
 
 	case MAIN_MAP_ADMIN:
 	    if (!y->accepter) {
-		errout(y, "No accepter given in admin");
+		yaml_errout(y, "No accepter given in admin");
 		return -1;
 	    }
 	    /* NULL terminate the options. */
@@ -1089,7 +1235,7 @@ yhandle_mapping_end(struct yconf *y)
 	break;
 
     default:
-	errout(y, "Unexpected mapping end: %d", y->state);
+	yaml_errout(y, "Unexpected mapping end: %d", y->state);
 	return -1;
     }
 
@@ -1162,23 +1308,27 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 
     *size_read = 0;
 
-    if (d->f) {
-	*size_read = fread(buffer, 1, size, d->f);
+    if (d->f->f) {
+	*size_read = fread(buffer, 1, size, d->f->f);
 	if (*size_read < size) {
-	    if (ferror(d->f)) {
-		syslog(LOG_ERR, "Error reading input file: %m");
+	    if (ferror(d->f->f)) {
+		yaml_errout(d->y, "Error reading input file: %s",
+			    strerror(errno));
 		return 0;
 	    }
 	    /* End of file */
-	    d->f = NULL;
 	    size -= *size_read;
 	    buffer += *size_read;
-	} else {
-	    return 1;
+
+	    /*
+	     * End of file handling in the main routine will move to
+	     * the next file as necessary.
+	     */
 	}
+	return 1;
     }
 
-    while (d->curr < d->num_config_lines && size > 1) {
+    while (d->curr < d->num_config_lines) {
 	unsigned int len = strlen(d->config_lines[d->curr]);
 
 	size--; /* leave space for the terminating newline. */
@@ -1189,7 +1339,7 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 	    if (!process_buffer(d, buffer, &output_processed,
 				d->config_lines[d->curr] + d->pos,
 				&input_processed)) {
-		syslog(LOG_ERR, "Invalid yaml config string");
+		yaml_errout(d->y, "Invalid yaml config string");
 		return 0;
 	    }
 	    size -= output_processed;
@@ -1214,7 +1364,7 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 }
 
 int
-yaml_readconfig(FILE *f, char *filename,
+yaml_readconfig(FILE *file, char *filename,
 		char **config_lines, unsigned int num_config_lines,
 		struct absout *errout)
 {
@@ -1222,6 +1372,7 @@ yaml_readconfig(FILE *f, char *filename,
     struct yconf y;
     int err = 0;
     struct yaml_read_handler_data d;
+    struct yaml_read_file f;
 
     memset(&y, 0, sizeof(y));
     y.enable = true;
@@ -1239,31 +1390,31 @@ yaml_readconfig(FILE *f, char *filename,
     }
     y.connections_len = 10;
     y.state = BEGIN_DOC;
-    y.errout = errout;
     y.sub_errout.out = sub_errout;
     y.sub_errout.data = &y;
-
-    yaml_parser_initialize(&y.parser);
+    y.d = &d;
 
     memset(&d, 0, sizeof(d));
-    d.f = f;
-    d.filename = filename;
+    d.errout = errout;
     d.config_lines = config_lines;
     d.num_config_lines = num_config_lines;
-    y.d = &d;
-    yaml_parser_set_input(&y.parser, yaml_read_handler, &d);
+    d.f = &f;
+    d.y = &y;
+
+    memset(&f, 0, sizeof(f));
+    f.filename = filename;
+    f.f = file;
+    yaml_parser_initialize(&f.parser);
+    yaml_parser_set_input(&f.parser, yaml_read_handler, &d);
 
     while (!done && !err) {
-	if (!yaml_parser_parse(&y.parser, &y.e)) {
-	    errout->out(errout, "yaml parsing error at line %lu column %lu: %s",
-		   (unsigned long) y.parser.problem_mark.line,
-		   (unsigned long) y.parser.problem_mark.column,
-		   y.parser.problem);
+	if (!yaml_parser_parse(&y.d->f->parser, &y.d->f->e)) {
+	    yaml_errout(&y, y.d->f->parser.problem);
 	    err = EINVAL;
 	    break;
 	}
 
-	switch (y.e.type) {
+	switch (y.d->f->e.type) {
 	case YAML_NO_EVENT:
 	case YAML_STREAM_START_EVENT:
 	case YAML_DOCUMENT_START_EVENT:
@@ -1272,7 +1423,7 @@ yaml_readconfig(FILE *f, char *filename,
 
 	case YAML_STREAM_END_EVENT:
 	    if (y.state != END_DOC) {
-		errout->out(errout, "yaml file ended in invalid state: %d",
+		yaml_errout(&y, "yaml file ended in invalid state: %d",
 			    y.state);
 		err = EINVAL;
 	    }
@@ -1285,10 +1436,10 @@ yaml_readconfig(FILE *f, char *filename,
 	    printf("YAML_ALIAS_EVENT\n");
 	    printf(" anc: '%s'\n", y.e.data.alias.anchor);
 #endif
-	    a = lookup_alias(&y, (char *) y.e.data.alias.anchor);
+	    a = lookup_alias(&y, (char *) y.d->f->e.data.alias.anchor);
 	    if (!a) {
-		errout->out(errout, "Unable to find alias '%s'",
-			    y.e.data.alias.anchor);
+		yaml_errout(&y, "Unable to find alias '%s'",
+			    y.d->f->e.data.alias.anchor);
 		err = EINVAL;
 	    } else {
 		if (yhandle_scalar(&y, NULL, a->value))
@@ -1304,8 +1455,8 @@ yaml_readconfig(FILE *f, char *filename,
 	    printf(" tag: '%s'\n", y.e.data.scalar.tag);
 	    printf(" val: '%s'\n", y.e.data.scalar.value);
 #endif
-	    if (yhandle_scalar(&y, (char *) y.e.data.scalar.anchor,
-			       (char *) y.e.data.scalar.value))
+	    if (yhandle_scalar(&y, (char *) y.d->f->e.data.scalar.anchor,
+			       (char *) y.d->f->e.data.scalar.value))
 		err = EINVAL;
 	    break;
 
@@ -1346,10 +1497,25 @@ yaml_readconfig(FILE *f, char *filename,
 	    break;
 	}
 
-	yaml_event_delete(&y.e);
+	yaml_event_delete(&y.d->f->e);
+
+	if (done) {
+	continue_clean:
+	    while (d.f && d.f->curr_file >= d.f->files.we_wordc)
+		/* Done with this include directive. */
+		cleanup_yaml_read_file(&d);
+	    if (d.f) {
+		done = false;
+		yaml_parser_delete(&d.f->parser);
+		fclose(d.f->f);
+		if (next_yaml_read_file(&d))
+		    goto continue_clean;
+	    }
+	}
     }
 
-    yaml_parser_delete(&y.parser);
+    while (d.f)
+	cleanup_yaml_read_file(&d);
 
     yconf_cleanup_main(&y);
     free(y.options);

@@ -40,10 +40,22 @@ documentation for how spaces are handled, but as a note, use quotes if
 you are not sure, like:
 .IP
 define: &aliasname "alias text"
+.br
 banner: "My banner *(aliasname) is here"
 .PP
 
 If you for some reason need "*(" in your text, use "*(*" for that.
+
+.SH INCLUDING OTHER FILES
+A YAML file may include another file at the main level, with:
+.IP
+include: <filename>
+.PP
+This filename can include globs, and all referenced files are
+included.  These must be full yaml files, but are included in context
+at this point, with all the defines, connection names, etc.  This can
+let you have individual connections in individual files to ease
+management.
 
 .SH USING EXTERNAL FILES
 You may want to store passwords and such in external files for better
