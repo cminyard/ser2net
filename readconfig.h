@@ -37,7 +37,7 @@ int readconfig_init(void);
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int readconfig(FILE *instream);
-int yaml_readconfig(FILE *f, char **config_lines,
+int yaml_readconfig(FILE *f, char *filename, char **config_lines,
 		    unsigned int num_config_lines,
 		    struct absout *errout);
 

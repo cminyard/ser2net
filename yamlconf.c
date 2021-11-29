@@ -157,6 +157,17 @@ struct scalar_next_state {
     };
 };
 
+struct yaml_read_handler_data {
+    FILE *f;
+    char *filename;
+    char **config_lines;
+    unsigned int num_config_lines;
+    unsigned int curr;
+    unsigned int pos;
+    char in_quote;
+    bool in_escape;
+};
+
 struct yconf {
     enum ystate state;
 
@@ -190,6 +201,7 @@ struct yconf {
 
     yaml_parser_t parser;
     yaml_event_t e;
+    struct yaml_read_handler_data *d;
     struct absout *errout;
     struct absout sub_errout;
 };
@@ -203,9 +215,11 @@ errout(struct yconf *y, const char *str, ...)
     va_start(ap, str);
     vsnprintf(buf, sizeof(buf), str, ap);
     va_end(ap);
-    y->errout->out(y->errout, "%s on line %lu column %lu", buf,
+    y->errout->out(y->errout, "%s:%lu(column %lu): %s",
+		   y->d->filename,
 		   (unsigned long) y->e.start_mark.line,
-		   (unsigned long) y->e.start_mark.column);
+		   (unsigned long) y->e.start_mark.column,
+		   buf);
     return 0;
 }
 
@@ -1082,16 +1096,6 @@ yhandle_mapping_end(struct yconf *y)
     return 0;
 }
 
-struct yaml_read_handler_data {
-    FILE *f;
-    char **config_lines;
-    unsigned int num_config_lines;
-    unsigned int curr;
-    unsigned int pos;
-    char in_quote;
-    bool in_escape;
-};
-
 /*
  * Copy characters from input to buffer, up to either buffer_size or
  * input_size.  Upon return buffer_size and input_size are updated to
@@ -1210,7 +1214,8 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 }
 
 int
-yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines,
+yaml_readconfig(FILE *f, char *filename,
+		char **config_lines, unsigned int num_config_lines,
 		struct absout *errout)
 {
     bool done = false;
@@ -1242,8 +1247,10 @@ yaml_readconfig(FILE *f, char **config_lines, unsigned int num_config_lines,
 
     memset(&d, 0, sizeof(d));
     d.f = f;
+    d.filename = filename;
     d.config_lines = config_lines;
     d.num_config_lines = num_config_lines;
+    y.d = &d;
     yaml_parser_set_input(&y.parser, yaml_read_handler, &d);
 
     while (!done && !err) {

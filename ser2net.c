@@ -167,7 +167,7 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
 }
 
 static FILE *
-fopen_config_file(bool *is_yaml)
+fopen_config_file(bool *is_yaml, char **rfilename)
 {
     FILE *instream = fopen(config_file, "r");
 
@@ -183,8 +183,10 @@ fopen_config_file(bool *is_yaml)
 		   " '%s': %m", config_file, old_config_file);
 	    return NULL;
 	}
+	*rfilename = old_config_file;
 	*is_yaml = false;
     } else {
+	*rfilename = config_file;
 	*is_yaml = str_endswith(config_file, ".yaml");
     }
 
@@ -210,20 +212,21 @@ reread_config_file(const char *reqtype, struct absout *eout)
 
     if (config_file) {
 	FILE *instream = NULL;
+	char *filename;
 	bool is_yaml;
 
 	syslog(LOG_INFO, "Got %s, re-reading configuration", reqtype);
 	readconfig_init();
 
-	instream = fopen_config_file(&is_yaml);
+	instream = fopen_config_file(&is_yaml, &filename);
 	if (!instream)
 	    goto out;
 
 	if (!admin_port_from_cmdline)
 	    controller_shutdown();
 	if (is_yaml)
-	    rv = yaml_readconfig(instream, config_lines, num_config_lines,
-				 eout);
+	    rv = yaml_readconfig(instream, filename,
+				 config_lines, num_config_lines, eout);
 	else
 	    rv = readconfig(instream);
 	fclose(instream);
@@ -718,6 +721,7 @@ main(int argc, char *argv[])
     int print_when_ready = 0;
     FILE *instream = NULL;
     enum { CONFIG_NONE, CONFIG_YAML, CONFIG_OLD } config_type = CONFIG_NONE;
+    char *filename;
 
     gensio_set_progname("ser2net");
 
@@ -940,8 +944,9 @@ main(int argc, char *argv[])
 	if (strcmp(config_file, "-") == 0) {
 	    instream = stdin;
 	    is_yaml = true;
+	    filename = "<stdin>";
 	} else {
-	    instream = fopen_config_file(&is_yaml);
+	    instream = fopen_config_file(&is_yaml, &filename);
 	    if (!instream)
 		exit(1);
 	}
@@ -960,13 +965,16 @@ main(int argc, char *argv[])
 	    }
 	    config_type = CONFIG_OLD;
 	}
+    } else {
+	filename = "<cmdline>";
     }
 
     if (config_type == CONFIG_YAML || instream)	{
 	int rv;
 
 	if (config_type == CONFIG_YAML)
-	    rv = yaml_readconfig(instream, config_lines, num_config_lines,
+	    rv = yaml_readconfig(instream, filename,
+				 config_lines, num_config_lines,
 				 &stderr_absout);
 	else
 	    rv = readconfig(instream);
