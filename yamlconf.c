@@ -171,6 +171,7 @@ struct scalar_next_state {
 struct yaml_read_file {
 #ifdef DO_WORDEXP
     wordexp_t files;
+    bool files_set;
     int curr_file;
 #endif
 
@@ -392,9 +393,11 @@ cleanup_yaml_read_file(struct yaml_read_handler_data *d)
     d->f = d->f->prev_f;
     yaml_parser_delete(&old_f->parser);
     if (old_f->closeme) {
-	fclose(old_f->f);
+	if (old_f->f)
+	    fclose(old_f->f);
 #ifdef DO_WORDEXP
-	wordfree(&old_f->files);
+	if (old_f->files_set)
+	    wordfree(&old_f->files);
 #endif
 	free(old_f);
 	d->include_depth--;
@@ -491,6 +494,7 @@ do_include(struct yconf *y, const char *ivalue)
     }
 
     f->closeme = true;
+    f->files_set = true;
     f->prev_f = y->d->f;
     y->d->f = f;
     y->d->include_depth++;
