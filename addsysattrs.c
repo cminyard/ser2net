@@ -51,8 +51,11 @@ get_base_str(const char *devname, unsigned int *len)
 
     s = strstr(devname, ",serialdev");
     if (s) {
+	s++;
 	s = strchr(s, ',');
 	if (s)
+	    s++;
+	while (isspace(*s))
 	    s++;
     } else {
 	s = strstr(devname, "/dev/");
@@ -63,6 +66,8 @@ get_base_str(const char *devname, unsigned int *len)
 	    *len = e - s;
 	else
 	    *len = strlen(s);
+	while (*len > 0 && isspace(s[(*len) - 1]))
+	    (*len)--;
     }
 
     return s;
