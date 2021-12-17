@@ -124,7 +124,6 @@ add_usb_attrs(struct absout *eout, const char *portname, const char *devstr,
 {
     int rv;
     char *p, *s;
-    unsigned int len;
 
     rv = gensio_argv_sappend(so, txt, args, argc, "devicetype=serialusb");
     if (rv < 0)
@@ -132,27 +131,26 @@ add_usb_attrs(struct absout *eout, const char *portname, const char *devstr,
 		  "Device %s: Unable add txt devicetype for %s\n",
 		  portname, gensio_err_to_str(rv));
 
-    /* Search backwards three directory levels, the name should match. */
+    /*
+     * Search backwards to the device.  Depending on the specific
+     * device, there should be various levels of directories named
+     * "tty" or "ttyxxxx".  Like "tty/ttyACM0" or
+     * "ttyUSB0/tty/ttyUSB0".
+     */
     s = p = strrchr(path, '/');
-    if (p && p > path) {
-	p--;
-	while (p > path && *p != '/')
-	    p--;
-    }
-    if (p && p > path) {
+    while (p && p > path && strncmp(p + 1, "tty", 3) == 0) {
 	s = p;
 	p--;
 	while (p > path && *p != '/')
 	    p--;
     }
-    len = strlen(devstr);
-    if (!p || (s - p - 1 != len) || strncmp(p + 1, devstr, len)) {
+    if (!p) {
 	eout->out(eout,
 		  "Device %s: usb path is not valid: %s\n",
 		  portname, path);
 	return;
     }
-    *p = '\0';
+    *s = '\0';
 
     add_attr(eout, portname, path, "bInterfaceNumber", txt, args, argc);
     add_attr(eout, portname, path, "interface", txt, args, argc);
