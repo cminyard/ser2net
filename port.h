@@ -330,6 +330,11 @@ struct port_info
     char *authdir;
 
     /*
+     * Enable PAM authentication
+     */
+    char *pamauth;
+
+    /*
      * List of authorized users.  If NULL, all users are authorized.
      * If no allowed users are specified, the default is taken.
      */

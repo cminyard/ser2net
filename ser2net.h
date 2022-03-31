@@ -65,7 +65,7 @@ int scan_int(const char *str);
 /*
  * Handle authorization events from accepters.
  */
-int handle_acc_auth_event(const char *authdir,
+int handle_acc_auth_event(const char *authdir, const char *pamauth,
 			  const struct gensio_list *allowed_users,
 			  int event, void *data);
 

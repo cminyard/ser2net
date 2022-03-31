@@ -453,6 +453,9 @@ port uness all connect backs have been established.
 .I authdir: <directory string>
 specified the authentication directory to use for this connection.
 
+.I pamauth: <service name>
+Enables PAM authentication and sets the PAM service name.
+
 .I allowed-users: <space separated list of names>
 The users that are allowed to use this connections.  This has no
 meaning if authentication is not enabled on the connections.  If this
@@ -536,7 +539,7 @@ options:
 .RE
 .RE
 
-A rotator has three possible options, "authdir", "allowed-users", and
+A rotator has four possible options, "authdir", "pamauth", "allowed-users", and
 "accepter-retry-time", both same as connections.
 
 You should use YAML aliases for the connections.
@@ -678,6 +681,13 @@ details.
 The authentication directory for ser2net for admin connections.  The
 "ADMIN_CONNECTIONS" for more details.
 .TP
+.B pamauth: <NULL>
+The PAM service name for ser2net PAM authentication (<NULL> for disabled).
+.TP
+.B pamauth-admin: <NULL>
+The PAM service name for ser2net admin connection PAM authentication (<NULL>
+for disabled). See "ADMIN_CONNECTIONS" for more details.
+.TP
 .B mdns-interface: -1
 The default mDNS interface.
 .TP
@@ -707,10 +717,10 @@ options:
 .RE
 .RE
 
-The only option available is "authdir-admin", which sets the
-authentication directory for the admin port.  This is different than
-the authdir for connections and rotators, though you can set it to the
-same value.
+The only options available are "authdir-admin", which sets the authentication
+directory for the admin port and "pamauth-admin" which sets the PAM service
+name and enables PAM authentication. Both are different than "authdir" resp.
+"pamauth" for connections, though you can set it to the same value.
 
 .SH LEDS
 .B ser2net
@@ -1137,14 +1147,18 @@ If you have not connected to that server/port before, gtlssh will
 ask you to verify it, much like ssh does.  If certificates, IP
 address, etc. change, gtlssh will tell you about it.
 
-If you do not want to use a certificate (certificates are certainly
-preferred, but may not alway be workable) you can use a password
-login, too.  Put a password in authdir/username/password.  When
-you connect with gtlssh, if certificate validate fails, you will
-be prompted for the password.  If it matches the first line in the
-password file, then authentication will succeed.  You must set
-enable-password in the certauth gensio options for passwords
-to work.
+If you do not want to use a certificate (certificates are certainly preferred,
+but may not always be workable) you can use a password login, too. You must set
+enable-password in the certauth gensio options for passwords to work.  When you
+connect with gtlssh, if certificate validate fails, you will be prompted for
+the password. Password authentication can be performed in two different ways.
+Both are mutually exclusive,  depending on whether pamauth is set or not:
+.IP \(bu
+To authenticate using the PAM library set the PAM service name via pamauth
+option.
+.IP \(bu
+Put a password in authdir/username/password. If it matches the first line in
+the password file and pamauth is not set, then authentication will succeed.
 .SS "AUTHENTICATION AND ROTATORS"
 Rotators are a special case.  BE CAREFUL.  A rotator has its own
 authentication.  If you set up authentication on a port that is

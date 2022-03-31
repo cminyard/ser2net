@@ -273,8 +273,8 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 	return port_new_con(port, data);
 
     default:
-	return handle_acc_auth_event(port->authdir, port->allowed_users,
-				     event, data);
+	return handle_acc_auth_event(port->authdir, port->pamauth,
+	    port->allowed_users, event, data);
     }
 }
 

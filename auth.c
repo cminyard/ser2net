@@ -29,8 +29,24 @@
 #include <limits.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <pwd.h>
+#include <dirent.h>
 #include <gensio/gensio.h>
 #include "ser2net.h"
+
+#if defined(USE_PAM)
+#include <security/pam_appl.h>
+#endif
+
+/*
+ * Ambiguity in spec: is it an array of pointers or a pointer to an array?
+ * Stolen from openssh.
+ */
+#ifdef PAM_SUN_CODEBASE
+# define PAM_MSG_MEMBER(msg, n, member) ((*(msg))[(n)].member)
+#else
+# define PAM_MSG_MEMBER(msg, n, member) ((msg)[(n)]->member)
+#endif
 
 struct user {
     struct gensio_link link;
@@ -118,11 +134,14 @@ free_user_list(struct gensio_list *users)
  * The next few functions are for authentication handling.
  */
 static int
-handle_auth_begin(struct gensio *net, const char *authdir,
+handle_auth_begin(struct gensio *net, const char *authdir, const char *pamauth,
 		  const struct gensio_list *allowed_users)
 {
     gensiods len;
     char username[100];
+    char userauthdir[1000];
+    DIR *dir;
+    struct passwd *pw;
     int err;
 
     len = sizeof(username);
@@ -138,6 +157,29 @@ handle_auth_begin(struct gensio *net, const char *authdir,
 	       username);
 	return GE_AUTHREJECT;
     }
+
+#if defined(USE_PAM)
+    /* set user-specific authdir if it exists. */
+    if (pamauth) {
+	pw = getpwnam(username);
+	if (pw) {
+	    len = snprintf(userauthdir, sizeof(userauthdir),
+		"%s/.gtlssh/allowed_certs/", pw->pw_dir);
+	    dir = opendir(userauthdir);
+	    if (dir) {
+		closedir(dir);
+
+		err = gensio_control(net, 0, GENSIO_CONTROL_SET,
+				     GENSIO_CONTROL_CERT_AUTH, userauthdir, &len);
+		if (err) {
+		    syslog(LOG_ERR, "Could not set authdir %s: %s", userauthdir,
+			   gensio_err_to_str(err));
+		    return GE_NOTSUP;
+		}
+	    }
+	}
+    }
+#endif
 
     return GE_NOTSUP;
 }
@@ -238,8 +280,112 @@ handle_password(struct gensio *net, const char *authdir, const char *password)
     return GE_NOTSUP;
 }
 
+#if defined(USE_PAM)
+static int
+pam_conversation_cb(int num_msg, const struct pam_message **msg,
+		    struct pam_response **pam_response, void *appdata_ptr)
+{
+    int i;
+    const char *password = appdata_ptr;
+    struct pam_response *resp = NULL;
+
+    if (password == NULL) {
+	return PAM_CONV_ERR;
+    }
+
+    resp = calloc(num_msg, sizeof(struct pam_response));
+    if (resp == NULL) {
+	return PAM_BUF_ERR;
+    }
+
+    for (i = 0; i < num_msg; i++) {
+	resp[i].resp_retcode = 0;
+
+	switch(PAM_MSG_MEMBER(msg, i, msg_style)) {
+	case PAM_PROMPT_ECHO_ON:
+	case PAM_PROMPT_ECHO_OFF:
+	    resp[i].resp = strdup(password);
+	    if(resp[i].resp == NULL) {
+		goto error;
+	    }
+	}
+    }
+
+    *pam_response = resp;
+    return PAM_SUCCESS;
+
+error:
+    if (resp) {
+	for (i = 0; i < num_msg; i++) {
+	    free(resp[i].resp);
+	}
+	free(resp);
+    }
+    return PAM_BUF_ERR;
+}
+
+static int
+handle_password_pam(struct gensio *net, const char *pamauth, const char *password)
+{
+    int ret = GE_AUTHREJECT;
+    char username[100];
+    gensiods len;
+    int err, pam_err = 0;
+    pam_handle_t *pamh = NULL;
+    struct pam_conv pam_conv;
+
+    len = sizeof(username);
+    err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
+			 &len);
+    if (err) {
+	syslog(LOG_ERR, "No username provided by remote: %s",
+	       gensio_err_to_str(err));
+	goto exit;
+    }
+
+    pam_conv.conv = pam_conversation_cb;
+    pam_conv.appdata_ptr = (char *)password;
+    pam_err = pam_start(pamauth, username, &pam_conv, &pamh);
+    if (pam_err != PAM_SUCCESS) {
+	syslog(LOG_ERR, "Unable to start PAM transaction: %s",
+	       pam_strerror(pamh, pam_err));
+	goto exit;
+    }
+
+    pam_err = pam_authenticate(pamh, PAM_SILENT);
+    if (pam_err != PAM_SUCCESS) {
+	syslog(LOG_ERR, "PAM authentication failed: %s",
+	    pam_strerror(pamh, pam_err)
+	);
+	goto exit;
+    } else {
+	syslog(LOG_INFO, "Accepted password for %s\n", username);
+    }
+
+    pam_err = pam_acct_mgmt(pamh, 0);
+    if (pam_err == PAM_NEW_AUTHTOK_REQD) {
+	syslog(LOG_ERR, "user %s password expired", username);
+	goto exit;
+    }
+    if (pam_err != PAM_SUCCESS) {
+	syslog(LOG_ERR, "pam_acct_mgmt failed for %s: %s",
+	    username, pam_strerror(pamh, pam_err)
+	);
+	goto exit;
+    }
+
+    ret = 0;
+
+exit:
+    if (pamh) {
+	pam_end(pamh, pam_err);
+    }
+    return ret;
+}
+#endif
+
 int
-handle_acc_auth_event(const char *authdir,
+handle_acc_auth_event(const char *authdir, const char *pamauth,
 		      const struct gensio_list *allowed_users,
 		      int event, void *data)
 {
@@ -247,7 +393,7 @@ handle_acc_auth_event(const char *authdir,
     case GENSIO_ACC_EVENT_AUTH_BEGIN:
 	if (!authdir)
 	    return 0;
-	return handle_auth_begin(data, authdir, allowed_users);
+	return handle_auth_begin(data, authdir, pamauth, allowed_users);
 
     case GENSIO_ACC_EVENT_PRECERT_VERIFY:
 	if (!authdir)
@@ -256,10 +402,17 @@ handle_acc_auth_event(const char *authdir,
 
     case GENSIO_ACC_EVENT_PASSWORD_VERIFY: {
 	struct gensio_acc_password_verify_data *pwdata;
-	if (!authdir)
-	    return 0;
 	pwdata = (struct gensio_acc_password_verify_data *) data;
-	return handle_password(pwdata->io, authdir, pwdata->password);
+#if defined(USE_PAM)
+	if (pamauth) {
+	    return handle_password_pam(pwdata->io, pamauth, pwdata->password);
+	} else
+#endif
+	if (authdir) {
+	    return handle_password(pwdata->io, authdir, pwdata->password);
+	} else {
+	    return 0;
+	}
     }
 
     default:

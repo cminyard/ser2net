@@ -71,6 +71,8 @@ static struct default_data defaults[] = {
 						DATAROOT "/ser2net/auth" },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
 						SYSCONFDIR "/ser2net/auth" },
+    { "pamauth",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "pamauth-admin",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "allowed-users",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "signature",	GENSIO_DEFAULT_STR,	.def.strval = "ser2net" },
     { "openstr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
