@@ -27,6 +27,26 @@ if test "x$use_pthreads" != "xno"; then
        fi])
 fi
 
+use_pam=yes
+AC_ARG_WITH(pam,
+[  --with-pam=yes|no           Support PAM authentication or not.],
+    if test "x$withval" = "xyes"; then
+      use_pam=yes
+    elif test "x$withval" = "xno"; then
+      use_pam=no
+    fi,
+)
+
+if test "x$use_pam" != "xno"; then
+    AC_CHECK_HEADER(security/pam_appl.h, [],
+	[AC_MSG_ERROR(["security/pam_appl.h not, please install libpam dev package or disable PAM support"])]
+    )
+    AC_CHECK_LIB(pam, pam_start, [],
+	[AC_MSG_ERROR([libpam won't link, please install libpam dev package or disable PAM support"])]
+    )
+    AC_DEFINE([USE_PAM], [], [Enable PAM support])
+fi
+
 AC_ARG_WITH(sysfs-led-support,
  [  --with-sysfs-led-support   Enable LED support (Linux only)],
  sysfs_led_support_flag="$withval",

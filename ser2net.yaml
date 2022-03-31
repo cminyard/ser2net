@@ -273,6 +273,7 @@ define: &confver 1.0
 #     net-to-dev-bufsize: 64
 #     max-connections: 1
 #     authdir: <authentication directory>
+#     pamauth: ""
 #     allowed-users: <space separated list of names>
 #     remaddr: <remote address>
 #     connback: <remote connector string>

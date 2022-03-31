@@ -44,6 +44,7 @@
 static struct gensio_lock *cntlr_lock;
 static struct gensio_accepter *controller_accepter;
 static char *controller_authdir;
+static char *controller_pamauth;
 static struct gensio_waiter *accept_waiter;
 
 static int max_controller_ports = 4;	/* How many control connections
@@ -1074,7 +1075,10 @@ controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
 	return controller_acc_new_child(data);
 
     default:
-	return handle_acc_auth_event(controller_authdir, NULL, event, data);
+	return handle_acc_auth_event(
+	    controller_authdir, controller_pamauth,
+	    NULL, event, data
+	);
     }
 }
 
@@ -1106,6 +1110,9 @@ controller_init(char *controller_port, const char * const *options,
     if (find_default_str("authdir-admin", &controller_authdir))
 	goto out_nomem;
 
+    if (find_default_str("pamauth-admin", &controller_pamauth))
+	goto out_nomem;
+
     for (i = 0; options && options[i]; i++) {
 	if (gensio_check_keyvalue(options[i], "authdir-admin", &val) > 0) {
 	    char *s = strdup(val);
@@ -1115,6 +1122,16 @@ controller_init(char *controller_port, const char * const *options,
 	    if (controller_authdir)
 		free(controller_authdir);
 	    controller_authdir = s;
+	    continue;
+	}
+	if (gensio_check_keyvalue(options[i], "pamauth-admin", &val) > 0) {
+	    char *s = strdup(val);
+
+	    if (!s)
+		goto out_nomem;
+	    if (controller_pamauth)
+		free(controller_pamauth);
+	    controller_pamauth = s;
 	    continue;
 	}
 	if (eout)

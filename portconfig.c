@@ -586,6 +586,15 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	if (port->authdir)
 	    free(port->authdir);
 	port->authdir = fval;
+    } else if (gensio_check_keyvalue(pos, "pamauth", &val) > 0) {
+	fval = strdup(val);
+	if (!fval) {
+	    eout->out(eout, "Out of memory allocating pamauth");
+	    return -1;
+	}
+	if (port->pamauth)
+	    free(port->pamauth);
+	port->pamauth = fval;
     } else if (gensio_check_keyvalue(pos, "allowed-users", &val) > 0) {
 	rv = add_allowed_users(&port->allowed_users, val, eout);
 	if (rv)
@@ -830,6 +839,8 @@ init_port_data(port_info_t *port)
     port->connector_retry_time = find_default_int("connector-retry-time");
     port->accepter_retry_time = find_default_int("accepter-retry-time");
     if (find_default_str("authdir", &port->authdir))
+	return ENOMEM;
+    if (find_default_str("pamauth", &port->pamauth))
 	return ENOMEM;
     if (find_default_str("allowed-users", &port->default_allowed_users))
 	return ENOMEM;

@@ -46,6 +46,7 @@ typedef struct rotator
     struct gensio_accepter *accepter;
 
     char *authdir;
+    char *pamauth;
     struct gensio_list *allowed_users;
     char *default_allowed_users;
 
@@ -150,8 +151,8 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
 	return rot_new_con(rot, data);
 
     default:
-	return handle_acc_auth_event(rot->authdir, rot->allowed_users,
-				     event, data);
+	return handle_acc_auth_event(rot->authdir, rot->pamauth,
+	    rot->allowed_users, event, data);
     }
 }
 
@@ -195,6 +196,8 @@ free_rotator(rotator_t *rot)
 	gensio_acc_free(rot->accepter);
     if (rot->authdir)
 	free(rot->authdir);
+    if (rot->pamauth)
+	free(rot->pamauth);
     free_user_list(rot->allowed_users);
     if (rot->default_allowed_users)
 	free(rot->default_allowed_users);
@@ -277,6 +280,9 @@ add_rotator(struct absout *eout, const char *name, const char *accstr,
     if (find_default_str("authdir", &rot->authdir))
 	goto out_nomem;
 
+    if (find_default_str("pamauth", &rot->pamauth))
+	goto out_nomem;
+
     if (find_default_str("allowed-users", &rot->default_allowed_users))
 	goto out_nomem;
 
@@ -294,6 +300,16 @@ add_rotator(struct absout *eout, const char *name, const char *accstr,
 		if (!rot->authdir) {
 		    eout->out(eout, "Out of memory allocating rotator"
 			      " authdir on line %d\n", lineno);
+		    goto out_nomem;
+		}
+		continue;
+	    } else if (gensio_check_keyvalue(options[i], "pamauth", &str) > 0) {
+		if (rot->pamauth)
+		    free(rot->pamauth);
+		rot->pamauth = strdup(str);
+		if (!rot->pamauth) {
+		    eout->out(eout, "Out of memory allocating rotator"
+			      " pamauth on line %d\n", lineno);
 		    goto out_nomem;
 		}
 		continue;
