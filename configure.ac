@@ -27,23 +27,31 @@ if test "x$use_pthreads" != "xno"; then
        fi])
 fi
 
-use_pam=yes
+use_pam=check
 AC_ARG_WITH(pam,
 [  --with-pam=yes|no           Support PAM authentication or not.],
     if test "x$withval" = "xyes"; then
       use_pam=yes
     elif test "x$withval" = "xno"; then
       use_pam=no
+    else
+      [AC_MSG_FAILURE([Unknown option to --with-pam, use yes or no])]
     fi,
 )
 
+if test "use_pam" != "no"; then
+  have_pam=yes
+  AC_CHECK_HEADER(security/pam_appl.h, [], [have_pam=no])
+  if test "$have_pam" = "yes"; then
+    AC_CHECK_LIB(pam, pam_start, [], [have_pam=no])
+  fi
+  if test "$use_pam" = "yes" -a "$have_pam" = "no"; then
+    AC_MSG_ERROR([Pam enabled, but no pam support found])
+  fi
+  use_pam=$have_pam
+fi
 if test "x$use_pam" != "xno"; then
-    AC_CHECK_HEADER(security/pam_appl.h, [],
-	[AC_MSG_ERROR(["security/pam_appl.h not, please install libpam dev package or disable PAM support"])]
-    )
-    AC_CHECK_LIB(pam, pam_start, [],
-	[AC_MSG_ERROR([libpam won't link, please install libpam dev package or disable PAM support"])]
-    )
+    LIBS="$LIBS -lpam"
     AC_DEFINE([USE_PAM], [], [Enable PAM support])
 fi
 
@@ -70,7 +78,7 @@ AC_CHECK_LIB(nsl,main)
 AC_CHECK_HEADERS([wordexp.h])
 AC_CHECK_FUNCS(wordexp)
 
-PKG_CHECK_MODULES(GENSIO, libgensio, [LIBS=$GENSIO_LIBS],
+PKG_CHECK_MODULES(GENSIO, libgensio, [LIBS="$LIBS $GENSIO_LIBS"],
    [AC_CHECK_HEADER(gensio/gensio.h, [],
       [AC_MSG_ERROR([gensio.h not found, please install gensio dev package])])
    AC_CHECK_LIB(gensio, str_to_gensio, [],
