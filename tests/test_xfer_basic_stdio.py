@@ -12,6 +12,6 @@ test_transfer("basic stdio", "This is a test!",
 test_write_drain("basic stdio", "This is a write drain test!",
                  ("connection: &con",
                   "  accepter: stdio",
-                  "  connector: serialdev,/dev/ttyPipeA0,9600N81"),
+                  "  connector: serialdev,/dev/ttyPipeA0,9600N81,local"),
                  None,
                  "serialdev,/dev/ttyPipeB0,9600N81")

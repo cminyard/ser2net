@@ -12,7 +12,7 @@ test_transfer("basic sctp", "This is a test!",
 test_write_drain("basic sctp", "This is a write drain test!",
                  ("connection: &con",
                   "  accepter: sctp,3023",
-                  "  connector: serialdev,/dev/ttyPipeA0,9600N81"),
+                  "  connector: serialdev,/dev/ttyPipeA0,9600N81,local"),
                  "sctp,localhost,3023",
                  "serialdev,/dev/ttyPipeB0,9600N81")
 

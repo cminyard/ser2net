@@ -15,7 +15,7 @@ test_transfer("basic udp", "This is a test!",
 test_write_drain("basic udp", "This is a write drain test!",
                  ("connection: &con",
                   "  accepter: udp,3023",
-                  "  connector: serialdev,/dev/ttyPipeA0,9600N81"),
+                  "  connector: serialdev,/dev/ttyPipeA0,9600N81,local"),
                  "udp,localhost,3023",
                  "serialdev,/dev/ttyPipeB0,9600N81",
                  initial_write_io1 = "A")

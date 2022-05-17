@@ -28,5 +28,5 @@ test_write_drain("basic tcp", "This is a write drain test!",
                "  accepter: tcp,3023",
                "  connector: ipmisol,lan -U ipmiusr -P test -p %d localhost,9600" % ipmisimdaemon.ipmisol_port),
                  "tcp,localhost,3023",
-                 "serialdev,/dev/ttyPipeA0,9600N81,LOCAL",
+                 "serialdev,/dev/ttyPipeA0,9600N81,local",
                  switch_delay = 0.25)

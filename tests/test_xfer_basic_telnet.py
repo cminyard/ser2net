@@ -12,7 +12,7 @@ test_transfer("basic telnet", "This is a test!",
 test_write_drain("basic telnet", "This is a write drain test!",
                  ("connection: &con",
                   "  accepter: telnet,tcp,3023",
-                  "  connector: serialdev,/dev/ttyPipeA0,9600N81"),
+                  "  connector: serialdev,/dev/ttyPipeA0,9600N81,local"),
                  "telnet,tcp,localhost,3023",
                  "serialdev,/dev/ttyPipeB0,9600N81")
 
