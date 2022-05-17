@@ -196,7 +196,7 @@ class HandleData:
         else:
             iolen = None
 
-        if (debug or self.debug) and iolen != None:
+        if (debug or self.debug) and buf is not None and iolen != None:
             print("%s: Got %d bytes at pos %d of %d" % (self.name, len(buf),
                                                         self.compared, iolen))
         if (debug >= 2 or self.debug >= 2):
