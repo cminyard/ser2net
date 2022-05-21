@@ -139,9 +139,6 @@ handle_auth_begin(struct gensio *net, const char *authdir, const char *pamauth,
 {
     gensiods len;
     char username[100];
-    char userauthdir[1000];
-    DIR *dir;
-    struct passwd *pw;
     int err;
 
     len = sizeof(username);
@@ -161,6 +158,10 @@ handle_auth_begin(struct gensio *net, const char *authdir, const char *pamauth,
 #if defined(USE_PAM)
     /* set user-specific authdir if it exists. */
     if (pamauth) {
+	char userauthdir[1000];
+	DIR *dir;
+	struct passwd *pw;
+
 	pw = getpwnam(username);
 	if (pw) {
 	    len = snprintf(userauthdir, sizeof(userauthdir),
