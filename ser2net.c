@@ -89,7 +89,7 @@ static char *help_string =
 "  -s - specify a default signature for RFC2217 protocol\n"
 "  -Y - Handle a yaml configuration string.  This may be specified multiple\n"
 "       times; these strings are strung together as if they were one input\n"
-"       string.  This disables the defalt config file, you must specify -c\n"
+"       string.  This disables the default config file, you must specify -c\n"
 "       after the last -Y.  The config file will be processed first, if it\n"
 "       is specified, then the -Y strings in order, as if they are one\n"
 "       continguous file.  '#' characters outside of quotes will be converted\n"
