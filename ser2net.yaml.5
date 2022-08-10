@@ -15,7 +15,7 @@ Look at yaml documentation on the internet for how that works.
 YAML has the ability to create aliases that can be used elsewhere in
 the configuration file.  These can be used for tying things together
 between parts of the file, or (as an extension to YAML) for string
-subtitution.
+substitution.
 
 You define an alias with the following:
 .IP
@@ -364,7 +364,7 @@ data, but gives reasonable interactivity.  Default is true.
 sets the number of serial port characters, in tenths of a character,
 to wait after receiving from the connection gensio and sending to the
 accepted gensio.  So setting this to 25 will cause ser2net to wait the
-amount of time it takes to recieve 2.5 serial port characters before
+amount of time it takes to receive 2.5 serial port characters before
 sending the data on to the TCP port.  The default value is 20.
 
 .I chardelay-min: <number>
@@ -421,11 +421,11 @@ connection from any port from the given network host.
 
 .I no-con-to-acc: true|false
 If true, do not transfer any data from the connector to the accepter.
-Throw any data recevied from the connecter away.
+Throw any data received from the connecter away.
 
 .I no-acc-to-con: true|false
 If true, do not transfer any data from the accepter to the connecter.
-Throw any data recevied from the accepter away.
+Throw any data received from the accepter away.
 
 .I connback: <connector>[;<connector>[;...]]
 specifies reverse connections that will be made when data comes in on
@@ -637,7 +637,7 @@ gives reasonable interactivity.
 sets the number of serial port characters, in tenths of a character,
 to wait after receiving from the serial port and sending to the TCP
 port.  So setting this to 25 will cause ser2net to wait the amount
-of time it takes to recieve 2.5 serial port characters before sending
+of time it takes to receive 2.5 serial port characters before sending
 the data on to the TCP port.  This can range from 1-1000.
 .TP
 .B chardelay-min: 1000
