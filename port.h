@@ -28,6 +28,7 @@
 
 #include <netdb.h>
 #include <sys/time.h>
+#include <sys/socket.h>
 #include "gbuf.h"
 #include "absout.h"
 #include <gensio/gensio.h>

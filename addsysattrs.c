@@ -26,6 +26,7 @@
  */
 
 #include <gensio/gensio.h>
+#include "absout.h"
 
 #ifdef linux
 
