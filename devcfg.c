@@ -1118,26 +1118,43 @@ static int devcfg_parity(struct devio *io, unsigned char *val, int *bpc)
 	return -1;
     }
 
+#ifndef CMSPAR
     /* We don't support MARK or SPACE parity. */
     if ((*val >= 1) && (*val <= 3)) {
+#else
+    if (*val > 3)
+        termio.c_cflag |= CMSPAR;
+    else
+        termio.c_cflag &= ~CMSPAR;
+#endif
 	termio.c_cflag &= ~(PARENB | PARODD);
 	switch (*val) {
 	case 1: d->current_parity_on = 0; break; /* NONE */
-	case 2: termio.c_cflag |= PARENB | PARODD; /* ODD */
-	    d->current_parity_on = 1;
-	    break;
-	case 3: termio.c_cflag |= PARENB; /* EVEN */
-	    d->current_parity_on = 1;
-	    break;
+	case 2: /* ODD */
+	case 4: /* MARK */
+		termio.c_cflag |= PARENB | PARODD;
+		d->current_parity_on = 1;
+		break;
+	case 3: /* EVEN */
+	case 5: /* SPACE */
+		termio.c_cflag |= PARENB;
+		d->current_parity_on = 1;
+		break;
 	}
 	tcsetattr(d->devfd, TCSANOW, &termio);
+#ifndef CMSPAR
     }
+#endif
 
     if (termio.c_cflag & PARENB) {
-	if (termio.c_cflag & PARODD)
-	    *val = 2; /* ODD */
-	else
-	    *val = 3; /* EVEN */
+        if (termio.c_cflag & PARODD)
+            *val = 2; /* ODD */
+        else
+            *val = 3; /* EVEN */
+#ifdef CMSPAR
+        if (termio.c_cflag & CMSPAR)
+            *val += 2;
+#endif
     } else
 	*val = 1; /* NONE */
 
