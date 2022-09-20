@@ -32,6 +32,13 @@ that will create it for you.
 If you don't know about autoconf, the INSTALL file has some info,
 or google it.
 
+=================
+Docker Containers
+=================
+
+Docker container support is available at:
+   https://github.com/jippi/docker-ser2net
+
 =====
 Using
 =====
