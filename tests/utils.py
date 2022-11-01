@@ -485,7 +485,10 @@ class HandleData:
         self.waiter.wake()
         return
 
-import collections
+try:
+   import collections.abc as seqholder
+except:
+   import collections as seqholder
 
 PY3 = sys.version_info[0] == 3
 
@@ -497,7 +500,7 @@ else:
 def is_nonstr_sequence(obj):
     if isinstance(obj, string_types):
         return False
-    return isinstance(obj, collections.Sequence)
+    return isinstance(obj, seqholder.Sequence)
 
 class Ser2netDaemon:
     """Create a ser2net daemon instance and start it up
