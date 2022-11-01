@@ -32,6 +32,7 @@
 #include <pwd.h>
 #include <dirent.h>
 #include <gensio/gensio.h>
+#include <gensio/gensio_list.h>
 #include "ser2net.h"
 
 #if defined(USE_PAM)
