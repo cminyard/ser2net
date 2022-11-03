@@ -291,6 +291,7 @@ define: &confver 1.0
 #     closeon:
 #     connector-retry-time: 10
 #     accepter-retry-time: 10
+#     must-not-fail: false
 #     mdns: false
 #     mdns-interface: -1
 #     mdns-nettype: unspec

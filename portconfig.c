@@ -499,6 +499,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	    eout->out(eout, "Out of memory appending to devname");
 	    return -1;
 	}
+    } else if (gensio_check_keybool(pos, "must-not-fail",
+				    &port->must_not_fail_mode) > 0) {
     } else if (gensio_check_keybool(pos, "kickolduser",
 				    &port->kickolduser_mode) > 0) {
     } else if (gensio_check_keybool(pos, "trace-hexdump",
@@ -833,6 +835,7 @@ init_port_data(port_info_t *port)
     port->trace_both.fd = -1;
 
     port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
+    port->must_not_fail_mode = find_default_bool("must-not-fail");
     port->kickolduser_mode = find_default_bool("kickolduser");
     port->enable_chardelay = find_default_int("chardelay");
     port->chardelay_scale = find_default_int("chardelay-scale");
@@ -1020,8 +1023,13 @@ portconfig(struct absout *eout,
 	new_port->default_allowed_users = NULL;
     }
 
-    if (dataxfer_setup_port(new_port, eout, do_telnet))
+    if (dataxfer_setup_port(new_port, eout, do_telnet)) {
+        if (new_port->must_not_fail_mode) {
+            eout->out(eout, "Connection setup failed and must-not-fail is set to 1, so exiting now.");
+            exit(1); 
+        }
 	goto errout;
+    }
 
     if (gbuf_init(&new_port->dev_to_net, new_port->dev_to_net.maxsize))
     {

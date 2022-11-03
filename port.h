@@ -269,6 +269,9 @@ struct port_info
     /* Send a break if we get a sync command? */
     bool telnet_brk_on_sync;
 
+    /* If the connection fails to open during start-up then exit ser2net */
+    bool must_not_fail_mode;
+
     /* kickolduser mode */
     bool kickolduser_mode;
 

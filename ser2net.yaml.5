@@ -463,6 +463,10 @@ is not set or defaulted, all users are allowed.  If this is set to an
 empty set of users, then no users are allowed.  This may be specified
 more than once, each one adds more users.
 
+.I must-not-fail: true|false
+If this connection fails during startup then ser2net will exit,
+forcing the service to go offline.
+
 .I mdns: true|false
 Enables/disables mdns support for the connection.  If you set this and
 mdns is available, ser2net will create a service on mdns for the port.
