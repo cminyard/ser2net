@@ -39,14 +39,15 @@
 #endif
 
 /* States for the net_to_dev_state and dev_to_net_state. */
-#define PORT_CLOSED			0 /* The accepter is disabled. */
-#define PORT_UNCONNECTED		1 /* The TCP port is not connected
+#define PORT_NOT_STARTED		0 /* The dataxfer_start_port failed. */
+#define PORT_CLOSED			1 /* The accepter is disabled. */
+#define PORT_UNCONNECTED		2 /* The TCP port is not connected
                                              to anything right now. */
-#define PORT_WAITING_INPUT		2 /* Waiting for input from the
+#define PORT_WAITING_INPUT		3 /* Waiting for input from the
 					     input side. */
-#define PORT_WAITING_OUTPUT_CLEAR	3 /* Waiting for output to clear
+#define PORT_WAITING_OUTPUT_CLEAR	4 /* Waiting for output to clear
 					     so I can send data. */
-#define PORT_CLOSING			4 /* Waiting for output close
+#define PORT_CLOSING			5 /* Waiting for output close
 					     string to be sent. */
 typedef struct trace_info_s
 {
@@ -125,6 +126,9 @@ struct port_info
 
     /* FIXME - remove this with old config.  An old config specified telnet. */
     bool do_telnet;
+
+    /* Keeps a count of retried port startups. */
+    unsigned int retry_startup_counter;
 
     /* The port has been deleted, but still has connections in use. */
     bool deleted;
