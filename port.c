@@ -122,13 +122,22 @@ void
 port_start_timer(port_info_t *port)
 {
     gensio_time timeout;
-    unsigned int timeout_sec = 1;
+    unsigned int timeout_sec;
 
-    if (port->dev_to_net_state == PORT_UNCONNECTED)
+    switch (port->dev_to_net_state) {
+    case PORT_UNCONNECTED:
 	timeout_sec = port->connector_retry_time;
+	break;
 
-    if (port->dev_to_net_state == PORT_CLOSED)
+    case PORT_CLOSED:
+    case PORT_NOT_STARTED:
 	timeout_sec = port->accepter_retry_time;
+	break;
+
+    default:
+	timeout_sec = 1;
+	break;
+    }
 
 #ifdef gensio_version_major
     timeout.secs = timeout_sec;
@@ -496,6 +505,11 @@ int
 startup_port(struct absout *eout, port_info_t *port)
 {
     int err;
+
+    if (port->dev_to_net_state == PORT_NOT_STARTED) {
+	port_start_timer(port);
+	return GE_NOTREADY;
+    }
 
     if (port->dev_to_net_state != PORT_CLOSED)
 	return GE_INUSE;
@@ -914,6 +928,66 @@ handle_shutdown_timeout(port_info_t *port)
     return false;
 }
 
+static int
+port_startup(port_info_t *new_port, struct absout *eout, bool retry)
+{
+    int err;
+
+    err = str_to_gensio(new_port->devname, so, handle_dev_event, new_port,
+			&new_port->io);
+    if (err) {
+	if (!retry || new_port->retry_startup_counter % 64 == 0)
+	    eout->out(eout, "device configuration %s invalid: %s",
+		      new_port->devname, gensio_err_to_str(err));
+	goto out_err;
+    }
+
+    err = str_to_gensio_accepter(new_port->accstr, so,
+				handle_port_child_event, new_port,
+				&new_port->accepter);
+    if (err) {
+	gensio_free(new_port->io);
+	new_port->io = NULL;
+	if (!retry || new_port->retry_startup_counter % 64 == 0)
+	    eout->out(eout, "Invalid accepter port name/number '%s': %s",
+		      new_port->accstr, gensio_err_to_str(err));
+	goto out_err;
+    }
+
+    if (new_port->enabled && new_port->do_telnet) {
+	const char *str = "telnet";
+	struct gensio_accepter *parent;
+
+	if (new_port->allow_2217)
+	    str = "telnet(rfc2217=true)";
+	err = str_to_gensio_accepter_child(new_port->accepter, str,
+					   so,
+					   handle_port_child_event,
+					   new_port, &parent);
+	if (err) {
+	    gensio_free(new_port->io);
+	    new_port->io = NULL;
+	    gensio_acc_free(new_port->accepter);
+	    new_port->accepter = NULL;
+	    if (!retry || new_port->retry_startup_counter % 64 == 0)
+		eout->out(eout, "Could not allocate telnet gensio: %s",
+			  gensio_err_to_str(err));
+	    goto out_err;
+	}
+	new_port->accepter = parent;
+    }
+
+    new_port->dev_to_net_state = PORT_CLOSED;
+    if (retry)
+	eout->out(eout, "port accepter '%s' is now started",
+		  new_port->accstr);
+    return 0;
+
+ out_err:
+    new_port->retry_startup_counter++;
+    return err;
+}
+
 static void
 port_timeout(struct gensio_timer *timer, void *data)
 {
@@ -922,6 +996,12 @@ port_timeout(struct gensio_timer *timer, void *data)
     int err;
 
     so->lock(port->lock);
+    if (port->dev_to_net_state == PORT_NOT_STARTED) {
+	err = port_startup(port, &syslog_absout, true);
+	if (err)
+	    goto out;
+    }
+
     if (port->dev_to_net_state == PORT_CLOSED) {
 	if (port->enabled)
 	    startup_port(&syslog_absout, port);
@@ -989,7 +1069,7 @@ apply_new_ports(struct absout *eout)
 	if (curr->deleted)
 	    continue;
 
-	if (curr->enabled) {
+	if (curr->enabled && curr->accepter) {
 	    /*
 	     * This unlock is a little strange, but we don't want to
 	     * do any waiting while holding the ports lock, otherwise
@@ -1112,8 +1192,6 @@ apply_new_ports(struct absout *eout)
     for (curr = ports; curr; curr = curr->next) {
 	so->lock(curr->lock);
 	if (!curr->deleted) {
-	    curr->dev_to_net_state = PORT_CLOSED;
-	    curr->net_to_dev_state = PORT_CLOSED;
 	    if (curr->accepter_stopped) {
 		curr->accepter_stopped = false;
 		if (curr->enabled) {
@@ -1136,8 +1214,6 @@ apply_new_ports(struct absout *eout)
 int
 dataxfer_setup_port(port_info_t *new_port, struct absout *eout)
 {
-    int err;
-
     new_port->timer = so->alloc_timer(so, port_timeout, new_port);
     if (!new_port->timer) {
 	eout->out(eout, "Could not allocate timer data");
@@ -1157,40 +1233,10 @@ dataxfer_setup_port(port_info_t *new_port, struct absout *eout)
 	return -1;
     }
 
-    err = str_to_gensio(new_port->devname, so, handle_dev_event, new_port,
-			&new_port->io);
-    if (err) {
-	eout->out(eout, "device configuration %s invalid: %s",
-		  new_port->devname, gensio_err_to_str(err));
-	return -1;
-    }
+    new_port->dev_to_net_state = PORT_NOT_STARTED;
+    new_port->net_to_dev_state = PORT_CLOSED;
 
-    err = str_to_gensio_accepter(new_port->accstr, so,
-				handle_port_child_event, new_port,
-				&new_port->accepter);
-    if (err) {
-	eout->out(eout, "Invalid accepter port name/number '%s': %s",
-		  new_port->accstr, gensio_err_to_str(err));
-	return -1;
-    }
-
-    if (new_port->enabled && new_port->do_telnet) {
-	const char *str = "telnet";
-	struct gensio_accepter *parent;
-
-	if (new_port->allow_2217)
-	    str = "telnet(rfc2217=true)";
-	err = str_to_gensio_accepter_child(new_port->accepter, str,
-					   so,
-					   handle_port_child_event,
-					   new_port, &parent);
-	if (err) {
-	    eout->out(eout, "Could not allocate telnet gensio: %s",
-		      gensio_err_to_str(err));
-	    return -1;
-	}
-	new_port->accepter = parent;
-    }
+    port_startup(new_port, eout, false);
 
     return 0;
 }
