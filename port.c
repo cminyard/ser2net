@@ -1134,8 +1134,7 @@ apply_new_ports(struct absout *eout)
 }
 
 int
-dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
-		    bool do_telnet)
+dataxfer_setup_port(port_info_t *new_port, struct absout *eout)
 {
     int err;
 
@@ -1175,7 +1174,7 @@ dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
 	return -1;
     }
 
-    if (new_port->enabled && do_telnet) {
+    if (new_port->enabled && new_port->do_telnet) {
 	const char *str = "telnet";
 	struct gensio_accepter *parent;
 

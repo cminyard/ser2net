@@ -123,6 +123,9 @@ struct port_info
     void (*port_op_done)(struct port_info *, void *);
     void *port_op_data;
 
+    /* FIXME - remove this with old config.  An old config specified telnet. */
+    bool do_telnet;
+
     /* The port has been deleted, but still has connections in use. */
     bool deleted;
 
@@ -396,8 +399,7 @@ void reset_timer(net_info_t *netcon);
 	 netcon < &(port->netcons[port->max_connections]);	\
 	 netcon++)
 void shutdown_one_netcon(net_info_t *netcon, const char *reason);
-int dataxfer_setup_port(port_info_t *new_port, struct absout *eout,
-			bool do_telnet);
+int dataxfer_setup_port(port_info_t *new_port, struct absout *eout);
 int startup_port(struct absout *eout, port_info_t *port);
 int shutdown_port(port_info_t *port, const char *errreason);
 void port_start_timer(port_info_t *port);

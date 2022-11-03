@@ -894,7 +894,6 @@ portconfig(struct absout *eout,
     net_info_t *netcon;
     enum str_type str_type;
     int err;
-    bool do_telnet = false;
     bool write_only = false;
     unsigned int i;
     struct port_remaddr *r;
@@ -974,7 +973,7 @@ portconfig(struct absout *eout,
     } else if (strcmp(state, "telnet") == 0) {
 	/* FIXME - remove this someday. */
 	new_port->enabled = true;
-	do_telnet = true;
+	new_port->do_telnet = true;
     } else if (strcmp(state, "off") == 0) {
 	new_port->enabled = false;
     } else {
@@ -1020,7 +1019,7 @@ portconfig(struct absout *eout,
 	new_port->default_allowed_users = NULL;
     }
 
-    if (dataxfer_setup_port(new_port, eout, do_telnet))
+    if (dataxfer_setup_port(new_port, eout))
 	goto errout;
 
     if (gbuf_init(&new_port->dev_to_net, new_port->dev_to_net.maxsize))
