@@ -122,13 +122,22 @@ void
 port_start_timer(port_info_t *port)
 {
     gensio_time timeout;
-    unsigned int timeout_sec = 1;
+    unsigned int timeout_sec;
 
-    if (port->dev_to_net_state == PORT_UNCONNECTED)
+    switch (port->dev_to_net_state) {
+    case PORT_UNCONNECTED:
 	timeout_sec = port->connector_retry_time;
+	break;
 
-    if (port->dev_to_net_state == PORT_CLOSED)
+    case PORT_CLOSED:
+    case PORT_NOT_STARTED:
 	timeout_sec = port->accepter_retry_time;
+	break;
+
+    default:
+	timeout_sec = 1;
+	break;
+    }
 
 #ifdef gensio_version_major
     timeout.secs = timeout_sec;
