@@ -708,7 +708,7 @@ handle_net_fd_write_ready(net_info_t *netcon, struct gensio *net)
     }
 
  out_unlock:
-    if (rv > 0)
+    if (rv != 0)
 	gensio_set_write_callback_enable(netcon->net, false);
 
     if (rv >= 0)
