@@ -883,6 +883,7 @@ shutdown_port(port_info_t *port, const char *errreason)
 	/* An error occurred and we are in a non-err shutdown.  Convert it. */
 	port->shutdown_reason = errreason;
 	port->net_to_dev_state = PORT_CLOSING;
+	gensio_set_read_callback_enable(port->io, false);
 	return 0;
     }
 
@@ -896,6 +897,9 @@ shutdown_port(port_info_t *port, const char *errreason)
 	/* It's an error, force a shutdown.  Don't set dev_to_net_state yet. */
 	port->shutdown_reason = errreason;
 	port->net_to_dev_state = PORT_CLOSING;
+
+	/* Shut down write on an error. */
+	gensio_set_read_callback_enable(port->io, false);
     } else {
 	port->shutdown_reason = "All users disconnected";
     }
