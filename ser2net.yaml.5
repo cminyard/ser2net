@@ -978,8 +978,10 @@ Any monitor ("monitor start" from a control connections) will catch
 input from all network connections.
 
 .I kickolduser
-will kick off all connections if a connection comes in on a port that already
-has a maximum number of connections.
+will kick off an existing connection if a connection comes in on a
+port that already has a maximum number of connections.  The connection
+kicked off is arbitrarily chosen and the algorithm is subject to
+change.
 
 .I tracing
 will trace data from all network connections.
