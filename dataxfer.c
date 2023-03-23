@@ -957,10 +957,12 @@ static void
 s2n_sync(net_info_t *netcon, struct sergensio *sio)
 {
     struct sergensio *rsio = gensio_to_sergensio(netcon->port->io);
+    port_info_t *port = netcon->port;
 
     if (!rsio)
 	return;
-    sergensio_send_break(rsio);
+    if (port->telnet_brk_on_sync)
+	sergensio_send_break(rsio);
 }
 
 static void
