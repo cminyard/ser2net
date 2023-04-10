@@ -1000,6 +1000,14 @@ controller_io_event(struct gensio *net, void *user_data, int event, int err,
     case GENSIO_EVENT_WRITE_READY:
 	controller_write_ready(net);
 	return 0;
+
+#ifdef GENSIO_EVENT_PARMLOG
+    case GENSIO_EVENT_PARMLOG: {
+	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
+	vsyslog(LOG_ERR, d->log, d->args);
+	return 0;
+    }
+#endif
     }
 
     return ENOTSUP;
@@ -1073,6 +1081,14 @@ controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
     switch (event) {
     case GENSIO_ACC_EVENT_NEW_CONNECTION:
 	return controller_acc_new_child(data);
+
+#ifdef GENSIO_ACC_EVENT_PARMLOG
+    case GENSIO_ACC_EVENT_PARMLOG: {
+	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) data;
+	vsyslog(LOG_ERR, d->log, d->args);
+	return 0;
+    }
+#endif
 
     default:
 	return handle_acc_auth_event(

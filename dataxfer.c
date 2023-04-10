@@ -434,6 +434,14 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 	so->unlock(port->lock);
 	return 0;
 
+#ifdef GENSIO_EVENT_PARMLOG
+    case GENSIO_EVENT_PARMLOG: {
+	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
+	vsyslog(LOG_ERR, d->log, d->args);
+	return 0;
+    }
+#endif
+
     default:
 	return GE_NOTSUP;
     }
@@ -1061,6 +1069,14 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
     case GENSIO_EVENT_SER_RTS:
 	s2n_rts(netcon, gensio_to_sergensio(net), *((int *) buf));
 	return 0;
+
+#ifdef GENSIO_EVENT_PARMLOG
+    case GENSIO_EVENT_PARMLOG: {
+	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
+	vsyslog(LOG_ERR, d->log, d->args);
+	return 0;
+    }
+#endif
 
     default:
 	return GE_NOTSUP;

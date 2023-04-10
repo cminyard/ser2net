@@ -150,6 +150,14 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
     case GENSIO_ACC_EVENT_NEW_CONNECTION:
 	return rot_new_con(rot, data);
 
+#ifdef GENSIO_ACC_EVENT_PARMLOG
+    case GENSIO_ACC_EVENT_PARMLOG: {
+	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) data;
+	vsyslog(LOG_ERR, d->log, d->args);
+	return 0;
+    }
+#endif
+
     default:
 	return handle_acc_auth_event(rot->authdir, rot->pamauth,
 	    rot->allowed_users, event, data);
