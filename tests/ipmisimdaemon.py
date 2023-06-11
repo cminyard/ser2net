@@ -144,7 +144,7 @@ class IPMISimDaemon:
             else:
                 self.signal(signal.SIGKILL)
             # It would be really nice if waitpid had a timeout options,
-            # in absense of that simulate it, sort of.
+            # in absence of that simulate it, sort of.
             subcount = 500
             while (subcount > 0):
                 time.sleep(.01)

@@ -52,7 +52,7 @@
 typedef struct trace_info_s
 {
     bool hexdump;     /* output each block as a hexdump */
-    bool timestamp;   /* preceed each line with a timestamp */
+    bool timestamp;   /* precede each line with a timestamp */
     char *filename;   /* open file.  NULL if not used */
     int  fd;          /* open file.  -1 if not used */
 } trace_info_t;

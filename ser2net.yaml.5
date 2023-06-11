@@ -298,7 +298,7 @@ HANDLING" above.
 .I closeon: <closeon string>
 If the given string is seen coming from the connector side of the
 connection, close the connection.  The comparison here is, for
-simplicity, simplistic.  Complex expressions with repetative things
+simplicity, simplistic.  Complex expressions with repetitive things
 may not compare correctly.  For instance, if your closeon strings is
 "ababc" and your input strings is "abababc", the comparison will fail
 because the comparison algorithm will see "ababa" and will fail on the
@@ -1091,7 +1091,7 @@ which will generate keyname.crt and keyname.key in outdir.  Then
 put keyname.crt in ser2net's <authdir>/username/allowed_certs.  By
 default <authdir> is /usr/share/ser2net/auth, but you can change
 that with the authdir default in the ser2net config file or by
-setting authdir on individual connections (in case you want differet
+setting authdir on individual connections (in case you want different
 ones for different ports).  You then must rehash the allowed_certs
 directory:
 .IP

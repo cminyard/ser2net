@@ -129,7 +129,7 @@ define: &confver 1.0
 # # of computers, all your connections should be at least encrypted, and
 # # preferably authenticated.
 # #
-# # Note that the examples below use SCTP.  TCP can be subtituted.  They
+# # Note that the examples below use SCTP.  TCP can be substituted.  They
 # # also use the echo gensio, which is useful for testing.
 # #
 # # For encrypted connections to work, you need to use the ssl gensio
@@ -197,7 +197,7 @@ define: &confver 1.0
 # # in single quotes.  If you put them in double quotes, yaml will interpret
 # # the '\' sequences on it's own, and thus ser2net will not be able to
 # # process them.  The yaml rules are complex, and the single quotes are
-# # not necessar in all the instance below, but it's good practice to use
+# # not necessary in all the instance below, but it's good practice to use
 # # them to avoid confusion.  Notice that you can do '' in a single quote
 # # string to add one single quote.
 # connection: &con6
@@ -250,7 +250,7 @@ define: &confver 1.0
 #     mdns-sysattrs: true
 
 # # An example showing all options and their defaults.  Note that empty
-# # strings are ok for most strings, but not for things that take filesname
+# # strings are ok for most strings, but not for things that take filenames
 # # or are required to be aliases.
 # connection: &con7
 #   accepter: tcp,2008

@@ -1302,7 +1302,7 @@ process_buffer(struct yaml_read_handler_data *d,
 	case '\'':
 	case '"':
 	    if (d->in_quote == '"' && d->in_escape)
-		/* \" in "" doens't end the quotes. */
+		/* \" in "" doesn't end the quotes. */
 		goto normal_char;
 	    if (d->in_quote == c)
 		d->in_quote = 0;
