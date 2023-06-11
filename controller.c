@@ -235,7 +235,7 @@ controller_raw_output(struct controller_info *cntlr,
 
 	newbuf = malloc(new_size);
 	if (newbuf == NULL) {
-	    /* Out of memory, just ignore thre request */
+	    /* Out of memory, just ignore the request */
 	    return;
 	}
 

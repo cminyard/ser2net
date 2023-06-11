@@ -92,7 +92,7 @@ static char *help_string =
 "       string.  This disables the default config file, you must specify -c\n"
 "       after the last -Y.  The config file will be processed first, if it\n"
 "       is specified, then the -Y strings in order, as if they are one\n"
-"       continguous file.  '#' characters outside of quotes will be converted\n"
+"       contiguous file.  '#' characters outside of quotes will be converted\n"
 "       to newlines to make things easier to handle.  Each -Y will be\n"
 "       terminated with a newline automatically.\n";
 
@@ -999,7 +999,7 @@ main(int argc, char *argv[])
 	} else {
 	    /* setsid() is necessary if we really want to demonize */
 	    setsid();
-	    /* Second fork to really deamonize me. */
+	    /* Second fork to really daemonize me. */
 	    if ((pid = fork()) > 0) {
 		exit(0);
 	    } else if (pid < 0) {
