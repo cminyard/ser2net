@@ -1,8 +1,8 @@
-AC_INIT([ser2net], [4.3.12], [minyard@acm.org])
+AC_INIT([ser2net],[4.3.12],[minyard@acm.org])
 AM_INIT_AUTOMAKE([-Wall])
 AC_PROG_CC
 AM_PROG_AR
-AM_PROG_LIBTOOL
+LT_INIT
 
 use_pthreads=yes
 use_pthreads_set=false
@@ -73,7 +73,7 @@ fi
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 AC_CONFIG_MACRO_DIR([m4])
-AC_STDC_HEADERS
+
 AC_CHECK_LIB(nsl,main)
 AC_CHECK_HEADERS([wordexp.h])
 AC_CHECK_FUNCS(wordexp)
@@ -99,4 +99,5 @@ AC_CHECK_HEADER(yaml.h, [],
 AC_CHECK_LIB(yaml, yaml_document_initialize, [],
    [AC_MSG_ERROR([libyaml won't link, please install libyaml dev package])])
 
-AC_OUTPUT([Makefile tests/Makefile])
+AC_CONFIG_FILES([Makefile tests/Makefile])
+AC_OUTPUT
