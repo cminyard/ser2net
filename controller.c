@@ -34,12 +34,12 @@
 #include <gensio/selector.h>
 #include <gensio/gensio.h>
 #include <gensio/gensio_mdns.h>
-#include <gensio/argvutils.h>
 
 #include "ser2net.h"
 #include "controller.h"
 #include "dataxfer.h"
 #include "defaults.h"
+#include "mdns.h"
 
 /* This file holds the code that runs the control port. */
 
@@ -1106,265 +1106,10 @@ controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
     so->wake(accept_waiter);
 }
 
-#ifdef DO_MDNS
-static bool admin_mdns;
-static unsigned int admin_mdns_port;
-static int admin_mdns_interface = -1;
-static int admin_mdns_nettype = GENSIO_NETTYPE_UNSPEC;
 static char *admin_name;
-static char *admin_mdns_name;
-static char *admin_mdns_type;
-static char *admin_mdns_domain;
-static char *admin_mdns_host;
-static const char **admin_mdns_txt;
-static gensiods admin_mdns_txt_argc;
-static gensiods admin_mdns_txt_args;
-static struct gensio_mdns_service *admin_mdns_service;
 
-static void
-admin_cleanup_mdns_data(void)
-{
-    admin_mdns = false;
-    admin_mdns_port = 0;
-    admin_mdns_interface = -1;
-    admin_mdns_nettype = GENSIO_NETTYPE_UNSPEC;
-    if (admin_name) {
-	free(admin_name);
-	admin_name = NULL;
-    }
-    if (admin_mdns_name) {
-	free(admin_mdns_name);
-	admin_mdns_name = NULL;
-    }
-    if (admin_mdns_type) {
-	free(admin_mdns_type);
-	admin_mdns_type = NULL;
-    }
-    if (admin_mdns_domain) {
-	free(admin_mdns_domain);
-	admin_mdns_domain = NULL;
-    }
-    if (admin_mdns_host) {
-	free(admin_mdns_host);
-	admin_mdns_host = NULL;
-    }
-
-    if (admin_mdns_txt) {
-	gensio_argv_free(so, admin_mdns_txt);
-	admin_mdns_txt = NULL;
-    }
-    admin_mdns_txt_argc = 0;
-    admin_mdns_txt_args = 0;
-}
-
-static char *
-admin_derive_mdns_type(void)
-{
-    /* Get a mdns type based on the gensio. */
-    unsigned int i;
-    const char *type, *ntype = "_iostream._tcp";
-
-    type = gensio_acc_get_type(controller_accepter, 0);
-    for (i = 1; type; i++) {
-	if (strcmp(type, "tcp") == 0)
-	    break;
-	if (strcmp(type, "udp") == 0) {
-	    ntype = "_iostream._udp";
-	    break;
-	}
-	type = gensio_acc_get_type(controller_accepter, i);
-    }
-    return strdup(ntype);
-}
-
-static void
-admin_mdns_addprovider(struct absout *eout)
-{
-    gensiods i;
-    static char *provstr = "provider=";
-    char *tmps = NULL;
-
-    for (i = 0; i < admin_mdns_txt_argc; i++) {
-	if (strncmp(admin_mdns_txt[i], provstr, strlen(provstr)) == 0)
-	    /* User already specified it, don't override. */
-	    return;
-    }
-
-    tmps = gensio_alloc_sprintf(so, "%s%s", provstr, "ser2net");
-    if (!tmps)
-	goto out_nomem;
-
-    if (gensio_argv_append(so, &admin_mdns_txt, tmps,
-			   &admin_mdns_txt_args, &admin_mdns_txt_argc,
-			   false))
-	goto out_nomem;
-    return;
-
- out_nomem:
-    eout->out(eout, "Error allocating admin mdns provider: out of memory");
-    if (tmps)
-	so->free(so, tmps);
-}
-
-static void
-admin_mdns_addstack(struct absout *eout)
-{
-    gensiods i;
-    static char *stackstr = "gensiostack=";
-    const char *type;
-    char *stack = NULL, *tmps = NULL;
-
-    for (i = 0; i < admin_mdns_txt_argc; i++) {
-	if (strncmp(admin_mdns_txt[i], stackstr, strlen(stackstr)) == 0)
-	    /* User already specified it, don't override. */
-	    return;
-    }
-
-    for (i = 0; ; i++) {
-	type = gensio_acc_get_type(controller_accepter, i);
-	if (!type)
-	    break;
-
-	if (strcmp(type, "telnet") == 0) {
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type);
-	} else {
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type);
-	}
-	if (!tmps)
-	    goto out_nomem;
-	if (stack)
-	    so->free(so, stack);
-	stack = tmps;
-    }
-
-    if (!stack)
-	return;
-
-    tmps = gensio_alloc_sprintf(so, "%s%s", stackstr, stack);
-    if (!tmps)
-	goto out_nomem;
-    stack = tmps;
-
-    if (gensio_argv_append(so, &admin_mdns_txt, stack,
-			   &admin_mdns_txt_args, &admin_mdns_txt_argc,
-			   false))
-	goto out_nomem;
-    return;
-
- out_nomem:
-    eout->out(eout, "Error allocating admin mdns stack: out of memory");
-    if (stack)
-	so->free(so, stack);
-}
-
-static void
-admin_mdns_setup(struct absout *eout)
-{
-    int err;
-    char portnum_str[20];
-    gensiods portnum_len = sizeof(portnum_str);
-
-    if (!admin_mdns)
-	return;
-
-    if (!admin_mdns_name && !admin_name) {
-	eout->out(eout, "admin mdns enabled, but no name given");
-	return;
-    }
-
-    if (!mdns) {
-	eout->out(eout, "mdns requested for admin port, but mdns failed"
-		  " to start or is disabled in gensio.");
-	return;
-    }
-
-    if (!admin_mdns_port) {
-	strcpy(portnum_str, "0");
-	err = gensio_acc_control(controller_accepter,
-				 GENSIO_CONTROL_DEPTH_FIRST,
-				 true, GENSIO_ACC_CONTROL_LPORT, portnum_str,
-				 &portnum_len);
-	if (err) {
-	    eout->out(eout, "Can't get admin mdns port: %s",
-		      gensio_err_to_str(err));
-	    goto out_cleanup;
-	}
-	admin_mdns_port = strtoul(portnum_str, NULL, 0);
-    }
-
-    if (!admin_mdns_type) {
-	admin_mdns_type = admin_derive_mdns_type();
-	if (!admin_mdns_type) {
-	    eout->out(eout, "Can't alloc admin mdns type: out of memory");
-	    goto out_cleanup;
-	}
-    }
-
-    if (!admin_mdns_name) {
-	admin_mdns_name = strdup(admin_name);
-	if (!admin_mdns_name) {
-	    eout->out(eout, "Can't alloc admin mdns name: out of memory");
-	    goto out_cleanup;
-	}
-    }
-
-    admin_mdns_addprovider(eout);
-    admin_mdns_addstack(eout);
-
-    /*
-     * Always stick on the NULL, that doesn't update argc so it's safe,
-     * a new txt will just write over the NULL we added.
-     */
-    err = gensio_argv_append(so, &admin_mdns_txt, NULL,
-			     &admin_mdns_txt_args, &admin_mdns_txt_argc, true);
-    if (err) {
-	eout->out(eout, "Error terminating admin mdns-txt: %s",
-		  gensio_err_to_str(err));
-	goto out_cleanup;
-    }
-
-    err = gensio_mdns_add_service(mdns, admin_mdns_interface,
-				  admin_mdns_nettype,
-				  admin_mdns_name, admin_mdns_type,
-				  admin_mdns_domain, admin_mdns_host,
-				  admin_mdns_port, admin_mdns_txt,
-				  &admin_mdns_service);
-    if (err) {
-	eout->out(eout, "Can't add admin mdns service: %s",
-		  gensio_err_to_str(err));
-	goto out_cleanup;
-    }
-    return;
-
- out_cleanup:
-    admin_cleanup_mdns_data();
-    return;
-}
-
-static void
-admin_mdns_shutdown(void)
-{
-    if (admin_mdns_service)
-	gensio_mdns_remove_service(admin_mdns_service);
-    admin_mdns_service = NULL;
-    admin_cleanup_mdns_data();
-}
-
-#else
-
-static void
-admin_mdns_setup(struct absout *eout)
-{
-}
-
-static void
-admin_mdns_shutdown(void)
-{
-}
+#ifdef DO_MDNS
+static struct mdns_info admin_mdns_info;
 #endif /* DO_MDNS */
 
 static int
@@ -1372,7 +1117,6 @@ controller_handle_options(const char * const *options, struct absout *eout)
 {
     unsigned int i;
     const char *val;
-    char *fval;
 
     if (find_default_str("authdir-admin", &controller_authdir)) {
 	eout->out(eout, "Can't get default value for authdir-admin:"
@@ -1382,18 +1126,13 @@ controller_handle_options(const char * const *options, struct absout *eout)
 
     if (find_default_str("pamauth-admin", &controller_pamauth)) {
 	eout->out(eout, "Can't get default value for pamauth-admin:"
-		  " out of memeory");
+		  " out of memory");
 	return -1;
     }
 
 #ifdef DO_MDNS
-    admin_mdns_interface = find_default_int("mdns-interface");
-    if (find_default_str("mdns-type", &admin_mdns_type))
-	return ENOMEM;
-    if (find_default_str("mdns-domain", &admin_mdns_domain))
-	return ENOMEM;
-    if (find_default_str("mdns-host", &admin_mdns_host))
-	return ENOMEM;
+    if (mdns_info_getdefaults(&admin_mdns_info, "admin", eout))
+	return -1;
 #endif
 
     for (i = 0; options && options[i]; i++) {
@@ -1424,69 +1163,8 @@ controller_handle_options(const char * const *options, struct absout *eout)
 	    continue;
 	}
 #ifdef DO_MDNS
-	if (gensio_check_keybool(options[i], "mdns", &admin_mdns) > 0)
+	if (mdns_checkoption(options[i], &admin_mdns_info, "admin", eout) > 0)
 	    continue;
-	if (gensio_check_keyuint(options[i], "mdns-port", &admin_mdns_port) > 0)
-	    continue;
-	if (gensio_check_keyint(options[i], "mdns-interface",
-				&admin_mdns_interface) > 0)
-	    continue;
-	if (gensio_check_keyenum(options[i], "mdns-nettype",
-				 mdns_nettypes,
-				 &admin_mdns_nettype) > 0)
-	    continue;
-	if (gensio_check_keyvalue(options[i], "mdns-name", &val) > 0) {
-	    fval = strdup(val);
-	    if (!fval) {
-		eout->out(eout, "Out of memory allocating admin mdns-name");
-		return -1;
-	    }
-	    if (admin_mdns_name)
-		free(admin_mdns_name);
-	    admin_mdns_name = fval;
-	}
-	if (gensio_check_keyvalue(options[i], "mdns-type", &val) > 0) {
-	    fval = strdup(val);
-	    if (!fval) {
-		eout->out(eout, "Out of memory allocating admin mdns-type");
-		return -1;
-	    }
-	    if (admin_mdns_type)
-		free(admin_mdns_type);
-	    admin_mdns_type = fval;
-	}
-	if (gensio_check_keyvalue(options[i], "mdns-domain", &val) > 0) {
-	    fval = strdup(val);
-	    if (!fval) {
-		eout->out(eout, "Out of memory allocating admin mdns-domain");
-		return -1;
-	    }
-	    if (admin_mdns_domain)
-		free(admin_mdns_domain);
-	    admin_mdns_domain = fval;
-	}
-	if (gensio_check_keyvalue(options[i], "mdns-host", &val) > 0) {
-	    fval = strdup(val);
-	    if (!fval) {
-		eout->out(eout, "Out of memory allocating admin mdns-host");
-		return -1;
-	    }
-	    if (admin_mdns_host)
-		free(admin_mdns_host);
-	    admin_mdns_host = fval;
-	}
-	if (gensio_check_keyvalue(options[i], "mdns-txt", &val) > 0) {
-	    int err = gensio_argv_append(so, &admin_mdns_txt, val,
-					 &admin_mdns_txt_args,
-					 &admin_mdns_txt_argc,
-					 true);
-
-	    if (err) {
-		eout->out(eout, "Out of memory allocating admin mdns-txt: %s",
-			  gensio_err_to_str(err));
-		return -1;
-	    }
-	}
 #endif
 	eout->out(eout, "Invalid option to admin port: %s", options[i]);
 	return -1;
@@ -1576,7 +1254,9 @@ controller_init(char *controller_port, const char *name,
 	eout->out(eout, "Unable to start controller accepter: %s",
 		  gensio_err_to_str(rv));
 
-    admin_mdns_setup(eout);
+#ifdef DO_MDNS
+    mdns_setup(&admin_mdns_info, admin_name, controller_accepter, eout);
+#endif
 
  out:
     return;
@@ -1590,7 +1270,13 @@ void
 controller_shutdown(void)
 {
     if (controller_accepter) {
-	admin_mdns_shutdown();
+#ifdef DO_MDNS
+	mdns_shutdown(&admin_mdns_info);
+#endif
+	if (admin_name) {
+	    free(admin_name);
+	    admin_name = NULL;
+	}
 	gensio_acc_shutdown(controller_accepter, controller_shutdown_done,
 			    NULL);
 	so->wait(accept_waiter, 1, NULL);

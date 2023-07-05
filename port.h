@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include "gbuf.h"
 #include "absout.h"
+#include "mdns.h"
 #include <gensio/gensio.h>
 
 /* States for the net_to_dev_state and dev_to_net_state. */
@@ -352,23 +353,8 @@ struct port_info
     gensiods sendon_len;
 
 #ifdef DO_MDNS
-    /*
-     * mdns info
-     */
-    bool mdns;
-    bool do_mdns_sysattrs;
-    unsigned int mdns_port;
-    int mdns_interface;
-    int mdns_nettype;
-    char *mdns_name;
-    char *mdns_type;
-    char *mdns_domain;
-    char *mdns_host;
-    const char **mdns_txt;
-    gensiods mdns_txt_argc;
-    gensiods mdns_txt_args;
-    struct gensio_mdns_service *mdns_service;
-#endif /* DO_MDNS */
+    struct mdns_info mdns_info;
+#endif
 };
 
 /* In dataxfer.c */

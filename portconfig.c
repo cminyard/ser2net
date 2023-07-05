@@ -333,16 +333,7 @@ finish_free_port(port_info_t *port)
     if (port->sendon)
 	free(port->sendon);
 #ifdef DO_MDNS
-    if (port->mdns_name)
-	free(port->mdns_name);
-    if (port->mdns_type)
-	free(port->mdns_type);
-    if (port->mdns_domain)
-	free(port->mdns_domain);
-    if (port->mdns_host)
-	free(port->mdns_host);
-    if (port->mdns_txt)
-	gensio_argv_free(so, port->mdns_txt);
+    mdns_shutdown(&port->mdns_info);
 #endif /* DO_MDNS */
     free(port);
 }
@@ -666,63 +657,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	port->sendon = fval;
 	port->sendon_len = len;
 #ifdef DO_MDNS
-    } else if (gensio_check_keybool(pos, "mdns",
-				    &port->mdns) > 0) {
-    } else if (gensio_check_keybool(pos, "mdns-sysattrs",
-				    &port->do_mdns_sysattrs) > 0) {
-    } else if (gensio_check_keyuint(pos, "mdns-port",
-				    &port->mdns_port) > 0) {
-    } else if (gensio_check_keyint(pos, "mdns-interface",
-				   &port->mdns_interface) > 0) {
-    } else if (gensio_check_keyenum(pos, "mdns-nettype",
-				    mdns_nettypes,
-				    &port->mdns_nettype) > 0) {
-    } else if (gensio_check_keyvalue(pos, "mdns-name", &val) > 0) {
-	fval = strdup(val);
-	if (!fval) {
-	    eout->out(eout, "Out of memory allocating mdns-name");
-	    return -1;
-	}
-	if (port->mdns_name)
-	    free(port->mdns_name);
-	port->mdns_name = fval;
-    } else if (gensio_check_keyvalue(pos, "mdns-type", &val) > 0) {
-	fval = strdup(val);
-	if (!fval) {
-	    eout->out(eout, "Out of memory allocating mdns-type");
-	    return -1;
-	}
-	if (port->mdns_type)
-	    free(port->mdns_type);
-	port->mdns_type = fval;
-    } else if (gensio_check_keyvalue(pos, "mdns-domain", &val) > 0) {
-	fval = strdup(val);
-	if (!fval) {
-	    eout->out(eout, "Out of memory allocating mdns-domain");
-	    return -1;
-	}
-	if (port->mdns_domain)
-	    free(port->mdns_domain);
-	port->mdns_domain = fval;
-    } else if (gensio_check_keyvalue(pos, "mdns-host", &val) > 0) {
-	fval = strdup(val);
-	if (!fval) {
-	    eout->out(eout, "Out of memory allocating mdns-host");
-	    return -1;
-	}
-	if (port->mdns_host)
-	    free(port->mdns_host);
-	port->mdns_host = fval;
-    } else if (gensio_check_keyvalue(pos, "mdns-txt", &val) > 0) {
-	int err = gensio_argv_append(so, &port->mdns_txt, val,
-				     &port->mdns_txt_args, &port->mdns_txt_argc,
-				     true);
-
-	if (err) {
-	    eout->out(eout, "Out of memory allocating mdns-txt: %s",
-		      gensio_err_to_str(err));
-	    return -1;
-	}
+    } else if (mdns_checkoption(pos, &port->mdns_info, port->name, eout) > 0) {
 #endif /* DO_MDNS */
 
     /* Everything from here down to the banner, etc is deprecated. */
@@ -813,7 +748,7 @@ process_connect_back(struct absout *eout, port_info_t *port,
 }
 
 static int
-init_port_data(port_info_t *port)
+init_port_data(port_info_t *port, struct absout *eout)
 {
     port->enabled = false;
 
@@ -857,15 +792,9 @@ init_port_data(port_info_t *port)
     port->led_rx = NULL;
 
 #ifdef DO_MDNS
-    port->mdns = find_default_bool("mdns");
-    port->do_mdns_sysattrs = find_default_bool("mdns-sysattrs");
-    port->mdns_interface = find_default_int("mdns-interface");
-    if (find_default_str("mdns-type", &port->mdns_type))
-	return ENOMEM;
-    if (find_default_str("mdns-domain", &port->mdns_domain))
-	return ENOMEM;
-    if (find_default_str("mdns-host", &port->mdns_host))
-	return ENOMEM;
+    /* The bool is not defaulted in getdefaults. */
+    port->mdns_info.mdns = find_default_bool("mdns");
+    mdns_info_getdefaults(&port->mdns_info, port->name, eout);
 #endif /* DO_MDNS */
 
     return 0;
@@ -935,7 +864,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    init_port_data(new_port);
+    init_port_data(new_port, eout);
 
     if (!new_port->name) {
 	new_port->name = strdup(name);

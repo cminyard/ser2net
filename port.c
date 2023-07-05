@@ -32,9 +32,6 @@
 #include "ser2net.h"
 #include "port.h"
 #include "gbuf.h"
-#ifdef DO_MDNS
-#include <gensio/gensio_mdns.h>
-#endif
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
 #include <gensio/sergensio.h>
@@ -295,218 +292,6 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
     }
 }
 
-#ifdef DO_MDNS
-static char *
-derive_mdns_type(port_info_t *port)
-{
-    /* Get a mdns type based on the gensio. */
-    unsigned int i;
-    const char *type, *ntype = "_iostream._tcp";
-
-    type = gensio_acc_get_type(port->accepter, 0);
-    for (i = 1; type; i++) {
-	if (strcmp(type, "tcp") == 0)
-	    break;
-	if (strcmp(type, "udp") == 0) {
-	    ntype = "_iostream._udp";
-	    break;
-	}
-	type = gensio_acc_get_type(port->accepter, i);
-    }
-    return strdup(ntype);
-}
-
-static void
-mdns_addprovider(struct absout *eout, port_info_t *port)
-{
-    gensiods i;
-    static char *provstr = "provider=";
-    char *tmps = NULL;
-
-    for (i = 0; i < port->mdns_txt_argc; i++) {
-	if (strncmp(port->mdns_txt[i], provstr, strlen(provstr)) == 0)
-	    /* User already specified it, don't override. */
-	    return;
-    }
-
-    tmps = gensio_alloc_sprintf(so, "%s%s", provstr, "ser2net");
-    if (!tmps)
-	goto out_nomem;
-
-    if (gensio_argv_append(so, &port->mdns_txt, tmps,
-			   &port->mdns_txt_args, &port->mdns_txt_argc,
-			   false))
-	goto out_nomem;
-    return;
-
- out_nomem:
-    eout->out(eout, "Error allocation mdns provider for %s: out of memory",
-	      port->name);
-    if (tmps)
-	so->free(so, tmps);
-}
-
-static void
-mdns_addstack(struct absout *eout, port_info_t *port)
-{
-    gensiods i;
-    static char *stackstr = "gensiostack=";
-    const char *type;
-    char *stack = NULL, *tmps = NULL;
-
-    for (i = 0; i < port->mdns_txt_argc; i++) {
-	if (strncmp(port->mdns_txt[i], stackstr, strlen(stackstr)) == 0)
-	    /* User already specified it, don't override. */
-	    return;
-    }
-
-    for (i = 0; ; i++) {
-	type = gensio_acc_get_type(port->accepter, i);
-	if (!type)
-	    break;
-
-	if (strcmp(type, "telnet") == 0) {
-	    struct gensio_accepter *telnet_acc =
-		gensio_acc_get_child(port->accepter, i);
-	    const char *rfc2217 = "";
-
-	    if (gensio_acc_to_sergensio_acc(telnet_acc))
-		rfc2217 = "(rfc2217)";
-
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type, rfc2217);
-	} else {
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type);
-	}
-	if (!tmps)
-	    goto out_nomem;
-	if (stack)
-	    so->free(so, stack);
-	stack = tmps;
-    }
-
-    if (!stack)
-	return;
-
-    tmps = gensio_alloc_sprintf(so, "%s%s", stackstr, stack);
-    if (!tmps)
-	goto out_nomem;
-    stack = tmps;
-
-    if (gensio_argv_append(so, &port->mdns_txt, stack,
-			   &port->mdns_txt_args, &port->mdns_txt_argc,
-			   false))
-	goto out_nomem;
-    return;
-
- out_nomem:
-    eout->out(eout, "Error allocation mdns stack for %s: out of memory",
-	      port->name);
-    if (stack)
-	so->free(so, stack);
-}
-
-static void
-mdns_setup(struct absout *eout, port_info_t *port)
-{
-    int err;
-    char portnum_str[20];
-    gensiods portnum_len = sizeof(portnum_str);
-
-    if (!port->mdns)
-	return;
-
-    if (!mdns) {
-	eout->out(eout, "mdns requested for device %s, but mdns failed"
-		  " to start or is disabled in gensio\n", port->name);
-	return;
-    }
-
-    if (!port->mdns_port) {
-	strcpy(portnum_str, "0");
-	err = gensio_acc_control(port->accepter, GENSIO_CONTROL_DEPTH_FIRST,
-				 true, GENSIO_ACC_CONTROL_LPORT, portnum_str,
-				 &portnum_len);
-	if (err) {
-	    eout->out(eout, "Can't get mdns port for device %s: %s",
-		      port->name, gensio_err_to_str(err));
-	    return;
-	}
-	port->mdns_port = strtoul(portnum_str, NULL, 0);
-    }
-
-    if (!port->mdns_type) {
-	port->mdns_type = derive_mdns_type(port);
-	if (!port->mdns_type) {
-	    eout->out(eout, "Can't alloc mdns type for %s: out of memory",
-		      port->name);
-	    return;
-	}
-    }
-
-    if (!port->mdns_name) {
-	port->mdns_name = strdup(port->name);
-	if (!port->mdns_name) {
-	    eout->out(eout, "Can't alloc mdns name for %s: out of memory",
-		      port->name);
-	    return;
-	}
-    }
-
-    mdns_addprovider(eout, port);
-    mdns_addstack(eout, port);
-
-    /*
-     * Always stick on the NULL, that doesn't update argc so it's safe,
-     * a new txt will just write over the NULL we added.
-     */
-    err = gensio_argv_append(so, &port->mdns_txt, NULL,
-			     &port->mdns_txt_args, &port->mdns_txt_argc, true);
-    if (err) {
-	eout->out(eout, "Error terminating mdns-txt for %s: %s",
-		  port->name, gensio_err_to_str(err));
-	return;
-    }
-
-    if (port->do_mdns_sysattrs)
-	add_sys_attrs(eout, port->name, port->devname, &port->mdns_txt,
-		      &port->mdns_txt_args, &port->mdns_txt_argc);
-
-    err = gensio_mdns_add_service(mdns, port->mdns_interface,
-				  port->mdns_nettype,
-				  port->mdns_name, port->mdns_type,
-				  port->mdns_domain, port->mdns_host,
-				  port->mdns_port, port->mdns_txt,
-				  &port->mdns_service);
-    if (err)
-	eout->out(eout, "Can't add mdns service for device %s: %s",
-		  port->name, gensio_err_to_str(err));
-}
-
-static void
-mdns_shutdown(port_info_t *port)
-{
-    if (port->mdns_service)
-	gensio_mdns_remove_service(port->mdns_service);
-    port->mdns_service = NULL;
-}
-
-#else
-
-static void
-mdns_setup(struct absout *eout, port_info_t *port)
-{
-}
-
-static void
-mdns_shutdown(port_info_t *port)
-{
-}
-#endif /* DO_MDNS */
-
 int
 startup_port(struct absout *eout, port_info_t *port)
 {
@@ -531,7 +316,9 @@ startup_port(struct absout *eout, port_info_t *port)
     port->dev_to_net_state = PORT_UNCONNECTED;
     port->net_to_dev_state = PORT_UNCONNECTED;
 
-    mdns_setup(eout, port);
+#ifdef DO_MDNS
+    mdns_setup(&port->mdns_info, port->name, port->accepter, eout);
+#endif
 
     if (port->connbacks) {
 	err = port_dev_enable(port);
@@ -633,7 +420,9 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 	    check_port_new_net(port, netcon);
     } else {
 	/* Port was disabled, shut it down. */
-	mdns_shutdown(port);
+#ifdef DO_MDNS
+	mdns_shutdown(&port->mdns_info);
+#endif
 	gensio_acc_shutdown(port->accepter, NULL, NULL);
 	call_port_op_done(port);
     }
