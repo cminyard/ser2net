@@ -704,7 +704,7 @@ There is an admin accepter that you can define for ser2net, it lets you
 log in, look at status, and change some things.  See "ADMIN INTERFACE"
 in ser2net(8) for detail on how to use it.  The format is:
 .RS
-admin:
+admin: [&<name>]
 .RS
 accepter: <accepter>
 .br
@@ -717,10 +717,15 @@ options:
 .RE
 .RE
 
-The only options available are "authdir-admin", which sets the authentication
-directory for the admin port and "pamauth-admin" which sets the PAM service
-name and enables PAM authentication. Both are different than "authdir" resp.
-"pamauth" for connections, though you can set it to the same value.
+The following authentications options available are "authdir-admin",
+which sets the authentication directory for the admin port and
+"pamauth-admin" which sets the PAM service name and enables PAM
+authentication. Both are different than "authdir" resp.  "pamauth" for
+connections, though you can set it to the same value.
+
+In addition, the same mdns option are available for admin ports as are
+available for connections.  And you can set an optional alias that
+will also set the mdna name.
 
 .SH LEDS
 .B ser2net

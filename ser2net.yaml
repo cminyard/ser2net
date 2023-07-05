@@ -53,9 +53,12 @@ define: &confver 1.0
 #   value: true
 #   class: serialdev
 
-# # Create a secure admin interface on sctp,2000
-# admin:
-#   accepter: mux,certauth,ssl,sctp,2000
+# # Create a secure admin interface on tcp,2000
+# # Enable mdns on it, connect with gtlssh -m admin1
+# admin: &admin1
+#   accepter: mux,certauth,ssl,tcp,2000
+#   options:
+#     mdns: true
 
 # # Define an arbitrary string substitution, we will use this later
 # # for a banner.
