@@ -1169,10 +1169,7 @@ controller_init(char *controller_port, const char *name,
     if (!accept_waiter) {
 	accept_waiter = so->alloc_waiter(so);
 	if (!accept_waiter) {
-	    if (eout)
-		eout->out(eout, "Unable to allocate controller accept waiter");
-	    else
-		syslog(LOG_ERR, "Unable to allocate controller accept waiter");
+	    eout->out(eout, "Unable to allocate controller accept waiter");
 	    goto out;
 	}
     }
@@ -1181,12 +1178,8 @@ controller_init(char *controller_port, const char *name,
 				controller_acc_child_event, NULL,
 				&controller_accepter);
     if (rv) {
-	if (eout)
-	    eout->out(eout, "Unable to allocate controller accepter: %s",
-		      gensio_err_to_str(rv));
-	else
-	    syslog(LOG_ERR, "Unable to allocate controller accepter: %s",
-		      gensio_err_to_str(rv));
+	eout->out(eout, "Unable to allocate controller accepter: %s",
+		  gensio_err_to_str(rv));
 	goto out;
     }
 
@@ -1205,34 +1198,22 @@ controller_init(char *controller_port, const char *name,
 				    "ser2net-control", NULL);
 	}
     }
-    if (rv) {
-	if (eout)
-	    eout->out(eout, "Error setting controller tcpdname: %s",
-		      gensio_err_to_str(rv));
-	else
-	    syslog(LOG_ERR, "Error setting controller tcpdname: %s",
-		      gensio_err_to_str(rv));
-    }
+    if (rv)
+	eout->out(eout, "Error setting controller tcpdname: %s",
+		  gensio_err_to_str(rv));
+
 #endif
     rv = gensio_acc_startup(controller_accepter);
-    if (rv) {
-	if (eout)
-	    eout->out(eout, "Unable to start controller accepter: %s",
-		      gensio_err_to_str(rv));
-	else
-	    syslog(LOG_ERR, "Unable to start controller accepter: %s",
-		      gensio_err_to_str(rv));
-    }
+    if (rv)
+	eout->out(eout, "Unable to start controller accepter: %s",
+		  gensio_err_to_str(rv));
 
  out:
-    return 0;
+    return;
 
  out_nomem:
-    if (eout)
-	eout->out(eout, "Unable to allocate memory for controller");
-    else
-	syslog(LOG_ERR, "Unable to allocate memory for controller");
-    return 0;
+    eout->out(eout, "Unable to allocate memory for controller");
+    return;
 }
 
 void
