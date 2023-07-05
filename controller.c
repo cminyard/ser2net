@@ -1374,8 +1374,6 @@ controller_handle_options(const char * const *options, struct absout *eout)
     const char *val;
     char *fval;
 
-    admin_mdns_interface = find_default_int("mdns-interface");
-
     if (find_default_str("authdir-admin", &controller_authdir)) {
 	eout->out(eout, "Can't get default value for authdir-admin:"
 		  " out of memeory");
@@ -1387,6 +1385,16 @@ controller_handle_options(const char * const *options, struct absout *eout)
 		  " out of memeory");
 	return -1;
     }
+
+#ifdef DO_MDNS
+    admin_mdns_interface = find_default_int("mdns-interface");
+    if (find_default_str("mdns-type", &admin_mdns_type))
+	return ENOMEM;
+    if (find_default_str("mdns-domain", &admin_mdns_domain))
+	return ENOMEM;
+    if (find_default_str("mdns-host", &admin_mdns_host))
+	return ENOMEM;
+#endif
 
     for (i = 0; options && options[i]; i++) {
 	if (gensio_check_keyvalue(options[i], "authdir-admin", &val) > 0) {

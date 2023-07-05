@@ -727,6 +727,12 @@ In addition, the same mdns option are available for admin ports as are
 available for connections.  And you can set an optional alias that
 will also set the mdna name.
 
+Like connections, default mdns options work for "mdns-interface",
+"mdna-type", "mdns-domain", and "mdns-host".  Unlike connections, the
+"mdns" boolean does not come from the default, you must specify it as
+an admin option to turn on mdns for the admin port.  This is to allow
+it to be specified separately and maintain backwards compatibility.
+
 .SH LEDS
 .B ser2net
 can flash LEDs during serial activity.  To create an LED, do:
