@@ -42,6 +42,15 @@ extern int ser2net_debug_level;
 
 extern int ser2net_wake_sig;
 
+#if (defined(gensio_version_major) && (gensio_version_major > 2 ||	\
+     (gensio_version_major == 2 && gensio_version_minor >= 2)))
+#define DO_MDNS
+#endif
+
+#ifdef DO_MDNS
+extern struct gensio_mdns *mdns;
+#endif
+
 void start_maint_op(void);
 void end_maint_op(void);
 int reread_config_file(const char *reqtype, struct absout *eout);

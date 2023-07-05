@@ -296,8 +296,6 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 }
 
 #ifdef DO_MDNS
-static struct gensio_mdns *mdns;
-
 static char *
 derive_mdns_type(port_info_t *port)
 {
@@ -1309,17 +1307,6 @@ init_dataxfer(void)
 	rv = ENOMEM;
 	goto out;
     }
-
-#ifdef DO_MDNS
-    rv = gensio_alloc_mdns(so, &mdns);
-    /*
-     * If gensio doesn't support MDNS, that's not reportable unless
-     * the user tries to use it.
-     */
-    if (rv && rv != GE_NOTSUP)
-	/* Not fatal */
-	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(rv));
-#endif /* DO_MDNS */
 
     rv = init_rotators();
 

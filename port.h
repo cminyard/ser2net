@@ -33,11 +33,6 @@
 #include "absout.h"
 #include <gensio/gensio.h>
 
-#if (defined(gensio_version_major) && (gensio_version_major > 2 ||	\
-     (gensio_version_major == 2 && gensio_version_minor >= 2)))
-#define DO_MDNS
-#endif
-
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_NOT_STARTED		0 /* The dataxfer_start_port failed. */
 #define PORT_CLOSED			1 /* The accepter is disabled. */
