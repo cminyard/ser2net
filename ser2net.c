@@ -46,6 +46,12 @@
 #ifdef DO_MDNS
 #include <gensio/gensio_mdns.h>
 struct gensio_mdns *mdns;
+struct gensio_enum_val mdns_nettypes[] = {
+    { "unspec", GENSIO_NETTYPE_UNSPEC },
+    { "ipv4", GENSIO_NETTYPE_IPV4 },
+    { "ipv6", GENSIO_NETTYPE_IPV6 },
+    { NULL }
+};
 #endif
 
 static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";

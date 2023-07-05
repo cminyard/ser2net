@@ -470,15 +470,6 @@ update_str_val(const char *str, char **outstr, const char *name,
     return 0;
 }
 
-#ifdef DO_MDNS
-static struct gensio_enum_val mdns_nettypes[] = {
-    { "unspec", GENSIO_NETTYPE_UNSPEC },
-    { "ipv4", GENSIO_NETTYPE_IPV4 },
-    { "ipv6", GENSIO_NETTYPE_IPV6 },
-    { NULL }
-};
-#endif /* DO_MDNS */
-
 static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
