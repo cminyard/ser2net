@@ -144,6 +144,7 @@ struct map_info {
     enum ystate next_state;
     int map_type;
     bool needs_anchor;
+    bool wants_anchor;
 };
 
 enum which_info {
@@ -753,27 +754,27 @@ enum main_map_types {
 };
 
 static struct map_info sc_default_map = {
-    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT, false
+    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT, false, false
 };
 
 static struct map_info sc_deldefault_map = {
-    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT, false
+    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT, false, false
 };
 
 static struct map_info sc_connection_map = {
-    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION, true
+    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION, true, false
 };
 
 static struct map_info sc_rotator_map = {
-    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR, true
+    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR, true, false
 };
 
 static struct map_info sc_led_map = {
-    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED, true
+    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED, true, false
 };
 
 static struct map_info sc_admin_map = {
-    "admin", sc_admin, MAIN_LEVEL, MAIN_MAP_ADMIN, false
+    "admin", sc_admin, MAIN_LEVEL, MAIN_MAP_ADMIN, false, true
 };
 
 static struct scalar_next_state sc_main[] = {
@@ -1095,20 +1096,22 @@ yhandle_mapping_start(struct yconf *y)
 	break;
 
     case IN_MAIN_NAME:
-	if (y->map_info->needs_anchor) {
+	if (y->map_info->needs_anchor || y->map_info->wants_anchor) {
 	    char *anchor = (char *) y->d->f->e.data.mapping_start.anchor;
 
-	    if (!anchor) {
+	    if (!anchor && y->map_info->needs_anchor) {
 		yaml_errout(y, "Main mapping requires an anchor for the name");
 		return -1;
 	    }
-	    y->name = strdup(anchor);
-	    if (!y->name) {
-		yaml_errout(y, "Out of memory allocating name");
-		return -1;
+	    if (anchor) {
+		y->name = strdup(anchor);
+		if (!y->name) {
+		    yaml_errout(y, "Out of memory allocating name");
+		    return -1;
+		}
+		if (add_alias(y, anchor, anchor))
+		    return -1;
 	    }
-	    if (add_alias(y, anchor, anchor))
-		return -1;
 	}
 	y->state = IN_MAIN_MAP;
 	break;
@@ -1258,7 +1261,7 @@ yhandle_mapping_end(struct yconf *y)
 	    /* NULL terminate the options. */
 	    if (add_option(y, NULL, NULL, "admin"))
 		return -1;
-	    controller_init(y->accepter, (const char **) y->options,
+	    controller_init(y->accepter, y->name, (const char **) y->options,
 			    &y->sub_errout);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);

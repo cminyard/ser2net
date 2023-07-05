@@ -1106,8 +1106,8 @@ controller_shutdown_done(struct gensio_accepter *net, void *cb_data)
 
 /* Set up the controller port to accept connections. */
 int
-controller_init(char *controller_port, const char * const *options,
-		struct absout *eout)
+controller_init(char *controller_port, const char *name,
+		const char * const *options, struct absout *eout)
 {
     unsigned int i;
     const char *val;

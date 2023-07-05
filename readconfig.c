@@ -578,7 +578,7 @@ handle_config_line(char *inbuf, int len)
     if (startswith(inbuf, "CONTROLPORT", &strtok_data)) {
 	char *config_port = strtok_r(NULL, "\n", &strtok_data);
 
-	controller_init(config_port, NULL, NULL);
+	controller_init(config_port, NULL, NULL, NULL);
 	goto out;
     }
 

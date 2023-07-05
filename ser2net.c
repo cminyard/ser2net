@@ -932,7 +932,7 @@ main(int argc, char *argv[])
     }
 
     if (admin_port)
-	controller_init(admin_port, NULL, NULL);
+	controller_init(admin_port, NULL, NULL, NULL);
 
     if (config_type == CONFIG_OLD) {
 	for (i = 0; i < num_config_lines; i++)
