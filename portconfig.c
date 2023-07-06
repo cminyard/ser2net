@@ -792,9 +792,9 @@ init_port_data(port_info_t *port, struct absout *eout)
     port->led_rx = NULL;
 
 #ifdef DO_MDNS
+    mdns_info_getdefaults(&port->mdns_info, port->name, eout);
     /* The bool is not defaulted in getdefaults. */
     port->mdns_info.mdns = find_default_bool("mdns");
-    mdns_info_getdefaults(&port->mdns_info, port->name, eout);
 #endif /* DO_MDNS */
 
     return 0;
