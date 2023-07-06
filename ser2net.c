@@ -43,17 +43,6 @@
 #include "dataxfer.h"
 #include "led.h"
 
-#ifdef DO_MDNS
-#include <gensio/gensio_mdns.h>
-struct gensio_mdns *mdns;
-struct gensio_enum_val mdns_nettypes[] = {
-    { "unspec", GENSIO_NETTYPE_UNSPEC },
-    { "ipv4", GENSIO_NETTYPE_IPV4 },
-    { "ipv6", GENSIO_NETTYPE_IPV6 },
-    { NULL }
-};
-#endif
-
 static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";
 static bool config_file_set = false;
 static char *old_config_file = SYSCONFDIR "/ser2net.conf";
@@ -923,16 +912,7 @@ main(int argc, char *argv[])
 
     setup_signals();
 
-#ifdef DO_MDNS
-    err = gensio_alloc_mdns(so, &mdns);
-    /*
-     * If gensio doesn't support MDNS, that's not reportable unless
-     * the user tries to use it.
-     */
-    if (err && err != GE_NOTSUP)
-	/* Not fatal */
-	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(err));
-#endif /* DO_MDNS */
+    init_mdns();
 
     err = init_dataxfer();
     if (err) {

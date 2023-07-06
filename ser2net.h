@@ -47,10 +47,7 @@ extern int ser2net_wake_sig;
 #define DO_MDNS
 #endif
 
-#ifdef DO_MDNS
-extern struct gensio_mdns *mdns;
-extern struct gensio_enum_val mdns_nettypes[];
-#endif
+void init_mdns(void);
 
 void start_maint_op(void);
 void end_maint_op(void);

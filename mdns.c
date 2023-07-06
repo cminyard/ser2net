@@ -32,6 +32,14 @@
 #ifdef DO_MDNS
 #include <gensio/gensio_mdns.h>
 
+struct gensio_mdns *mdns;
+struct gensio_enum_val mdns_nettypes[] = {
+    { "unspec", GENSIO_NETTYPE_UNSPEC },
+    { "ipv4", GENSIO_NETTYPE_IPV4 },
+    { "ipv6", GENSIO_NETTYPE_IPV6 },
+    { NULL }
+};
+
 void
 msnd_info_init(struct mdns_info *m)
 {
@@ -374,4 +382,25 @@ mdns_shutdown(struct mdns_info *m)
     m->mdns_service = NULL;
     cleanup_mdns_data(m);
 }
+
+void
+init_mdns(void)
+{
+    int err = gensio_alloc_mdns(so, &mdns);
+    /*
+     * If gensio doesn't support MDNS, that's not reportable unless
+     * the user tries to use it.
+     */
+    if (err && err != GE_NOTSUP)
+	/* Not fatal */
+	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(err));
+}
+
+#else
+
+void
+init_mdns(void)
+{
+}
+
 #endif
