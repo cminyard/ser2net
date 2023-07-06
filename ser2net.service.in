@@ -8,6 +8,7 @@ Type=simple
 User=ser2net
 Group=dialout
 ExecStart=@ser2netbindir@/ser2net -n
+ExecReload=kill -HUP $MAINPID
 StandardOutput=null
 Restart=on-failure
 
