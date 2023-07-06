@@ -1,0 +1,15 @@
+[Unit]
+Description=Serial to network proxy
+Requires=network.target
+Documentation=man:ser2net(8)
+
+[Service]
+Type=simple
+User=ser2net
+Group=dialout
+ExecStart=@ser2netbindir@/ser2net -n
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
