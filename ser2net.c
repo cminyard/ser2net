@@ -186,7 +186,7 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
 }
 
 static ftype *
-fopen_config_file(bool *is_yaml, char **rfilename)
+fopen_config_file(bool *is_yaml, char **rfilename, struct absout *eout)
 {
     int err;
     ftype *instream;
@@ -194,13 +194,13 @@ fopen_config_file(bool *is_yaml, char **rfilename)
     err = f_open(config_file, DO_READ, 0, &instream);
     if (err) {
 	if (config_file_set) {
-	    seout.out(&seout, "Unable to open config file '%s': %s",
+	    eout->out(eout, "Unable to open config file '%s': %s",
 		      config_file, gensio_err_to_str(err));
 	    return NULL;
 	}
 	err = f_open(old_config_file, DO_READ, 0, &instream);
 	if (err) {
-	    seout.out(&seout, "Unable to open config file '%s' or old one"
+	    eout->out(eout, "Unable to open config file '%s' or old one"
 		      " '%s': %s", config_file, old_config_file,
 		      gensio_err_to_str(err));
 	    return NULL;
@@ -218,7 +218,7 @@ fopen_config_file(bool *is_yaml, char **rfilename)
 
 	err = f_gets(instream, &in_buf, &len, &buflen);
 	if (err) {
-	    seout.out(&seout, "Unable to read config file '%s': %s",
+	    eout->out(eout, "Unable to read config file '%s': %s",
 		      *rfilename, gensio_err_to_str(err));
 	    if (in_buf)
 		free(in_buf);
@@ -229,9 +229,9 @@ fopen_config_file(bool *is_yaml, char **rfilename)
 	f_seek(instream, 0, SEEK_ABSOLUTE);
     }
     if (!*is_yaml)
-	fprintf(stderr,
+	eout->out(eout,
 	  "ser2net:WARNING: Using old config file format, this will go away\n"
-	  "soon.  Please switch to the yaml-based format.\n");
+	  "soon.  Please switch to the yaml-based format.");
     return instream;
 }
 
@@ -248,7 +248,7 @@ reread_config_file(const char *reqtype, struct absout *eout)
 	seout.out(&seout, "Got %s, re-reading configuration", reqtype);
 	readconfig_init();
 
-	instream = fopen_config_file(&is_yaml, &filename);
+	instream = fopen_config_file(&is_yaml, &filename, &seout);
 	if (!instream)
 	    goto out;
 
@@ -352,22 +352,32 @@ arg_error(char *name)
 static int
 make_pidfile(void)
 {
-    FILE *fpidfile;
+    int rv, len;
+    ftype *fpidfile;
+    char buf[20];
 
     if (!pid_file)
 	return 0;
-    fpidfile = fopen(pid_file, "w");
-    if (!fpidfile) {
+    rv = f_open(pid_file, DO_WRITE | DO_CREATE, 0644, &fpidfile);
+    if (rv) {
 	seout.out(&seout,
-		  "Error opening pidfile '%s': %m, pidfile not created",
-		  pid_file);
+		  "Error opening pidfile '%s': %m, pidfile not created: %s",
+		  pid_file, gensio_err_to_str(rv));
 	pid_file = NULL;
-	return GE_INVAL;
+	return rv;
     }
-    fprintf(fpidfile, "%d\n", getpid());
-    fclose(fpidfile);
+    len = snprintf(buf, sizeof(buf), "%d\n", getpid());
+    f_write(fpidfile, buf, len, NULL);
+    f_close(fpidfile);
 
     return 0;
+}
+
+static void
+cleanup_pidfile(void)
+{
+    if (pid_file)
+	unlink(pid_file);
 }
 
 static struct gensio_lock *config_lock;
@@ -746,7 +756,8 @@ main(int argc, char *argv[])
 	return 1;
     }
 
-    err = gensio_os_proc_register_term_handler(procdata, shutdown_cleanly, NULL);
+    err = gensio_os_proc_register_term_handler(procdata, shutdown_cleanly,
+					       NULL);
     if (err) {
 	seout.out(&seout, "Unable to setup termination handler: %s",
 		  gensio_err_to_str(err));
@@ -775,9 +786,6 @@ main(int argc, char *argv[])
 	return 1;
     }
 
-    if (ser2net_debug && !detach)
-	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
-
     err = readconfig_init();
     if (err) {
 	fprintf(stderr,
@@ -787,7 +795,7 @@ main(int argc, char *argv[])
     }
 
     if (admin_port)
-	controller_init(admin_port, NULL, NULL, &seout);
+	controller_init(admin_port, NULL, NULL, &stderr_absout);
 
     if (config_type == CONFIG_OLD) {
 	for (i = 0; i < num_config_lines; i++)
@@ -807,7 +815,7 @@ main(int argc, char *argv[])
 	    is_yaml = true;
 	    filename = "<stdin>";
 	} else {
-	    instream = fopen_config_file(&is_yaml, &filename);
+	    instream = fopen_config_file(&is_yaml, &filename, &stderr_absout);
 	    if (!instream)
 		return 1;
 	}
@@ -878,6 +886,10 @@ main(int argc, char *argv[])
 	close(0);
 	close(1);
 	close(2);
+    } else if (ser2net_debug) {
+	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
+    } else {
+	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
     }
 
     /* write pid file */
@@ -914,8 +926,7 @@ main(int argc, char *argv[])
     free_tracefiles();
     free_rs485confs();
 
-    if (pid_file)
-	unlink(pid_file);
+    cleanup_pidfile();
 
     if (admin_port)
 	free(admin_port);
