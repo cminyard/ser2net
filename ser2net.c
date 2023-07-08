@@ -36,6 +36,7 @@
 #include <errno.h>
 
 #include <gensio/selector.h>
+#include <gensio/gensio_os_funcs_public.h>
 
 #include "ser2net.h"
 #include "readconfig.h"
@@ -53,17 +54,15 @@ static int detach = 1;
 int ser2net_debug = 0;
 int ser2net_debug_level = 0;
 volatile int in_shutdown = 0;
-#ifdef USE_PTHREADS
-#include <pthread.h>
-int num_threads = 1;
-struct thread_info {
-    pthread_t id;
-};
-struct thread_info *threads;
-#endif
+static unsigned int num_threads = 1;
 
+struct s2n_threadinfo {
+    struct gensio_thread *gthread;
+    struct gensio_waiter *waiter;
+    struct gensio_runner *runner;
+} *threads;
 
-struct selector_s *ser2net_sel;
+struct gensio_os_proc_data *procdata;
 struct gensio_os_funcs *so;
 char *rfc2217_signature = "ser2net";
 
@@ -81,9 +80,7 @@ static char *help_string =
 "  -d - Don't detach and send debug I/O to standard output\n"
 "  -l - Increase the debugging level\n"
 "  -u - Disable UUCP locking\n"
-#ifdef USE_PTHREADS
 "  -t <num threads> - Use the given number of threads, default 1\n"
-#endif
 "  -b - unused (was Do CISCO IOS baud-rate negotiation, instead of RFC2217)\n"
 "  -v - print the program's version and exit\n"
 "  -s - specify a default signature for RFC2217 protocol\n"
@@ -349,348 +346,179 @@ make_pidfile(void)
     fclose(fpidfile);
 }
 
-static int dummyrv; /* Used to ignore return values of read() and write(). */
-
-/* Used to reliably deliver signals to a thread.  This is a pipe that
-   we write to from a signal handler to make sure it wakes up. */
-static int sig_fd_alert = -1;
-static int sig_fd_watch = -1;
-static volatile int reread_config = 0; /* Did I get a HUP signal? */
-static volatile int term_prog = 0; /* Did I get an INT signal? */
-
-static void
-sig_wake_selector(void)
-{
-    char dummy = 0;
-
-    dummyrv = write(sig_fd_alert, &dummy, 1);
-}
-
-static void
-sighup_handler(int sig)
-{
-    reread_config = 1;
-    sig_wake_selector();
-}
-
-static void
-sigint_handler(int sig)
-{
-    term_prog = 1;
-    sig_wake_selector();
-}
-
 static struct gensio_lock *config_lock;
-
 static struct gensio_lock *maint_lock;
 
-#ifdef USE_PTHREADS
 static int in_config_read = 0;
-
-int ser2net_wake_sig = SIGUSR1;
-void (*finish_shutdown)(void);
 
 void
 start_maint_op(void)
 {
-    so->lock(maint_lock);
+    gensio_os_funcs_lock(so, maint_lock);
 }
 
 void
 end_maint_op(void)
 {
-    so->unlock(maint_lock);
-}
-
-static void *
-config_reread_thread(void *dummy)
-{
-    pthread_detach(pthread_self());
-    start_maint_op();
-    reread_config_file("SIGHUP", &syslog_absout);
-    end_maint_op();
-    so->lock(config_lock);
-    in_config_read = 0;
-    so->unlock(config_lock);
-    return NULL;
+    gensio_os_funcs_unlock(so, maint_lock);
 }
 
 static void
-thread_reread_config_file(void)
+cleanup_s2n_threadinfo(struct s2n_threadinfo *thread)
+{
+    if (thread->waiter)
+	gensio_os_funcs_free_waiter(so, thread->waiter);
+    if (thread->runner)
+	gensio_os_funcs_free_runner(so, thread->runner);
+}
+
+static void
+config_join_runner(struct gensio_runner *r, void *data)
+{
+    struct s2n_threadinfo *thread = data;
+
+    gensio_os_wait_thread(thread->gthread);
+    cleanup_s2n_threadinfo(thread);
+    gensio_os_funcs_zfree(so, thread);
+}
+
+static void
+config_reread_thread(void *data)
+{
+    struct s2n_threadinfo *thread = data;
+
+    start_maint_op();
+    reread_config_file("SIGHUP", &syslog_absout);
+    end_maint_op();
+    gensio_os_funcs_lock(so, config_lock);
+    in_config_read = 0;
+    gensio_os_funcs_unlock(so, config_lock);
+    gensio_os_funcs_run(so, thread->runner);
+}
+
+static void
+thread_reread_config_file(void *data)
 {
     int rv;
-    pthread_t thread;
+    struct s2n_threadinfo *thread = NULL;
 
-    so->lock(config_lock);
-    if (in_config_read) {
+    gensio_os_funcs_lock(so, config_lock);
+    if (in_config_read || in_shutdown) {
 	so->unlock(config_lock);
 	return;
     }
     in_config_read = 1;
-    so->unlock(config_lock);
+    gensio_os_funcs_unlock(so, config_lock);
 
-    rv = pthread_create(&thread, NULL, config_reread_thread, NULL);
+    thread = gensio_os_funcs_zalloc(so, sizeof(*thread));
+    if (!thread)
+	goto out_nomem;
+    thread->waiter = gensio_os_funcs_alloc_waiter(so);
+    if (!thread->waiter)
+	goto out_nomem;
+    thread->runner = gensio_os_funcs_alloc_runner(so, config_join_runner,
+						  thread);
+    if (!thread->runner)
+	goto out_nomem;
+
+    rv = gensio_os_new_thread(so, config_reread_thread,
+			      thread, &thread->gthread);
     if (rv) {
 	syslog(LOG_ERR,
 	       "Unable to start thread to reread config file: %s",
-	       strerror(rv));
-	so->lock(config_lock);
-	in_config_read = 0;
-	so->unlock(config_lock);
+	       gensio_err_to_str(rv));
+	goto out_unlock;
     }
+    return;
+
+ out_nomem:
+    syslog(LOG_ERR, "Reconfig failed: Out of memory");
+ out_unlock:
+    if (thread)
+	cleanup_s2n_threadinfo(thread);
+    gensio_os_funcs_lock(so, config_lock);
+    in_config_read = 0;
+    gensio_os_funcs_unlock(so, config_lock);
 }
 
 static void
-wake_thread_sighandler(int sig)
+op_loop(void *data)
 {
-    /* Nothing to do, sending the sig just wakes up select(). */
+    struct s2n_threadinfo *thread = data;
+
+    gensio_os_funcs_wait(so, thread->waiter, 1, NULL);
 }
 
-static void
-wake_thread_send_sig(long thread_id, void *cb_data)
-{
-    pthread_t        *id = (void *) thread_id;
-
-    pthread_kill(*id, ser2net_wake_sig);
-}
-
-static void *
-op_loop(void *dummy)
-{
-    pthread_t self = pthread_self();
-
-    while (!in_shutdown)
-	sel_select(ser2net_sel, wake_thread_send_sig, (long) &self, NULL, NULL);
-
-    /* Join the threads only in the first thread.  You cannot join the
-       first thread.  Finish the shutdown in the first thread. */
-    if (self == threads[0].id) {
-	int i;
-
-	for (i = 0; i < num_threads; i++) {
-	    if (threads[i].id == self)
-		continue;
-	    pthread_join(threads[i].id, NULL);
-	}
-	free(threads);
-
-	finish_shutdown();
-    }
-    return NULL;
-}
-
-static void
+static int
 start_threads(void)
 {
     int i, rv;
-    struct sigaction act;
 
-    act.sa_handler = wake_thread_sighandler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-    rv = sigaction(ser2net_wake_sig, &act, NULL);
-    if (rv) {
-	syslog(LOG_ERR, "Unable to set sigaction: %s", strerror(errno));
-	exit(1);
-    }
-
-    threads = malloc(sizeof(*threads) * num_threads);
+    threads = gensio_os_funcs_zalloc(so, sizeof(*threads) * num_threads);
     if (!threads) {
 	syslog(LOG_ERR, "Unable to allocate thread info");
-	exit(1);
+	return 1;
     }
-
-    threads[0].id = pthread_self();
-
-    for (i = 1; i < num_threads; i++) {
-	rv = pthread_create(&threads[i].id, NULL, op_loop, NULL);
-	if (rv) {
-	    syslog(LOG_ERR, "Unable to start thread: %s", strerror(rv));
-	    exit(1);
-	}
-    }
-}
-
-static void
-stop_threads(void (*finish)(void))
-{
-    int i;
-    pthread_t self = pthread_self();
-
-    in_shutdown = 1;
-    finish_shutdown = finish;
-    start_maint_op();
-    /* Make sure we aren't in a reconfig. */
-    end_maint_op();
 
     for (i = 0; i < num_threads; i++) {
-	if (threads[i].id == self)
-	    continue;
-	pthread_kill(threads[i].id, ser2net_wake_sig);
+	threads[i].waiter = gensio_os_funcs_alloc_waiter(so);
+	if (!threads[i].waiter)
+	    goto out_nomem;
     }
-}
 
-struct sel_lock_s
-{
-    pthread_mutex_t lock;
-};
-
-static sel_lock_t *
-slock_alloc(void *cb_data)
-{
-    sel_lock_t *l;
-
-    l = malloc(sizeof(*l));
-    if (!l)
-	return NULL;
-    pthread_mutex_init(&l->lock, NULL);
-    return l;
-}
-
-static void
-slock_free(sel_lock_t *l)
-{
-    pthread_mutex_destroy(&l->lock);
-    free(l);
-}
-
-static void
-slock_lock(sel_lock_t *l)
-{
-    pthread_mutex_lock(&l->lock);
-}
-
-static void
-slock_unlock(sel_lock_t *l)
-{
-    pthread_mutex_unlock(&l->lock);
-}
-
-#else
-int ser2net_wake_sig = 0;
-void start_maint_op(void) { }
-void end_maint_op(void) { }
-static void start_threads(void) { }
-static void stop_threads(void (*finish)(void)) { finish(); }
-#define slock_alloc NULL
-#define slock_free NULL
-#define slock_lock NULL
-#define slock_unlock NULL
-static void *
-op_loop(void *dummy)
-{
-    sel_select_loop(ser2net_sel, NULL, 0, NULL);
-    return NULL;
-}
-#endif /* USE_PTHREADS */
-
-static void
-finish_shutdown_cleanly(void)
-{
-    struct timeval tv;
-
-    sel_clear_fd_handlers(ser2net_sel, sig_fd_watch);
-    free_rotators();
-    free_controllers();
-    shutdown_ports();
-    do {
-	if (check_ports_shutdown())
-	    break;
-	tv.tv_sec = 1;
-	tv.tv_usec = 0;
-	sel_select(ser2net_sel, NULL, 0, NULL, &tv);
-    } while(1);
-
-    shutdown_dataxfer();
-
-    free_longstrs();
-    free_tracefiles();
-    free_rs485confs();
-
-    if (pid_file)
-	unlink(pid_file);
-
-    if (admin_port)
-	free(admin_port);
-
-    so->free_funcs(so);
-
-    exit(1);
-}
-
-static void
-shutdown_cleanly(void)
-{
-    stop_threads(finish_shutdown_cleanly);
-}
-
-static void
-sig_fd_read_handler(int fd, void *cb_data)
-{
-    char dummy[10];
-
-    dummyrv = read(fd, dummy, sizeof(dummy));
-
-    if (term_prog)
-	shutdown_cleanly();
-
-    if (reread_config && !in_shutdown) {
-#ifdef USE_PTHREADS
-	thread_reread_config_file();
-#else
-	start_maint_op();
-	reread_config_file("SIGHUP", &syslog_absout);
-	end_maint_op();
-#endif
+    for (i = 1; i < num_threads; i++) {
+	rv = gensio_os_new_thread(so, op_loop, &threads[i],
+				  &threads[i].gthread);
+	if (rv) {
+	    syslog(LOG_ERR, "Unable to start thread: %s",
+		   gensio_err_to_str(rv));
+	    goto out;
+	}
     }
-}
+    return 0;
 
-static void
-setup_signals(void)
-{
-    struct sigaction act;
-    int              err;
-    int              pipefds[2];
-
-    /* Ignore SIGPIPEs so they don't kill us. */
-    signal(SIGPIPE, SIG_IGN);
-
-    err = pipe(pipefds);
-    if (err)
-	goto out;
-
-    sig_fd_alert = pipefds[1];
-    sig_fd_watch = pipefds[0];
-
-    act.sa_handler = sighup_handler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = SA_RESTART;
-    err = sigaction(SIGHUP, &act, NULL);
-    if (err)
-	goto out;
-
-    act.sa_handler = sigint_handler;
-    /* Only handle SIGINT once. */
-    act.sa_flags |= SA_RESETHAND;
-    err = sigaction(SIGINT, &act, NULL);
-    if (!err)
-	err = sigaction(SIGQUIT, &act, NULL);
-    if (!err)
-	err = sigaction(SIGTERM, &act, NULL);
-    if (err)
-	goto out;
-
-    err = sel_set_fd_handlers(ser2net_sel, sig_fd_watch, NULL,
-			      sig_fd_read_handler, NULL, NULL, NULL);
-    if (!err)
-	sel_set_fd_read_handler(ser2net_sel, sig_fd_watch,
-				SEL_FD_HANDLER_ENABLED);
-
+ out_nomem:
+    syslog(LOG_ERR, "Unable to alloc data for threads");
  out:
-    if (err) {
-	fprintf(stderr, "Error setting up signals: %s\n", strerror(errno));
-	exit(1);
+    for (i = 0; i < num_threads; i++) {
+	if (threads[i].gthread) {
+	    gensio_os_funcs_wake(so, threads[i].waiter);
+	    gensio_os_wait_thread(threads[i].gthread);
+	}
+	cleanup_s2n_threadinfo(&threads[i]);
     }
+    gensio_os_funcs_zfree(so, threads);
+    threads = NULL;
+    return 1;
+}
+
+static void
+stop_threads(void)
+{
+    int i;
+
+    for (i = 0; i < num_threads; i++)
+	gensio_os_funcs_wake(so, threads[i].waiter);
+}
+
+static void
+shutdown_cleanly(void *data)
+{
+    struct gensio_time timeout;
+
+    gensio_os_funcs_lock(so, config_lock);
+    in_shutdown = 1;
+    /* Make sure we aren't in a reconfig. */
+    while (in_config_read) {
+	gensio_os_funcs_unlock(so, config_lock);
+	timeout.secs = 1;
+	timeout.nsecs = 0;
+	gensio_os_funcs_service(so, &timeout);
+	gensio_os_funcs_lock(so, config_lock);
+    }
+    gensio_os_funcs_unlock(so, config_lock);
+
+    stop_threads();
 }
 
 static void
@@ -713,11 +541,9 @@ ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
 int
 main(int argc, char *argv[])
 {
-    int i;
+    unsigned int i;
     int err;
-#ifdef USE_PTHREADS
     char *end;
-#endif
     int print_when_ready = 0;
     FILE *instream = NULL;
     enum { CONFIG_NONE, CONFIG_YAML, CONFIG_OLD } config_type = CONFIG_NONE;
@@ -853,7 +679,6 @@ main(int argc, char *argv[])
             rfc2217_signature = argv[i];
             break;
 
-#ifdef USE_PTHREADS
 	case 't':
             i++;
             if (i == argc) {
@@ -866,8 +691,9 @@ main(int argc, char *argv[])
 			argv[i]);
 		exit(1);
 	    }
+	    if (num_threads == 0)
+		num_threads = 1;
             break;
-#endif
 
 	default:
 	    fprintf(stderr, "Invalid option: '%s'\n", argv[i]);
@@ -875,42 +701,46 @@ main(int argc, char *argv[])
 	}
     }
 
-#ifdef USE_PTHREADS
-    if (num_threads > 1)
-	err = sel_alloc_selector_thread(&ser2net_sel, ser2net_wake_sig,
-					slock_alloc, slock_free,
-					slock_lock, slock_unlock, NULL);
-    else
-#endif
-	err = sel_alloc_selector_nothread(&ser2net_sel);
-
+    err = gensio_default_os_hnd(SIGUSR1, &so);
     if (err) {
-	fprintf(stderr,
-		"Could not initialize ser2net selector: '%s'\n",
-		strerror(err));
-	exit(1);
-    }
-
-    so = gensio_selector_alloc(ser2net_sel, ser2net_wake_sig);
-    if (!so) {
 	fprintf(stderr, "Could not alloc ser2net gensio selector\n");
-	exit(1);
+	return 1;
     }
     so->vlog = ser2net_gensio_logger;
 
-    config_lock = so->alloc_lock(so);
+    err = gensio_os_proc_setup(so, &procdata);
+    if (err) {
+	syslog(LOG_ERR, "Unable to setup proc: %s", gensio_err_to_str(err));
+	return 1;
+    }
+
+    err = gensio_os_proc_register_reload_handler(procdata,
+						 thread_reread_config_file,
+						 NULL);
+    if (err) {
+	syslog(LOG_ERR, "Unable to setup reconfig handler: %s",
+	       gensio_err_to_str(err));
+	return 1;
+    }
+
+    err = gensio_os_proc_register_term_handler(procdata, shutdown_cleanly, NULL);
+    if (err) {
+	syslog(LOG_ERR, "Unable to setup termination handler: %s",
+	       gensio_err_to_str(err));
+	return 1;
+    }
+
+    config_lock = gensio_os_funcs_alloc_lock(so);
     if (!config_lock) {
 	fprintf(stderr, "Could not alloc ser2net config lock\n");
-	exit(1);
+	return 1;
     }
 
-    maint_lock = so->alloc_lock(so);
+    maint_lock = gensio_os_funcs_alloc_lock(so);
     if (!maint_lock) {
 	fprintf(stderr, "Could not alloc ser2net maint lock\n");
-	exit(1);
+	return 1;
     }
-
-    setup_signals();
 
     init_mdns();
 
@@ -919,7 +749,7 @@ main(int argc, char *argv[])
 	fprintf(stderr,
 		"Could not initialize dataxfer: '%s'\n",
 		strerror(err));
-	exit(1);
+	return 1;
     }
 
     if (ser2net_debug && !detach)
@@ -930,7 +760,7 @@ main(int argc, char *argv[])
 	fprintf(stderr,
 		"Could not initialize defaults: '%s'\n",
 		gensio_err_to_str(err));
-	exit(1);
+	return 1;
     }
 
     if (admin_port)
@@ -950,20 +780,20 @@ main(int argc, char *argv[])
 	} else {
 	    instream = fopen_config_file(&is_yaml, &filename);
 	    if (!instream)
-		exit(1);
+		return 1;
 	}
 	if (is_yaml) {
 	    if (config_type == CONFIG_OLD) {
 		fprintf(stderr, "You cannot mix old style config lines "
 			"and a yaml config file.\n");
-		exit(1);
+		return 1;
 	    }
 	    config_type = CONFIG_YAML;
 	} else {
 	    if (config_type == CONFIG_YAML) {
 		fprintf(stderr, "You cannot mix yaml config lines "
 			"and an old style config file.\n");
-		exit(1);
+		return 1;
 	    }
 	    config_type = CONFIG_OLD;
 	}
@@ -981,7 +811,7 @@ main(int argc, char *argv[])
 	else
 	    rv = readconfig(instream);
 	if (rv == -1)
-	    exit(1);
+	    return 1;
 	if (instream && instream != stdin)
 	    fclose(instream);
     }
@@ -1024,19 +854,48 @@ main(int argc, char *argv[])
     /* write pid file */
     make_pidfile();
 
-    start_threads();
+    if (start_threads())
+	return 1;
 
     if (print_when_ready) {
 	printf("Ready\n");
 	fflush(stdout);
     }
 
-    op_loop(NULL);
+    op_loop(&threads[0]);
 
-    so->free_lock(maint_lock);
-    so->free_lock(config_lock);
-    so->free_funcs(so);
-    sel_free_selector(ser2net_sel);
+    for (i = 1; i < num_threads; i++)
+	gensio_os_wait_thread(threads[i].gthread);
+
+    free_rotators();
+    free_controllers();
+    shutdown_ports();
+    while (!check_ports_shutdown()) {
+	struct gensio_time timeout;
+
+	timeout.secs = 1;
+	timeout.nsecs = 0;
+	gensio_os_funcs_service(so, &timeout);
+    }
+
+    shutdown_dataxfer();
+
+    free_longstrs();
+    free_tracefiles();
+    free_rs485confs();
+
+    if (pid_file)
+	unlink(pid_file);
+
+    if (admin_port)
+	free(admin_port);
+
+    if (config_lines)
+	free(config_lines);
+
+    gensio_os_funcs_free_lock(so, maint_lock);
+    gensio_os_funcs_free_lock(so, config_lock);
+    gensio_os_funcs_free(so);
 
     return 0;
 }
