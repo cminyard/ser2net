@@ -35,6 +35,7 @@
 #include "absout.h"
 #include "mdns.h"
 #include "timeproc.h"
+#include "fileio.h"
 
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_NOT_STARTED		0 /* The dataxfer_start_port failed. */
@@ -52,7 +53,7 @@ typedef struct trace_info_s
     bool hexdump;     /* output each block as a hexdump */
     bool timestamp;   /* precede each line with a timestamp */
     char *filename;   /* open file.  NULL if not used */
-    int  fd;          /* open file.  -1 if not used */
+    ftype *f;         /* open file.  NULL if not used */
 } trace_info_t;
 
 typedef struct port_info port_info_t;

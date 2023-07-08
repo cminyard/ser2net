@@ -25,14 +25,10 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
-#include <fcntl.h>
 #include "ser2net.h"
 #include "port.h"
-#include "timeproc.h"
 
 static int
 timestamp(trace_info_t *t, char *buf, int size)
@@ -63,9 +59,10 @@ trace_write_end(char *out, int size, const unsigned char *start, int col)
 
 static int
 trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
-	    gensiods buf_len, const char *prefix)
+	    gensiods buf_len, const char *prefix, int *out_len)
 {
-    int rv = 0, w, col = 0, pos, file = t->fd;
+    int rv = 0, w, col = 0, pos;
+    ftype *file = t->f;
     gensiods q;
     static char out[1024];
     const unsigned char *start;
@@ -74,7 +71,7 @@ trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
         return 0;
 
     if (!t->hexdump)
-        return write(file, buf, buf_len);
+	return f_write(file, buf, buf_len, out_len);
 
     pos = timestamp(t, out, sizeof(out));
     pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
@@ -85,8 +82,8 @@ trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
         col++;
         if (col >= 8) {
             trace_write_end(out + pos, sizeof(out) - pos, start, col);
-            rv = write(file, out, strlen(out));
-            if (rv < 0)
+            rv = f_write(file, out, strlen(out), NULL);
+            if (rv)
                 return rv;
             pos = timestamp(t, out, sizeof(out));
             pos += snprintf(out + pos, sizeof(out) - pos, "%s ", prefix);
@@ -100,47 +97,36 @@ trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
             pos += 3;
         }
         trace_write_end(out + pos, sizeof(out) - pos, start, col);
-        rv = write(file, out, strlen(out));
-        if (rv < 0)
+        rv = f_write(file, out, strlen(out), NULL);
+        if (rv)
             return rv;
     }
-    return buf_len;
+    if (out_len)
+	*out_len = buf_len;
+    return 0;
 }
 
 void
 do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	 gensiods buf_len, const char *prefix)
 {
-    int rv;
+    int rv, outlen;
 
     while (buf_len > 0) {
-    retry_write:
-	rv = trace_write(port, t, buf, buf_len, prefix);
+	rv = trace_write(port, t, buf, buf_len, prefix, &outlen);
 	if (rv == -1) {
-	    char errbuf[128];
-	    int err = errno;
+	    seout.out(&seout,
+		      "Unable to write to trace file on port %s: %s",
+		      port->name, gensio_err_to_str(rv));
 
-	    if (err == EINTR)
-		goto retry_write;
-
-	    /* Fatal error writing to the file, log it and close the file. */
-
-	    if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
-		seout.out(&seout, "Unable write to trace file on port %s: %d",
-			  port->name, err);
-	    else
-		seout.out(&seout,
-			  "Unable to write to trace file on port %s: %s",
-			  port->name, errbuf);
-
-	    close(t->fd);
-	    t->fd = -1;
+	    f_close(t->f);
+	    t->f = NULL;
 	    return;
 	}
 
 	/* Handle a partial write */
-	buf_len -= rv;
-	buf += rv;
+	buf_len -= outlen;
+	buf += outlen;
     }
 }
 
@@ -148,23 +134,23 @@ static void
 hf_out(port_info_t *port, char *buf, int len)
 {
     if (port->tr && port->tr->timestamp)
-        write_ignore_fail(port->tr->fd, buf, len);
+        f_write(port->tr->f, buf, len, NULL);
 
     /* don't output to write file if it's the same as read file */
     if (port->tw && port->tw != port->tr && port->tw->timestamp)
-        write_ignore_fail(port->tw->fd, buf, len);
+        f_write(port->tw->f, buf, len, NULL);
 
     /* don't output to both file if it's the same as read or write file */
     if (port->tb && port->tb != port->tr && port->tb != port->tw
 		&& port->tb->timestamp)
-        write_ignore_fail(port->tb->fd, buf, len);
+        f_write(port->tb->f, buf, len, NULL);
 }
 
 void
 header_trace(port_info_t *port, net_info_t *netcon)
 {
     char buf[1024];
-    trace_info_t tr = { 1, 1, NULL, -1 };
+    trace_info_t tr = { 1, 1, NULL, NULL };
     gensiods len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
@@ -182,7 +168,7 @@ void
 footer_trace(port_info_t *port, char *type, const char *reason)
 {
     char buf[1024];
-    trace_info_t tr = { 1, 1, NULL, -1 };
+    trace_info_t tr = { 1, 1, NULL, NULL };
     int len = 0;
 
     len += timestamp(&tr, buf, sizeof(buf));
@@ -205,26 +191,17 @@ open_trace_file(port_info_t *port,
     trfile = process_str_to_str(port, NULL, t->filename, ts, NULL, 1, eout);
     if (!trfile) {
 	eout->out(eout, "Unable to translate trace file %s", t->filename);
-	t->fd = -1;
 	return;
     }
 
-    rv = open(trfile, O_WRONLY | O_CREAT | O_APPEND, 0600);
-    if (rv == -1) {
-	char errbuf[128];
-	int err = errno;
-
-	if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
-	    eout->out(eout, "Unable to open trace file %s: %d",
-		      trfile, err);
-	else
-	    eout->out(eout, "Unable to open trace file %s: %s",
-		      trfile, errbuf);
-    }
+    rv = f_open(trfile, DO_WRITE | DO_CREATE | DO_APPEND, 0600, &t->f);
+    if (rv)
+	eout->out(eout, "Unable to open trace file %s: %s",
+		  trfile, gensio_err_to_str(rv));
+    else
+	*out = t;
 
     free(trfile);
-    t->fd = rv;
-    *out = t;
 }
 
 void
@@ -265,17 +242,17 @@ setup_trace(port_info_t *port, struct absout *eout)
 void
 shutdown_trace(port_info_t *port)
 {
-    if (port->trace_write.fd != -1) {
-	close(port->trace_write.fd);
-	port->trace_write.fd = -1;
+    if (port->trace_write.f) {
+	f_close(port->trace_write.f);
+	port->trace_write.f = NULL;
     }
-    if (port->trace_read.fd != -1) {
-	close(port->trace_read.fd);
-	port->trace_read.fd = -1;
+    if (port->trace_read.f) {
+	f_close(port->trace_read.f);
+	port->trace_read.f = NULL;
     }
-    if (port->trace_both.fd != -1) {
-	close(port->trace_both.fd);
-	port->trace_both.fd = -1;
+    if (port->trace_both.f) {
+	f_close(port->trace_both.f);
+	port->trace_both.f = NULL;
     }
 
     port->tw = port->tr = port->tb = NULL;

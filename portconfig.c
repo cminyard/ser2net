@@ -753,9 +753,9 @@ init_port_data(port_info_t *port, struct absout *eout)
 
     port->net_to_dev_state = PORT_CLOSED;
     port->dev_to_net_state = PORT_CLOSED;
-    port->trace_read.fd = -1;
-    port->trace_write.fd = -1;
-    port->trace_both.fd = -1;
+    port->trace_read.f = NULL;
+    port->trace_write.f = NULL;
+    port->trace_both.f = NULL;
 
     port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
     port->kickolduser_mode = find_default_bool("kickolduser");

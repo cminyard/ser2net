@@ -56,9 +56,6 @@ int reread_config_file(const char *reqtype, struct absout *eout);
 int init_dataxfer(void);
 void shutdown_dataxfer(void);
 
-/* Write the data completely out, return without comment on error. */
-void write_ignore_fail(int fd, const char *data, size_t count);
-
 #ifndef gensio_version_major
 typedef struct timeval gensio_time;
 #endif

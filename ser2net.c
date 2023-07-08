@@ -257,17 +257,6 @@ reread_config_file(const char *reqtype, struct absout *eout)
 }
 
 void
-write_ignore_fail(int fd, const char *data, size_t count)
-{
-    ssize_t written;
-
-    while ((written = write(fd, data, count)) > 0) {
-	data += written;
-	count -= written;
-    }
-}
-
-void
 add_usec_to_time(gensio_time *tv, int usec)
 {
 #ifdef gensio_version_major
