@@ -32,7 +32,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <syslog.h>
 #include <stdarg.h>
 #include <limits.h>
 #include <errno.h>
@@ -148,7 +147,8 @@ translateescapes(char *string, unsigned int *outlen,
 
 /* Parse the incoming string, it may be on multiple lines. */
 static void
-handle_longstr(const char *name, const char *line, enum str_type type)
+handle_longstr(const char *name, const char *line, enum str_type type,
+	       struct absout *eout)
 {
     struct longstr_s *longstr;
 
@@ -158,7 +158,7 @@ handle_longstr(const char *name, const char *line, enum str_type type)
 
     longstr = malloc(sizeof(*longstr));
     if (!longstr) {
-	syslog(LOG_ERR, "Out of memory handling string on %d", lineno);
+	eout->out(eout, "Out of memory handling string on %d", lineno);
 	return;
     }
     memset(longstr, 0, sizeof(*longstr));
@@ -166,13 +166,13 @@ handle_longstr(const char *name, const char *line, enum str_type type)
 
     longstr->name = strdup(name);
     if (!longstr->name) {
-	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
+	eout->out(eout, "Out of memory handling longstr on %d", lineno);
 	goto out_err;
     }
 
     longstr->str = strdup(line);
     if (!longstr->str) {
-	syslog(LOG_ERR, "Out of memory handling longstr on %d", lineno);
+	eout->out(eout, "Out of memory handling longstr on %d", lineno);
 	goto out_err;
     }
 
@@ -184,7 +184,7 @@ handle_longstr(const char *name, const char *line, enum str_type type)
 	translateescapes(longstr->str, &longstr->length,
 			 &err, &errpos);
 	if (err) {
-	    syslog(LOG_ERR, "%s (starting at %s) on line %d", err, errpos,
+	    eout->out(eout, "%s (starting at %s) on line %d", err, errpos,
 		   lineno);
 	    goto out_err;
 	}
@@ -253,26 +253,26 @@ struct tracefile_s
 struct tracefile_s *tracefiles = NULL;
 
 static void
-handle_tracefile(char *name, char *fname)
+handle_tracefile(char *name, char *fname, struct absout *eout)
 {
     struct tracefile_s *new_tracefile;
 
     new_tracefile = malloc(sizeof(*new_tracefile));
     if (!new_tracefile) {
-	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	eout->out(eout, "Out of memory handling tracefile on %d", lineno);
 	return;
     }
 
     new_tracefile->name = strdup(name);
     if (!new_tracefile->name) {
-	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	eout->out(eout, "Out of memory handling tracefile on %d", lineno);
 	free(new_tracefile);
 	return;
     }
 
     new_tracefile->str = strdup(fname);
     if (!new_tracefile->str) {
-	syslog(LOG_ERR, "Out of memory handling tracefile on %d", lineno);
+	eout->out(eout, "Out of memory handling tracefile on %d", lineno);
 	free(new_tracefile->name);
 	free(new_tracefile);
 	return;
@@ -283,7 +283,7 @@ handle_tracefile(char *name, char *fname)
 }
 
 char *
-find_tracefile(const char *name)
+find_tracefile(const char *name, struct absout *eout)
 {
     struct tracefile_s *tracefile = tracefiles;
 
@@ -292,7 +292,7 @@ find_tracefile(const char *name)
 	    return strdup(tracefile->str);
 	tracefile = tracefile->next;
     }
-    syslog(LOG_ERR, "Tracefile %s not found, it will be ignored", name);
+    eout->out(eout, "Tracefile %s not found, it will be ignored", name);
     return NULL;
 }
 
@@ -320,26 +320,26 @@ struct rs485conf
 struct rs485conf *rs485confs = NULL;
 
 static void
-handle_rs485conf(char *name, char *str)
+handle_rs485conf(char *name, char *str, struct absout *eout)
 {
     struct rs485conf *new_rs485conf;
 
     new_rs485conf = malloc(sizeof(*new_rs485conf));
     if (!new_rs485conf) {
-	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
+	eout->out(eout, "Out of memory handling rs485 config on %d", lineno);
 	return;
     }
     memset(new_rs485conf, 0, sizeof(*new_rs485conf));
 
     new_rs485conf->name = strdup(name);
     if (!new_rs485conf->name) {
-	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
+	eout->out(eout, "Out of memory handling rs485 config on %d", lineno);
 	goto out_err;
     }
 
     new_rs485conf->str = strdup(str);
     if (!new_rs485conf->str) {
-	syslog(LOG_ERR, "Out of memory handling rs485 config on %d", lineno);
+	eout->out(eout, "Out of memory handling rs485 config on %d", lineno);
 	goto out_err;
     }
 
@@ -356,7 +356,7 @@ handle_rs485conf(char *name, char *str)
 }
 
 char *
-find_rs485conf(const char *name)
+find_rs485conf(const char *name, struct absout *eout)
 {
     struct rs485conf *rs485 = rs485confs;
 
@@ -365,7 +365,7 @@ find_rs485conf(const char *name)
             return strdup(rs485->str);
         rs485 = rs485->next;
     }
-    syslog(LOG_ERR, "RS485 configuration %s not found, it will be ignored",
+    eout->out(eout, "RS485 configuration %s not found, it will be ignored",
 	   name);
     return NULL;
 }
@@ -394,24 +394,6 @@ startswith(char *str, const char *test, char **strtok_data)
     }
     return 0;
 }
-
-static int
-syslog_eprint(struct absout *e, const char *str, ...)
-{
-    va_list ap;
-    char buf[1024];
-
-    va_start(ap, str);
-    vsnprintf(buf, sizeof(buf), str, ap);
-    va_end(ap);
-    syslog(LOG_ERR, "%s on line %d", buf, *((int *) e->data));
-    return 0;
-}
-
-static struct absout syslog_eout = {
-    .out = syslog_eprint,
-    .data = &lineno
-};
 
 /*
  * This rather complicated variable is used to scan the string for
@@ -475,7 +457,7 @@ scan_for_state(char *str)
 }
 
 int
-handle_config_line(char *inbuf, int len)
+handle_config_line(char *inbuf, int len, struct absout *eout)
 {
     char *portnum, *state, *timeoutstr, *devname, *devcfg;
     unsigned int timeout;
@@ -498,10 +480,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No banner name given on line %d", lineno);
+	    eout->out(eout, "No banner name given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, BANNER);
+	handle_longstr(name, str, BANNER, eout);
 	goto out;
     }
 
@@ -509,10 +491,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No signature given on line %d", lineno);
+	    eout->out(eout, "No signature given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, SIGNATURE);
+	handle_longstr(name, str, SIGNATURE, eout);
 	goto out;
     }
 
@@ -520,10 +502,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No open string name given on line %d", lineno);
+	    eout->out(eout, "No open string name given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, OPENSTR);
+	handle_longstr(name, str, OPENSTR, eout);
 	goto out;
     }
 
@@ -531,10 +513,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No close string name given on line %d", lineno);
+	    eout->out(eout, "No close string name given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, CLOSESTR);
+	handle_longstr(name, str, CLOSESTR, eout);
 	goto out;
     }
 
@@ -542,10 +524,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No close on string name given on line %d", lineno);
+	    eout->out(eout, "No close on string name given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, CLOSEON);
+	handle_longstr(name, str, CLOSEON, eout);
 	goto out;
     }
 
@@ -553,10 +535,10 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No device name given on line %d", lineno);
+	    eout->out(eout, "No device name given on line %d", lineno);
 	    goto out;
 	}
-	handle_longstr(name, str, DEVNAME);
+	handle_longstr(name, str, DEVNAME, eout);
 	goto out;
     }
 
@@ -564,21 +546,21 @@ handle_config_line(char *inbuf, int len)
 	char *name = strtok_r(NULL, ":", &strtok_data);
 	char *str = strtok_r(NULL, "\n", &strtok_data);
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No tracefile name given on line %d", lineno);
+	    eout->out(eout, "No tracefile name given on line %d", lineno);
 	    goto out;
 	}
 	if ((str == NULL) || (strlen(str) == 0)) {
-	    syslog(LOG_ERR, "No tracefile given on line %d", lineno);
+	    eout->out(eout, "No tracefile given on line %d", lineno);
 	    goto out;
 	}
-	handle_tracefile(name, str);
+	handle_tracefile(name, str, eout);
 	goto out;
     }
 
     if (startswith(inbuf, "CONTROLPORT", &strtok_data)) {
 	char *config_port = strtok_r(NULL, "\n", &strtok_data);
 
-	controller_init(config_port, NULL, NULL, &syslog_absout);
+	controller_init(config_port, NULL, NULL, eout);
 	goto out;
     }
 
@@ -586,14 +568,14 @@ handle_config_line(char *inbuf, int len)
         char *name = strtok_r(NULL, ":", &strtok_data);
         char *str = strtok_r(NULL, "\n", &strtok_data);
         if (name == NULL) {
-            syslog(LOG_ERR, "No signature given on line %d", lineno);
+            eout->out(eout, "No signature given on line %d", lineno);
             goto out;
         }
         if ((str == NULL) || (strlen(str) == 0)) {
-            syslog(LOG_ERR, "No RS485 configuration given on line %d", lineno);
+            eout->out(eout, "No RS485 configuration given on line %d", lineno);
             goto out;
         }
-        handle_rs485conf(name, str);
+        handle_rs485conf(name, str, eout);
         goto out;
     }
 
@@ -603,7 +585,7 @@ handle_config_line(char *inbuf, int len)
 	char *class = strtok_r(NULL, "\n", &strtok_data);
 
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No default name given on line %d", lineno);
+	    eout->out(eout, "No default name given on line %d", lineno);
 	    goto out;
 	}
 	if (str && strlen(str) == 0) {
@@ -620,7 +602,7 @@ handle_config_line(char *inbuf, int len)
 
 	err = gensio_set_default(so, class, name, str, 0);
 	if (err)
-	    syslog(LOG_ERR, "error setting default value on line %d for %s: %s",
+	    eout->out(eout, "error setting default value on line %d for %s: %s",
 		   lineno, name, strerror(err));
 	goto out;
     }
@@ -630,18 +612,18 @@ handle_config_line(char *inbuf, int len)
 	char *class = strtok_r(NULL, "\n", &strtok_data);
 
 	if (!name) {
-	    syslog(LOG_ERR, "No default name given on line %d", lineno);
+	    eout->out(eout, "No default name given on line %d", lineno);
 	    goto out;
 	}
 	if (!class || strcmp(class, "ser2net") == 0 ||
 			strcmp(class, "default") == 0) {
-	    syslog(LOG_ERR, "Can only delete class default on line %d", lineno);
+	    eout->out(eout, "Can only delete class default on line %d", lineno);
 	    goto out;
 	}
 
 	err = gensio_del_default(so, class, name, false);
 	if (err)
-	    syslog(LOG_ERR, "error deleting default value on line %d for %s: %s",
+	    eout->out(eout, "error deleting default value on line %d for %s: %s",
 		   lineno, name, strerror(err));
 	goto out;
     }
@@ -653,17 +635,17 @@ handle_config_line(char *inbuf, int len)
 	const char **portv;
 
 	if (name == NULL) {
-	    syslog(LOG_ERR, "No rotator name given on line %d", lineno);
+	    eout->out(eout, "No rotator name given on line %d", lineno);
 	    goto out;
 	}
 
 	err = gensio_str_to_argv(so, str, &portc, &portv, NULL);
 	if (err) {
-	    syslog(LOG_ERR, "Unable to allocate rotator argv on line %d",
+	    eout->out(eout, "Unable to allocate rotator argv on line %d",
 		   lineno);
 	    goto out;
 	}
-	err = add_rotator(&syslog_eout, name, name, portc, portv, NULL, lineno);
+	err = add_rotator(eout, name, name, portc, portv, NULL, lineno);
 	if (err)
 	    gensio_argv_free(so, portv);
 	goto out;
@@ -676,21 +658,21 @@ handle_config_line(char *inbuf, int len)
 	const char **argv;
 
 	if (name == NULL || strlen(name) == 0) {
-	    syslog(LOG_ERR, "No LED name given on line %d", lineno);
+	    eout->out(eout, "No LED name given on line %d", lineno);
 	    goto out;
 	}
 	if ((driver == NULL) || (strlen(driver) == 0)) {
-	    syslog(LOG_ERR, "No LED driver given on line %d", lineno);
+	    eout->out(eout, "No LED driver given on line %d", lineno);
 	    goto out;
 	}
 	cfg = strtok_r(NULL, "\n", &strtok_data);
 	err = gensio_str_to_argv(so, cfg, NULL, &argv, NULL);
 	if (err) {
-	    syslog(LOG_ERR, "Error parsing LED config: %s\n",
+	    eout->out(eout, "Error parsing LED config: %s\n",
 		   gensio_err_to_str(err));
 	    goto out;
 	}
-	add_led(name, driver, argv, lineno);
+	add_led(name, driver, argv, lineno, eout);
 	gensio_argv_free(so, argv);
 	goto out;
     }
@@ -698,7 +680,7 @@ handle_config_line(char *inbuf, int len)
     /* Scan for the state. */
     state = scan_for_state(inbuf);
     if (!state) {
-	syslog(LOG_ERR, "No state given on line %d", lineno);
+	eout->out(eout, "No state given on line %d", lineno);
 	goto out;
     }
 
@@ -714,14 +696,14 @@ handle_config_line(char *inbuf, int len)
 
     timeoutstr = strtok_r(inbuf, ":", &strtok_data);
     if (timeoutstr == NULL) {
-	syslog(LOG_ERR, "No timeout given on line %d", lineno);
+	eout->out(eout, "No timeout given on line %d", lineno);
 	goto out;
     } else {
 	char *end;
 
 	timeout = strtoul(timeoutstr, &end, 0);
 	if (end == timeoutstr || *end != '\0') {
-	    syslog(LOG_ERR, "Invalid timeout '%s' on line %d\n",
+	    eout->out(eout, "Invalid timeout '%s' on line %d\n",
 		   timeoutstr, lineno);
 	    goto out;
 	}
@@ -729,7 +711,7 @@ handle_config_line(char *inbuf, int len)
 
     devname = strtok_r(NULL, ":", &strtok_data);
     if (devname == NULL) {
-	syslog(LOG_ERR, "No device name given on line %d", lineno);
+	eout->out(eout, "No device name given on line %d", lineno);
 	goto out;
     }
 
@@ -740,12 +722,12 @@ handle_config_line(char *inbuf, int len)
 
     err = gensio_str_to_argv(so, devcfg, NULL, &devcfg_argv, NULL);
     if (err) {
-	syslog(LOG_ERR, "Invalid device config on line %d: %s",
+	eout->out(eout, "Invalid device config on line %d: %s",
 	       lineno, gensio_err_to_str(err));
 	goto out;
     }
 
-    portconfig(&syslog_eout, portnum, portnum, state, timeout, devname,
+    portconfig(eout, portnum, portnum, state, timeout, devname,
 	       devcfg_argv);
 
     gensio_argv_free(so, devcfg_argv);
@@ -772,14 +754,14 @@ readconfig_init(void)
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int
-readconfig(FILE *instream)
+readconfig(FILE *instream, struct absout *eout)
 {
     int linesize = 256;
     char *inbuf = malloc(linesize);
     int  rv = 0, pos = 0;
 
     if (!inbuf) {
-	syslog(LOG_ERR, "Unable to allocate input buffer");
+	eout->out(eout, "Unable to allocate input buffer");
 	return ENOMEM;
     }
 
@@ -796,7 +778,7 @@ readconfig(FILE *instream)
 	    linesize += 256;
 	    new_inbuf = realloc(inbuf, linesize);
 	    if (!new_inbuf) {
-		syslog(LOG_ERR, "Unable to reallocate input buffer");
+		eout->out(eout, "Unable to reallocate input buffer");
 		rv = ENOMEM;
 		goto out_err;
 	    }
@@ -809,10 +791,10 @@ readconfig(FILE *instream)
 	    inbuf[len - 1] = '\0';
 	    len--;
 	}
-	pos = handle_config_line(inbuf, len);
+	pos = handle_config_line(inbuf, len, eout);
     }
     if (pos > 0)
-	handle_config_line(inbuf, strlen(inbuf));
+	handle_config_line(inbuf, strlen(inbuf), eout);
 
  out_err:
     free(inbuf);

@@ -30,7 +30,6 @@
 #include <errno.h>
 #include <string.h>
 #include <ctype.h>
-#include <syslog.h>
 #include <assert.h>
 
 #include <gensio/gensio.h>
@@ -186,18 +185,18 @@ port_check_connect_backs(port_info_t *port)
 					   handle_net_event, netcon,
 					   &netcon->net);
 	    if (err) {
-		syslog(LOG_ERR, "Unable to allocate connect back port %s,"
-		       " addr %s: %s\n", port->name, netcon->remote_str,
-		       gensio_err_to_str(err));
+		seout.out(&seout, "Unable to allocate connect back port %s,"
+			  " addr %s: %s\n", port->name, netcon->remote_str,
+			  gensio_err_to_str(err));
 		continue;
 	    }
 	    err = gensio_open(netcon->net, connect_back_done, netcon);
 	    if (err) {
 		gensio_free(netcon->net);
 		netcon->net = NULL;
-		syslog(LOG_ERR, "Unable to open connect back port %s,"
-		       " addr %s: %s\n", port->name, netcon->remote_str,
-		       gensio_err_to_str(err));
+		seout.out(&seout, "Unable to open connect back port %s,"
+			  " addr %s: %s\n", port->name, netcon->remote_str,
+			  gensio_err_to_str(err));
 		continue;
 	    }
 	    port->num_waiting_connect_backs++;
@@ -239,8 +238,8 @@ handle_dev_read(port_info_t *port, int err, unsigned char *buf,
 	}
 
 	/* Got an error on the read, shut down the port. */
-	syslog(LOG_ERR, "dev read error for device on port %s: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "dev read error for device on port %s: %s",
+		  port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev read error");
     }
 
@@ -437,7 +436,7 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 #ifdef GENSIO_EVENT_PARMLOG
     case GENSIO_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif
@@ -495,8 +494,8 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
 
     err = gbuf_write(port, buf);
     if (err) {
-	syslog(LOG_ERR, "The dev write for port %s had error: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "The dev write for port %s had error: %s",
+		  port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
 	return;
     }
@@ -550,8 +549,8 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 	    reason = "network read close";
 	} else {
 	    /* Got an error on the read, shut down the port. */
-	    syslog(LOG_ERR, "read error for port %s: %s", port->name,
-		   gensio_err_to_str(readerr));
+	    seout.out(&seout, "read error for port %s: %s", port->name,
+		      gensio_err_to_str(readerr));
 	    reason = "network read error";
 	}
 	goto out_shutdown;
@@ -595,8 +594,8 @@ handle_net_fd_read(net_info_t *netcon, struct gensio *net, int readerr,
 
     err = gbuf_write(port, &port->net_to_dev);
     if (err) {
-	syslog(LOG_ERR, "The dev write(2) for port %s had error: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "The dev write(2) for port %s had error: %s",
+		  port->name, gensio_err_to_str(err));
 	shutdown_port(port, "dev write error");
 	rv = buflen;
 	goto out_unlock;
@@ -652,8 +651,8 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
 	return -1;
     } else if (reterr) {
 	/* Some other bad error. */
-	syslog(LOG_ERR, "The network write for port %s had error: %s",
-	       port->name, gensio_err_to_str(reterr));
+	seout.out(&seout, "The network write for port %s had error: %s",
+		  port->name, gensio_err_to_str(reterr));
 	shutdown_one_netcon(netcon, "network write error");
 	return -1;
     }
@@ -1073,7 +1072,7 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 #ifdef GENSIO_EVENT_PARMLOG
     case GENSIO_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif
@@ -1190,7 +1189,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 
     if (port->devstr)
 	gbuf_free(port->devstr);
-    port->devstr = process_str_to_buf(port, NULL, port->openstr);
+    port->devstr = process_str_to_buf(port, NULL, port->openstr, &seout);
     if (port->devstr)
 	port->dev_write_handler = handle_dev_fd_devstr_write;
     else
@@ -1200,7 +1199,7 @@ port_dev_open_done(struct gensio *io, int err, void *cb_data)
 	gensio_set_write_callback_enable(port->io, true);
     gensio_set_read_callback_enable(port->io, true);
 
-    setup_trace(port);
+    setup_trace(port, &seout);
 
     port_start_timer(port);
 
@@ -1229,8 +1228,8 @@ port_dev_enable(port_info_t *port)
     err = gensio_control(port->io, GENSIO_CONTROL_DEPTH_ALL, false,
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
-	syslog(LOG_ERR, "Could not enable NODELAY on port %s: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "Could not enable NODELAY on port %s: %s",
+		  port->name, gensio_err_to_str(err));
 
     return 0;
 }
@@ -1245,12 +1244,12 @@ setup_port(port_info_t *port, net_info_t *netcon)
     err = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_ALL, false,
 			 GENSIO_CONTROL_NODELAY, auxdata, NULL);
     if (err)
-	syslog(LOG_ERR, "Could not enable NODELAY on socket %s: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "Could not enable NODELAY on socket %s: %s",
+		  port->name, gensio_err_to_str(err));
 
     if (netcon->banner)
 	gbuf_free(netcon->banner);
-    netcon->banner = process_str_to_buf(port, netcon, port->bannerstr);
+    netcon->banner = process_str_to_buf(port, netcon, port->bannerstr, &seout);
 
     if (num_connected_net(port) == 1 && (!port->connbacks || !port->io_open)) {
 	/* We are first, set things up on the device. */

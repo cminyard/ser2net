@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
-#include <syslog.h>
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
@@ -127,11 +126,12 @@ do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	    /* Fatal error writing to the file, log it and close the file. */
 
 	    if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
-		syslog(LOG_ERR, "Unable write to trace file on port %s: %d",
-		       port->name, err);
+		seout.out(&seout, "Unable write to trace file on port %s: %d",
+			  port->name, err);
 	    else
-		syslog(LOG_ERR, "Unable to write to trace file on port %s: %s",
-		       port->name, errbuf);
+		seout.out(&seout,
+			  "Unable to write to trace file on port %s: %s",
+			  port->name, errbuf);
 
 	    close(t->fd);
 	    t->fd = -1;
@@ -197,14 +197,14 @@ static void
 open_trace_file(port_info_t *port,
                 trace_info_t *t,
                 struct timeval *tv,
-                trace_info_t **out)
+                trace_info_t **out, struct absout *eout)
 {
     int rv;
     char *trfile;
 
-    trfile = process_str_to_str(port, NULL, t->filename, tv, NULL, 1);
+    trfile = process_str_to_str(port, NULL, t->filename, tv, NULL, 1, eout);
     if (!trfile) {
-	syslog(LOG_ERR, "Unable to translate trace file %s", t->filename);
+	eout->out(eout, "Unable to translate trace file %s", t->filename);
 	t->fd = -1;
 	return;
     }
@@ -215,11 +215,11 @@ open_trace_file(port_info_t *port,
 	int err = errno;
 
 	if (strerror_r(err, errbuf, sizeof(errbuf)) == -1)
-	    syslog(LOG_ERR, "Unable to open trace file %s: %d",
-		   trfile, err);
+	    eout->out(eout, "Unable to open trace file %s: %d",
+		      trfile, err);
 	else
-	    syslog(LOG_ERR, "Unable to open trace file %s: %s",
-		   trfile, errbuf);
+	    eout->out(eout, "Unable to open trace file %s: %s",
+		      trfile, errbuf);
     }
 
     free(trfile);
@@ -228,7 +228,7 @@ open_trace_file(port_info_t *port,
 }
 
 void
-setup_trace(port_info_t *port)
+setup_trace(port_info_t *port, struct absout *eout)
 {
     struct timeval tv;
 
@@ -237,7 +237,7 @@ setup_trace(port_info_t *port)
 
     port->tw = NULL;
     if (port->trace_write.filename)
-	open_trace_file(port, &port->trace_write, &tv, &port->tw);
+	open_trace_file(port, &port->trace_write, &tv, &port->tw, eout);
 
     port->tr = NULL;
     if (port->trace_read.filename) {
@@ -245,7 +245,7 @@ setup_trace(port_info_t *port)
 	if (port->tw && (strcmp(np->filename, port->tw->filename) == 0))
 	    port->tr = port->tw;
 	else
-	    open_trace_file(port, np, &tv, &port->tr);
+	    open_trace_file(port, np, &tv, &port->tr, eout);
     }
 
     port->tb = NULL;
@@ -256,7 +256,7 @@ setup_trace(port_info_t *port)
 	else if (port->tr && (strcmp(np->filename, port->tr->filename) == 0))
 	    port->tb = port->tr;
 	else
-	    open_trace_file(port, np, &tv, &port->tb);
+	    open_trace_file(port, np, &tv, &port->tb, eout);
     }
 
     return;

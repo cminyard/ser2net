@@ -26,7 +26,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <syslog.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 #include "ser2net.h"
@@ -153,7 +152,7 @@ handle_rot_child_event(struct gensio_accepter *accepter, void *user_data,
 #ifdef GENSIO_ACC_EVENT_PARMLOG
     case GENSIO_ACC_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) data;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif
@@ -244,7 +243,7 @@ rot_timeout(struct gensio_timer *timer, void *cb_data)
     if (rv) {
 	gensio_time timeout = { rot->accepter_retry_time, 0 };
 
-	syslog(LOG_ERR, "Failed to start rotator: %s", gensio_err_to_str(rv));
+	seout.out(&seout, "Failed to start rotator: %s", gensio_err_to_str(rv));
 	so->start_timer(rot->restart_timer, &timeout);
     }
 }

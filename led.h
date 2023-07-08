@@ -27,6 +27,8 @@
 #ifndef LED_H
 #define LED_H
 
+#include "absout.h"
+
 struct led_driver_s;
 
 struct led_s
@@ -43,13 +45,14 @@ struct led_driver_s {
     const char *name;
 
     /* required: parse the parameters from config file */
-    int (*init)(struct led_s *led, const char * const *options, int lineno);
+    int (*init)(struct led_s *led, const char * const *options, int lineno,
+		struct absout *eout);
 
     /* optional, but required when drv_data is malloced in init */
     int (*free)(struct led_s *led);
 
     /* optional: called once during initialization, prepares the LED */
-    int (*configure)(void *drv_data, int lineno);
+    int (*configure)(void *drv_data, int lineno, struct absout *eout);
 
     /* required: called when data transfer should be signaled */
     int (*flash)(void *drv_data);
@@ -66,7 +69,7 @@ int led_driver_register(struct led_driver_s *led_driver);
 
 /* Handle an LED config line */
 int add_led(const char *name, const char *driverstr,
-	    const char * const *options, int lineno);
+	    const char * const *options, int lineno, struct absout *eout);
 
 /* Search for a LED by name */
 struct led_s *find_led(const char *name);

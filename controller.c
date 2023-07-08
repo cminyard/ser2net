@@ -28,7 +28,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
-#include <syslog.h>
 #include <yaml.h>
 
 #include <gensio/selector.h>
@@ -387,20 +386,6 @@ static char *help_str =
 "         on - The port is up and all I/O is transferred\r\n"
 "reload - Reload the configuration file.\r\n";
 
-static int
-cntlr_eout(struct absout *e, const char *str, ...)
-{
-    controller_info_t *cntlr = e->data;
-    va_list ap;
-    char buf[1024];
-
-    va_start(ap, str);
-    vsnprintf(buf, sizeof(buf), str, ap);
-    va_end(ap);
-    syslog(LOG_ERR, "%s", buf);
-    return controller_outputf(cntlr, "error", "%s", buf);
-}
-
 void
 cntlr_report_conchange(const char *type, const char *con, const char *remaddr)
 {
@@ -536,10 +521,9 @@ process_command(controller_info_t *cntlr, const char *cmd, const char *id,
 	end_maint_op();
     } else if (strcmp(cmd, "reload") == 0) {
 	int rv;
-	struct absout eout = { cntlr_eout, cntlr };
 
 	start_maint_op();
-	rv = reread_config_file("admin request", &eout);
+	rv = reread_config_file("admin request", &seout);
 	end_maint_op();
 
 	if (!rv) {
@@ -850,8 +834,9 @@ controller_read(struct gensio *net, int err,
     if (err) {
 	/* Got an error on the read, shut down the port. */
 	if (err != GE_REMCLOSE)
-	    syslog(LOG_ERR, "read error for controller port: %s",
-		   gensio_err_to_str(err));
+	    seout.out(&seout,
+		      "read error for controller port: %s",
+		      gensio_err_to_str(err));
 	shutdown_controller(cntlr); /* Releases the lock */
 	goto out_return;
     }
@@ -962,8 +947,9 @@ controller_write_ready(struct gensio *net)
 	goto out_fail;
     } else if (err) {
 	/* Some other bad error. */
-	syslog(LOG_ERR, "The tcp write for controller had error: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout,
+		  "The tcp write for controller had error: %s",
+		  gensio_err_to_str(err));
 	goto out_fail;
     }
 
@@ -1006,7 +992,7 @@ controller_io_event(struct gensio *net, void *user_data, int event, int err,
 #ifdef GENSIO_EVENT_PARMLOG
     case GENSIO_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) buf;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif
@@ -1087,7 +1073,7 @@ controller_acc_child_event(struct gensio_accepter *accepter, void *user_data,
 #ifdef GENSIO_ACC_EVENT_PARMLOG
     case GENSIO_ACC_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) data;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif

@@ -397,10 +397,10 @@ void free_port(port_info_t *port);
 
 /* In ser2net_str.c */
 struct gbuf *process_str_to_buf(port_info_t *port, net_info_t *netcon,
-				const char *str);
+				const char *str, struct absout *eout);
 char *process_str_to_str(port_info_t *port, net_info_t *netcon,
 			 const char *str, struct timeval *tv,
-			 gensiods *lenrv, int isfilename);
+			 gensiods *lenrv, int isfilename, struct absout *eout);
 gensiods net_raddr_str(struct gensio *io, char *buf, gensiods buflen);
 
 /* In rotator.c */
@@ -412,7 +412,7 @@ void header_trace(port_info_t *port, net_info_t *netcon);
 void footer_trace(port_info_t *port, char *type, const char *reason);
 void do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	      gensiods buf_len, const char *prefix);
-void setup_trace(port_info_t *port);
+void setup_trace(port_info_t *port, struct absout *eout);
 void shutdown_trace(port_info_t *port);
 
 /* In addsyattrs.c */

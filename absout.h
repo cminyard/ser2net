@@ -26,8 +26,11 @@
 #ifndef ABSOUT_H
 #define ABSOUT_H
 
+#include <stdarg.h>
+
 struct absout {
     int (*out)(struct absout *e, const char *str, ...);
+    int (*vout)(struct absout *e, const char *str, va_list ap);
     void *data;
 };
 #define abspr(abs, fmt, ...) \

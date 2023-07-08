@@ -35,8 +35,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/types.h>
-#include <syslog.h>
 #include <limits.h>
+#include "ser2net.h"
 #include "led.h"
 #include "led_sysfs.h"
 
@@ -52,7 +52,7 @@ struct led_sysfs_s
 };
 
 static int
-led_is_trigger_missing(const char *led)
+led_is_trigger_missing(const char *led, struct absout *eout)
 {
     char path[PATH_MAX];
     char buffer[BUFSIZE + 1], *trigger;
@@ -61,12 +61,12 @@ led_is_trigger_missing(const char *led)
     snprintf(path, sizeof(path), "%s/%s/trigger", SYSFS_LED_BASE, led);
 
     if ((fd = open(path, O_RDONLY)) == -1) {
-	syslog(LOG_ERR, "led: Unable to open %s", buffer);
+	eout->out(eout, "led: Unable to open %s", buffer);
 	return -1;
     }
 
     if ((c = read(fd, buffer, BUFSIZE)) <= 0) {
-	syslog(LOG_ERR, "led: Unable to read from %s", path);
+	eout->out(eout, "led: Unable to read from %s", path);
 	close(fd);
 	return -1;
     }
@@ -76,13 +76,14 @@ led_is_trigger_missing(const char *led)
     buffer[c] = '\0';
     trigger = strstr(buffer, "transient");
     if (!trigger)
-	syslog(LOG_ERR, "led: missing transient trigger in %s,"
-	       " maybe you need to 'modprobe ledtrig-transient'", path);
+	eout->out(eout, "led: missing transient trigger in %s,"
+		  " maybe you need to 'modprobe ledtrig-transient'", path);
     return trigger == NULL;
 }
 
 static int
-led_write(const char *led, const char *property, const char *buf, int lineno)
+led_write(const char *led, const char *property, const char *buf, int lineno,
+	  struct absout *eout)
 {
     char filename[255];
     int fd;
@@ -94,16 +95,16 @@ led_write(const char *led, const char *property, const char *buf, int lineno)
     if ((fd = open(filename, O_WRONLY | O_TRUNC)) == -1) {
 	if (lineno)
 	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
-	syslog(LOG_ERR, "Unable to open to LED %s%s: %s", linestr, led,
-	       strerror(errno));
+	eout->out(eout, "Unable to open to LED %s%s: %s", linestr, led,
+		  strerror(errno));
 	return -1;
     }
 
     if (write(fd, buf, strlen(buf)) != strlen(buf)) {
 	if (lineno)
 	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
-	syslog(LOG_ERR, "Unable to write to LED %s%s: %s", linestr, led,
-	       strerror(errno));
+	eout->out(eout, "Unable to write to LED %s%s: %s", linestr, led,
+		  strerror(errno));
 	close(fd);
 	return -1;
     }
@@ -113,15 +114,15 @@ led_write(const char *led, const char *property, const char *buf, int lineno)
 }
 
 static int
-led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
+led_sysfs_init(struct led_s *led, const char * const *options, int lineno,
+	       struct absout *eout)
 {
     struct led_sysfs_s *drv_data = NULL;
     const char *key, *value;
     unsigned int i, len;
 
-    drv_data = calloc(1, sizeof(*drv_data));
-    if (!drv_data) {
-	syslog(LOG_ERR,
+    drv_data = calloc(1, sizeof(*drv_data)); if (!drv_data) {
+	eout->out(eout,
 	       "Out of memory handling LED %s on line %d.",
 	       led->name, lineno);
 	return -1;
@@ -133,11 +134,11 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
     for (i = 0; options[i]; i++) {
 	value = strchr(options[i], '=');
 	if (!value) {
-	    syslog(LOG_ERR, "Missing '=' in option %s on line %d\n",
+	    eout->out(eout, "Missing '=' in option %s on line %d\n",
 		   options[i], lineno);
 	    goto out_err;
 	} if (value == options[i]) {
-	    syslog(LOG_ERR, "Missing key in option '%s' on line %d\n",
+	    eout->out(eout, "Missing key in option '%s' on line %d\n",
 		   options[i], lineno);
 	    goto out_err;
 	}
@@ -152,7 +153,7 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
 
 	    drv_data->device = strdup(value);
 	    if (!drv_data->device) {
-		syslog(LOG_ERR, "Out of memory handling LED '%s' on line %d.",
+		eout->out(eout, "Out of memory handling LED '%s' on line %d.",
 		       led->name, lineno);
 		goto out_err;
 	    }
@@ -166,7 +167,7 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
     }
 
     if (!drv_data->device) {
-	syslog(LOG_ERR,
+	eout->out(eout,
 	       "LED '%s': parameter 'device' required, but missing on line %d.",
 	       led->name, lineno);
 	if (drv_data->device)
@@ -175,7 +176,7 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
     }
 
     if (drv_data->duration < 0) {
-	syslog(LOG_ERR,
+	eout->out(eout,
 	       "LED '%s': invalid duration, using default on line %d.",
 	       led->name, lineno);
 	drv_data->duration = 10;
@@ -187,7 +188,7 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno)
     if (drv_data->state == -1)
 	drv_data->state = 1;
     if (drv_data->state < 0 || drv_data->state > 1) {
-	syslog(LOG_ERR,
+	eout->out(eout,
 	       "LED '%s': invalid state, using default on line %d.",
 	       led->name, lineno);
 	drv_data->state = 1;
@@ -215,14 +216,14 @@ led_sysfs_free(struct led_s *led)
 }
 
 static int
-led_sysfs_configure(void *led_driver_data, int lineno)
+led_sysfs_configure(void *led_driver_data, int lineno, struct absout *eout)
 {
     struct led_sysfs_s *ctx = (struct led_sysfs_s *)led_driver_data;
     char buffer[255];
     int rv = 0;
 
     /* check whether we can enable the transient trigger for this led */
-    rv = led_is_trigger_missing(ctx->device);
+    rv = led_is_trigger_missing(ctx->device, eout);
     if (rv != 0)
 	return rv;
 
@@ -230,16 +231,16 @@ led_sysfs_configure(void *led_driver_data, int lineno)
      * switch to transient trigger, this will kick creation of additional
      * property file in sysfs
      */
-    rv = led_write(ctx->device, "trigger", "transient", lineno);
+    rv = led_write(ctx->device, "trigger", "transient", lineno, eout);
     if (rv)
 	return rv;
 
     /* pre-configure the trigger for our needs */
     snprintf(buffer, sizeof(buffer), "%d", ctx->duration);
-    rv |= led_write(ctx->device, "duration", buffer, lineno);
+    rv |= led_write(ctx->device, "duration", buffer, lineno, eout);
 
     snprintf(buffer, sizeof(buffer), "%d", ctx->state);
-    rv |= led_write(ctx->device, "state", buffer, lineno);
+    rv |= led_write(ctx->device, "state", buffer, lineno, eout);
 
     return rv;
 }
@@ -249,7 +250,7 @@ led_sysfs_flash(void *led_driver_data)
 {
     struct led_sysfs_s *ctx = (struct led_sysfs_s *)led_driver_data;
 
-    return led_write(ctx->device, "activate", "1", 0);
+    return led_write(ctx->device, "activate", "1", 0, &seout);
 }
 
 static int
@@ -259,8 +260,8 @@ led_sysfs_deconfigure(void *led_driver_data)
     int rv = 0;
 
 
-    rv |= led_write(ctx->device, "trigger", "none", 0);
-    rv |= led_write(ctx->device, "brightness", "0", 0);
+    rv |= led_write(ctx->device, "trigger", "none", 0, &seout);
+    rv |= led_write(ctx->device, "brightness", "0", 0, &seout);
 
     return rv;
 }

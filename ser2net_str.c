@@ -28,7 +28,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <syslog.h>
 #include <sys/time.h>
 #include <gensio/gensio.h>
 #include "port.h"
@@ -403,7 +402,7 @@ buffer_op(void *data, char c)
 char *
 process_str_to_str(port_info_t *port, net_info_t *netcon,
 		   const char *str, struct timeval *tv,
-		   gensiods *lenrv, int isfilename)
+		   gensiods *lenrv, int isfilename, struct absout *eout)
 {
     gensiods len = 0;
     struct tm now;
@@ -420,7 +419,7 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
     else
 	bufop.str = malloc(len + 1);
     if (!bufop.str) {
-	syslog(LOG_ERR, "Out of memory processing string: %s", port->name);
+	eout->out(eout, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
     process_str(port, netcon, &now, tv, str, buffer_op, &bufop, isfilename);
@@ -435,7 +434,8 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
 }
 
 struct gbuf *
-process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
+process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str,
+		   struct absout *eout)
 {
     char *bstr;
     struct gbuf *buf;
@@ -448,13 +448,13 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str)
 
     buf = malloc(sizeof(*buf));
     if (!buf) {
-	syslog(LOG_ERR, "Out of memory processing string: %s", port->name);
+	eout->out(eout, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
-    bstr = process_str_to_str(port, netcon, str, &tv, &len, 0);
+    bstr = process_str_to_str(port, netcon, str, &tv, &len, 0, eout);
     if (!bstr) {
 	free(buf);
-	syslog(LOG_ERR, "Error processing string: %s", port->name);
+	eout->out(eout, "Error processing string: %s", port->name);
 	return NULL;
     }
     buf->buf = (unsigned char *) bstr;

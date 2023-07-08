@@ -28,7 +28,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <syslog.h>
 
 #include "led.h"
 #include "led_sysfs.h"
@@ -87,40 +86,42 @@ find_led(const char *name)
 
 int
 add_led(const char *name, const char *driverstr, const char * const *options,
-	int lineno)
+	int lineno, struct absout *eout)
 {
     struct led_driver_s *driver;
     struct led_s *led;
 
     led = find_led(name);
     if (led) {
-	syslog(LOG_ERR, "LED %s already exists on line %d\n", name, lineno);
+	eout->out(eout, "LED %s already exists on line %d\n", name, lineno);
 	return -1;
     }
 
     driver = led_driver_by_name(driverstr);
     if (!driver) {
-	syslog(LOG_ERR, "Unknown LED driver '%s' for LED '%s' on %d",
-	       driverstr, name, lineno);
+	eout->out(eout, "Unknown LED driver '%s' for LED '%s' on %d",
+		  driverstr, name, lineno);
 	return -1;
     }
 
     led = calloc(1, sizeof(*led));
     if (!led) {
-	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
+	eout->out(eout, "Out of memory handling LED '%s' on %d",
+		  name, lineno);
 	return -1;
     }
 
     led->name = strdup(name);
     if (!led->name) {
-	syslog(LOG_ERR, "Out of memory handling LED '%s' on %d", name, lineno);
+	eout->out(eout, "Out of memory handling LED '%s' on %d",
+		  name, lineno);
 	free(led);
 	return -1;
     }
 
     led->driver = driver;
 
-    if (led->driver->init(led, options, lineno) < 0) {
+    if (led->driver->init(led, options, lineno, eout) < 0) {
 	/* errors should be reported by driver itself */
 	free(led->name);
 	free(led);
@@ -128,7 +129,7 @@ add_led(const char *name, const char *driverstr, const char * const *options,
     }
 
     if (led->driver->configure) {
-	if (led->driver->configure(led->drv_data, lineno) < 0) {
+	if (led->driver->configure(led->drv_data, lineno, eout) < 0) {
 	    /*
 	     * errors should be reported by driver itself; however, we
 	     * cleanup here

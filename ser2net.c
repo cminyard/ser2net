@@ -27,13 +27,12 @@
    parameters, initializes everything, then starts the select loop. */
 
 #include <stdio.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syslog.h>
-#include <sys/types.h>
-#include <unistd.h>
+
 #include <errno.h>
+#include <syslog.h>
+#include <unistd.h>
 
 #include <gensio/selector.h>
 #include <gensio/gensio_os_funcs_public.h>
@@ -110,33 +109,54 @@ str_endswith(const char *str, const char *end)
 }
 
 static int
-syslog_eout(struct absout *e, const char *str, ...)
+syslog_evout(struct absout *e, const char *str, va_list ap)
 {
-    va_list ap;
     char buf[1024];
 
-    va_start(ap, str);
     vsnprintf(buf, sizeof(buf), str, ap);
-    va_end(ap);
     syslog(LOG_ERR, "%s", buf);
     return 0;
 }
-struct absout syslog_absout = { .out = syslog_eout };
 
 static int
-stderr_eout(struct absout *e, const char *str, ...)
+syslog_eout(struct absout *e, const char *str, ...)
 {
     va_list ap;
-    char buf[1024];
 
     va_start(ap, str);
-    vsnprintf(buf, sizeof(buf), str, ap);
+    syslog_evout(e, str, ap);
     va_end(ap);
+    return 0;
+}
+struct absout seout = {
+    .out = syslog_eout,
+    .vout = syslog_evout
+};
+
+static int
+stderr_evout(struct absout *e, const char *str, va_list ap)
+{
+    char buf[1024];
+
+    vsnprintf(buf, sizeof(buf), str, ap);
     syslog(LOG_ERR, "%s", buf);
     fprintf(stderr, "%s\n", buf);
     return 0;
 }
-static struct absout stderr_absout = { .out = stderr_eout };
+static int
+stderr_eout(struct absout *e, const char *str, ...)
+{
+    va_list ap;
+
+    va_start(ap, str);
+    stderr_evout(e, str, ap);
+    va_end(ap);
+    return 0;
+}
+static struct absout stderr_absout = {
+    .out = stderr_eout,
+    .vout = stderr_evout
+};
 
 static int
 gensio_log_level_to_syslog(int gloglevel)
@@ -149,6 +169,7 @@ gensio_log_level_to_syslog(int gloglevel)
     case GENSIO_LOG_WARNING:
 	return LOG_WARNING;
     case GENSIO_LOG_INFO:
+    default:
 	return LOG_INFO;
     }
     return LOG_ERR;
@@ -170,14 +191,14 @@ fopen_config_file(bool *is_yaml, char **rfilename)
 
     if (!instream) {
 	if (config_file_set) {
-	    syslog(LOG_ERR, "Unable to open config file '%s': %m",
-		   config_file);
+	    seout.out(&seout, "Unable to open config file '%s': %m",
+		      config_file);
 	    return NULL;
 	}
 	instream = fopen(old_config_file, "r");
 	if (!instream) {
-	    syslog(LOG_ERR, "Unable to open config file '%s' or old one"
-		   " '%s': %m", config_file, old_config_file);
+	    seout.out(&seout, "Unable to open config file '%s' or old one"
+		      " '%s': %m", config_file, old_config_file);
 	    return NULL;
 	}
 	*rfilename = old_config_file;
@@ -212,7 +233,7 @@ reread_config_file(const char *reqtype, struct absout *eout)
 	char *filename;
 	bool is_yaml;
 
-	syslog(LOG_INFO, "Got %s, re-reading configuration", reqtype);
+	seout.out(&seout, "Got %s, re-reading configuration", reqtype);
 	readconfig_init();
 
 	instream = fopen_config_file(&is_yaml, &filename);
@@ -225,11 +246,11 @@ reread_config_file(const char *reqtype, struct absout *eout)
 	    rv = yaml_readconfig(instream, filename,
 				 config_lines, num_config_lines, eout);
 	else
-	    rv = readconfig(instream);
+	    rv = readconfig(instream, eout);
 	fclose(instream);
 
 	if (!rv)
-	    apply_new_ports(&syslog_absout);
+	    apply_new_ports(&seout);
     }
  out:
     return rv;
@@ -325,25 +346,27 @@ static void
 arg_error(char *name)
 {
     fprintf(stderr, help_string, name);
-    exit(1);
 }
 
-static void
+static int
 make_pidfile(void)
 {
     FILE *fpidfile;
+
     if (!pid_file)
-	return;
+	return 0;
     fpidfile = fopen(pid_file, "w");
     if (!fpidfile) {
-	syslog(LOG_WARNING,
-	       "Error opening pidfile '%s': %m, pidfile not created",
-	       pid_file);
+	seout.out(&seout,
+		  "Error opening pidfile '%s': %m, pidfile not created",
+		  pid_file);
 	pid_file = NULL;
-	return;
+	return GE_INVAL;
     }
     fprintf(fpidfile, "%d\n", getpid());
     fclose(fpidfile);
+
+    return 0;
 }
 
 static struct gensio_lock *config_lock;
@@ -388,7 +411,7 @@ config_reread_thread(void *data)
     struct s2n_threadinfo *thread = data;
 
     start_maint_op();
-    reread_config_file("SIGHUP", &syslog_absout);
+    reread_config_file("SIGHUP", &seout);
     end_maint_op();
     gensio_os_funcs_lock(so, config_lock);
     in_config_read = 0;
@@ -424,15 +447,15 @@ thread_reread_config_file(void *data)
     rv = gensio_os_new_thread(so, config_reread_thread,
 			      thread, &thread->gthread);
     if (rv) {
-	syslog(LOG_ERR,
-	       "Unable to start thread to reread config file: %s",
-	       gensio_err_to_str(rv));
+	seout.out(&seout,
+		  "Unable to start thread to reread config file: %s",
+		  gensio_err_to_str(rv));
 	goto out_unlock;
     }
     return;
 
  out_nomem:
-    syslog(LOG_ERR, "Reconfig failed: Out of memory");
+    seout.out(&seout, "Reconfig failed: Out of memory");
  out_unlock:
     if (thread)
 	cleanup_s2n_threadinfo(thread);
@@ -456,7 +479,7 @@ start_threads(void)
 
     threads = gensio_os_funcs_zalloc(so, sizeof(*threads) * num_threads);
     if (!threads) {
-	syslog(LOG_ERR, "Unable to allocate thread info");
+	seout.out(&seout, "Unable to allocate thread info");
 	return 1;
     }
 
@@ -470,15 +493,15 @@ start_threads(void)
 	rv = gensio_os_new_thread(so, op_loop, &threads[i],
 				  &threads[i].gthread);
 	if (rv) {
-	    syslog(LOG_ERR, "Unable to start thread: %s",
-		   gensio_err_to_str(rv));
+	    seout.out(&seout, "Unable to start thread: %s",
+		      gensio_err_to_str(rv));
 	    goto out;
 	}
     }
     return 0;
 
  out_nomem:
-    syslog(LOG_ERR, "Unable to alloc data for threads");
+    seout.out(&seout, "Unable to alloc data for threads");
  out:
     for (i = 0; i < num_threads; i++) {
 	if (threads[i].gthread) {
@@ -525,15 +548,7 @@ static void
 ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
 		      const char *log, va_list args)
 {
-    int priority = LOG_INFO;
-
-    switch (level) {
-    case GENSIO_LOG_FATAL:   priority = LOG_CRIT; break;
-    case GENSIO_LOG_ERR:     priority = LOG_ERR; break;
-    case GENSIO_LOG_WARNING: priority = LOG_WARNING; break;
-    case GENSIO_LOG_INFO:    priority = LOG_INFO; break;
-    case GENSIO_LOG_DEBUG:   priority = LOG_DEBUG; break;
-    }
+    int priority = gensio_log_level_to_syslog(level);
 
     vsyslog(priority, log, args);
 }
@@ -554,19 +569,20 @@ main(int argc, char *argv[])
     config_lines = malloc(sizeof(*config_lines));
     if (!config_lines) {
 	fprintf(stderr, "Out of memory\n");
-	exit(1);
+	return 1;
     }
     *config_lines = NULL;
 
     if (led_driver_init() < 0) {
 	fprintf(stderr, "Error while initializing LED drivers\n");
-	exit(1);
+	return 1;
     }
 
     for (i = 1; i < argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
 	    fprintf(stderr, "Invalid argument: '%s'\n", argv[i]);
 	    arg_error(argv[0]);
+	    return 1;
 	}
 
 	switch (argv[i][1]) {
@@ -600,6 +616,7 @@ main(int argc, char *argv[])
 		    fprintf(stderr,
 			    "You cannot mix yaml and old config lines.\n");
 		    arg_error(argv[0]);
+		    return 1;
 		}
 		config_type = CONFIG_OLD;
 	    } else {
@@ -614,13 +631,14 @@ main(int argc, char *argv[])
 		fprintf(stderr, "No config line specified with -%c\n",
 			argv[i][1]);
 		arg_error(argv[0]);
+		return 1;
 	    }
 	    num_config_lines++;
 	    config_lines = realloc(config_lines, sizeof(*config_lines) *
 				   (num_config_lines + 1));
 	    if (!config_lines) {
 		fprintf(stderr, "Out of memory handling config line\n");
-		exit(1);
+		return 1;
 	    }
 	    config_lines[num_config_lines - 1] = argv[i];
 	    config_file = NULL;
@@ -633,6 +651,7 @@ main(int argc, char *argv[])
 	    if (i == argc) {
 		fprintf(stderr, "No config file specified with -c\n");
 		arg_error(argv[0]);
+		return 1;
 	    }
 	    config_file = argv[i];
 	    config_file_set = true;
@@ -644,11 +663,12 @@ main(int argc, char *argv[])
 	    if (i == argc) {
 		fprintf(stderr, "No control port specified with -p\n");
 		arg_error(argv[0]);
+		return 1;
 	    }
 	    admin_port = strdup(argv[i]);
 	    if (!admin_port) {
 		fprintf(stderr, "Could not allocate memory for -p\n");
-		exit(1);
+		return 1;
 	    }
 	    admin_port_from_cmdline = true;
 	    break;
@@ -658,6 +678,7 @@ main(int argc, char *argv[])
 	    if (i == argc) {
 		fprintf(stderr, "No pid file specified with -P\n");
 		arg_error(argv[0]);
+		return 1;
 	    }
 	    pid_file = argv[i];
 	    break;
@@ -668,13 +689,13 @@ main(int argc, char *argv[])
 
 	case 'v':
 	    printf("%s version %s\n", argv[0], VERSION);
-	    exit(0);
+	    return 1;
 
 	case 's':
             i++;
             if (i == argc) {
 	        fprintf(stderr, "No signature specified\n");
-		exit(1);
+		return 1;
             }
             rfc2217_signature = argv[i];
             break;
@@ -683,13 +704,13 @@ main(int argc, char *argv[])
             i++;
             if (i == argc) {
 	        fprintf(stderr, "No thread count specified\n");
-		exit(1);
+		return 1;
             }
 	    num_threads = strtoul(argv[i], &end, 10);
 	    if (end == argv[i] || *end != '\0') {
 	        fprintf(stderr, "Invalid thread count specified: %s\n",
 			argv[i]);
-		exit(1);
+		return 1;
 	    }
 	    if (num_threads == 0)
 		num_threads = 1;
@@ -698,6 +719,7 @@ main(int argc, char *argv[])
 	default:
 	    fprintf(stderr, "Invalid option: '%s'\n", argv[i]);
 	    arg_error(argv[0]);
+	    return 1;
 	}
     }
 
@@ -710,7 +732,7 @@ main(int argc, char *argv[])
 
     err = gensio_os_proc_setup(so, &procdata);
     if (err) {
-	syslog(LOG_ERR, "Unable to setup proc: %s", gensio_err_to_str(err));
+	seout.out(&seout, "Unable to setup proc: %s", gensio_err_to_str(err));
 	return 1;
     }
 
@@ -718,15 +740,15 @@ main(int argc, char *argv[])
 						 thread_reread_config_file,
 						 NULL);
     if (err) {
-	syslog(LOG_ERR, "Unable to setup reconfig handler: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout, "Unable to setup reconfig handler: %s",
+		  gensio_err_to_str(err));
 	return 1;
     }
 
     err = gensio_os_proc_register_term_handler(procdata, shutdown_cleanly, NULL);
     if (err) {
-	syslog(LOG_ERR, "Unable to setup termination handler: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout, "Unable to setup termination handler: %s",
+		  gensio_err_to_str(err));
 	return 1;
     }
 
@@ -764,11 +786,12 @@ main(int argc, char *argv[])
     }
 
     if (admin_port)
-	controller_init(admin_port, NULL, NULL, &syslog_absout);
+	controller_init(admin_port, NULL, NULL, &seout);
 
     if (config_type == CONFIG_OLD) {
 	for (i = 0; i < num_config_lines; i++)
-	    handle_config_line(config_lines[i], strlen(config_lines[i]));
+	    handle_config_line(config_lines[i], strlen(config_lines[i]),
+			       &stderr_absout);
     }
     if (config_file) {
 	bool is_yaml;
@@ -809,13 +832,13 @@ main(int argc, char *argv[])
 				 config_lines, num_config_lines,
 				 &stderr_absout);
 	else
-	    rv = readconfig(instream);
+	    rv = readconfig(instream, &stderr_absout);
 	if (rv == -1)
 	    return 1;
 	if (instream && instream != stdin)
 	    fclose(instream);
     }
-    apply_new_ports(&syslog_absout);
+    apply_new_ports(&seout);
 
     if (detach) {
 	int pid;
@@ -826,7 +849,7 @@ main(int argc, char *argv[])
 	if ((pid = fork()) > 0) {
 	    exit(0);
 	} else if (pid < 0) {
-	    syslog(LOG_ERR, "Error forking first fork: %s", strerror(errno));
+	    seout.out(&seout, "Error forking first fork: %s", strerror(errno));
 	    exit(1);
 	} else {
 	    /* setsid() is necessary if we really want to demonize */
@@ -835,15 +858,15 @@ main(int argc, char *argv[])
 	    if ((pid = fork()) > 0) {
 		exit(0);
 	    } else if (pid < 0) {
-		syslog(LOG_ERR, "Error forking second fork: %s",
-		       strerror(errno));
+		seout.out(&seout, "Error forking second fork: %s",
+			  strerror(errno));
 		exit(1);
 	    }
 	}
 
 	/* Close all my standard I/O. */
 	if (chdir("/") < 0) {
-	    syslog(LOG_ERR, "unable to chdir to '/': %s", strerror(errno));
+	    seout.out(&seout, "unable to chdir to '/': %s", strerror(errno));
 	    exit(1);
 	}
 	close(0);
@@ -852,7 +875,8 @@ main(int argc, char *argv[])
     }
 
     /* write pid file */
-    make_pidfile();
+    if (make_pidfile())
+	return 1;
 
     if (start_threads())
 	return 1;

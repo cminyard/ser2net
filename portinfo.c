@@ -34,6 +34,16 @@
 #include "port.h"
 
 static int
+cntrl_absverrout(struct absout *e, const char *str, va_list ap)
+{
+    struct controller_info *cntlr = e->data;
+    char buf[1024];
+
+    vsnprintf(buf, sizeof(buf), str, ap);
+    return controller_outputf(cntlr, "error", "%s", buf);
+}
+
+static int
 cntrl_abserrout(struct absout *e, const char *str, ...)
 {
     struct controller_info *cntlr = e->data;
@@ -409,7 +419,11 @@ setportenable(struct controller_info *cntlr, const char *portspec,
 {
     port_info_t *port;
     bool new_enable;
-    struct absout eout = { .out = cntrl_abserrout, .data = cntlr };
+    struct absout eout = {
+	.out = cntrl_abserrout,
+	.vout = cntrl_absverrout,
+	.data = cntlr
+    };
     int rv;
     struct gensio_waiter *waiter = NULL;
 

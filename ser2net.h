@@ -83,7 +83,8 @@ int add_allowed_users(struct gensio_list **users, const char *str,
 		      struct absout *eout);
 void free_user_list(struct gensio_list *users);
 
-extern struct absout syslog_absout;
+/* System err output (syslog on *nix). */
+extern struct absout seout;
 
 void do_gensio_log(const char *name, struct gensio_loginfo *i);
 

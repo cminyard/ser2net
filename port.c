@@ -27,7 +27,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <syslog.h>
 #include <assert.h>
 #include "ser2net.h"
 #include "port.h"
@@ -281,7 +280,7 @@ handle_port_child_event(struct gensio_accepter *accepter, void *user_data,
 #ifdef GENSIO_ACC_EVENT_PARMLOG
     case GENSIO_ACC_EVENT_PARMLOG: {
 	struct gensio_parmlog_data *d = (struct gensio_parmlog_data *) data;
-	vsyslog(LOG_ERR, d->log, d->args);
+	seout.vout(&seout, d->log, d->args);
 	return 0;
     }
 #endif
@@ -407,7 +406,7 @@ finish_shutdown_port(struct gensio_runner *runner, void *cb_data)
 		ports = new;
 	    }
 	    if (new->enabled)
-		startup_port(&syslog_absout, new);
+		startup_port(&seout, new);
 	    so->unlock(new->lock);
 	}
 	so->unlock(ports_lock);
@@ -480,8 +479,8 @@ handle_dev_fd_close_write(port_info_t *port)
 	goto closeit;
 
     if (err) {
-	syslog(LOG_ERR, "The dev write(3) for port %s had error: %s",
-	       port->name, gensio_err_to_str(err));
+	seout.out(&seout, "The dev write(3) for port %s had error: %s",
+		  port->name, gensio_err_to_str(err));
 	goto closeit;
     }
 
@@ -510,7 +509,7 @@ start_shutdown_port_io(port_info_t *port)
 
     if (port->devstr)
 	gbuf_free(port->devstr);
-    port->devstr = process_str_to_buf(port, NULL, port->closestr);
+    port->devstr = process_str_to_buf(port, NULL, port->closestr, &seout);
     port->dev_write_handler = handle_dev_fd_close_write;
     gensio_set_write_callback_enable(port->io, true);
 }
@@ -796,14 +795,14 @@ port_timeout(struct gensio_timer *timer, void *data)
 
     so->lock(port->lock);
     if (port->dev_to_net_state == PORT_NOT_STARTED) {
-	err = port_startup(port, &syslog_absout, true);
+	err = port_startup(port, &seout, true);
 	if (err)
 	    goto out;
     }
 
     if (port->dev_to_net_state == PORT_CLOSED) {
 	if (port->enabled)
-	    startup_port(&syslog_absout, port);
+	    startup_port(&seout, port);
 	goto out_unlock;
     }
 

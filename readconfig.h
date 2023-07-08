@@ -29,14 +29,14 @@
 #include "absout.h"
 
 /* Handle one line of configuration. */
-int handle_config_line(char *inbuf, int len);
+int handle_config_line(char *inbuf, int len, struct absout *eout);
 
 /* Initialize for a new config read. */
 int readconfig_init(void);
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
-int readconfig(FILE *instream);
+int readconfig(FILE *instream, struct absout *eout);
 int yaml_readconfig(FILE *f, char *filename, char **config_lines,
 		    unsigned int num_config_lines,
 		    struct absout *errout);
@@ -59,9 +59,9 @@ void free_rs485confs(void);
  * Search for a tracefile by name.  Note that the
  * returned value needs to be free-ed when done.
  */
-char *find_tracefile(const char *name);
+char *find_tracefile(const char *name, struct absout *eout);
 
 /* Search for RS485 configuration by name. */
-char *find_rs485conf(const char *name);
+char *find_rs485conf(const char *name, struct absout *eout);
 
 #endif /* READCONFIG */

@@ -625,7 +625,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	struct timeval tv = { 0, 0 };
 	gensiods len;
 
-	fval = process_str_to_str(port, NULL, val, &tv, &len, false);
+	fval = process_str_to_str(port, NULL, val, &tv, &len, false, eout);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating closeon");
 	    return -1;
@@ -647,7 +647,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	struct timeval tv =  { 0, 0 };
 	gensiods len;
 
-	fval= process_str_to_str(port, NULL, val, &tv, &len, false);
+	fval= process_str_to_str(port, NULL, val, &tv, &len, false, eout);
 	if (!fval) {
 	    eout->out(eout, "Out of memory allocating sendon");
 	    return -1;
@@ -689,15 +689,15 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	port->trace_both.timestamp = false;
     } else if (gensio_check_keyvalue(pos, "tr", &val) > 0) {
 	/* trace read, data from the port to the socket */
-	port->trace_read.filename = find_tracefile(val);
+	port->trace_read.filename = find_tracefile(val, eout);
     } else if (gensio_check_keyvalue(pos, "tw", &val) > 0) {
 	/* trace write, data from the socket to the port */
-	port->trace_write.filename = find_tracefile(val);
+	port->trace_write.filename = find_tracefile(val, eout);
     } else if (gensio_check_keyvalue(pos, "tb", &val) > 0) {
 	/* trace both directions. */
-	port->trace_both.filename = find_tracefile(val);
+	port->trace_both.filename = find_tracefile(val, eout);
     } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
-	port->rs485 = find_rs485conf(val);
+	port->rs485 = find_rs485conf(val, eout);
     } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
 	port->telnet_brk_on_sync = 1;
     } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {

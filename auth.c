@@ -25,7 +25,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <syslog.h>
 #include <limits.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -146,13 +145,14 @@ handle_auth_begin(struct gensio *net, const char *authdir, const char *pamauth,
     err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
 			 &len);
     if (err) {
-	syslog(LOG_ERR, "No username provided by remote: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout, "No username provided by remote: %s",
+		  gensio_err_to_str(err));
 	return GE_AUTHREJECT;
     }
     if (!is_user_present(allowed_users, username)) {
-	syslog(LOG_ERR, "Username not allowed for this connection: %s",
-	       username);
+	seout.out(&seout,
+		  "Username not allowed for this connection: %s",
+		  username);
 	return GE_AUTHREJECT;
     }
 
@@ -174,8 +174,9 @@ handle_auth_begin(struct gensio *net, const char *authdir, const char *pamauth,
 		err = gensio_control(net, 0, GENSIO_CONTROL_SET,
 				     GENSIO_CONTROL_CERT_AUTH, userauthdir, &len);
 		if (err) {
-		    syslog(LOG_ERR, "Could not set authdir %s: %s", userauthdir,
-			   gensio_err_to_str(err));
+		    seout.out(&seout,
+			      "Could not set authdir %s: %s",
+			      userauthdir, gensio_err_to_str(err));
 		    return GE_NOTSUP;
 		}
 	    }
@@ -205,8 +206,9 @@ handle_precert(struct gensio *net, const char *authdir)
 	err = gensio_control(net, 0, true, GENSIO_CONTROL_GET_PEER_CERT_NAME,
 			     username, &len);
 	if (err) {
-	    syslog(LOG_ERR, "No username provided by remote or cert: %s",
-		   gensio_err_to_str(err));
+	    seout.out(&seout,
+		      "No username provided by remote or cert: %s",
+		      gensio_err_to_str(err));
 	    return GE_AUTHREJECT;
 	}
 	/* Skip over the <n>,CN, in the username output. */
@@ -214,7 +216,8 @@ handle_precert(struct gensio *net, const char *authdir)
 	if (s)
 	    s = strchr(s + 1, ',');
 	if (!s) {
-	    syslog(LOG_ERR, "Got invalid username: %s", username);
+	    seout.out(&seout, "Got invalid username: %s",
+		      username);
 	    return GE_AUTHREJECT;
 	}
 	s++;
@@ -223,8 +226,8 @@ handle_precert(struct gensio *net, const char *authdir)
 	err = gensio_control(net, 0, false, GENSIO_CONTROL_USERNAME, s,
 			     NULL);
 	if (err) {
-	    syslog(LOG_ERR, "Unable to set username to %s: %s", s,
-		   gensio_err_to_str(err));
+	    seout.out(&seout, "Unable to set username to %s: %s", s,
+		      gensio_err_to_str(err));
 	    return GE_AUTHREJECT;
 	}
     }
@@ -234,8 +237,9 @@ handle_precert(struct gensio *net, const char *authdir)
     err = gensio_control(net, 0, false, GENSIO_CONTROL_CERT_AUTH,
 			 filename, &len);
     if (err && err != GE_CERTNOTFOUND) {
-	syslog(LOG_ERR, "Unable to set authdir to %s: %s", filename,
-	       gensio_err_to_str(err));
+	seout.out(&seout,
+		  "Unable to set authdir to %s: %s", filename,
+		  gensio_err_to_str(err));
     }
     return GE_NOTSUP;
 }
@@ -254,8 +258,8 @@ handle_password(struct gensio *net, const char *authdir, const char *password)
     err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
 			 &len);
     if (err) {
-	syslog(LOG_ERR, "No username provided by remote: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout, "No username provided by remote: %s",
+		  gensio_err_to_str(err));
 	return GE_AUTHREJECT;
     }
 
@@ -263,15 +267,15 @@ handle_password(struct gensio *net, const char *authdir, const char *password)
 	     authdir, username);
     pwfile = fopen(filename, "r");
     if (!pwfile) {
-	syslog(LOG_ERR, "Can't open password file %s: %s", filename,
-	       strerror(errno));
+	seout.out(&seout, "Can't open password file %s: %s",
+		  filename, strerror(errno));
 	return GE_AUTHREJECT;
     }
     s = fgets(readpw, sizeof(readpw), pwfile);
     fclose(pwfile);
     if (!s) {
-	syslog(LOG_ERR, "Can't read password file %s: %s", filename,
-	       strerror(errno));
+	seout.out(&seout, "Can't read password file %s: %s",
+		  filename, strerror(errno));
 	return GE_AUTHREJECT;
     }
     s = strchr(readpw, '\n');
@@ -340,8 +344,8 @@ handle_password_pam(struct gensio *net, const char *pamauth, const char *passwor
     err = gensio_control(net, 0, true, GENSIO_CONTROL_USERNAME, username,
 			 &len);
     if (err) {
-	syslog(LOG_ERR, "No username provided by remote: %s",
-	       gensio_err_to_str(err));
+	seout.out(&seout, "No username provided by remote: %s",
+		  gensio_err_to_str(err));
 	goto exit;
     }
 
@@ -349,30 +353,29 @@ handle_password_pam(struct gensio *net, const char *pamauth, const char *passwor
     pam_conv.appdata_ptr = (char *)password;
     pam_err = pam_start(pamauth, username, &pam_conv, &pamh);
     if (pam_err != PAM_SUCCESS) {
-	syslog(LOG_ERR, "Unable to start PAM transaction: %s",
-	       pam_strerror(pamh, pam_err));
+	seout.out(&seout, "Unable to start PAM transaction: %s",
+		  pam_strerror(pamh, pam_err));
 	goto exit;
     }
 
     pam_err = pam_authenticate(pamh, PAM_SILENT);
     if (pam_err != PAM_SUCCESS) {
-	syslog(LOG_ERR, "PAM authentication failed: %s",
-	    pam_strerror(pamh, pam_err)
+	seout.out(&seout, "PAM authentication failed: %s",
+		  pam_strerror(pamh, pam_err)
 	);
 	goto exit;
     } else {
-	syslog(LOG_INFO, "Accepted password for %s\n", username);
+	seout.out(&seout, "Accepted password for %s\n", username);
     }
 
     pam_err = pam_acct_mgmt(pamh, 0);
     if (pam_err == PAM_NEW_AUTHTOK_REQD) {
-	syslog(LOG_ERR, "user %s password expired", username);
+	seout.out(&seout, "user %s password expired", username);
 	goto exit;
     }
     if (pam_err != PAM_SUCCESS) {
-	syslog(LOG_ERR, "pam_acct_mgmt failed for %s: %s",
-	    username, pam_strerror(pamh, pam_err)
-	);
+	seout.out(&seout, "pam_acct_mgmt failed for %s: %s",
+		  username, pam_strerror(pamh, pam_err));
 	goto exit;
     }
 

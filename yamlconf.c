@@ -28,7 +28,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <yaml.h>
-#include <syslog.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -262,6 +261,16 @@ yaml_errout(struct yconf *y, const char *str, ...)
 }
 
 static int
+sub_verrout(struct absout *e, const char *str, va_list ap)
+{
+    struct yconf *y = e->data;
+    int rv;
+
+    rv = yaml_verrout_d_f(y->d, y->d->f, str, ap);
+    return rv;
+}
+
+static int
 sub_errout(struct absout *e, const char *str, ...)
 {
     struct yconf *y = e->data;
@@ -434,7 +443,7 @@ next_yaml_read_file(struct yaml_read_handler_data *d)
     f->f = fopen(f->filename, "r");
     if (!f->f) {
 	yaml_errout_d_f(d, f->prev_f,
-			"Unable to open file %s, skipping\n", f->filename);
+			"Unable to open file %s, skipping", f->filename);
 	if (f->curr_file < f->files.we_wordc)
 	    goto retry;
 	return 1;
@@ -457,7 +466,7 @@ do_include(struct yconf *y, const char *ivalue)
 
     if (y->d->include_depth > 100) {
 	yaml_errout(y, "Too many nested includes, you probably have a"
-		    " circular include\n");
+		    " circular include");
 	return -1;
     }
 
@@ -961,7 +970,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case MAIN_LEVEL:
 	scalar_next_state(y, sc_main, scalar);
 	if (y->state == PARSE_ERR) {
-	    yaml_errout(y, "Invalid token at the main level: %s\n", scalar);
+	    yaml_errout(y, "Invalid token at the main level: %s", scalar);
 	    goto out_err;
 	}
 	break;
@@ -969,7 +978,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     case IN_DEFINE:
 	anchor_allowed = true;
 	if (!anchor)
-	    yaml_errout(y, "No anchor for define, define ignored\n");
+	    yaml_errout(y, "No anchor for define, define ignored");
 	else {
 	    if (add_alias(y, anchor, scalar))
 		goto out_err;
@@ -1045,7 +1054,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
     }
 
     if (anchor && !anchor_allowed)
-	yaml_errout(y, "Anchor on non-scalar ignored\n");
+	yaml_errout(y, "Anchor on non-scalar ignored");
 
     free(scalar);
     return 0;
@@ -1248,7 +1257,7 @@ yhandle_mapping_end(struct yconf *y)
 		return -1;
 	    err = add_led(y->name, y->driver,
 			  (const char **) y->options,
-			  y->d->f->e.start_mark.line);
+			  y->d->f->e.start_mark.line, &y->sub_errout);
 	    y->state = MAIN_LEVEL;
 	    yconf_cleanup_main(y);
 	    break;
@@ -1430,6 +1439,7 @@ yaml_readconfig(FILE *file, char *filename,
     y.connections_len = 10;
     y.state = BEGIN_DOC;
     y.sub_errout.out = sub_errout;
+    y.sub_errout.vout = sub_verrout;
     y.sub_errout.data = &y;
     y.d = &d;
 
