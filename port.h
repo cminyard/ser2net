@@ -27,12 +27,14 @@
 #define PORT
 
 #include <netdb.h>
-#include <sys/time.h>
 #include <sys/socket.h>
+
+#include <gensio/gensio.h>
+
 #include "gbuf.h"
 #include "absout.h"
 #include "mdns.h"
-#include <gensio/gensio.h>
+#include "timeproc.h"
 
 /* States for the net_to_dev_state and dev_to_net_state. */
 #define PORT_NOT_STARTED		0 /* The dataxfer_start_port failed. */
@@ -399,7 +401,7 @@ void free_port(port_info_t *port);
 struct gbuf *process_str_to_buf(port_info_t *port, net_info_t *netcon,
 				const char *str, struct absout *eout);
 char *process_str_to_str(port_info_t *port, net_info_t *netcon,
-			 const char *str, struct timeval *tv,
+			 const char *str, timev *ts,
 			 gensiods *lenrv, int isfilename, struct absout *eout);
 gensiods net_raddr_str(struct gensio *io, char *buf, gensiods buflen);
 

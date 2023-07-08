@@ -30,19 +30,19 @@
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include <time.h>
-#include <sys/time.h>
 #include "ser2net.h"
 #include "port.h"
+#include "timeproc.h"
 
 static int
 timestamp(trace_info_t *t, char *buf, int size)
 {
-    time_t result;
+    timev result;
+
     if (!t->timestamp)
         return 0;
-    result = time(NULL);
-    return strftime(buf, size, "%Y/%m/%d %H:%M:%S ", localtime(&result));
+    get_curr_time(&result);
+    return time_to_str(buf, size, &result);
 }
 
 static int
@@ -196,13 +196,13 @@ footer_trace(port_info_t *port, char *type, const char *reason)
 static void
 open_trace_file(port_info_t *port,
                 trace_info_t *t,
-                struct timeval *tv,
+                timev *ts,
                 trace_info_t **out, struct absout *eout)
 {
     int rv;
     char *trfile;
 
-    trfile = process_str_to_str(port, NULL, t->filename, tv, NULL, 1, eout);
+    trfile = process_str_to_str(port, NULL, t->filename, ts, NULL, 1, eout);
     if (!trfile) {
 	eout->out(eout, "Unable to translate trace file %s", t->filename);
 	t->fd = -1;
@@ -230,14 +230,14 @@ open_trace_file(port_info_t *port,
 void
 setup_trace(port_info_t *port, struct absout *eout)
 {
-    struct timeval tv;
+    timev ts;
 
     /* Only get the time once so all trace files have consistent times. */
-    gettimeofday(&tv, NULL);
+    get_curr_time(&ts);
 
     port->tw = NULL;
     if (port->trace_write.filename)
-	open_trace_file(port, &port->trace_write, &tv, &port->tw, eout);
+	open_trace_file(port, &port->trace_write, &ts, &port->tw, eout);
 
     port->tr = NULL;
     if (port->trace_read.filename) {
@@ -245,7 +245,7 @@ setup_trace(port_info_t *port, struct absout *eout)
 	if (port->tw && (strcmp(np->filename, port->tw->filename) == 0))
 	    port->tr = port->tw;
 	else
-	    open_trace_file(port, np, &tv, &port->tr, eout);
+	    open_trace_file(port, np, &ts, &port->tr, eout);
     }
 
     port->tb = NULL;
@@ -256,7 +256,7 @@ setup_trace(port_info_t *port, struct absout *eout)
 	else if (port->tr && (strcmp(np->filename, port->tr->filename) == 0))
 	    port->tb = port->tr;
 	else
-	    open_trace_file(port, np, &tv, &port->tb, eout);
+	    open_trace_file(port, np, &ts, &port->tb, eout);
     }
 
     return;

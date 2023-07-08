@@ -23,12 +23,10 @@
  *  release a modified version which carries forward this exception.
  */
 
-#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <sys/time.h>
 #include <gensio/gensio.h>
 #include "port.h"
 
@@ -71,8 +69,7 @@ static char *smonths[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 static char *sdays[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
 static void
-process_str(port_info_t *port, net_info_t *netcon,
-	    struct tm *time, struct timeval *tv,
+process_str(port_info_t *port, net_info_t *netcon, brkout_time *tb,
 	    const char *s,
 	    void (*op)(void *data, char val), void *data, int isfilename)
 {
@@ -196,7 +193,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'Y':
 	    {
 		char d[12], *dp;
-		snprintf(d, sizeof(d), "%d", time->tm_year + 1900);
+		snprintf(d, sizeof(d), "%d", bt_year(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -206,50 +203,56 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'y':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%d", time->tm_yday);
+		snprintf(d, sizeof(d), "%d", bt_yearday(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
 	    }
 
 	    /* \M -> month (Jan, Feb, Mar, etc.) */
-	    case 'M':
-		if (time->tm_mon >= 12)
+	    case 'M': {
+		int month = bt_month(tb);
+
+		if (month >= 12)
 		    op(data, '?');
 		else {
-		    char *dp = smonths[time->tm_mon];
+		    char *dp = smonths[month];
 		    for (; *dp; dp++)
 			op(data, *dp);
 		}
 		break;
+	    }
 
 	    /* \m -> month (as a number) */
 	    case 'm':
 	    {
 		char d[12], *dp;
-		/* tm_mon runs from 0-11, thus the "+ 1" */
-		snprintf(d, sizeof(d), "%d", time->tm_mon + 1);
+		/* bt_month runs from 0-11, thus the "+ 1" */
+		snprintf(d, sizeof(d), "%d", bt_month(tb) + 1);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
 	    }
 
 	    /* \A -> day of the week (Mon, Tue, etc.) */
-	    case 'A':
-		if (time->tm_wday >= 7)
+	    case 'A': {
+		int weekday = bt_weekday(tb);
+
+		if (weekday >= 7)
 		    op(data, '?');
 		else {
-		    char *dp = sdays[time->tm_wday];
+		    char *dp = sdays[weekday];
 		    for (; *dp; dp++)
 			op(data, *dp);
 		}
 		break;
+	    }
 
 	    /* \D -> day of the month */
 	    case 'D':
 	    {
 		char d[12], *dp;
-		snprintf(d, sizeof(d), "%d", time->tm_mday);
+		snprintf(d, sizeof(d), "%d", bt_monthday(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -259,7 +262,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'H':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%2.2d", time->tm_hour);
+		snprintf(d, sizeof(d), "%2.2d", bt_hour(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -269,14 +272,14 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'h':
 	    {
 		char d[10], *dp;
-		int v;
+		int hour;
 
-		v = time->tm_hour;
-		if (v <= 0 || v >= 24)
-		    v = 12;
-		else if (v > 12)
-		    v -= 12;
-		snprintf(d, sizeof(d), "%2.2d", v);
+		hour = bt_hour(tb);
+		if (hour <= 0 || hour >= 24)
+		    hour = 12;
+		else if (hour > 12)
+		    hour -= 12;
+		snprintf(d, sizeof(d), "%2.2d", hour);
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -286,7 +289,8 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'i':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%2.2d", time->tm_min);
+
+		snprintf(d, sizeof(d), "%2.2d", bt_minute(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -296,7 +300,8 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'S':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%2.2d", time->tm_sec);
+
+		snprintf(d, sizeof(d), "%2.2d", bt_second(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -304,7 +309,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 
 	    /* \q -> am/pm */
 	    case 'q':
-		if (time->tm_hour < 12) {
+		if (bt_hour(tb) < 12) {
 		    op(data, 'a');
 		} else {
 		    op(data, 'p');
@@ -314,7 +319,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 
 	    /* \P -> AM/PM */
 	    case 'P':
-		if (time->tm_hour < 12) {
+		if (bt_hour(tb) < 12) {
 		    op(data, 'A');
 		} else {
 		    op(data, 'P');
@@ -327,7 +332,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    {
 		char d[10], *dp;
 		snprintf(d, sizeof(d), "%2.2d:%2.2d:%2.2d",
-			 time->tm_hour, time->tm_min, time->tm_sec);
+			 bt_hour(tb), bt_minute(tb), bt_second(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -337,7 +342,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'e':
 	    {
 		char d[30], *dp;
-		snprintf(d, sizeof(d), "%ld", tv->tv_sec);
+		snprintf(d, sizeof(d), "%ld", bt_epoc(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -347,7 +352,7 @@ process_str(port_info_t *port, net_info_t *netcon,
 	    case 'U':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%6.6ld", tv->tv_usec);
+		snprintf(d, sizeof(d), "%6.6ld", bt_usec(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
@@ -401,15 +406,15 @@ buffer_op(void *data, char c)
 
 char *
 process_str_to_str(port_info_t *port, net_info_t *netcon,
-		   const char *str, struct timeval *tv,
+		   const char *str, timev *ts,
 		   gensiods *lenrv, int isfilename, struct absout *eout)
 {
     gensiods len = 0;
-    struct tm now;
+    brkout_time now;
     struct bufop_data bufop;
 
-    localtime_r(&tv->tv_sec, &now);
-    process_str(port, netcon, &now, tv, str, count_op, &len, isfilename);
+    breakout_time(ts, &now);
+    process_str(port, netcon, &now, str, count_op, &len, isfilename);
     if (!lenrv)
 	/* If we don't return a length, append a nil char. */
 	len++;
@@ -422,7 +427,7 @@ process_str_to_str(port_info_t *port, net_info_t *netcon,
 	eout->out(eout, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
-    process_str(port, netcon, &now, tv, str, buffer_op, &bufop, isfilename);
+    process_str(port, netcon, &now, str, buffer_op, &bufop, isfilename);
     bufop.str[len] = '\0';
 
     if (lenrv)
@@ -440,18 +445,18 @@ process_str_to_buf(port_info_t *port, net_info_t *netcon, const char *str,
     char *bstr;
     struct gbuf *buf;
     gensiods len;
-    struct timeval tv;
+    timev ts;
 
     if (!str || *str == '\0')
 	return NULL;
-    gettimeofday(&tv, NULL);
+    get_curr_time(&ts);
 
     buf = malloc(sizeof(*buf));
     if (!buf) {
 	eout->out(eout, "Out of memory processing string: %s", port->name);
 	return NULL;
     }
-    bstr = process_str_to_str(port, netcon, str, &tv, &len, 0, eout);
+    bstr = process_str_to_str(port, netcon, str, &ts, &len, 0, eout);
     if (!bstr) {
 	free(buf);
 	eout->out(eout, "Error processing string: %s", port->name);
