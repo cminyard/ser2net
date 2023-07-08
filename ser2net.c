@@ -380,6 +380,48 @@ cleanup_pidfile(void)
 	unlink(pid_file);
 }
 
+void
+do_detach(void)
+{
+    if (detach) {
+	int pid;
+
+	/* Detach from the calling terminal. */
+	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
+	syslog(LOG_NOTICE, "ser2net startup");
+	if ((pid = fork()) > 0) {
+	    exit(0);
+	} else if (pid < 0) {
+	    seout.out(&seout, "Error forking first fork: %s", strerror(errno));
+	    exit(1);
+	} else {
+	    /* setsid() is necessary if we really want to demonize */
+	    setsid();
+	    /* Second fork to really daemonize me. */
+	    if ((pid = fork()) > 0) {
+		exit(0);
+	    } else if (pid < 0) {
+		seout.out(&seout, "Error forking second fork: %s",
+			  strerror(errno));
+		exit(1);
+	    }
+	}
+
+	/* Close all my standard I/O. */
+	if (chdir("/") < 0) {
+	    seout.out(&seout, "unable to chdir to '/': %s", strerror(errno));
+	    exit(1);
+	}
+	close(0);
+	close(1);
+	close(2);
+    } else if (ser2net_debug) {
+	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
+    } else {
+	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
+    }
+}
+
 static struct gensio_lock *config_lock;
 static struct gensio_lock *maint_lock;
 
@@ -854,43 +896,7 @@ main(int argc, char *argv[])
     }
     apply_new_ports(&seout);
 
-    if (detach) {
-	int pid;
-
-	/* Detach from the calling terminal. */
-	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
-	syslog(LOG_NOTICE, "ser2net startup");
-	if ((pid = fork()) > 0) {
-	    exit(0);
-	} else if (pid < 0) {
-	    seout.out(&seout, "Error forking first fork: %s", strerror(errno));
-	    exit(1);
-	} else {
-	    /* setsid() is necessary if we really want to demonize */
-	    setsid();
-	    /* Second fork to really daemonize me. */
-	    if ((pid = fork()) > 0) {
-		exit(0);
-	    } else if (pid < 0) {
-		seout.out(&seout, "Error forking second fork: %s",
-			  strerror(errno));
-		exit(1);
-	    }
-	}
-
-	/* Close all my standard I/O. */
-	if (chdir("/") < 0) {
-	    seout.out(&seout, "unable to chdir to '/': %s", strerror(errno));
-	    exit(1);
-	}
-	close(0);
-	close(1);
-	close(2);
-    } else if (ser2net_debug) {
-	openlog("ser2net", LOG_PID | LOG_CONS | LOG_PERROR, LOG_DAEMON);
-    } else {
-	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
-    }
+    do_detach();
 
     /* write pid file */
     if (make_pidfile())
