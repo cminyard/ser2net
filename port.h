@@ -26,8 +26,11 @@
 #ifndef PORT
 #define PORT
 
+#ifdef WIN32
+#include <ws2tcpip.h>
+#else
 #include <netdb.h>
-#include <sys/socket.h>
+#endif
 
 #include <gensio/gensio.h>
 

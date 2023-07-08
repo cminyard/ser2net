@@ -25,7 +25,6 @@
 
 #include <string.h>
 #include <stdio.h>
-#include <arpa/inet.h>
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
 #include "ser2net.h"

@@ -40,8 +40,6 @@
 /* When the version info was added, the type was changed. */
 typedef struct gensio_addr gaddrinfo;
 #define gensio_free_addrinfo(o, a) gensio_addr_free(a)
-#include <sys/socket.h>
-#include <netdb.h>
 #else
 typedef struct addrinfo gaddrinfo;
 #endif

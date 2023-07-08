@@ -44,6 +44,23 @@
 
 //#define DEBUG 1
 
+#ifdef WIN32
+char *strndup(const char *s, size_t n)
+{
+    int len = strlen(s);
+    char *r;
+
+    if (len > n)
+	len = n;
+    r = malloc(len + 1);
+    if (!r)
+	return NULL;
+    memcpy(r, s, len);
+    r[len] = '\0';
+    return r;
+}
+#endif
+
 /*
  * States for the state machine reading the configuration file.
  */

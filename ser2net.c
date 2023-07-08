@@ -30,11 +30,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <errno.h>
-#include <syslog.h>
-#include <unistd.h>
-
-#include <gensio/selector.h>
 #include <gensio/gensio_os_funcs_public.h>
 
 #include "ser2net.h"
@@ -110,6 +105,34 @@ str_endswith(const char *str, const char *end)
 }
 
 static int
+stderr_evout(struct absout *e, const char *str, va_list ap)
+{
+    char buf[1024];
+
+    vsnprintf(buf, sizeof(buf), str, ap);
+#ifndef WIN32
+    syslog(LOG_ERR, "%s", buf);
+#endif
+    fprintf(stderr, "%s\n", buf);
+    return 0;
+}
+static int
+stderr_eout(struct absout *e, const char *str, ...)
+{
+    va_list ap;
+
+    va_start(ap, str);
+    stderr_evout(e, str, ap);
+    va_end(ap);
+    return 0;
+}
+
+#ifndef WIN32
+#include <errno.h>
+#include <syslog.h>
+#include <unistd.h>
+
+static int
 syslog_evout(struct absout *e, const char *str, va_list ap)
 {
     char buf[1024];
@@ -129,34 +152,10 @@ syslog_eout(struct absout *e, const char *str, ...)
     va_end(ap);
     return 0;
 }
+
 struct absout seout = {
     .out = syslog_eout,
     .vout = syslog_evout
-};
-
-static int
-stderr_evout(struct absout *e, const char *str, va_list ap)
-{
-    char buf[1024];
-
-    vsnprintf(buf, sizeof(buf), str, ap);
-    syslog(LOG_ERR, "%s", buf);
-    fprintf(stderr, "%s\n", buf);
-    return 0;
-}
-static int
-stderr_eout(struct absout *e, const char *str, ...)
-{
-    va_list ap;
-
-    va_start(ap, str);
-    stderr_evout(e, str, ap);
-    va_end(ap);
-    return 0;
-}
-static struct absout stderr_absout = {
-    .out = stderr_eout,
-    .vout = stderr_evout
 };
 
 static int
@@ -184,6 +183,50 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
     vsnprintf(buf, sizeof(buf), i->str, i->args);
     syslog(gensio_log_level_to_syslog(i->level), "%s: %s", name, buf);
 }
+
+static void
+ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
+		      const char *log, va_list args)
+{
+    int priority = gensio_log_level_to_syslog(level);
+
+    vsyslog(priority, log, args);
+}
+
+#else
+
+#define SIGUSR1 0
+
+struct absout seout = {
+    .out = stderr_eout,
+    .vout = stderr_evout
+};
+
+void
+do_gensio_log(const char *name, struct gensio_loginfo *i)
+{
+    char buf[256];
+
+    vsnprintf(buf, sizeof(buf), i->str, i->args);
+    fprintf(stderr, "%s: %s: %s", gensio_log_level_to_str(i->level), name, buf);
+}
+
+static void
+ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
+		      const char *log, va_list args)
+{
+    char buf[256];
+
+    vsnprintf(buf, sizeof(buf), log, args);
+    fprintf(stderr, "%s: %s", gensio_log_level_to_str(level), buf);
+}
+
+#endif
+
+static struct absout stderr_absout = {
+    .out = stderr_eout,
+    .vout = stderr_evout
+};
 
 static ftype *
 fopen_config_file(bool *is_yaml, char **rfilename, struct absout *eout)
@@ -352,6 +395,7 @@ arg_error(char *name)
 static int
 make_pidfile(void)
 {
+#ifndef WIN32
     int rv, len;
     ftype *fpidfile;
     char buf[20];
@@ -369,20 +413,23 @@ make_pidfile(void)
     len = snprintf(buf, sizeof(buf), "%d\n", getpid());
     f_write(fpidfile, buf, len, NULL);
     f_close(fpidfile);
-
+#endif
     return 0;
 }
 
 static void
 cleanup_pidfile(void)
 {
+#ifndef WIN32
     if (pid_file)
 	unlink(pid_file);
+#endif
 }
 
 void
 do_detach(void)
 {
+#ifndef WIN32
     if (detach) {
 	int pid;
 
@@ -420,6 +467,7 @@ do_detach(void)
     } else {
 	openlog("ser2net", LOG_PID | LOG_CONS, LOG_DAEMON);
     }
+#endif
 }
 
 static struct gensio_lock *config_lock;
@@ -595,15 +643,6 @@ shutdown_cleanly(void *data)
     gensio_os_funcs_unlock(so, config_lock);
 
     stop_threads();
-}
-
-static void
-ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
-		      const char *log, va_list args)
-{
-    int priority = gensio_log_level_to_syslog(level);
-
-    vsyslog(priority, log, args);
 }
 
 int
@@ -792,7 +831,7 @@ main(int argc, char *argv[])
     err = gensio_os_proc_register_reload_handler(procdata,
 						 thread_reread_config_file,
 						 NULL);
-    if (err) {
+    if (err && err != GE_NOTSUP) {
 	seout.out(&seout, "Unable to setup reconfig handler: %s",
 		  gensio_err_to_str(err));
 	return 1;

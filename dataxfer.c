@@ -30,6 +30,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <stdint.h>
 
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
@@ -739,7 +740,7 @@ sergensio_val_set(struct sergensio *sio, int err,
 		  unsigned int val, void *cb_data)
 {
     port_info_t *port = sergensio_get_user_data(sio);
-    enum s2n_ser_ops op = (long) cb_data;
+    enum s2n_ser_ops op = (intptr_t) cb_data;
     net_info_t *netcon;
 
     so->lock(port->lock);

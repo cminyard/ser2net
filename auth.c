@@ -27,7 +27,6 @@
 #include <string.h>
 #include <limits.h>
 #include <stdlib.h>
-#include <pwd.h>
 #include <dirent.h>
 #include <gensio/gensio.h>
 #include <gensio/gensio_list.h>

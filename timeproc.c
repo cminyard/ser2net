@@ -25,6 +25,16 @@
 
 #include "timeproc.h"
 
+#ifdef WIN32
+static struct tm *
+localtime_r(long *sec, struct tm *tm)
+{
+    time_t tsec = *sec;
+    localtime_s(tm, &tsec);
+    return tm;
+}
+#endif
+
 void
 get_curr_time(timev *ts)
 {

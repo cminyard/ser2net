@@ -28,7 +28,6 @@
 #include <string.h>
 #include <yaml.h>
 
-#include <gensio/selector.h>
 #include <gensio/gensio.h>
 #include <gensio/gensio_mdns.h>
 
