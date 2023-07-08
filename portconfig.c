@@ -24,7 +24,6 @@
  */
 
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -221,7 +220,7 @@ port_add_remaddr(struct absout *eout, port_info_t *port, const char *istr)
     str = strdup(istr);
     if (!str) {
 	eout->out(eout, "Out of memory handling remote address '%s'", istr);
-	return ENOMEM;
+	return GE_NOMEM;
     }
 
     remstr = strtok_r(str, ";", &strtok_data);
@@ -251,7 +250,7 @@ port_add_connback(struct absout *eout, port_info_t *port, const char *istr)
     if (!str) {
 	eout->out(eout, "Out of memory handling connect back address '%s'",
 		  istr);
-	return ENOMEM;
+	return GE_NOMEM;
     }
 
     remstr = strtok_r(str, ";", &strtok_data);
@@ -389,7 +388,7 @@ strdupcat(char **str, const char *cat)
     char *s = malloc(strlen(*str) + strlen(cat) + 2);
 
     if (!s)
-	return ENOMEM;
+	return GE_NOMEM;
     strcpy(s, *str);
     strcat(s, ",");
     strcat(s, cat);
@@ -770,23 +769,23 @@ init_port_data(port_info_t *port, struct absout *eout)
     port->connector_retry_time = find_default_int("connector-retry-time");
     port->accepter_retry_time = find_default_int("accepter-retry-time");
     if (find_default_str("authdir", &port->authdir))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("pamauth", &port->pamauth))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("allowed-users", &port->default_allowed_users))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("signature", &port->signaturestr))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("banner", &port->bannerstr))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("openstr", &port->openstr))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("closestr", &port->closestr))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("closeon", &port->closeon))
-	return ENOMEM;
+	return GE_NOMEM;
     if (find_default_str("sendon", &port->sendon))
-	return ENOMEM;
+	return GE_NOMEM;
 
     port->led_tx = NULL;
     port->led_rx = NULL;
@@ -864,7 +863,9 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    init_port_data(new_port, eout);
+    err = init_port_data(new_port, eout);
+    if (err)
+	goto errout;
 
     if (!new_port->name) {
 	new_port->name = strdup(name);

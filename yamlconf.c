@@ -1459,7 +1459,7 @@ yaml_readconfig(FILE *file, char *filename,
     while (!done && !err) {
 	if (!yaml_parser_parse(&y.d->f->parser, &y.d->f->e)) {
 	    yaml_errout(&y, y.d->f->parser.problem);
-	    err = EINVAL;
+	    err = GE_INVAL;
 	    break;
 	}
 
@@ -1474,7 +1474,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    if (y.state != END_DOC) {
 		yaml_errout(&y, "yaml file ended in invalid state: %d",
 			    y.state);
-		err = EINVAL;
+		err = GE_INVAL;
 	    }
 	    done = true;
 	    break;
@@ -1489,10 +1489,10 @@ yaml_readconfig(FILE *file, char *filename,
 	    if (!a) {
 		yaml_errout(&y, "Unable to find alias '%s'",
 			    y.d->f->e.data.alias.anchor);
-		err = EINVAL;
+		err = GE_INVAL;
 	    } else {
 		if (yhandle_scalar(&y, NULL, a->value))
-		    err = EINVAL;
+		    err = GE_INVAL;
 	    }
 	    break;
 	}
@@ -1506,7 +1506,7 @@ yaml_readconfig(FILE *file, char *filename,
 #endif
 	    if (yhandle_scalar(&y, (char *) y.d->f->e.data.scalar.anchor,
 			       (char *) y.d->f->e.data.scalar.value))
-		err = EINVAL;
+		err = GE_INVAL;
 	    break;
 
 	case YAML_SEQUENCE_START_EVENT:
@@ -1516,7 +1516,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    printf(" tag: '%s'\n", y.e.data.sequence_start.tag);
 #endif
 	    if (yhandle_seq_start(&y))
-		err = EINVAL;
+		err = GE_INVAL;
 	    break;
 
 	case YAML_SEQUENCE_END_EVENT:
@@ -1524,7 +1524,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    printf("YAML_SEQUENCE_END_EVENT\n");
 #endif
 	    if (yhandle_seq_end(&y))
-		err = EINVAL;
+		err = GE_INVAL;
 	    break;
 
 	case YAML_MAPPING_START_EVENT:
@@ -1534,7 +1534,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    printf(" tag: '%s'\n", y.e.data.mapping_start.tag);
 #endif
 	    if (yhandle_mapping_start(&y))
-		err = EINVAL;
+		err = GE_INVAL;
 	    break;
 
 	case YAML_MAPPING_END_EVENT:
@@ -1542,7 +1542,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    printf("YAML_MAPPING_END_EVENT\n");
 #endif
 	    if (yhandle_mapping_end(&y))
-		err = EINVAL;
+		err = GE_INVAL;
 	    break;
 	}
 

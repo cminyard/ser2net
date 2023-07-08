@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include <errno.h>
 #include <yaml.h>
 
 #include <gensio/selector.h>
@@ -941,9 +940,7 @@ controller_write_ready(struct gensio *net)
     err = gensio_write(net, &write_count,
 		       &(cntlr->outbuf[cntlr->outbuf_pos]),
 		       cntlr->outbuf_count, NULL);
-    if (err == EAGAIN) {
-	/* This again was due to O_NONBso->lock, just ignore it. */
-    } else if (err == EPIPE) {
+    if (err == GE_REMCLOSE) {
 	goto out_fail;
     } else if (err) {
 	/* Some other bad error. */
@@ -998,7 +995,7 @@ controller_io_event(struct gensio *net, void *user_data, int event, int err,
 #endif
     }
 
-    return ENOTSUP;
+    return GE_NOTSUP;
 }
 
 static int

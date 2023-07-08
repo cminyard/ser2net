@@ -25,7 +25,6 @@
 
 #include <string.h>
 #include <stdio.h>
-#include <errno.h>
 #include <arpa/inet.h>
 #include <gensio/gensio.h>
 #include <gensio/sergensio.h>
@@ -456,7 +455,7 @@ setportenable(struct controller_info *cntlr, const char *portspec,
 	waiter = so->alloc_waiter(so);
 	if (!waiter) {
 	    controller_outputf(cntlr, "error", "Out of memory");
-	    rv = ENOMEM;
+	    rv = GE_NOMEM;
 	} else {
 	    port->port_op_done = port_op_finished;
 	    port->port_op_data = waiter;

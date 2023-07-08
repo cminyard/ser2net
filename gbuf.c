@@ -24,7 +24,6 @@
  */
 
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include "gbuf.h"
 
@@ -59,7 +58,7 @@ gbuf_init(struct gbuf *buf, gensiods size)
 {
     buf->buf = malloc(size);
     if (!buf->buf)
-	return ENOMEM;
+	return GE_NOMEM;
 
     buf->maxsize = size;
     gbuf_reset(buf);

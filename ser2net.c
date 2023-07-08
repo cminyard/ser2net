@@ -226,7 +226,7 @@ fopen_config_file(bool *is_yaml, char **rfilename)
 int
 reread_config_file(const char *reqtype, struct absout *eout)
 {
-    int rv = ENOENT;
+    int rv = GE_NOTFOUND;
 
     if (config_file) {
 	FILE *instream = NULL;
@@ -833,7 +833,7 @@ main(int argc, char *argv[])
 				 &stderr_absout);
 	else
 	    rv = readconfig(instream, &stderr_absout);
-	if (rv == -1)
+	if (rv)
 	    return 1;
 	if (instream && instream != stdin)
 	    fclose(instream);

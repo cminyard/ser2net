@@ -26,7 +26,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <errno.h>
 #include <assert.h>
 #include "ser2net.h"
 #include "port.h"
@@ -1092,7 +1091,7 @@ init_dataxfer(void)
 
     ports_lock = so->alloc_lock(so);
     if (!ports_lock) {
-	rv = ENOMEM;
+	rv = GE_NOMEM;
 	goto out;
     }
 

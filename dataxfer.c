@@ -27,7 +27,6 @@
    ports and the TCP ports. */
 
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>

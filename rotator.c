@@ -24,7 +24,6 @@
  */
 
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
@@ -260,7 +259,7 @@ init_rotators(void)
 {
     rotator_shutdown_wait = so->alloc_waiter(so);
     if (!rotator_shutdown_wait)
-	return ENOMEM;
+	return GE_NOMEM;
     return 0;
 }
 
@@ -273,7 +272,7 @@ add_rotator(struct absout *eout, const char *name, const char *accstr,
 
     rot = malloc(sizeof(*rot));
     if (!rot)
-	return ENOMEM;
+	return GE_NOMEM;
     memset(rot, 0, sizeof(*rot));
 
     rot->name = strdup(name);
@@ -335,7 +334,7 @@ add_rotator(struct absout *eout, const char *name, const char *accstr,
 	    free_rotator(rot);
 	    eout->out(eout, "Invalid option %s for rotator on line %d\n",
 		      options[i], lineno);
-	    return EINVAL;
+	    return GE_INVAL;
 	}
     }
 
@@ -383,7 +382,7 @@ add_rotator(struct absout *eout, const char *name, const char *accstr,
     return 0;
 
  out_nomem:
-    rv = ENOMEM;
+    rv = GE_NOMEM;
  out_err:
     /* If we fail, the user should free these. */
     rot->portc = 0;

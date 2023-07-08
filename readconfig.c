@@ -34,7 +34,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <limits.h>
-#include <errno.h>
 #include <gensio/gensio.h>
 #include <gensio/argvutils.h>
 
@@ -762,7 +761,7 @@ readconfig(FILE *instream, struct absout *eout)
 
     if (!inbuf) {
 	eout->out(eout, "Unable to allocate input buffer");
-	return ENOMEM;
+	return GE_NOMEM;
     }
 
     lineno = 0;
@@ -779,7 +778,7 @@ readconfig(FILE *instream, struct absout *eout)
 	    new_inbuf = realloc(inbuf, linesize);
 	    if (!new_inbuf) {
 		eout->out(eout, "Unable to reallocate input buffer");
-		rv = ENOMEM;
+		rv = GE_NOMEM;
 		goto out_err;
 	    }
 	    inbuf = new_inbuf;
