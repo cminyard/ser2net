@@ -104,6 +104,10 @@ str_endswith(const char *str, const char *end)
     return false;
 }
 
+#ifndef WIN32
+#include <syslog.h>
+#endif
+
 static int
 stderr_evout(struct absout *e, const char *str, va_list ap)
 {
@@ -129,7 +133,6 @@ stderr_eout(struct absout *e, const char *str, ...)
 
 #ifndef WIN32
 #include <errno.h>
-#include <syslog.h>
 #include <unistd.h>
 
 static int

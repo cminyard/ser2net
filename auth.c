@@ -33,6 +33,7 @@
 #include "ser2net.h"
 
 #if defined(USE_PAM)
+#include <pwd.h>
 #include <security/pam_appl.h>
 #endif
 
