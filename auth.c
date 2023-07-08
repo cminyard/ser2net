@@ -26,7 +26,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <pwd.h>
 #include <dirent.h>
@@ -93,7 +92,7 @@ add_allowed_users(struct gensio_list **users, const char *istr,
     if (str)
 	free(str);
     eout->out(eout, "Out of memory allocating allowed user list");
-    return ENOMEM;
+    return GE_NOMEM;
 }
 
 static bool
@@ -267,15 +266,13 @@ handle_password(struct gensio *net, const char *authdir, const char *password)
 	     authdir, username);
     pwfile = fopen(filename, "r");
     if (!pwfile) {
-	seout.out(&seout, "Can't open password file %s: %s",
-		  filename, strerror(errno));
+	seout.out(&seout, "Can't open password file %s", filename);
 	return GE_AUTHREJECT;
     }
     s = fgets(readpw, sizeof(readpw), pwfile);
     fclose(pwfile);
     if (!s) {
-	seout.out(&seout, "Can't read password file %s: %s",
-		  filename, strerror(errno));
+	seout.out(&seout, "Can't read password file %s", filename);
 	return GE_AUTHREJECT;
     }
     s = strchr(readpw, '\n');
