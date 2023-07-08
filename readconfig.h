@@ -27,17 +27,18 @@
 #define READCONFIG
 #include <stdio.h>
 #include "absout.h"
+#include "fileio.h"
 
 /* Handle one line of configuration. */
-int handle_config_line(char *inbuf, int len, struct absout *eout);
+void handle_config_line(char *inbuf, int len, struct absout *eout);
 
 /* Initialize for a new config read. */
 int readconfig_init(void);
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
-int readconfig(FILE *instream, struct absout *eout);
-int yaml_readconfig(FILE *f, char *filename, char **config_lines,
+int readconfig(ftype *f, struct absout *eout);
+int yaml_readconfig(ftype *f, char *filename, char **config_lines,
 		    unsigned int num_config_lines,
 		    struct absout *errout);
 

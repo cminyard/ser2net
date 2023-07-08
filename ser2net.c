@@ -42,6 +42,7 @@
 #include "controller.h"
 #include "dataxfer.h"
 #include "led.h"
+#include "fileio.h"
 
 static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";
 static bool config_file_set = false;
@@ -184,21 +185,24 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
     syslog(gensio_log_level_to_syslog(i->level), "%s: %s", name, buf);
 }
 
-static FILE *
+static ftype *
 fopen_config_file(bool *is_yaml, char **rfilename)
 {
-    FILE *instream = fopen(config_file, "r");
+    int err;
+    ftype *instream;
 
-    if (!instream) {
+    err = f_open(config_file, DO_READ, 0, &instream);
+    if (err) {
 	if (config_file_set) {
-	    seout.out(&seout, "Unable to open config file '%s': %m",
-		      config_file);
+	    seout.out(&seout, "Unable to open config file '%s': %s",
+		      config_file, gensio_err_to_str(err));
 	    return NULL;
 	}
-	instream = fopen(old_config_file, "r");
-	if (!instream) {
+	err = f_open(old_config_file, DO_READ, 0, &instream);
+	if (err) {
 	    seout.out(&seout, "Unable to open config file '%s' or old one"
-		      " '%s': %m", config_file, old_config_file);
+		      " '%s': %s", config_file, old_config_file,
+		      gensio_err_to_str(err));
 	    return NULL;
 	}
 	*rfilename = old_config_file;
@@ -209,12 +213,20 @@ fopen_config_file(bool *is_yaml, char **rfilename)
     }
 
     if (!*is_yaml) {
-	char in_buf[100];
+	unsigned int len = 0, buflen = 0;
+	char *in_buf = NULL;
 
-	in_buf[0] = '\0';
-	if (fgets(in_buf, sizeof(in_buf) - 1, instream) != NULL)
-	    *is_yaml = strncmp(in_buf, "%YAML", 5) == 0;
-	fseek(instream, 0, SEEK_SET);
+	err = f_gets(instream, &in_buf, &len, &buflen);
+	if (err) {
+	    seout.out(&seout, "Unable to read config file '%s': %s",
+		      *rfilename, gensio_err_to_str(err));
+	    if (in_buf)
+		free(in_buf);
+	    return NULL;
+	}
+	*is_yaml = strncmp(in_buf, "%YAML", 5) == 0;
+	free(in_buf);
+	f_seek(instream, 0, SEEK_ABSOLUTE);
     }
     if (!*is_yaml)
 	fprintf(stderr,
@@ -229,7 +241,7 @@ reread_config_file(const char *reqtype, struct absout *eout)
     int rv = GE_NOTFOUND;
 
     if (config_file) {
-	FILE *instream = NULL;
+	ftype *instream = NULL;
 	char *filename;
 	bool is_yaml;
 
@@ -247,7 +259,7 @@ reread_config_file(const char *reqtype, struct absout *eout)
 				 config_lines, num_config_lines, eout);
 	else
 	    rv = readconfig(instream, eout);
-	fclose(instream);
+	f_close(instream);
 
 	if (!rv)
 	    apply_new_ports(&seout);
@@ -549,7 +561,7 @@ main(int argc, char *argv[])
     int err;
     char *end;
     int print_when_ready = 0;
-    FILE *instream = NULL;
+    ftype *instream = NULL;
     enum { CONFIG_NONE, CONFIG_YAML, CONFIG_OLD } config_type = CONFIG_NONE;
     char *filename;
 
@@ -786,7 +798,12 @@ main(int argc, char *argv[])
 	bool is_yaml;
 
 	if (strcmp(config_file, "-") == 0) {
-	    instream = stdin;
+	    err = f_stdio_open(stdin, DO_READ, 0, &instream);
+	    if (err) {
+		fprintf(stderr, "Unable to create stdin file: %s\n",
+			gensio_err_to_str(err));
+		return 1;
+	    }
 	    is_yaml = true;
 	    filename = "<stdin>";
 	} else {
@@ -824,8 +841,8 @@ main(int argc, char *argv[])
 	    rv = readconfig(instream, &stderr_absout);
 	if (rv)
 	    return 1;
-	if (instream && instream != stdin)
-	    fclose(instream);
+	if (instream)
+	    f_close(instream);
     }
     apply_new_ports(&seout);
 

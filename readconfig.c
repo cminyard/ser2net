@@ -455,7 +455,7 @@ scan_for_state(char *str)
     return NULL;
 }
 
-int
+void
 handle_config_line(char *inbuf, int len, struct absout *eout)
 {
     char *portnum, *state, *timeoutstr, *devname, *devcfg;
@@ -471,9 +471,6 @@ handle_config_line(char *inbuf, int len, struct absout *eout)
     if (inbuf[0] == '#')
 	/* Ignore comments. */
 	goto out;
-
-    if (inbuf[len - 1] == '\\')
-	return len - 1; /* Continued line. */
 
     if (startswith(inbuf, "BANNER", &strtok_data)) {
 	char *name = strtok_r(NULL, ":", &strtok_data);
@@ -731,7 +728,7 @@ handle_config_line(char *inbuf, int len, struct absout *eout)
 
     gensio_argv_free(so, devcfg_argv);
  out:
-    return 0;
+    return;
 }
 
 int
@@ -753,47 +750,37 @@ readconfig_init(void)
 /* Read the specified configuration file and call the routine to
    create the ports. */
 int
-readconfig(FILE *instream, struct absout *eout)
+readconfig(ftype *f, struct absout *eout)
 {
-    int linesize = 256;
-    char *inbuf = malloc(linesize);
-    int  rv = 0, pos = 0;
-
-    if (!inbuf) {
-	eout->out(eout, "Unable to allocate input buffer");
-	return GE_NOMEM;
-    }
+    int rv = 0;
+    unsigned int linesize = 0;
+    char *inbuf = NULL;
+    unsigned int len = 0;
 
     lineno = 0;
 
-    while (fgets(inbuf + pos, linesize - pos, instream) != NULL) {
-	int len = strlen(inbuf);
+    do {
+	rv = f_gets(f, &inbuf, &len, &linesize);
+	if (rv == GE_REMCLOSE) {
+	    rv = 0;
+	    break;
+	}
+	if (rv) {
+	    eout->out(eout, "Unable to read input line: %s",
+		      gensio_err_to_str(rv));
+	    goto out_err;
+	}
 	lineno++;
-	if (len >= (linesize - 1) && inbuf[len - 1] != '\n') {
-	    char *new_inbuf;
 
-	    /* We filled up the buffer.  Expand the line. */
-	    pos = len;
-	    linesize += 256;
-	    new_inbuf = realloc(inbuf, linesize);
-	    if (!new_inbuf) {
-		eout->out(eout, "Unable to reallocate input buffer");
-		rv = GE_NOMEM;
-		goto out_err;
-	    }
-	    inbuf = new_inbuf;
+	/* Handle continued line. */
+	if (len > 0 && inbuf[len - 1] == '\\') {
+	    len--;
 	    continue;
 	}
 
-	/* Remove the '\n' */
-	if (len > 0 && inbuf[len - 1] == '\n') {
-	    inbuf[len - 1] = '\0';
-	    len--;
-	}
-	pos = handle_config_line(inbuf, len, eout);
-    }
-    if (pos > 0)
-	handle_config_line(inbuf, strlen(inbuf), eout);
+	handle_config_line(inbuf, len, eout);
+	len = 0;
+    } while(1);
 
  out_err:
     free(inbuf);

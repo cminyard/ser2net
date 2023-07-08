@@ -28,11 +28,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <yaml.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
 #if defined(HAVE_WORDEXP) && defined(HAVE_WORDEXP_H)
 #define DO_WORDEXP
 #endif
@@ -45,6 +40,7 @@
 #include "dataxfer.h"
 #include "readconfig.h"
 #include "led.h"
+#include "fileio.h"
 
 //#define DEBUG 1
 
@@ -179,7 +175,7 @@ struct yaml_read_file {
     yaml_parser_t parser;
     yaml_event_t e;
     char *filename;
-    FILE *f;
+    ftype *ft;
 
     struct yaml_read_file *prev_f;
 };
@@ -403,8 +399,8 @@ cleanup_yaml_read_file(struct yaml_read_handler_data *d)
     d->f = d->f->prev_f;
     yaml_parser_delete(&old_f->parser);
     if (old_f->closeme) {
-	if (old_f->f)
-	    fclose(old_f->f);
+	if (old_f->ft)
+	    f_close(old_f->ft);
 #ifdef DO_WORDEXP
 	if (old_f->files_set)
 	    wordfree(&old_f->files);
@@ -437,13 +433,15 @@ next_yaml_read_file(struct yaml_read_handler_data *d)
 {
 #ifdef DO_WORDEXP
     struct yaml_read_file *f = d->f;
+    int rv;
 
  retry:
     f->filename = f->files.we_wordv[f->curr_file++];
-    f->f = fopen(f->filename, "r");
-    if (!f->f) {
+    rv = f_open(f->filename, DO_READ, 0, &f->ft);
+    if (rv) {
 	yaml_errout_d_f(d, f->prev_f,
-			"Unable to open file %s, skipping", f->filename);
+			"Unable to open file %s, skipping: %s", f->filename,
+			gensio_err_to_str(rv));
 	if (f->curr_file < f->files.we_wordc)
 	    goto retry;
 	return 1;
@@ -517,13 +515,15 @@ do_include(struct yconf *y, const char *ivalue)
 #endif
 }
 
+#define ALLOC_INC 4096
 static struct yfile *
 lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 {
     struct yfile *f = y->files;
-    int infd, rv;
-    char *name, *value = NULL;
-    struct stat stat;
+    ftype *ft = NULL;
+    int rv;
+    unsigned int buflen = 0, newlen, outlen, readleft;
+    char *name, *value = NULL, *nvalue = NULL;
 
     while (f && f->namelen == len && strncmp(f->name, filename, len) != 0)
 	f = f->next;
@@ -536,37 +536,53 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
 	return NULL;
     }
 
-    infd = open(name, O_RDONLY);
-    if (infd == -1) {
-	yaml_errout(y, "Error opening %s: %s", name, strerror(errno));
+    rv = f_open(name, DO_READ, 0, &ft);
+    if (rv) {
+	yaml_errout(y, "Error opening %s: %s", name, gensio_err_to_str(rv));
 	goto out_err;
     }
 
-    rv = fstat(infd, &stat);
-    if (rv == -1) {
-	yaml_errout(y, "Error stat-ing %s: %s", name, strerror(errno));
-	goto out_err;
-    }
+    do {
+	newlen = buflen + ALLOC_INC;
+	nvalue = realloc(value, newlen);
+	if (!nvalue) {
+	    yaml_errout(y, "Error allocating memory for file %s", name);
+	    rv = GE_NOMEM;
+	    goto out_err;
+	}
+	value = nvalue;
 
-    value = malloc(stat.st_size + 1);
-    if (!value) {
-	yaml_errout(y, "Error allocating memory for file %s", name);
-	goto out_err;
+	readleft = ALLOC_INC;
+	while (readleft > 0) {
+	    rv = f_read(ft, value + buflen, ALLOC_INC, &outlen);
+	    if (rv) {
+		if (rv == GE_REMCLOSE)
+		    break;
+		yaml_errout(y, "Error reading %s: %s", name,
+			    gensio_err_to_str(rv));
+		goto out_err;
+	    }
+	    buflen += outlen;
+	    readleft -= outlen;
+	}
+    } while (1);
+    if (buflen == newlen) {
+	nvalue = realloc(value, buflen + 1);
+	if (!nvalue) {
+	    yaml_errout(y, "Error allocating memory for file %s", name);
+	    rv = GE_NOMEM;
+	    goto out_err;
+	}
+	value = nvalue;
     }
-
-    rv = read(infd, value, stat.st_size);
-    if (rv == -1) {
-	yaml_errout(y, "Error reading %s: %s", name, strerror(errno));
-	goto out_err;
-    }
-    value[stat.st_size] = '\0';
+    value[buflen] = '\0';
 
     f = malloc(sizeof(*f));
     if (!f) {
 	yaml_errout(y, "Error allocating memory for file struct %s", name);
 	goto out_err;
     }
-    close(infd);
+    f_close(ft);
 
     f->name = name;
     f->namelen = strlen(name);
@@ -580,8 +596,8 @@ lookup_filename_len(struct yconf *y, const char *filename, unsigned int len)
     if (value)
 	free(value);
     free(name);
-    if (infd != -1)
-	close(infd);
+    if (ft)
+	f_close(ft);
     return NULL;
 }
 
@@ -1353,26 +1369,31 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 		  size_t *size_read)
 {
     struct yaml_read_handler_data *d = data;
+    unsigned int readlen;
+    int rv;
 
     *size_read = 0;
 
-    if (d->f->f) {
-	*size_read = fread(buffer, 1, size, d->f->f);
-	if (*size_read < size) {
-	    if (ferror(d->f->f)) {
+    if (d->f->ft) {
+	do {
+	    rv = f_read(d->f->ft, buffer, size, &readlen);
+	    if (rv == GE_REMCLOSE) {
+		/*
+		 * End of file handling in the main routine will move to
+		 * the next file as necessary.
+		 */
+		break;
+	    }
+	    if (rv) {
 		yaml_errout(d->y, "Error reading input file: %s",
-			    strerror(errno));
+			    gensio_err_to_str(rv));
 		return 0;
 	    }
-	    /* End of file */
-	    size -= *size_read;
-	    buffer += *size_read;
+	    *size_read += readlen;
+	    size -= readlen;
+	    buffer += readlen;
+	} while(size > 0);
 
-	    /*
-	     * End of file handling in the main routine will move to
-	     * the next file as necessary.
-	     */
-	}
 	return 1;
     }
 
@@ -1412,7 +1433,7 @@ yaml_read_handler(void *data, unsigned char *buffer, size_t size,
 }
 
 int
-yaml_readconfig(FILE *file, char *filename,
+yaml_readconfig(ftype *file, char *filename,
 		char **config_lines, unsigned int num_config_lines,
 		struct absout *errout)
 {
@@ -1427,14 +1448,14 @@ yaml_readconfig(FILE *file, char *filename,
     y.options = malloc(sizeof(char *) * 10);
     if (!y.options) {
 	errout->out(errout, "Out of memory allocating options array");
-	return ENOMEM;
+	return GE_NOMEM;
     }
     y.options_len = 10;
     y.connections = malloc(sizeof(char *) * 10);
     if (!y.connections) {
 	free(y.options);
 	errout->out(errout, "Out of memory allocating connection array");
-	return ENOMEM;
+	return GE_NOMEM;
     }
     y.connections_len = 10;
     y.state = BEGIN_DOC;
@@ -1452,7 +1473,7 @@ yaml_readconfig(FILE *file, char *filename,
 
     memset(&f, 0, sizeof(f));
     f.filename = filename;
-    f.f = file;
+    f.ft = file;
     yaml_parser_initialize(&f.parser);
     yaml_parser_set_input(&f.parser, yaml_read_handler, &d);
 
@@ -1556,7 +1577,7 @@ yaml_readconfig(FILE *file, char *filename,
 	    if (d.f) {
 		done = false;
 		yaml_parser_delete(&d.f->parser);
-		fclose(d.f->f);
+		f_close(d.f->ft);
 		if (next_yaml_read_file(&d))
 		    goto continue_clean;
 	    }

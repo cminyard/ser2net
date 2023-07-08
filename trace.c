@@ -59,7 +59,7 @@ trace_write_end(char *out, int size, const unsigned char *start, int col)
 
 static int
 trace_write(port_info_t *port, trace_info_t *t, const unsigned char *buf,
-	    gensiods buf_len, const char *prefix, int *out_len)
+	    gensiods buf_len, const char *prefix, unsigned int *out_len)
 {
     int rv = 0, w, col = 0, pos;
     ftype *file = t->f;
@@ -110,7 +110,8 @@ void
 do_trace(port_info_t *port, trace_info_t *t, const unsigned char *buf,
 	 gensiods buf_len, const char *prefix)
 {
-    int rv, outlen;
+    int rv;
+    unsigned int outlen;
 
     while (buf_len > 0) {
 	rv = trace_write(port, t, buf, buf_len, prefix, &outlen);
