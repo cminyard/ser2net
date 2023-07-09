@@ -68,9 +68,9 @@ static struct default_data defaults[] = {
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "connback",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
-						DATAROOT "/ser2net/auth" },
+						DATAROOT DIRSEPS "ser2net" DIRSEPS "auth" },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
-						SYSCONFDIR "/ser2net/auth" },
+						SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "auth" },
     { "pamauth",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "pamauth-admin",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "allowed-users",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
@@ -104,11 +104,11 @@ setup_ser2net_defaults(void)
 	    return err;
     }
     err = gensio_set_default(so, "ssl", "key",
-			     SYSCONFDIR "/ser2net/ser2net.key", 0);
+			     SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.key", 0);
     if (err)
 	return err;
     err = gensio_set_default(so, "ssl", "cert",
-			     SYSCONFDIR "/ser2net/ser2net.crt", 0);
+			     SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.crt", 0);
     if (err)
 	return err;
 #ifdef gensio_version_ge /* gensio_version_ge came in with 2.2.3 and 2.3.0 */

@@ -39,9 +39,9 @@
 #include "led.h"
 #include "fileio.h"
 
-static char *config_file = SYSCONFDIR "/ser2net/ser2net.yaml";
+static char *config_file = SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.yaml";
 static bool config_file_set = false;
-static char *old_config_file = SYSCONFDIR "/ser2net.conf";
+static char *old_config_file = SYSCONFDIR DIRSEPS "ser2net.conf";
 bool admin_port_from_cmdline = false;
 char *admin_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
@@ -63,7 +63,7 @@ char *rfc2217_signature = "ser2net";
 
 static char *help_string =
 "%s: Valid parameters are:\n"
-"  -c <config file> - use a config file besides /etc/ser2net/ser2net.yaml\n"
+"  -c <config file> - use a config file besides %s\n"
 "  -C <config line> - Handle a single configuration line.  This may be\n"
 "     specified multiple times for multiple lines.  This is just like a\n"
 "     line in the config file.  This disables the default config file,\n"
@@ -392,7 +392,7 @@ scan_int(const char *str)
 static void
 arg_error(char *name)
 {
-    fprintf(stderr, help_string, name);
+    fprintf(stderr, help_string, name, config_file);
 }
 
 static int

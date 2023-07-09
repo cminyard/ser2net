@@ -212,3 +212,21 @@ in this case) is available via mdns.  So you can just do::
 and gtlssh will look up the mdns name, the port, if telnet is enabled,
 etc. and make the connection.  This only works on a local network,
 though, if you are bridged it won't work.
+
+===============
+Windows Support
+===============
+
+You can build ser2net for windows.  You need a gensio built for Windows, of
+course, and that's supported.  It should just build under MINGW64.  Beyond
+gensio, you will also need mingw-w64-x86_64-libyaml installed.
+
+You will need to set --sysconfdir for where "/etc" is, and --datarootdir
+for where "/usr/share" is on your system.  And you need to use '\' of course.
+One thing that's really annoying is that you must use 8 '\' characters for
+every '\' in the final string because of all the quoting it goes through.  So
+to set it to C:\etc and C:\usr\share, you would do::
+
+  ../configure '--sysconfdir=C:\\\\\\\\etc' '--datarootdir=C:\\\\\\\\usr\\\\\\\\share'
+
+Other than that, everything pretty much works the same.

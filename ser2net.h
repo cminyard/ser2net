@@ -85,4 +85,12 @@ extern struct absout seout;
 
 void do_gensio_log(const char *name, struct gensio_loginfo *i);
 
+#ifdef _WIN32
+#define DIRSEP '\\'
+#define DIRSEPS "\\"
+#else
+#define DIRSEP '/'
+#define DIRSEPS "/"
+#endif
+
 #endif /* SER2NET_H */
