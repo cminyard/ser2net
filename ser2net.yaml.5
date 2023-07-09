@@ -360,23 +360,30 @@ characters, or at least 1000us, before sending.  This allows more
 efficient use of network resources when receiving large amounts of
 data, but gives reasonable interactivity.  Default is true.
 
+Note that this feature is designed to balance network efficiency and
+interactivity.  It is not designed to give guarantees of minimum chunk
+of data size, as task scheduling and network stacks can modify these
+things, too.
+
 .I chardelay-scale: <number>
-sets the number of serial port characters, in tenths of a character,
-to wait after receiving from the connection gensio and sending to the
+sets the time, measured in tenths of serial port characters, to wait
+after receiving from nothing from the connection before sending to the
 accepted gensio.  So setting this to 25 will cause ser2net to wait the
-amount of time it takes to receive 2.5 serial port characters before
-sending the data on to the TCP port.  The default value is 20.
+amount of time it takes to receive 2.5 serial port characters after
+receiving the last character before sending the data on to the TCP
+port.  The default value is 20, max is 1000.  This is ignored for
+non-serial gensios.
 
 .I chardelay-min: <number>
-sets the minimum delay that ser2net will wait, in microseconds.  If
-the calculation for chardelay-scale results in a value smaller than
-this number, this number will be used instead.  The default value
-is 1000.
+is the same as chardelay-scale, but in microseconds.  The larger of
+chardelay-scale and chardelay-min is used.  The default value is 1000,
+max is 100000.
 
 .I chardelay-max: <number>
-sets the maximum delay that ser2net will wait, in microseconds, before
-sending the data.  The default value is 20000.  This keeps the connection
-working smoothly at slow speeds.
+sets the maximum delay that ser2net will wait, in microseconds, after
+receiving a character, before sending the data.  The default value is
+20000, max is 1000000.  This keeps the connection working smoothly at
+slow speeds.
 
 .I sendon: <sendon string>
 If the given string is seen coming from the connector side of the
