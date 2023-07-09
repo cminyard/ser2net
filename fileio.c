@@ -159,6 +159,10 @@ f_write(ftype *f, const void *buf, unsigned int len, unsigned int *outlen)
 	rv = fwrite(buf, 1, len, f->f);
 	if (rv == 0)
 	    return gensio_os_err_to_err(so, errno);
+	/*
+	 * This is primarily used for tracing, so flush on every write.
+	 */
+	fflush(f->f);
     }
     if (outlen)
 	*outlen = rv;
