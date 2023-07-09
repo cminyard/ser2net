@@ -23,6 +23,7 @@
  *  release a modified version which carries forward this exception.
  */
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
