@@ -78,21 +78,18 @@ AC_CHECK_LIB(nsl,main)
 AC_CHECK_HEADERS([wordexp.h])
 AC_CHECK_FUNCS(wordexp)
 
-PKG_CHECK_MODULES(GENSIO, libgensio, [LIBS="$LIBS $GENSIO_LIBS"],
-   [AC_CHECK_HEADER(gensio/gensio.h, [],
+AC_CHECK_HEADER(gensio/gensio.h, [],
       [AC_MSG_ERROR([gensio.h not found, please install gensio dev package])])
-   AC_CHECK_LIB(gensio, str_to_gensio, [],
-      [AC_MSG_ERROR([libgensio won't link, please install gensio dev package])])])
+AC_CHECK_LIB(gensio, str_to_gensio, [],
+      [AC_MSG_ERROR([libgensio won't link, please install gensio dev package])])
 
 AC_CHECK_LIB(gensio, gensio_list_add_tail, [],
-   [PKG_CHECK_MODULES(GENSIOOSH, libgensioosh, [LIBS="$LIBS $GENSIOOSH_LIBS"],
-      [AC_CHECK_LIB(gensioosh, gensio_list_add_tail, [],
-         [AC_MSG_ERROR([libgensioosh won't link, please install gensio dev package])])])])
+   [AC_CHECK_LIB(gensioosh, gensio_list_add_tail, [],
+         [AC_MSG_ERROR([libgensioosh won't link, please install gensio dev package])])])
 
 AC_CHECK_LIB(gensio, gensio_alloc_mdns, [],
-   [PKG_CHECK_MODULES(GENSIOMDNS, libgensiomdns, [LIBS="$LIBS $GENSIOMDNS_LIBS"],
-      [AC_CHECK_LIB(gensiomdns, gensio_alloc_mdns, [],
-         [AC_MSG_ERROR([libgensiomdns won't link, please install gensio dev package])])])])
+   [AC_CHECK_LIB(gensiomdns, gensio_alloc_mdns, [],
+         [AC_MSG_ERROR([libgensiomdns won't link, please install gensio dev package])])])
 
 AC_CHECK_HEADER(yaml.h, [],
    [AC_MSG_ERROR([yaml.h not found, please install libyaml dev package])])
