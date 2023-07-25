@@ -352,7 +352,7 @@ process_str(port_info_t *port, net_info_t *netcon, brkout_time *tb,
 	    case 'U':
 	    {
 		char d[10], *dp;
-		snprintf(d, sizeof(d), "%6.6ld", bt_usec(tb));
+		snprintf(d, sizeof(d), "%6.6ld", (long) bt_usec(tb));
 		for (dp = d; *dp; dp++)
 		    op(data, *dp);
 		break;
