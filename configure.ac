@@ -1,4 +1,4 @@
-AC_INIT([ser2net],[4.3.13],[minyard@acm.org])
+AC_INIT([ser2net],[4.4.0],[minyard@acm.org])
 AM_INIT_AUTOMAKE([-Wall])
 AC_PROG_CC
 AM_PROG_AR
@@ -7,25 +7,9 @@ LT_INIT
 use_pthreads=yes
 use_pthreads_set=false
 AC_ARG_WITH(pthreads,
-[  --with-pthreads=yes|no      Use pthreads or not.],
-    use_pthreads_set=true
-    if test "x$withval" = "xyes"; then
-      use_pthreads=yes
-    elif test "x$withval" = "xno"; then
-      use_pthreads=no
-    fi,
+[  --with-pthreads=yes|no      Argument is ignore.],
+    AC_MSG_WARN([--with-pthreads is no longer used])
 )
-
-if test "x$use_pthreads" != "xno"; then
-   AX_PTHREAD(
-      [LIBS="$LIBS $PTHREAD_LIBS"
-       CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
-       CC="$PTHREAD_CC"
-       AC_DEFINE([USE_PTHREADS], [], [Enable multithreaded support])],
-      [if $use_pthreads_set; then
-          AC_MSG_FAILURE([--with-pthreads was given, but no working pthread library was found])
-       fi])
-fi
 
 use_pam=check
 AC_ARG_WITH(pam,
