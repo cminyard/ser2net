@@ -591,6 +591,9 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	rv = port_add_connback(eout, port, val);
 	if (rv)
 	    return -1;
+    } else if (gensio_check_keyuint(pos, "connback-timeout",
+				    &port->connback_timeout) > 0) {
+	port->connback_timeout_set = true;
     } else if (check_keyvalue_default(pos, "banner", &val, "") > 0) {
 	fval = strdup(val);
 	if (!fval) {

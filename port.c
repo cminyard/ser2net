@@ -110,7 +110,11 @@ net_raddr(struct gensio *io, struct sockaddr_storage *addr, gensiods *socklen)
 void
 reset_timer(net_info_t *netcon)
 {
-    netcon->timeout_left = netcon->port->timeout;
+    if (netcon->connect_back && netcon->port->connback_timeout_set)
+	netcon->timeout_left = netcon->port->connback_timeout;
+    else
+	netcon->timeout_left = netcon->port->timeout;
+    netcon->timeout_running = netcon->timeout_left != 0;
 }
 
 void
@@ -837,9 +841,13 @@ port_timeout(struct gensio_timer *timer, void *data)
 	goto out;
     }
 
-    if (port->timeout && port_in_use(port)) {
+    /*
+     * Check the timeout on all the ports.  If we have a separate
+     * timeout for connect backs, we need to check that separately.
+     */
+    if (port_in_use(port)) {
 	for_each_connection(port, netcon) {
-	    if (!netcon->net || netcon->connect_back)
+	    if (!netcon->net || !netcon->timeout_running)
 		continue;
 	    netcon->timeout_left--;
 	    if (netcon->timeout_left < 0)

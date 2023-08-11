@@ -93,6 +93,8 @@ struct net_info {
 					   seconds) before the timeout
 					   goes off. */
 
+    bool timeout_running;		/* Do we use the timer? */
+
     /*
      * Close the session when all the output has been written to the
      * network port.
@@ -213,6 +215,8 @@ struct port_info
     struct port_remaddr *remaddrs;	/* Remote addresses allowed. */
     struct port_remaddr *connbacks;	/* Connect back addresses */
     unsigned int num_waiting_connect_backs;
+    unsigned int connback_timeout;
+    bool connback_timeout_set;
 
     unsigned int max_connections;	/* Maximum number of connections
 					   we can accept at a time for this
