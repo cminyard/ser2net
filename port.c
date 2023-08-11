@@ -839,7 +839,7 @@ port_timeout(struct gensio_timer *timer, void *data)
 
     if (port->timeout && port_in_use(port)) {
 	for_each_connection(port, netcon) {
-	    if (!netcon->net)
+	    if (!netcon->net || netcon->connect_back)
 		continue;
 	    netcon->timeout_left--;
 	    if (netcon->timeout_left < 0)
