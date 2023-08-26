@@ -858,6 +858,36 @@ main(int argc, char *argv[])
 	    config_file_set = true;
 	    break;
 
+	case 'C':
+	    i++;
+	    if (i == argc) {
+		fprintf(stderr, "No config dir specified with -c\n");
+		arg_error(argv[0]);
+		return 1;
+	    }
+	    confdir = argv[i];
+	    break;
+
+	case 'a':
+	    i++;
+	    if (i == argc) {
+		fprintf(stderr, "No auth dir specified with -a\n");
+		arg_error(argv[0]);
+		return 1;
+	    }
+	    authdir = argv[i];
+	    break;
+
+	case 'A':
+	    i++;
+	    if (i == argc) {
+		fprintf(stderr, "No admin auth dir specified with -A\n");
+		arg_error(argv[0]);
+		return 1;
+	    }
+	    admin_authdir = argv[i];
+	    break;
+
 	case 'p':
 	    /* Get the control port. */
 	    i++;

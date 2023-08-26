@@ -24,12 +24,33 @@ or serial port, the connection is refused with an error message.
 .TP
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
-.BR "/etc/ser2net/ser2net.yaml".
+.BR "sysconfdir/ser2net/ser2net.yaml".
 If the
 .B config-file
 is
 .B "-"
-then standard input is read as the config file.
+then standard input is read as the config file.  See \-C for info on
+sysconfdir
+.TP
+.I "\-C sysconfdir"
+Set the directory where the configuration file and ssl keys are
+stored.  This is generally /etc/ser2net on Unix-type systems, on
+Windows it is ../etc/ser2net from the executable's location by
+default.
+.TP
+.I "\-a authdir"
+Set the default directory where authentication information is stored.
+This is generally /usr/share/ser2net on Unix-type systems, on Windows
+it is ../share/ser2net from the executable's location by default.
+This can be overridden in the config file.  See the ser2net.yaml.5 for
+info on what this does.
+.TP
+.I "\-A admin-authdir"
+Set the default directory where the administrator's authentication
+information is stores.  This is
+.BR "sysconfdir/auth"
+by default.  This can be overridden in the config file.  See the
+ser2net.yaml.5 for info on what this does.
 .TP
 .I "\-Y yaml-config-string"
 Add a yaml config string to the end of strings to be processed.  This
@@ -39,7 +60,7 @@ specified, the default config file is disabled and you have to enable
 it with the -c option.
 
 To make things easier to handle, any # in the config string that is
-not inside quote (what would normally start a comment in yaml) is
+not inside quotes (what would normally start a comment in yaml) is
 converted to a new line.  Plus a new line is added after each
 separate config string.  So, for instance:
 
