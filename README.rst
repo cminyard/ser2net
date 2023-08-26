@@ -227,13 +227,13 @@ a file relative to the executable's dectory, ../etc/ser2net and
 
 For installation, use the following configuration::
 
-  ../configure --sbindir=/Gensio/bin --libexecdir=/Gensio/bin --mandir=/Gensio/man \
-      --includedir=/Gensio/include --prefix=/Gensio \
+  ../configure --sbindir=/Ser2Net/bin --libexecdir=/Ser2Net/bin --mandir=/Ser2Net/man \
+      --includedir=/Ser2Net/include --prefix=/Ser2Net \
       CPPFLAGS=-I$HOME/install/Gensio/include LDFLAGS=-L$HOME/install/Gensio/lib
 
 Where gensio is already installed there, and then do::
 
   make install DESTDIR=$HOME/install
 
-You can then use the Inno Setup Compiler to compile gensio and ser2net
-into an executable using the gensio+ser2net.iss file.
+You can then use the Inno Setup Compiler to compile ser2net into an
+executable installer using the ser2net.iss file.
