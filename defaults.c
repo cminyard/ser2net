@@ -103,12 +103,10 @@ setup_ser2net_defaults(void)
 	if (err)
 	    return err;
     }
-    err = gensio_set_default(so, "ssl", "key",
-			     SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.key", 0);
+    err = gensio_set_default(so, "ssl", "key", S2N_KEYFILE, 0);
     if (err)
 	return err;
-    err = gensio_set_default(so, "ssl", "cert",
-			     SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.crt", 0);
+    err = gensio_set_default(so, "ssl", "cert", S2N_CERTFILE, 0);
     if (err)
 	return err;
 #ifdef gensio_version_ge /* gensio_version_ge came in with 2.2.3 and 2.3.0 */
