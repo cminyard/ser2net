@@ -221,12 +221,19 @@ You can build ser2net for windows.  You need a gensio built for Windows, of
 course, and that's supported.  It should just build under MINGW64.  Beyond
 gensio, you will also need mingw-w64-x86_64-libyaml installed.
 
-You will need to set --sysconfdir for where "/etc" is, and --datarootdir
-for where "/usr/share" is on your system.  And you need to use '\' of course.
-One thing that's really annoying is that you must use 8 '\' characters for
-every '\' in the final string because of all the quoting it goes through.  So
-to set it to C:\etc and C:\usr\share, you would do::
+The sysconfdir and datarootdir do not work on Windows, instead it uses
+a file relative to the executable's dectory, ../etc/ser2net and
+../share/ser2net. Other than that, everything pretty much works the same.
 
-  ../configure '--sysconfdir=C:\\\\\\\\etc' '--datarootdir=C:\\\\\\\\usr\\\\\\\\share'
+For installation, use the following configuration::
 
-Other than that, everything pretty much works the same.
+  ../configure --sbindir=/Gensio/bin --libexecdir=/Gensio/bin --mandir=/Gensio/man \
+      --includedir=/Gensio/include --prefix=/Gensio \
+      CPPFLAGS=-I$HOME/install/Gensio/include LDFLAGS=-L$HOME/install/Gensio/lib
+
+Where gensio is already installed there, and then do::
+
+  make install DESTDIR=$HOME/install
+
+You can then use the Inno Setup Compiler to compile gensio and ser2net
+into an executable using the gensio+ser2net.iss file.
