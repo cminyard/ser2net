@@ -55,6 +55,7 @@ char *keyfile;
 char *certfile;
 
 static char *config_file;
+bool config_file_set;
 
 static char *
 alloc_vsprintf(const char *fmt, va_list va)
@@ -198,7 +199,7 @@ setup_paths(void)
 	    goto out_err;
 	}
     }
-    if (!config_file) {
+    if (!config_file && !config_file_set) {
 	config_file = alloc_sprintf("%s%sser2net.yaml", confdir, DIRSEPS);
 	if (!config_file) {
 	    fprintf(stderr, "Unable to allocate config file name\n");
@@ -839,7 +840,10 @@ main(int argc, char *argv[])
 		return 1;
 	    }
 	    config_lines[num_config_lines - 1] = argv[i];
-	    config_file = NULL;
+	    if (!config_file_set) {
+		config_file = NULL;
+		config_file_set = true;
+	    }
 	    break;
 
 	case 'c':
@@ -851,6 +855,7 @@ main(int argc, char *argv[])
 		return 1;
 	    }
 	    config_file = argv[i];
+	    config_file_set = true;
 	    break;
 
 	case 'p':
