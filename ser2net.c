@@ -39,7 +39,6 @@
 #include "led.h"
 #include "fileio.h"
 
-static char *config_file = S2N_CONFDIR DIRSEPS "ser2net.yaml";
 bool admin_port_from_cmdline = false;
 char *admin_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
@@ -48,6 +47,169 @@ int ser2net_debug = 0;
 int ser2net_debug_level = 0;
 volatile int in_shutdown = 0;
 static unsigned int num_threads = 1;
+
+char *confdir;
+char *authdir;
+char *admin_authdir;
+char *keyfile;
+char *certfile;
+
+static char *config_file;
+
+static char *
+alloc_vsprintf(const char *fmt, va_list va)
+{
+    va_list va2;
+    int len;
+    char c[1], *str;
+
+    va_copy(va2, va);
+    len = vsnprintf(c, 0, fmt, va);
+    str = malloc(len + 1);
+    if (str)
+        vsnprintf(str, len + 1, fmt, va2);
+    va_end(va2);
+    return str;
+}
+
+static char *
+alloc_sprintf(const char *fmt, ...)
+{
+    va_list va;
+    char *s;
+
+    va_start(va, fmt);
+    s = alloc_vsprintf(fmt, va);
+    va_end(va);
+    return s;
+}
+
+#ifdef _WIN32
+#include <windows.h>
+
+static int
+drop_last_diritem(char *dir)
+{
+    char *s, *s2;
+
+    s = strrchr(dir, '/');
+    s2 = strrchr(dir, '\\');
+    if (!s && !s2)
+	return 0;
+    if (s && s2) {
+	if (s < s2)
+	    s = s2;
+	} else if (s2) {
+	s = s2;
+    }
+    *s = '\0';
+    return 1;
+}
+
+static char *
+get_basedir(void)
+{
+    char dir[256];
+    DWORD rv;
+
+    rv = GetModuleFileNameA(NULL, dir, sizeof(dir));
+    if (rv == 0)
+	return NULL;
+    if (!drop_last_diritem(dir))
+	return NULL;
+    if (!drop_last_diritem(dir))
+	return NULL;
+    return strdup(dir);
+}
+
+static int
+setup_paths_base(void)
+{
+    char *basedir = get_basedir();
+
+    if (!basedir) {
+	fprintf(stderr, "Unable to allocate base dir\n");
+	return 1;
+    }
+    if (!confdir) {
+	confdir = alloc_sprintf("%s%setc%sser2net", basedir, DIRSEPS, DIRSEPS);
+	if (!confdir) {
+	    fprintf(stderr, "Unable to allocate confdir\n");
+	    goto out_err;
+	}
+    }
+    if (!authdir) {
+	authdir = alloc_sprintf("%s%share%sser2net", basedir, DIRSEPS, DIRSEPS);
+	if (!confdir) {
+	    fprintf(stderr, "Unable to allocate authdir\n");
+	    goto out_err;
+	}
+    }
+    free(basedir);
+    return 0;
+
+ out_err:
+    free(basedir);
+    return 1;
+}
+
+#else
+static int
+setup_paths_base(void)
+{
+    if (!confdir)
+	confdir = SYSCONFDIR;
+    if (!authdir) {
+	authdir = alloc_sprintf("%s%sshare%sser2net",
+				DATAROOT, DIRSEPS, DIRSEPS);
+	if (!authdir) {
+	    fprintf(stderr, "Unable to allocate authdir\n");
+	    return 1;
+	}
+    }
+    return 0;
+}
+#endif
+
+static int
+setup_paths(void)
+{
+    if (setup_paths_base())
+	return 1;
+
+    if (!admin_authdir) {
+	admin_authdir = alloc_sprintf("%s%sauth", confdir, DIRSEPS);
+	if (!admin_authdir) {
+	    fprintf(stderr, "Unable to allocate admin authdir\n");
+	    goto out_err;
+	}
+    }
+    if (!keyfile) {
+	keyfile = alloc_sprintf("%s%sser2net.key", confdir, DIRSEPS);
+	if (!keyfile) {
+	    fprintf(stderr, "Unable to allocate keyfile\n");
+	    goto out_err;
+	}
+    }
+    if (!certfile) {
+	certfile = alloc_sprintf("%s%sser2net.crt", confdir, DIRSEPS);
+	if (!certfile) {
+	    fprintf(stderr, "Unable to allocate certfile\n");
+	    goto out_err;
+	}
+    }
+    if (!config_file) {
+	config_file = alloc_sprintf("%s%sser2net.yaml", confdir, DIRSEPS);
+	if (!config_file) {
+	    fprintf(stderr, "Unable to allocate config file name\n");
+	    goto out_err;
+	}
+    }
+    return 0;
+
+ out_err:
+    return 1;
+}
 
 struct s2n_threadinfo {
     struct gensio_thread *gthread;
@@ -341,11 +503,16 @@ scan_int(const char *str)
 static void
 arg_error(char *name)
 {
+    if (setup_paths())
+	return;
     fprintf(stderr, help_string, name, config_file);
     printf("\n");
-    printf("  config dir: " S2N_CONFDIR "\n");
-    printf("  user auth dir: " S2N_AUTHDIR "\n");
-    printf("  admin auth dir: " S2N_ADMIN_AUTHDIR "\n");
+    printf("  config file: %s\n", config_file);
+    printf("  config dir: %s\n", confdir);
+    printf("  user auth dir: %s\n", authdir);
+    printf("  admin auth dir: %s\n", admin_authdir);
+    printf("  keyfile: %s\n", keyfile);
+    printf("  certfile: %s\n", certfile);
 }
 
 static int
@@ -751,6 +918,9 @@ main(int argc, char *argv[])
 	    return 1;
 	}
     }
+
+    if (setup_paths())
+	return 1;
 
     err = gensio_default_os_hnd(SIGUSR1, &so);
     if (err) {

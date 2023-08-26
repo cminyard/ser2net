@@ -101,16 +101,16 @@ setup_ser2net_defaults(void)
 	if (err)
 	    return err;
     }
-    err = gensio_set_default(so, NULL, "authdir", S2N_AUTHDIR, 0);
+    err = gensio_set_default(so, NULL, "authdir", authdir, 0);
     if (err)
       return err;
-    err = gensio_set_default(so, NULL, "authdir-admin", S2N_ADMIN_AUTHDIR, 0);
+    err = gensio_set_default(so, NULL, "authdir-admin", admin_authdir, 0);
     if (err)
       return err;
-    err = gensio_set_default(so, "ssl", "key", S2N_KEYFILE, 0);
+    err = gensio_set_default(so, "ssl", "key", keyfile, 0);
     if (err)
 	return err;
-    err = gensio_set_default(so, "ssl", "cert", S2N_CERTFILE, 0);
+    err = gensio_set_default(so, "ssl", "cert", certfile, 0);
     if (err)
 	return err;
 #ifdef gensio_version_ge /* gensio_version_ge came in with 2.2.3 and 2.3.0 */
