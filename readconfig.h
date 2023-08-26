@@ -29,40 +29,13 @@
 #include "absout.h"
 #include "fileio.h"
 
-/* Handle one line of configuration. */
-void handle_config_line(char *inbuf, int len, struct absout *eout);
-
 /* Initialize for a new config read. */
 int readconfig_init(void);
 
 /* Read the specified configuration file and call the routine to
    create the ports. */
-int readconfig(ftype *f, struct absout *eout);
 int yaml_readconfig(ftype *f, char *filename, char **config_lines,
 		    unsigned int num_config_lines,
 		    struct absout *errout);
-
-/*
- * Search for a banner/open/close string by name.  Note that the
- * returned value needs to be free-ed when done.
- */
-enum str_type { BANNER, OPENSTR, CLOSESTR, SIGNATURE, CLOSEON, DEVNAME };
-char *find_str(const char *name, enum str_type *type, unsigned int *len);
-
-/*
- * Clean up longstrings.
- */
-void free_longstrs(void);
-void free_tracefiles(void);
-void free_rs485confs(void);
-
-/*
- * Search for a tracefile by name.  Note that the
- * returned value needs to be free-ed when done.
- */
-char *find_tracefile(const char *name, struct absout *eout);
-
-/* Search for RS485 configuration by name. */
-char *find_rs485conf(const char *name, struct absout *eout);
 
 #endif /* READCONFIG */

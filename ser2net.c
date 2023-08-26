@@ -40,8 +40,6 @@
 #include "fileio.h"
 
 static char *config_file = S2N_CONFDIR DIRSEPS "ser2net.yaml";
-static bool config_file_set = false;
-static char *old_config_file = SYSCONFDIR DIRSEPS "ser2net.conf";
 bool admin_port_from_cmdline = false;
 char *admin_port = NULL; /* Can be set from readconfig, too. */
 static char *pid_file = NULL;
@@ -90,19 +88,6 @@ static char *help_string =
 
 static char **config_lines;
 static unsigned int num_config_lines;
-
-static bool
-str_endswith(const char *str, const char *end)
-{
-    unsigned int slen = strlen(str);
-    unsigned int elen = strlen(end);
-
-    if (elen > slen)
-	return false;
-    if (strcmp(end, str + slen - elen) == 0)
-	return true;
-    return false;
-}
 
 #ifndef WIN32
 #include <syslog.h>
@@ -232,52 +217,20 @@ static struct absout stderr_absout = {
 };
 
 static ftype *
-fopen_config_file(bool *is_yaml, char **rfilename, struct absout *eout)
+fopen_config_file(char **rfilename, struct absout *eout)
 {
     int err;
     ftype *instream;
 
     err = f_open(config_file, DO_READ, 0, &instream);
     if (err) {
-	if (config_file_set) {
-	    eout->out(eout, "Unable to open config file '%s': %s",
-		      config_file, gensio_err_to_str(err));
-	    return NULL;
-	}
-	err = f_open(old_config_file, DO_READ, 0, &instream);
-	if (err) {
-	    eout->out(eout, "Unable to open config file '%s' or old one"
-		      " '%s': %s", config_file, old_config_file,
-		      gensio_err_to_str(err));
-	    return NULL;
-	}
-	*rfilename = old_config_file;
-	*is_yaml = false;
+	eout->out(eout, "Unable to open config file '%s': %s",
+		  config_file, gensio_err_to_str(err));
+	return NULL;
     } else {
 	*rfilename = config_file;
-	*is_yaml = str_endswith(config_file, ".yaml");
     }
 
-    if (!*is_yaml) {
-	unsigned int len = 0, buflen = 0;
-	char *in_buf = NULL;
-
-	err = f_gets(instream, &in_buf, &len, &buflen);
-	if (err) {
-	    eout->out(eout, "Unable to read config file '%s': %s",
-		      *rfilename, gensio_err_to_str(err));
-	    if (in_buf)
-		free(in_buf);
-	    return NULL;
-	}
-	*is_yaml = strncmp(in_buf, "%YAML", 5) == 0;
-	free(in_buf);
-	f_seek(instream, 0, SEEK_ABSOLUTE);
-    }
-    if (!*is_yaml)
-	eout->out(eout,
-	  "ser2net:WARNING: Using old config file format, this will go away\n"
-	  "soon.  Please switch to the yaml-based format.");
     return instream;
 }
 
@@ -289,22 +242,18 @@ reread_config_file(const char *reqtype, struct absout *eout)
     if (config_file) {
 	ftype *instream = NULL;
 	char *filename;
-	bool is_yaml;
 
 	seout.out(&seout, "Got %s, re-reading configuration", reqtype);
 	readconfig_init();
 
-	instream = fopen_config_file(&is_yaml, &filename, &seout);
+	instream = fopen_config_file(&filename, &seout);
 	if (!instream)
 	    goto out;
 
 	if (!admin_port_from_cmdline)
 	    controller_shutdown();
-	if (is_yaml)
-	    rv = yaml_readconfig(instream, filename,
-				 config_lines, num_config_lines, eout);
-	else
-	    rv = readconfig(instream, eout);
+	rv = yaml_readconfig(instream, filename,
+			     config_lines, num_config_lines, eout);
 	f_close(instream);
 
 	if (!rv)
@@ -656,11 +605,10 @@ int
 main(int argc, char *argv[])
 {
     unsigned int i;
-    int err;
+    int err, rv;
     char *end;
     int print_when_ready = 0;
     ftype *instream = NULL;
-    enum { CONFIG_NONE, CONFIG_YAML, CONFIG_OLD } config_type = CONFIG_NONE;
     char *filename;
 
     gensio_set_progname("ser2net");
@@ -707,23 +655,7 @@ main(int argc, char *argv[])
 	case 'b':
 	    break;
 
-	case 'C':
 	case 'Y':
-	    if (argv[i][1] == 'C') {
-		if (config_type == CONFIG_YAML) {
-		mixed_config_lines:
-		    fprintf(stderr,
-			    "You cannot mix yaml and old config lines.\n");
-		    arg_error(argv[0]);
-		    return 1;
-		}
-		config_type = CONFIG_OLD;
-	    } else {
-		if (config_type == CONFIG_OLD)
-		    goto mixed_config_lines;
-		config_type = CONFIG_YAML;
-	    }
-
 	    /* Get a config line. */
 	    i++;
 	    if (i == argc) {
@@ -741,7 +673,6 @@ main(int argc, char *argv[])
 	    }
 	    config_lines[num_config_lines - 1] = argv[i];
 	    config_file = NULL;
-	    config_file_set = true;
 	    break;
 
 	case 'c':
@@ -753,7 +684,6 @@ main(int argc, char *argv[])
 		return 1;
 	    }
 	    config_file = argv[i];
-	    config_file_set = true;
 	    break;
 
 	case 'p':
@@ -885,14 +815,7 @@ main(int argc, char *argv[])
     if (admin_port)
 	controller_init(admin_port, NULL, NULL, &stderr_absout);
 
-    if (config_type == CONFIG_OLD) {
-	for (i = 0; i < num_config_lines; i++)
-	    handle_config_line(config_lines[i], strlen(config_lines[i]),
-			       &stderr_absout);
-    }
     if (config_file) {
-	bool is_yaml;
-
 	if (strcmp(config_file, "-") == 0) {
 	    err = f_stdio_open(stdin, DO_READ, 0, &instream);
 	    if (err) {
@@ -900,46 +823,24 @@ main(int argc, char *argv[])
 			gensio_err_to_str(err));
 		return 1;
 	    }
-	    is_yaml = true;
 	    filename = "<stdin>";
 	} else {
-	    instream = fopen_config_file(&is_yaml, &filename, &stderr_absout);
+	    instream = fopen_config_file(&filename, &stderr_absout);
 	    if (!instream)
 		return 1;
-	}
-	if (is_yaml) {
-	    if (config_type == CONFIG_OLD) {
-		fprintf(stderr, "You cannot mix old style config lines "
-			"and a yaml config file.\n");
-		return 1;
-	    }
-	    config_type = CONFIG_YAML;
-	} else {
-	    if (config_type == CONFIG_YAML) {
-		fprintf(stderr, "You cannot mix yaml config lines "
-			"and an old style config file.\n");
-		return 1;
-	    }
-	    config_type = CONFIG_OLD;
 	}
     } else {
 	filename = "<cmdline>";
     }
 
-    if (config_type == CONFIG_YAML || instream)	{
-	int rv;
+    rv = yaml_readconfig(instream, filename,
+			 config_lines, num_config_lines,
+			 &stderr_absout);
+    if (rv)
+	return 1;
+    if (instream)
+	f_close(instream);
 
-	if (config_type == CONFIG_YAML)
-	    rv = yaml_readconfig(instream, filename,
-				 config_lines, num_config_lines,
-				 &stderr_absout);
-	else
-	    rv = readconfig(instream, &stderr_absout);
-	if (rv)
-	    return 1;
-	if (instream)
-	    f_close(instream);
-    }
     apply_new_ports(&seout);
 
     do_detach();
@@ -973,10 +874,6 @@ main(int argc, char *argv[])
     }
 
     shutdown_dataxfer();
-
-    free_longstrs();
-    free_tracefiles();
-    free_rs485confs();
 
     cleanup_pidfile();
 

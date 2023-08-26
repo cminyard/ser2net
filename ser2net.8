@@ -25,24 +25,11 @@ or serial port, the connection is refused with an error message.
 .I "\-c config\-file"
 Set the configuration file to one other than the default of
 .BR "/etc/ser2net/ser2net.yaml".
-If the filename does not end in
-".yaml" or the first line in the file does not begin with "%YAML", the
-configuration file is parsed as an old-style configuration file, which
-should work but is no longer supported.  If the
+If the
 .B config-file
 is
 .B "-"
-then standard input is read as the config file.  This only supports yaml.
-.TP
-.I "\-C config-line"
-Handle a single configuration line.  This may be
-specified multiple times for multiple lines.  This is just like a
-line in the old style config file.  This disables the default config file,
-you must specify a -c after the last -C to have it read a config
-file, too.
-
-Note that this is the old-style configuration lines and is likely
-to go away when old style configuration is removed.
+then standard input is read as the config file.
 .TP
 .I "\-Y yaml-config-string"
 Add a yaml config string to the end of strings to be processed.  This
@@ -263,10 +250,7 @@ Configuration is accomplished through the file
 .BR /etc/ser2net/ser2net.yaml .
 A file with another name or path may be specified using the
 .I \-c
-option.  If the file ends in .yaml, it will be processed with the
-new yaml parser.  If it ends in anything else, it will use the
-old configuration file format, no longer supported or documented.
-The old style configuration will go away at some point.
+option.
 
 The yaml configuration file is described in ser2net.yaml(5)
 

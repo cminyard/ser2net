@@ -395,42 +395,6 @@ strdupcat(char **str, const char *cat)
     return 0;
 }
 
-static const char *serialdev_parms[] = {
-    "XONXOFF", NULL,
-    "-XONXOFF", "xonxoff=false",
-    "RTSCTS", NULL,
-    "-RTSCTS", "rtscts=false",
-    "LOCAL", NULL,
-    "-LOCAL", "local=false",
-    "HANGUP_WHEN_DONE", "hangup-when-done",
-    "-HANGUP_WHEN_DONE", "hangup-when-done=false",
-    "NOBREAK", NULL,
-    "-NOBREAK", "nobreak=false",
-    "NONE", NULL,
-    "EVEN", NULL,
-    "ODD", NULL,
-    "MARK", NULL,
-    "SPACE", NULL,
-    NULL
-};
-
-static bool
-matchstr(const char *parms[], const char *c, const char **newval)
-{
-    unsigned int i;
-
-    for (i = 0; parms[i]; i += 2) {
-	if (strcmp(parms[i], c) == 0) {
-	    if (parms[i + 1])
-		*newval = parms[i + 1];
-	    else
-		*newval = parms[i];
-	    return true;
-	}
-    }
-    return false;
-}
-
 static int
 check_keyvalue_default(const char *str, const char *name, const char **value,
 		       const char *def)
@@ -461,25 +425,12 @@ update_str_val(const char *str, char **outstr, const char *name,
 static int
 myconfig(port_info_t *port, struct absout *eout, const char *pos)
 {
-    enum str_type stype;
-    char *s, *fval;
-    const char *val, *newval = pos;
-    unsigned int len;
+    char *fval;
+    const char *val;
     int rv;
 
-    /*
-     * This is a hack for backwards compatibility, if we see a config
-     * item meant for the device, we stick it onto the device name.
-     */
-    if (isdigit(pos[0]) || matchstr(serialdev_parms, pos, &newval)) {
-	int err = strdupcat(&port->devname, newval);
-
-	if (err) {
-	    eout->out(eout, "Out of memory appending to devname");
-	    return -1;
-	}
-    } else if (gensio_check_keybool(pos, "kickolduser",
-				    &port->kickolduser_mode) > 0) {
+    if (gensio_check_keybool(pos, "kickolduser",
+			     &port->kickolduser_mode) > 0) {
     } else if (gensio_check_keybool(pos, "trace-hexdump",
 				    &port->trace_read.hexdump) > 0) {
 	port->trace_write.hexdump = port->trace_read.hexdump;
@@ -659,66 +610,7 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 #ifdef DO_MDNS
     } else if (mdns_checkoption(pos, &port->mdns_info, port->name, eout) > 0) {
 #endif /* DO_MDNS */
-
-    /* Everything from here down to the banner, etc is deprecated. */
-    } else if (strcmp(pos, "remctl") == 0) {
-	port->allow_2217 = true;
-    } else if (strcmp(pos, "-remctl") == 0) {
-	port->allow_2217 = false;
-    } else if (strcmp(pos, "-kickolduser") == 0) {
-        port->kickolduser_mode = 0;
-    } else if (strcmp(pos, "-hexdump") == 0) {
-	port->trace_read.hexdump = false;
-	port->trace_write.hexdump = false;
-	port->trace_both.hexdump = false;
-    } else if (strcmp(pos, "-timestamp") == 0) {
-	port->trace_read.timestamp = false;
-	port->trace_write.timestamp = false;
-	port->trace_both.timestamp = false;
-    } else if (strcmp(pos, "-tr-hexdump") == 0) {
-	port->trace_read.hexdump = false;
-    } else if (strcmp(pos, "-tr-timestamp") == 0) {
-	port->trace_read.timestamp = false;
-    } else if (strcmp(pos, "-tw-hexdump") == 0) {
-	port->trace_write.hexdump = false;
-    } else if (strcmp(pos, "-tw-timestamp") == 0) {
-	port->trace_write.timestamp = false;
-    } else if (strcmp(pos, "-tb-hexdump") == 0) {
-	port->trace_both.hexdump = false;
-    } else if (strcmp(pos, "-tb-timestamp") == 0) {
-	port->trace_both.timestamp = false;
-    } else if (gensio_check_keyvalue(pos, "tr", &val) > 0) {
-	/* trace read, data from the port to the socket */
-	port->trace_read.filename = find_tracefile(val, eout);
-    } else if (gensio_check_keyvalue(pos, "tw", &val) > 0) {
-	/* trace write, data from the socket to the port */
-	port->trace_write.filename = find_tracefile(val, eout);
-    } else if (gensio_check_keyvalue(pos, "tb", &val) > 0) {
-	/* trace both directions. */
-	port->trace_both.filename = find_tracefile(val, eout);
-    } else if (gensio_check_keyvalue(pos, "rs485", &val) > 0) {
-	port->rs485 = find_rs485conf(val, eout);
-    } else if (strcmp(pos, "telnet_brk_on_sync") == 0) {
-	port->telnet_brk_on_sync = 1;
-    } else if (strcmp(pos, "-telnet_brk_on_sync") == 0) {
-	port->telnet_brk_on_sync = 0;
-    } else if (strcmp(pos, "-chardelay") == 0) {
-	port->enable_chardelay = false;
-
-    /* Banner and friend handling. */
-    } else if ((s = find_str(pos, &stype, &len))) {
-	/* It's a startup banner, signature or open/close string, it's
-	   already set. */
-	switch (stype) {
-	case BANNER: port->bannerstr = s; break;
-	case SIGNATURE: port->signaturestr = s; break;
-	case OPENSTR: port->openstr = s; break;
-	case CLOSESTR: port->closestr = s; break;
-	case CLOSEON: port->closeon = s; port->closeon_len = len; break;
-	default: free(s); goto unknown;
-	}
     } else {
-    unknown:
 	eout->out(eout, "Unknown config item: %s", pos);
 	return -1;
     }
@@ -812,7 +704,6 @@ portconfig(struct absout *eout,
 {
     port_info_t *new_port, *curr;
     net_info_t *netcon;
-    enum str_type str_type;
     int err;
     bool write_only = false;
     unsigned int i;
@@ -844,21 +735,7 @@ portconfig(struct absout *eout,
 	goto errout;
     }
 
-    new_port->devname = find_str(devname, &str_type, NULL);
-    if (new_port->devname) {
-	if (str_type != DEVNAME) {
-	    free(new_port->devname);
-	    new_port->devname = NULL;
-	} else {
-	    new_port->orig_devname = strdup(devname);
-	    if (!new_port->orig_devname) {
-		eout->out(eout, "unable to allocate original device name");
-		goto errout;
-	    }
-	}
-    }
-    if (!new_port->devname)
-	new_port->devname = strdup(devname);
+    new_port->devname = strdup(devname);
     if (!new_port->devname) {
 	eout->out(eout, "unable to allocate device name");
 	goto errout;
