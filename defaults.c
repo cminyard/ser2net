@@ -68,9 +68,9 @@ static struct default_data defaults[] = {
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "connback",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
-						DATAROOT DIRSEPS "ser2net" DIRSEPS "auth" },
+						S2N_AUTHDIR },
     { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
-						SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "auth" },
+						S2N_ADMIN_AUTHDIR },
     { "pamauth",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "pamauth-admin",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "allowed-users",	GENSIO_DEFAULT_STR,	.def.strval = NULL },

@@ -93,4 +93,8 @@ void do_gensio_log(const char *name, struct gensio_loginfo *i);
 #define DIRSEPS "/"
 #endif
 
+#define S2N_CONFDIR SYSCONFDIR DIRSEPS "ser2net"
+#define S2N_AUTHDIR DATAROOT DIRSEPS "ser2net" DIRSEPS "auth"
+#define S2N_ADMIN_AUTHDIR SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "auth"
+
 #endif /* SER2NET_H */

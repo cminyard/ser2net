@@ -39,7 +39,7 @@
 #include "led.h"
 #include "fileio.h"
 
-static char *config_file = SYSCONFDIR DIRSEPS "ser2net" DIRSEPS "ser2net.yaml";
+static char *config_file = S2N_CONFDIR DIRSEPS "ser2net.yaml";
 static bool config_file_set = false;
 static char *old_config_file = SYSCONFDIR DIRSEPS "ser2net.conf";
 bool admin_port_from_cmdline = false;
@@ -393,6 +393,10 @@ static void
 arg_error(char *name)
 {
     fprintf(stderr, help_string, name, config_file);
+    printf("\n");
+    printf("  config dir: " S2N_CONFDIR "\n");
+    printf("  user auth dir: " S2N_AUTHDIR "\n");
+    printf("  admin auth dir: " S2N_ADMIN_AUTHDIR "\n");
 }
 
 static int
