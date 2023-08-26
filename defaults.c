@@ -67,10 +67,8 @@ static struct default_data defaults[] = {
 					.def.intval = 10 },
     { "remaddr",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "connback",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
-    { "authdir",	GENSIO_DEFAULT_STR,	.def.strval =
-						S2N_AUTHDIR },
-    { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval =
-						S2N_ADMIN_AUTHDIR },
+    { "authdir",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
+    { "authdir-admin",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "pamauth",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "pamauth-admin",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
     { "allowed-users",	GENSIO_DEFAULT_STR,	.def.strval = NULL },
@@ -103,6 +101,12 @@ setup_ser2net_defaults(void)
 	if (err)
 	    return err;
     }
+    err = gensio_set_default(so, NULL, "authdir", S2N_AUTHDIR, 0);
+    if (err)
+      return err;
+    err = gensio_set_default(so, NULL, "authdir-admin", S2N_ADMIN_AUTHDIR, 0);
+    if (err)
+      return err;
     err = gensio_set_default(so, "ssl", "key", S2N_KEYFILE, 0);
     if (err)
 	return err;
