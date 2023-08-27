@@ -25,7 +25,7 @@ AllowNoIcons=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir=C:\msys64\home\cminyard\install
+OutputDir=C:\msys64\home\cminyard
 OutputBaseFilename=Ser2Net
 Compression=lzma
 SolidCompression=yes
