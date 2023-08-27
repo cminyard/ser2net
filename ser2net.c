@@ -158,10 +158,16 @@ setup_paths_base(void)
 static int
 setup_paths_base(void)
 {
-    if (!confdir)
-	confdir = SYSCONFDIR;
+    if (!confdir) {
+	confdir = alloc_sprintf("%s%sser2net",
+				SYSCONFDIR, DIRSEPS);
+	if (!confdir) {
+	    fprintf(stderr, "Unable to allocate authdir\n");
+	    return 1;
+	}
+    }
     if (!authdir) {
-	authdir = alloc_sprintf("%s%sshare%sser2net",
+	authdir = alloc_sprintf("%s%sser2net%sauth",
 				DATAROOT, DIRSEPS, DIRSEPS);
 	if (!authdir) {
 	    fprintf(stderr, "Unable to allocate authdir\n");
