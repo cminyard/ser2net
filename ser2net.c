@@ -140,7 +140,7 @@ setup_paths_base(void)
 	}
     }
     if (!authdir) {
-	authdir = alloc_sprintf("%s%share%sser2net", basedir, DIRSEPS, DIRSEPS);
+	authdir = alloc_sprintf("%s%sshare%sser2net%sauth", basedir, DIRSEPS, DIRSEPS, DIRSEPS);
 	if (!confdir) {
 	    fprintf(stderr, "Unable to allocate authdir\n");
 	    goto out_err;
@@ -359,7 +359,7 @@ do_gensio_log(const char *name, struct gensio_loginfo *i)
     char buf[256];
 
     vsnprintf(buf, sizeof(buf), i->str, i->args);
-    fprintf(stderr, "%s: %s: %s", gensio_log_level_to_str(i->level), name, buf);
+    fprintf(stderr, "%s: %s: %s\n", gensio_log_level_to_str(i->level), name, buf);
 }
 
 static void
@@ -369,7 +369,7 @@ ser2net_gensio_logger(struct gensio_os_funcs *o, enum gensio_log_levels level,
     char buf[256];
 
     vsnprintf(buf, sizeof(buf), log, args);
-    fprintf(stderr, "%s: %s", gensio_log_level_to_str(level), buf);
+    fprintf(stderr, "%s: %s\n", gensio_log_level_to_str(level), buf);
 }
 
 #endif
