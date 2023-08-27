@@ -231,8 +231,8 @@ handle_precert(struct gensio *net, const char *authdir)
 	}
     }
 
-    snprintf(filename, sizeof(filename), "%s/%s/allowed_certs/",
-	     authdir, s);
+    snprintf(filename, sizeof(filename), "%s%c%s%callowed_certs%c",
+	     authdir, DIRSEP, s, DIRSEP, DIRSEP);
     err = gensio_control(net, 0, false, GENSIO_CONTROL_CERT_AUTH,
 			 filename, &len);
     if (err && err != GE_CERTNOTFOUND) {
