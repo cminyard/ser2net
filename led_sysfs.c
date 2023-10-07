@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -49,6 +50,7 @@ struct led_sysfs_s
     char *device;
     int state;
     int duration;
+    int max_brightness;
 };
 
 static int
@@ -95,7 +97,7 @@ led_write(const char *led, const char *property, const char *buf, int lineno,
     if ((fd = open(filename, O_WRONLY | O_TRUNC)) == -1) {
 	if (lineno)
 	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
-	eout->out(eout, "Unable to open to LED %s%s: %s", linestr, led,
+	eout->out(eout, "Unable to open LED %s%s: %s", linestr, led,
 		  strerror(errno));
 	return -1;
     }
@@ -110,6 +112,73 @@ led_write(const char *led, const char *property, const char *buf, int lineno,
     }
 
     close(fd);
+    return 0;
+}
+
+static int
+led_read(const char *led, const char *property, char *buf, unsigned int buflen,
+	 int *len, int lineno, struct absout *eout)
+{
+    char filename[255];
+    int fd;
+    char linestr[100] = "";
+    ssize_t rlen;
+
+    snprintf(filename, sizeof(filename), "%s/%s/%s",
+	     SYSFS_LED_BASE, led, property);
+
+    if ((fd = open(filename, O_RDONLY)) == -1) {
+	if (lineno)
+	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
+	eout->out(eout, "Unable to open LED for read %s%s: %s", linestr, led,
+		  strerror(errno));
+	return -1;
+    }
+
+    rlen = read(fd, buf, buflen);
+    if (rlen < 0) {
+	if (lineno)
+	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
+	eout->out(eout, "Unable to read from LED %s%s: %s", linestr, led,
+		  strerror(errno));
+	close(fd);
+	return -1;
+    }
+    *len = rlen;
+
+    close(fd);
+    return 0;
+}
+
+static int
+led_read_num(const char *led, const char *property, int *val,
+	 int lineno, struct absout *eout)
+{
+    char buf[100], *end;
+    char linestr[100] = "";
+    int len;
+    int rv, rval;
+
+    rv = led_read(led, property, buf, sizeof(buf) - 1, &len, lineno, eout);
+    if (rv)
+	return rv;
+
+    /* Kill trailing spaces and terminate. */
+    while(len >= 0 && isspace(buf[--len]))
+	;
+    buf[++len] = '\0';
+
+    rval = strtol(buf, &end, 0);
+    if (!buf[0] || *end != '\0') {
+	if (lineno)
+	    snprintf(linestr, sizeof(linestr), "on line %d ", lineno);
+	eout->out(eout, "Invalid number from LED value %s%s: %s", linestr, led,
+		  buf);
+	return 1;
+    }
+
+    *val = rval;
+
     return 0;
 }
 
@@ -184,13 +253,23 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno,
     if (drv_data->duration == 0)
 	drv_data->duration = 10;
 
+    if (led_read_num(drv_data->device, "max_brightness",
+		     &drv_data->max_brightness, lineno, eout)) {
+	eout->out(eout,
+	       "LED '%s': Unable to read max_brightness using 1 on line %d.",
+	       led->name, lineno);
+	drv_data->max_brightness = 1;
+    }
 
     if (drv_data->state == -1)
 	drv_data->state = 1;
-    if (drv_data->state < 0 || drv_data->state > 1) {
+    if (drv_data->state < 0 || drv_data->state > drv_data->max_brightness) {
 	eout->out(eout,
-	       "LED '%s': invalid state, using default on line %d.",
-	       led->name, lineno);
+		  "LED '%s': invalid state on line %d: %d."
+		  "  min is %d, max is %d."
+		  "  Defaulting to 1.",
+		  led->name, lineno, drv_data->state, 0,
+		  drv_data->max_brightness);
 	drv_data->state = 1;
     }
 
