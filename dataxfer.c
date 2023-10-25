@@ -1008,12 +1008,20 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 	s2n_break(netcon);
 	return 0;
 
+#ifdef GENSIO_EVENT_SER_MODEMSTATE_MASK
+    case GENSIO_EVENT_SER_MODEMSTATE_MASK:
+#else
     case GENSIO_EVENT_SER_MODEMSTATE:
+#endif
 	s2n_modemstate(netcon, gensio_to_sergensio(net),
 		       *((unsigned int *) buf));
 	return 0;
 
+#ifdef GENSIO_EVENT_SER_LINESTATE_MASK
+    case GENSIO_EVENT_SER_LINESTATE_MASK:
+#else
     case GENSIO_EVENT_SER_LINESTATE:
+#endif
 	s2n_linestate(netcon, gensio_to_sergensio(net),
 		      *((unsigned int *) buf));
 	return 0;

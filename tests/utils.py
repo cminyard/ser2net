@@ -100,6 +100,7 @@ class HandleData:
         self.to_compare = None
         self.to_waitfor = None
         self.expecting_modemstate = False
+        self.expecting_modemstate_mask = False
         self.expecting_linestate = False
         self.expected_server_cb = None
         self.expected_server_value = 0
@@ -308,6 +309,25 @@ class HandleData:
     def set_expected_modemstate(self, modemstate):
         self.expecting_modemstate = True
         self.expected_modemstate = modemstate
+        return
+
+    def modemstate_mask(self, io, modemstate):
+        if (not self.expecting_modemstate_mask):
+            if (debug or self.debug):
+                print("Got unexpected modemstate_mask for %s: %x" %
+                      (self.name, modemstate))
+            return
+        if (modemstate != self.expected_modemstate_mask):
+            raise HandlerException("%s: Expecting modemstate_mask 0x%x, got 0x%x" %
+                                   (self.name, self.expected_modemstate_mask,
+                                    modemstate))
+        self.expecting_modemstate_mask = False
+        self.waiter.wake()
+        return
+
+    def set_expected_modemstate_mask(self, modemstate):
+        self.expecting_modemstate_mask = True
+        self.expected_modemstate_mask = modemstate
         return
 
     def linestate(self, io, linestate):
