@@ -361,6 +361,9 @@ handle_dev_write_ready(port_info_t *port)
     so->unlock(port->lock);
 }
 
+static void handle_ser_modemstate(port_info_t *port, net_info_t *netcon);
+static void handle_ser_linestate(port_info_t *port, net_info_t *netcon);
+
 int
 handle_dev_event(struct gensio *io, void *user_data, int event, int err,
 		 unsigned char *buf, gensiods *buflen,
@@ -390,46 +393,16 @@ handle_dev_event(struct gensio *io, void *user_data, int event, int err,
     case GENSIO_EVENT_SER_MODEMSTATE:
 	so->lock(port->lock);
 	port->last_modemstate = *((unsigned int *) buf);
-	for_each_connection(port, netcon) {
-	    struct sergensio *sio;
-
-	    if (!netcon->net)
-		continue;
-	    sio = gensio_to_sergensio(netcon->net);
-	    if (!sio)
-		continue;
-
-	    /*
-	     * The 0xf below is non-standard, but the spec makes no
-	     * sense in this case.  From what I can tell, the
-	     * modemstate top 4 bits is the settings, and the bottom 4
-	     * bits is telling you what changed.  So you don't want to
-	     * report a value unless something changed, and only if it
-	     * was in the modemstate mask.
-	     */
-	    if (port->last_modemstate & netcon->modemstate_mask & 0xf)
-		sergensio_modemstate(sio, (port->last_modemstate &
-					   netcon->modemstate_mask));
-	}
+	for_each_connection(port, netcon)
+	    handle_ser_modemstate(port, netcon);
 	so->unlock(port->lock);
 	return 0;
 
     case GENSIO_EVENT_SER_LINESTATE:
 	so->lock(port->lock);
 	port->last_linestate = *((unsigned int *) buf);
-	for_each_connection(port, netcon) {
-	    struct sergensio *sio;
-
-	    if (!netcon->net)
-		continue;
-	    sio = gensio_to_sergensio(netcon->net);
-	    if (!sio)
-		continue;
-
-	    if (port->last_linestate & netcon->linestate_mask)
-		sergensio_linestate(sio, (port->last_linestate &
-					  netcon->linestate_mask));
-	}
+	for_each_connection(port, netcon)
+	    handle_ser_linestate(port, netcon);
 	so->unlock(port->lock);
 	return 0;
 
@@ -736,6 +709,46 @@ enum s2n_ser_ops {
 };
 
 static void
+handle_ser_modemstate(port_info_t *port, net_info_t *netcon)
+{
+    struct sergensio *sio;
+
+    if (!netcon->net)
+	return;
+    sio = gensio_to_sergensio(netcon->net);
+    if (!sio)
+	return;
+
+    /*
+     * The 0xf below is non-standard, but the spec makes no
+     * sense in this case.  From what I can tell, the
+     * modemstate top 4 bits is the settings, and the bottom 4
+     * bits is telling you what changed.  So you don't want to
+     * report a value unless something changed, and only if it
+     * was in the modemstate mask.
+     */
+    if (port->last_modemstate & netcon->modemstate_mask & 0xf)
+	sergensio_modemstate(sio, (port->last_modemstate &
+				   netcon->modemstate_mask));
+}
+
+static void
+handle_ser_linestate(port_info_t *port, net_info_t *netcon)
+{
+    struct sergensio *sio;
+
+    if (!netcon->net)
+	return;
+    sio = gensio_to_sergensio(netcon->net);
+    if (!sio)
+	return;
+
+    if (port->last_linestate & netcon->linestate_mask)
+	sergensio_linestate(sio, (port->last_linestate &
+				  netcon->linestate_mask));
+}
+
+static void
 sergensio_val_set(struct sergensio *sio, int err,
 		  unsigned int val, void *cb_data)
 {
@@ -802,9 +815,9 @@ sergensio_val_set(struct sergensio *sio, int err,
 }
 
 static void
-s2n_modemstate(net_info_t *netcon, struct sergensio *sio,
-	       unsigned int modemstate)
+s2n_modemstate(net_info_t *netcon, struct gensio *io,unsigned int modemstate)
 {
+    struct sergensio *sio = gensio_to_sergensio(io);
     port_info_t *port = netcon->port;
 
     if (!sio)
@@ -814,8 +827,9 @@ s2n_modemstate(net_info_t *netcon, struct sergensio *sio,
 }
 
 static void
-s2n_linestate(net_info_t *netcon, struct sergensio *sio, unsigned int linestate)
+s2n_linestate(net_info_t *netcon, struct gensio *io, unsigned int linestate)
 {
+    struct sergensio *sio = gensio_to_sergensio(io);
     port_info_t *port = netcon->port;
 
     if (!sio)
@@ -945,9 +959,10 @@ s2n_rts(net_info_t *netcon, int rts)
 }
 
 static void
-s2n_signature(net_info_t *netcon, struct sergensio *sio, char *sig,
+s2n_signature(net_info_t *netcon, struct gensio *io, char *sig,
 	      unsigned int sig_len)
 {
+    struct sergensio *sio = gensio_to_sergensio(io);
     port_info_t *port = netcon->port;
 
     if (!sio)
@@ -1013,8 +1028,7 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 #else
     case GENSIO_EVENT_SER_MODEMSTATE:
 #endif
-	s2n_modemstate(netcon, gensio_to_sergensio(net),
-		       *((unsigned int *) buf));
+	s2n_modemstate(netcon, net, *((unsigned int *) buf));
 	return 0;
 
 #ifdef GENSIO_EVENT_SER_LINESTATE_MASK
@@ -1022,12 +1036,11 @@ handle_net_event(struct gensio *net, void *user_data, int event, int err,
 #else
     case GENSIO_EVENT_SER_LINESTATE:
 #endif
-	s2n_linestate(netcon, gensio_to_sergensio(net),
-		      *((unsigned int *) buf));
+	s2n_linestate(netcon, net, *((unsigned int *) buf));
 	return 0;
 
     case GENSIO_EVENT_SER_SIGNATURE:
-	s2n_signature(netcon, gensio_to_sergensio(net), (char *) buf, len);
+	s2n_signature(netcon, net, (char *) buf, len);
 	return 0;
 
     case GENSIO_EVENT_SER_FLOW_STATE:
