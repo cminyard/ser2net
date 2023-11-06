@@ -7,7 +7,6 @@ import utils
 from serialsim import *
 
 # This is the termios ser2net sets up when it opens a serial port.
-# Same for sergensio_termios gensio.
 base_termios = [ 0, 0, 0, 0, 0, 0,
                  [ '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
                    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',

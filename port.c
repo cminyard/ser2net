@@ -32,7 +32,6 @@
 #include "gbuf.h"
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
-#include <gensio/sergensio.h>
 
 struct gensio_lock *ports_lock;
 port_info_t *ports = NULL; /* Linked list of ports. */

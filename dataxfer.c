@@ -33,7 +33,9 @@
 #include <stdint.h>
 
 #include <gensio/gensio.h>
+#ifndef GENSIO_EVENT_SER_MODEMSTATE
 #include <gensio/sergensio.h>
+#endif
 
 #include "port.h"
 #include "ser2net.h"
@@ -708,6 +710,390 @@ enum s2n_ser_ops {
     S2N_RTS
 };
 
+#ifdef GENSIO_ACONTROL_SER_BAUD
+static void
+handle_ser_modemstate(port_info_t *port, net_info_t *netcon)
+{
+    if (!netcon->net)
+	return;
+    /*
+     * The 0xf below is non-standard, but the spec makes no
+     * sense in this case.  From what I can tell, the
+     * modemstate top 4 bits is the settings, and the bottom 4
+     * bits is telling you what changed.  So you don't want to
+     * report a value unless something changed, and only if it
+     * was in the modemstate mask.
+     */
+    if (port->last_modemstate & netcon->modemstate_mask & 0xf) {
+	char s[20];
+	gensiods len = snprintf(s, sizeof(s), "%d", (port->last_modemstate &
+						     netcon->modemstate_mask));
+
+	gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		       GENSIO_CONTROL_SET,
+		       GENSIO_CONTROL_SER_MODEMSTATE, s, &len);
+    }
+}
+
+static void
+handle_ser_linestate(port_info_t *port, net_info_t *netcon)
+{
+    if (!netcon->net)
+	return;
+
+    if (port->last_linestate & netcon->linestate_mask) {
+	char s[20];
+	gensiods len = snprintf(s, sizeof(s), "%d", (port->last_linestate &
+						     netcon->linestate_mask));
+
+	gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		       GENSIO_CONTROL_SET,
+		       GENSIO_CONTROL_SER_LINESTATE, s, &len);
+    }
+}
+
+static void
+ser_control_set(struct gensio *io, int err,
+		const char *val, gensiods len, void *cb_data)
+{
+    port_info_t *port = gensio_get_user_data(io);
+    enum s2n_ser_ops op = (intptr_t) cb_data;
+    net_info_t *netcon;
+
+    so->lock(port->lock);
+    for_each_connection(port, netcon) {
+	struct gensio *io = netcon->net;
+
+	if (!io)
+	    continue;
+
+	switch (op) {
+	case S2N_BAUD:
+	    port->bps = strtol(val, NULL, 0);
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_BAUD, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_DATASIZE:
+	    port->bpc = strtol(val, NULL, 0);
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_DATASIZE, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_PARITY:
+	    if (strcmp(val, "none") == 0)
+		port->paritybits = 0;
+	    else
+		port->paritybits = 1;
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_PARITY, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_STOPBITS:
+	    port->stopbits = strtol(val, NULL, 0);
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_STOPBITS, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_FLOWCONTROL:
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_FLOWCONTROL, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_IFLOWCONTROL:
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_IFLOWCONTROL, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_BREAK:
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_SBREAK, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_DTR:
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_DTR, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+
+	case S2N_RTS:
+	    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			    GENSIO_CONTROL_SET,
+			    GENSIO_ACONTROL_SER_RTS, val, strlen(val),
+			    NULL, NULL, NULL);
+	    break;
+	}
+    }
+    so->unlock(port->lock);
+}
+
+static void
+s2n_modemstate(net_info_t *netcon, struct gensio *io, unsigned int modemstate)
+{
+    port_info_t *port = netcon->port;
+    char s[20];
+    gensiods len;
+
+    netcon->modemstate_mask = modemstate;
+    len = snprintf(s, sizeof(s), "%d",
+		   port->last_modemstate & netcon->modemstate_mask);
+    gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_MODEMSTATE, s, &len);
+}
+
+static void
+s2n_linestate(net_info_t *netcon, struct gensio *io, unsigned int linestate)
+{
+    port_info_t *port = netcon->port;
+    char s[20];
+    gensiods len;
+
+    netcon->linestate_mask = linestate;
+    len = snprintf(s, sizeof(s), "%d",
+		   port->last_linestate & netcon->linestate_mask);
+    gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_LINESTATE, s, &len);
+}
+
+static void
+s2n_flowcontrol_state(net_info_t *netcon, bool val)
+{
+    char s[20];
+    gensiods len;
+
+    len = snprintf(s, sizeof(s), "%d", val);
+    gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_FLOWCONTROL_STATE, s, &len);
+}
+
+static void
+s2n_flush(net_info_t *netcon, int val)
+{
+    char s[20];
+    gensiods len;
+
+    strncpy(s, gensio_onoff_to_str(val), sizeof(s) - 1);
+    len = strlen(s);
+
+    if (netcon->port->io)
+	gensio_control(netcon->port->io, GENSIO_CONTROL_DEPTH_FIRST,
+		       GENSIO_CONTROL_SET,
+		       GENSIO_CONTROL_SER_FLUSH, s, &len);
+
+    if (netcon->net)
+	gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		       GENSIO_CONTROL_SET,
+		       GENSIO_CONTROL_SER_FLUSH, s, &len);
+}
+
+static void
+s2n_baud(net_info_t *netcon, int baud)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%d", baud);
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_BAUD, s, len, ser_control_set,
+		    (void *) (long) S2N_BAUD, NULL);
+}
+
+static void
+s2n_datasize(net_info_t *netcon, int datasize)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%d", datasize);
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_DATASIZE, s, len, ser_control_set,
+		    (void *) (long) S2N_DATASIZE, NULL);
+}
+
+static void
+s2n_parity(net_info_t *netcon, int parity)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%s", gensio_parity_to_str(parity));
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_PARITY, s, len, ser_control_set,
+		    (void *) (long) S2N_PARITY, NULL);
+}
+
+static void
+s2n_stopbits(net_info_t *netcon, int stopbits)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%d", stopbits);
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_STOPBITS, s, len, ser_control_set,
+		    (void *) (long) S2N_STOPBITS, NULL);
+}
+
+static void
+s2n_flowcontrol(net_info_t *netcon, int flowcontrol)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    printf("A: %d\n", flowcontrol);
+    len = snprintf(s, sizeof(s), "%s", gensio_flowcontrol_to_str(flowcontrol));
+    printf("B: %ld %s\n", len, s);
+    int rv = gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_FLOWCONTROL, s, len, ser_control_set,
+		    (void *) (long) S2N_FLOWCONTROL, NULL);
+    printf("C: %d\n", rv);
+}
+
+static void
+s2n_iflowcontrol(net_info_t *netcon, int iflowcontrol)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%s", gensio_flowcontrol_to_str(iflowcontrol));
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_IFLOWCONTROL, s, len, ser_control_set,
+		    (void *) (long) S2N_IFLOWCONTROL, NULL);
+}
+
+static void
+s2n_sbreak(net_info_t *netcon, int breakv)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%s", gensio_onoff_to_str(breakv));
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_SBREAK, s, len, ser_control_set,
+		    (void *) (long) S2N_BREAK, NULL);
+}
+
+static void
+s2n_dtr(net_info_t *netcon, int dtr)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%s", gensio_onoff_to_str(dtr));
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_DTR, s, len, ser_control_set,
+		    (void *) (long) S2N_DTR, NULL);
+}
+
+static void
+s2n_rts(net_info_t *netcon, int rts)
+{
+    struct gensio *io = netcon->port->io;
+    char s[20];
+    gensiods len;
+
+    if (!io)
+	return;
+    len = snprintf(s, sizeof(s), "%s", gensio_onoff_to_str(rts));
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_RTS, s, len, ser_control_set,
+		    (void *) (long) S2N_RTS, NULL);
+}
+
+static void
+s2n_signature(net_info_t *netcon, struct gensio *io, char *sig,
+	      unsigned int sig_len)
+{
+    if (!io)
+	return;
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_SIGNATURE,
+		    sig, sig_len, NULL, NULL, NULL);
+}
+
+static void
+s2n_sync(net_info_t *netcon)
+{
+    struct gensio *io = netcon->port->io;
+    port_info_t *port = netcon->port;
+
+    if (!io)
+	return;
+    if (port->telnet_brk_on_sync)
+	gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+			GENSIO_CONTROL_SET,
+			GENSIO_CONTROL_SER_SEND_BREAK, "", 0,
+			NULL, NULL, NULL);
+}
+
+static void
+s2n_break(net_info_t *netcon)
+{
+    struct gensio *io = netcon->port->io;
+
+    if (!io)
+	return;
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_CONTROL_SER_SEND_BREAK, "", 0,
+		    NULL, NULL, NULL);
+}
+
+#else
+#include <gensio/sergensio.h>
+
 static void
 handle_ser_modemstate(port_info_t *port, net_info_t *netcon)
 {
@@ -815,7 +1201,7 @@ sergensio_val_set(struct sergensio *sio, int err,
 }
 
 static void
-s2n_modemstate(net_info_t *netcon, struct gensio *io,unsigned int modemstate)
+s2n_modemstate(net_info_t *netcon, struct gensio *io, unsigned int modemstate)
 {
     struct sergensio *sio = gensio_to_sergensio(io);
     port_info_t *port = netcon->port;
@@ -996,6 +1382,7 @@ s2n_break(net_info_t *netcon)
 	return;
     sergensio_send_break(rsio);
 }
+#endif
 
 static int
 handle_net_event(struct gensio *net, void *user_data, int event, int err,

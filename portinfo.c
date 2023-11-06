@@ -26,7 +26,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <gensio/gensio.h>
+#ifndef GENSIO_ACONTROL_SER_RTS
 #include <gensio/sergensio.h>
+#endif
 #include "ser2net.h"
 #include "dataxfer.h"
 #include "port.h"
@@ -377,12 +379,33 @@ setportcontrol(struct controller_info *cntlr, const char *portspec,
 	controller_outputf(cntlr, "error",
 			   "Port is not currently connected - %s", portspec);
     } else {
-	struct sergensio *sio = gensio_to_sergensio(port->io);
+	struct gensio *io = port->io;
 
-	if (!sio)
+	if (!io)
 	    goto out_unlock;
 
 	for (i = 0; controls[i]; i++) {
+#ifdef GENSIO_ACONTROL_SER_RTS
+	    if (strcmp(controls[i], "RTSHI") == 0)
+		gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_RTS,
+				"on", 2, NULL, NULL, NULL);
+	    else if (strcmp(controls[i], "RTSLO") == 0)
+		gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_RTS,
+				"off", 3, NULL, NULL, NULL);
+	    else if (strcmp(controls[i], "DTRHI") == 0)
+		gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_DTR,
+				"on", 2, NULL, NULL, NULL);
+	    else if (strcmp(controls[i], "DTRLO") == 0)
+		gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_SET, GENSIO_ACONTROL_SER_DTR,
+				"off", 3, NULL, NULL, NULL);
+#else
+	    struct sergensio *sio = gensio_to_sergensio(io);
+	    if (!sio)
+		goto out_unlock;
 	    if (strcmp(controls[i], "RTSHI") == 0)
 		sergensio_rts(sio, SERGENSIO_RTS_ON, NULL, NULL);
 	    else if (strcmp(controls[i], "RTSLO") == 0)
@@ -391,6 +414,7 @@ setportcontrol(struct controller_info *cntlr, const char *portspec,
 		sergensio_dtr(sio, SERGENSIO_DTR_ON, NULL, NULL);
 	    else if (strcmp(controls[i], "DTRLO") == 0)
 		sergensio_dtr(sio, SERGENSIO_DTR_OFF, NULL, NULL);
+#endif
 	    else
 		controller_outputf(cntlr, "error",
 				   "Invalid device control - %s", controls[i]);
