@@ -28,15 +28,33 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <assert.h>
 
+#include <gensio/gensio_os_funcs_public.h>
+
+#include "ser2net.h"
 #include "led.h"
 #include "led_sysfs.h"
 
 /* list of all registered LED drivers */
 static struct led_driver_s *led_drivers = NULL;
 
+static struct gensio_lock *led_lock;
+
 /* all LEDs in the system. */
 static struct led_s *leds = NULL;
+
+static void
+lock_leds(void)
+{
+    gensio_os_funcs_lock(so, led_lock);
+}
+
+static void
+unlock_leds(void)
+{
+    gensio_os_funcs_unlock(so, led_lock);
+}
 
 static struct led_driver_s *
 led_driver_by_name(const char *name)
@@ -57,6 +75,12 @@ led_driver_init(void)
 {
     int rv = 0;
 
+    led_lock = gensio_os_funcs_alloc_lock(so);
+    if (!led_lock) {
+	fprintf(stderr, "Could not alloc ser2net led lock\n");
+	return -1;
+    }
+
     rv |= led_sysfs_register();
 
     return rv;
@@ -70,18 +94,32 @@ led_driver_register(struct led_driver_s *led_driver)
     return 0;
 }
 
-struct led_s *
-find_led(const char *name)
+static struct led_s *
+i_find_led(const char *name)
 {
     struct led_s *led = leds;
 
     while (led) {
 	if (strcmp(name, led->name) == 0)
-	    return led;
+	    break;
 	led = led->next;
     }
 
-    return NULL;
+    return led;
+}
+
+struct led_s *
+find_led(const char *name)
+{
+    struct led_s *led;
+
+    lock_leds();
+    led = i_find_led(name);
+    if (led)
+	led->refcount++;
+    unlock_leds();
+
+    return led;
 }
 
 int
@@ -89,43 +127,42 @@ add_led(const char *name, const char *driverstr, const char * const *options,
 	int lineno, struct absout *eout)
 {
     struct led_driver_s *driver;
-    struct led_s *led;
+    struct led_s *led = NULL;
 
-    led = find_led(name);
+    lock_leds();
+    led = i_find_led(name);
     if (led) {
 	eout->out(eout, "LED %s already exists on line %d\n", name, lineno);
-	return -1;
+	goto out_err;
     }
 
     driver = led_driver_by_name(driverstr);
     if (!driver) {
 	eout->out(eout, "Unknown LED driver '%s' for LED '%s' on %d",
 		  driverstr, name, lineno);
-	return -1;
+	goto out_err;
     }
 
     led = calloc(1, sizeof(*led));
     if (!led) {
 	eout->out(eout, "Out of memory handling LED '%s' on %d",
 		  name, lineno);
-	return -1;
+	goto out_err;
     }
 
     led->name = strdup(name);
     if (!led->name) {
 	eout->out(eout, "Out of memory handling LED '%s' on %d",
 		  name, lineno);
-	free(led);
-	return -1;
+	goto out_err;
     }
 
+    led->refcount = 1;
     led->driver = driver;
 
     if (led->driver->init(led, options, lineno, eout) < 0) {
 	/* errors should be reported by driver itself */
-	free(led->name);
-	free(led);
-	return -1;
+	goto out_err;
     }
 
     if (led->driver->configure) {
@@ -137,24 +174,31 @@ add_led(const char *name, const char *driverstr, const char * const *options,
 	    if (led->driver->free)
 		led->driver->free(led);
 
-	    free(led->name);
-	    free(led);
-	    return -1;
+	    goto out_err;
 	}
     }
 
     led->next = leds;
     leds = led;
+    unlock_leds();
     return 0;
+
+ out_err:
+    unlock_leds();
+    if (led) {
+	if (led->name)
+	    free(led->name);
+	free(led);
+    }
+    return -1;
 }
 
-void
-free_leds(void)
+static void
+i_free_led(struct led_s *led)
 {
-    while (leds) {
-	struct led_s *led = leds;
-	leds = leds->next;
-
+    assert(led->refcount > 0);
+    led->refcount--;
+    if (led->refcount == 0) {
 	/* let driver deconfigure the LED */
 	if (led->driver->deconfigure)
 	    led->driver->deconfigure(led->drv_data);
@@ -166,6 +210,27 @@ free_leds(void)
 	free(led->name);
 	free(led);
     }
+}
+
+void
+free_led(struct led_s *led)
+{
+    lock_leds();
+    i_free_led(led);
+    unlock_leds();
+}
+
+void
+free_leds(void)
+{
+    lock_leds();
+    while (leds) {
+	struct led_s *led = leds;
+
+	leds = leds->next;
+	i_free_led(led);
+    }
+    unlock_leds();
 }
 
 int

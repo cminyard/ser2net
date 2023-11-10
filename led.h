@@ -36,6 +36,7 @@ struct led_s
     struct led_s *next;
     char *name;
 
+    unsigned int refcount;
     struct led_driver_s *driver;
     void *drv_data;
 };
@@ -71,8 +72,11 @@ int led_driver_register(struct led_driver_s *led_driver);
 int add_led(const char *name, const char *driverstr,
 	    const char * const *options, int lineno, struct absout *eout);
 
-/* Search for a LED by name */
+/* Search for a LED by name.  This will increment the refcount. */
 struct led_s *find_led(const char *name);
+
+/* Decrement the LED's refcount and free if it reaches 0. */
+void free_led(struct led_s *led);
 
 /* Free all registered LEDs in the system */
 void free_leds(void);

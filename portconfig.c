@@ -329,6 +329,10 @@ finish_free_port(port_info_t *port)
 	free(port->orig_devname);
     if (port->sendon)
 	free(port->sendon);
+    if (port->led_rx)
+	free_led(port->led_rx);
+    if (port->led_tx)
+	free_led(port->led_tx);
 #ifdef DO_MDNS
     mdns_shutdown(&port->mdns_info);
 #endif /* DO_MDNS */

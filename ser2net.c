@@ -794,11 +794,6 @@ main(int argc, char *argv[])
     }
     *config_lines = NULL;
 
-    if (led_driver_init() < 0) {
-	fprintf(stderr, "Error while initializing LED drivers\n");
-	return 1;
-    }
-
     for (i = 1; i < argc; i++) {
 	if ((argv[i][0] != '-') || (strlen(argv[i]) != 2)) {
 	    fprintf(stderr, "Invalid argument: '%s'\n", argv[i]);
@@ -990,6 +985,11 @@ main(int argc, char *argv[])
     if (err) {
 	seout.out(&seout, "Unable to setup termination handler: %s",
 		  gensio_err_to_str(err));
+	return 1;
+    }
+
+    if (led_driver_init() < 0) {
+	fprintf(stderr, "Error while initializing LED drivers\n");
 	return 1;
     }
 
