@@ -8,8 +8,14 @@ ser2net used to be a program for connection network connections to
 serial ports.  It's now a program for connecting accepter gensio to
 connecting gensios.  See gensio(5) for details on gensios.
 
-ser2net is configured with yaml, which is flexible and easy to use.
+ser2net is configured with YAML, which is flexible and easy to use.
 Look at yaml documentation on the internet for how that works.
+
+However, there are two types of YAML files that ser2net can use:
+version 1 and version 2.  Version 1 YAML files have more capability
+than version 2 files, but they are non-standard YAML, a standard YAML
+parser cannot read them.  ser2net will autodetect the version based
+upon what it finds.
 
 .SH DEFINE SPECIFICATION
 YAML has the ability to create aliases that can be used elsewhere in
@@ -17,7 +23,7 @@ the configuration file.  These can be used for tying things together
 between parts of the file, or (as an extension to YAML) for string
 substitution.
 
-You define an alias with the following:
+You define an alias in version 1 with the following:
 .IP
 define: &aliasname alias text
 .PP
@@ -46,6 +52,25 @@ banner: "My banner *(aliasname) is here"
 
 If you for some reason need "*(" in your text, use "*(*" for that.
 
+For version 2 YAML files, the definition is:
+.IP
+defines:
+.br
+  aliasname: alias text
+.br
+  aliasname2: alias text 2
+.PP
+where you can list as many aliases as you like.  In version 2, you
+always refer to an alias with "=" instead of "*", like:
+.IP
+.br
+banner: "My banner =(aliasname) is here"
+.PP
+and if you for some reason need "=(" in your text, use "=(=" for that.
+
+In version 2, per standard YAML, you can only have one defines
+section, so they must all be together.
+
 .SH INCLUDING OTHER FILES
 A YAML file may include another file at the main level, with:
 .IP
@@ -57,20 +82,45 @@ at this point, with all the defines, connection names, etc.  This can
 let you have individual connections in individual files to ease
 management.
 
+Including is only available in version 1.
+
 .SH USING EXTERNAL FILES
 You may want to store passwords and such in external files for better
-security.  Putting "*{filename}" in a YAML scalar will put the file's
-contents into the scalar at that point.  If you need a "*{" in the
-string for some reason, use "*{*".
+security.  For version 1, putting "*{filename}" in a YAML scalar will
+put the file's contents into the scalar at that point.  If you need a
+"*{" in the string for some reason, use "*{*".
+
+For version 2, use "={filename}" instead.  And "={=" to include a "={"
+in a file.
 
 .SH CONNECTION SPECIFICATION
 A connection is a structure that describes how to connect an accepting
 gensio to a connecting gensio.
 
-An accepter specification looks like:
+An connection specification in version 1 starts with:
 
 .RS
 connection: &<alias>
+.RS
+<definition>
+.RE
+.RE
+
+In version 2, it's specified as:
+.RS
+connections:
+.RS
+<alias>:
+.RS
+<definition>
+.RE
+.RE
+.RE
+
+In version 2, all the connections must occur together in one place.
+
+The <definition> of a connection is the same for version 1 and version
+2:
 .RS
 accepter: <accepter>
 .br
@@ -85,7 +135,6 @@ options:
 <option name>: <option value>
 .br
 <option name>: <option value>...
-.RE
 .RE
 .RE
 
@@ -403,12 +452,14 @@ sets the size of the buffer reading from the accepted gensio and
 writing to the connecting gensio.
 
 .I led-tx: <led-alias>
-use the previously defined led to indicate serial tx traffic on this port.
-This should be a YAML alias, like *led2.
+use the previously defined led to indicate serial tx traffic on this
+port.  For version 2 this should be a YAML alias, like *led2.  For
+version 2 just use the name, like led2.
 
 .I led-rx: <led-alias>
-use the previously defined led to indicate serial rx traffic on this port.
-This should be a YAML alias, like *led2.
+use the previously defined led to indicate serial rx traffic on this
+port.  For version 2 this should be a YAML alias, like *led2.  For
+version 2 just use the name, like led2.
 
 .I max-connections: <number>
 set the maximum number of connections that can be made on this particular
@@ -528,9 +579,32 @@ set or just use it for information.  You have been warned.  Be careful.
 A rotator allows a single network connection to connect to one of a
 number of connections.
 
-A rotator specification looks like:
+A version 1 rotator specification starts with:
 .RS
 rotator: &<alias>
+.RS
+<definition>
+.RE
+.RE
+
+A version 2 rotator specification starts with:
+
+.RS
+rotators:
+.RS
+<alias>:
+.RS
+<definition>
+.RE
+.RE
+.RE
+
+Just like connections, in version 2 you have to put all the rotators
+together.
+
+The definition of a rotator is almost the same between version 1 and
+version 2:
+
 .RS
 accepter: <accepter>
 .br
@@ -549,12 +623,12 @@ options:
 <option name>: <option val>...
 .RE
 .RE
-.RE
 
 A rotator has four possible options, "authdir", "pamauth", "allowed-users", and
 "accepter-retry-time", both same as connections.
 
-You should use YAML aliases for the connections.
+For version 1, you should use YAML aliases for the connections.  For
+version 2, just use the alias names.
 
 Connections to the accepter will go through the set of connections and
 find the first unused one and use that.  The next connection will
@@ -566,7 +640,7 @@ Note that the security of the connection is
 used, only the security of the rotator.
 
 .SH "SER2NET DEFAULTS"
-To set a default, do:
+To set a default in version 1, do:
 .RS
 default:
 .RS
@@ -576,6 +650,25 @@ name: <default name>
 value: <default value>
 .br
 class: <default class>
+.RE
+.RE
+
+In version 2, like other things, the defaults are all in one place, like:
+.RS
+defaults:
+.RS
+<name>:
+.RS
+value: <default value>
+.br
+class: <default class>
+.RE
+<name2>:
+.RS
+value: <default value>
+.br
+class: <default class>
+.RE
 .RE
 .RE
 
@@ -747,7 +840,7 @@ it to be specified separately and maintain backwards compatibility.
 
 .SH LEDS
 .B ser2net
-can flash LEDs during serial activity.  To create an LED, do:
+can flash LEDs during serial activity.  To create an LED in version 1, do:
 .RS
 led: &<alias>
 .RS
@@ -758,6 +851,36 @@ options:
 <option name>: <option value>
 .br
 <option name>: <option value>
+.RE
+.RE
+.RE
+
+In version 2, use:
+.RS
+leds:
+.RS
+<alias>:
+.RS
+driver: sysfs
+.br
+options:
+.RS
+<option name>: <option value>
+.br
+<option name>: <option value>
+.RE
+.RE
+<alias>:
+.RS
+driver: sysfs
+.br
+options:
+.RS
+<option name>: <option value>
+.br
+<option name>: <option value>
+.RE
+.RE
 .RE
 .RE
 .RE
