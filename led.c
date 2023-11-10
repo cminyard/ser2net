@@ -157,7 +157,7 @@ free_leds(void)
 
 	/* let driver deconfigure the LED */
 	if (led->driver->deconfigure)
-	    led->driver->deconfigure(led);
+	    led->driver->deconfigure(led->drv_data);
 
 	/* let driver free its own data when it registered a cleanup function */
 	if (led->driver->free)
