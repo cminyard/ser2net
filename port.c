@@ -1062,10 +1062,12 @@ shutdown_ports(void)
 	    }
 	    port->deleted = true;
 	    port->enabled = false;
-	    shutdown_port(port, "program shutdown");
+	    if (shutdown_port(port, "program shutdown") != 0)
+		goto do_free_port;
 	    so->unlock(port->lock);
 	    prev = port;
 	} else {
+	do_free_port:
 	    if (prev)
 		prev->next = port->next;
 	    else
