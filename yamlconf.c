@@ -1311,7 +1311,7 @@ yhandle_mapping_start(struct yconf *y)
 	break;
 
     case IN_LEDS:
-	y->state = IN_ADMINS_MAP;
+	y->state = IN_LEDS_MAP;
 	break;
 
     case IN_LEDS_INST:
@@ -1334,7 +1334,7 @@ yhandle_mapping_start(struct yconf *y)
 
     case IN_ROTATORS_INST:
 	y->map_info = &sc_rotators_map;
-	y->state = IN_ROTATORS_MAP;
+	y->state = IN_MAIN_MAP;
 	break;
 
     case IN_MAIN_NAME:
