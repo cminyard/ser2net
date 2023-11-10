@@ -6,6 +6,13 @@
 # in /etc/ser2net/ser2net.yaml.
 #
 # This is described in ser2net.yaml(5)
+#
+# NOTE: ser2net can parse two types of yaml files, called version 1
+# and version 2 files.  You cannot mix things from these versions.
+# See the man page for details, and the end of this file (search for
+# "VERSION 2" for a version 2 example.  Everything up to that point
+# is version 1 only.  Version 1 is not yaml compliant and can't be
+# parsed by a normal yaml parser.  Version 2 is yaml compliant.
 
 # YAML gives an error on empty files, just add something so the
 # error doesn't happen.
@@ -303,3 +310,109 @@ define: &confver 1.0
 #     mdns-domain: <NULL>
 #     mdns-host: <NULL>
 #     mdns-txt: <NULL>
+
+# VERSION 2
+#
+
+# In a version 2 file, there are five different main maps: defines,
+# defaults, admins, leds, and connections.  Per YAML, you can only
+# have one of these maps per file.  In each of this is a mapping
+# for each object of that type.
+
+# For defines, that is simply:
+#  <name>:<value>
+# To refer to a define, you use =(<name>), you don't use YAML anchors
+# and references as they don't really work for parsing and recreating.
+# For including files, similaryly, you use ={<filename>}.  Don't use "*".
+
+# For everything else, you have the form:
+#  <name>:
+#    <item>: <value>
+# The name is not supplies with &, the name is just given.  Inside of
+# that, everything is pretty much the same as the version 1 connection,
+# led, default, and rotator configuration.
+
+# As with defines, you no longer reference leds or connections (in
+# rotators) with a "*".  Instead, just use the name directly without
+# the "*".  That works in version 1, too.
+
+# include is not supported on version 2 files, as there is no standard
+# yaml way to do this.
+
+# An example of a version 2 file:
+
+# %YAML 1.1
+# ---
+#
+# defines:
+#   banner1: Connected to port \N(\d)\r\n
+#
+# defaults:
+#   local:
+#     value: true
+#     class: serialdev
+#
+#   mdns:
+#     value: true
+#
+#   mdns-sysattrs:
+#     value: true
+#
+# admins:
+#   admin1:
+#     accepter: mux,certauth,ssl,tcp,2000
+#
+# leds:
+#   led1:
+#     driver: sysfs
+#     options:
+#       device: "input3::capslock"
+#
+# connections:
+#   ttyUSB0:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,4001
+#     connector: serialdev,/dev/ttyUSB0,19200n81
+#     options:
+#       banner: =(banner1)
+#       led-tx: led1
+#       led-rx: led1
+#
+#   ttyUSB1:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,4002
+#     connector: serialdev,/dev/ttyUSB1,115200n81
+#     options:
+#       banner: =(banner1)
+#       led-tx: led1
+#       led-rx: led1
+#
+#   ttyS0:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3001
+#     connector: serialdev,/dev/ttyUSB0,9600n81
+#     options:
+#       banner: =(banner1)
+#
+#   ttyS1:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3002
+#     connector: serialdev,/dev/ttyS1,9600N81
+#     options:
+#         banner: =(banner1)
+#
+#   ttyS2:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3003
+#     connector: serialdev,/dev/ttyS2,9600N81
+#     options:
+#         banner: =(banner1)
+#
+#   ttyS3:
+#     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3004
+#     connector: serialdev,/dev/ttyS3,9600N81
+#     options:
+#         banner: =(banner1)
+#
+# rotators:
+#   rot1:
+#     accepter: tcp,3010
+#     connections: [
+#       ttyUSB0,
+#       ttyUSB1
+#     ]
