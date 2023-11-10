@@ -75,7 +75,8 @@ find_rotator_port(const char *portname, struct gensio *net,
 	    so->lock(port->lock);
 	    if (!port->enabled)
 		goto next;
-	    if (port->dev_to_net_state == PORT_CLOSING)
+	    if (port->dev_to_net_state == PORT_CLOSING ||
+			port->dev_to_net_state == PORT_CLOSED)
 		goto next;
 	    err = net_raddr(net, &addr, &socklen);
 	    if (err)
