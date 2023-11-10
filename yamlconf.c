@@ -42,7 +42,7 @@
 #include "led.h"
 #include "fileio.h"
 
-//#define DEBUG 1
+/*#define DEBUG 1*/
 
 #ifdef WIN32
 char *strndup(const char *s, size_t n)
@@ -73,8 +73,33 @@ enum ystate {
      */
     MAIN_LEVEL,
 
-    IN_DEFINE,
     IN_INCLUDE,
+
+    IN_DEFINES,
+    IN_DEFINES_MAP,
+    IN_DEFINES_VAL,
+
+    IN_DEFAULTS,
+    IN_DEFAULTS_MAP,
+    IN_DEFAULTS_INST,
+
+    IN_ADMINS,
+    IN_ADMINS_MAP,
+    IN_ADMINS_INST,
+
+    IN_LEDS,
+    IN_LEDS_MAP,
+    IN_LEDS_INST,
+
+    IN_CONNECTIONS,
+    IN_CONNECTIONS_MAP,
+    IN_CONNECTIONS_INST,
+
+    IN_ROTATORS,
+    IN_ROTATORS_MAP,
+    IN_ROTATORS_INST,
+
+    IN_DEFINE,
 
     /*
      * We have read the type of the main mapping (connection, led, etc)
@@ -153,7 +178,6 @@ struct keyval_info {
 struct map_info {
     char *name;
     struct scalar_next_state *states;
-    enum ystate next_state;
     int map_type;
     bool needs_anchor;
     bool wants_anchor;
@@ -175,6 +199,7 @@ struct scalar_next_state {
 	struct keyval_info *keyval_info;
 	struct map_info *map_info;
     };
+    int version;
 };
 
 /*
@@ -212,6 +237,7 @@ struct yaml_read_handler_data {
 
 struct yconf {
     enum ystate state;
+    int version;
 
     struct map_info *map_info;
 
@@ -716,6 +742,14 @@ DECL_KEYVAL(class);
 #define KEYVAL_OFFSET(y)			\
     ((char **) (((char *) (y)) + (y)->keyval_info->keyval_offset))
 
+static struct scalar_next_state sc_defaults[] = {
+    { "value", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_value },
+    { "class", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
+      .keyval_info = &keyval_class },
+    {}
+};
+
 static struct scalar_next_state sc_default[] = {
     { "name", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_name },
@@ -781,12 +815,16 @@ static struct scalar_next_state sc_led[] = {
 static struct scalar_next_state sc_admin[] = {
     { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_accepter },
-    { "options", IN_OPTIONS, WHICH_INFO_OPTION,
-      .option_info = &led_option_info },
     {}
 };
 
 enum main_map_types {
+    MAIN_MAP_DEFAULTS,
+    MAIN_MAP_ADMINS,
+    MAIN_MAP_LEDS,
+    MAIN_MAP_CONNECTIONS,
+    MAIN_MAP_ROTATORS,
+
     MAIN_MAP_DEFAULT,
     MAIN_MAP_DELDEFAULT,
     MAIN_MAP_CONNECTION,
@@ -795,41 +833,73 @@ enum main_map_types {
     MAIN_MAP_ADMIN
 };
 
+static struct map_info sc_defaults_map = {
+    "defaults", sc_defaults, MAIN_MAP_DEFAULTS, false, false
+};
+
+static struct map_info sc_admins_map = {
+    "admins", sc_admin, MAIN_MAP_ADMINS, false, false
+};
+
+static struct map_info sc_leds_map = {
+    "leds", sc_led, MAIN_MAP_LEDS, false, false
+};
+
+static struct map_info sc_connections_map = {
+    "connections", sc_connection, MAIN_MAP_CONNECTIONS, false, false
+};
+
+static struct map_info sc_rotators_map = {
+    "rotators", sc_rotator, MAIN_MAP_ROTATORS, false, false
+};
+
 static struct map_info sc_default_map = {
-    "default", sc_default, MAIN_LEVEL, MAIN_MAP_DEFAULT, false, false
+    "default", sc_default, MAIN_MAP_DEFAULT, false, false
 };
 
 static struct map_info sc_deldefault_map = {
-    "deldefault", sc_deldefault, MAIN_LEVEL, MAIN_MAP_DELDEFAULT, false, false
+    "deldefault", sc_deldefault, MAIN_MAP_DELDEFAULT, false, false
 };
 
 static struct map_info sc_connection_map = {
-    "connection", sc_connection, MAIN_LEVEL, MAIN_MAP_CONNECTION, true, false
+    "connection", sc_connection, MAIN_MAP_CONNECTION, true, false
 };
 
 static struct map_info sc_rotator_map = {
-    "rotator", sc_rotator, MAIN_LEVEL, MAIN_MAP_ROTATOR, true, false
+    "rotator", sc_rotator, MAIN_MAP_ROTATOR, true, false
 };
 
 static struct map_info sc_led_map = {
-    "led", sc_led, MAIN_LEVEL, MAIN_MAP_LED, true, false
+    "led", sc_led, MAIN_MAP_LED, true, false
 };
 
 static struct map_info sc_admin_map = {
-    "admin", sc_admin, MAIN_LEVEL, MAIN_MAP_ADMIN, false, true
+    "admin", sc_admin, MAIN_MAP_ADMIN, false, true
 };
 
 static struct scalar_next_state sc_main[] = {
-    { "define", IN_DEFINE },
+    { "defines", IN_DEFINES, .version = 2 },
+    { "defaults", IN_DEFAULTS, .version = 2 },
+    { "admins", IN_ADMINS, .version = 2 },
+    { "leds", IN_LEDS, .version = 2 },
+    { "connections", IN_CONNECTIONS, .version = 2 },
+    { "rotators", IN_ROTATORS, .version = 2 },
+
     { "include", IN_INCLUDE },
-    { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map },
+
+    { "define", IN_DEFINE, .version = 1 },
+    { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map,
+      .version = 1 },
     { "delete_default", IN_MAIN_NAME, WHICH_INFO_MAP,
-      .map_info = &sc_deldefault_map },
+      .map_info = &sc_deldefault_map, .version = 1 },
     { "connection", IN_MAIN_NAME, WHICH_INFO_MAP,
-      .map_info = &sc_connection_map },
-    { "rotator", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_rotator_map },
-    { "led", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_led_map },
-    { "admin", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_admin_map },
+      .map_info = &sc_connection_map, .version = 1 },
+    { "rotator", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_rotator_map,
+      .version = 1},
+    { "led", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_led_map,
+      .version = 1 },
+    { "admin", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_admin_map,
+      .version = 1 },
     {}
 };
 
@@ -859,6 +929,13 @@ scalar_next_state(struct yconf *y,
 {
     while (s->name) {
 	if (strcasecmp(s->name, scalar) == 0) {
+	    if (y->version && s->version && y->version != s->version) {
+		yaml_errout(y, "Mixed version in yaml file");
+		y->state = PARSE_ERR;
+		return;
+	    }
+	    if (s->version)
+		y->version = s->version;
 	    switch (s->infotype) {
 	    case WHICH_INFO_NONE: break;
 	    case WHICH_INFO_OPTION: y->option_info = s->option_info; break;
@@ -884,11 +961,17 @@ process_scalar(struct yconf *y, const char *iscalar)
     char *rv = NULL, *out = NULL;
     unsigned int len = 0, alen;
     int state = 0;
+    char actchar;
+
+    if (y->version == 1)
+	actchar = '*';
+    else
+	actchar = '=';
 
  restart:
     for (s = iscalar; *s; s++) {
 	if (state == 0) {
-	    if (*s == '*')
+	    if (*s == actchar)
 		state = 1;
 	    else {
 		if (out)
@@ -896,20 +979,22 @@ process_scalar(struct yconf *y, const char *iscalar)
 		len++;
 	    }
 	} else if (state == 1) {
-	    /* Last character was a '*' */
+	    /* Last character was a actchar */
 	    if (*s == '(') {
 		start = s + 1;
 		state = 2;
 	    } else if (*s == '{') {
 		start = s + 1;
 		state = 3;
-	    } else if (*s == '*') {
+	    } else if (*s == actchar) {
+		/* Two actchars map to a single actchar */
 		if (out)
 		    *out++ = *s;
-		len++; /* Stay in state 1 */
+		len++;
+		state = 0;
 	    } else {
 		if (out) {
-		    *out++ = '*';
+		    *out++ = actchar;
 		    *out++ = *s;
 		}
 		len += 2;
@@ -917,10 +1002,10 @@ process_scalar(struct yconf *y, const char *iscalar)
 	    }
 	} else if (state == 2) {
 	    /* We are in a '*(' */
-	    if (start == s && *s == '*') {
+	    if (start == s && *s == actchar) {
 		/* '*(*' outputs a '*(' */
 		if (out) {
-		    *out++ = '*';
+		    *out++ = actchar;
 		    *out++ = '(';
 		}
 		len += 2;
@@ -944,10 +1029,10 @@ process_scalar(struct yconf *y, const char *iscalar)
 	    }
 	} else if (state == 3) {
 	    /* We are in a '*{' */
-	    if (start == s && *s == '*') {
+	    if (start == s && *s == actchar) {
 		/* '*{*' outputs a '*{' */
 		if (out) {
-		    *out++ = '*';
+		    *out++ = actchar;
 		    *out++ = '{';
 		}
 		len += 2;
@@ -1006,6 +1091,72 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	    yaml_errout(y, "Invalid token at the main level: %s", scalar);
 	    goto out_err;
 	}
+	break;
+
+    case IN_DEFINES_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_DEFINES_VAL;
+	break;
+
+    case IN_DEFINES_VAL:
+	anchor_allowed = true;
+	if (add_alias(y, y->name, scalar))
+	    goto out_err;
+	if (anchor) {
+	    if (add_alias(y, anchor, scalar))
+		goto out_err;
+	}
+	dofree(&y->name);
+	y->state = IN_DEFINES_MAP;
+	break;
+
+    case IN_DEFAULTS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_DEFAULTS_INST;
+	break;
+
+    case IN_ADMINS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_ADMINS_INST;
+	break;
+
+    case IN_LEDS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_LEDS_INST;
+	break;
+
+    case IN_CONNECTIONS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_CONNECTIONS_INST;
+	break;
+
+    case IN_ROTATORS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_ROTATORS_INST;
 	break;
 
     case IN_DEFINE:
@@ -1137,6 +1288,55 @@ yhandle_mapping_start(struct yconf *y)
 	y->state = MAIN_LEVEL;
 	break;
 
+    case IN_DEFINES:
+	y->state = IN_DEFINES_MAP;
+	break;
+
+    case IN_DEFAULTS:
+	y->state = IN_DEFAULTS_MAP;
+	break;
+
+    case IN_DEFAULTS_INST:
+	y->map_info = &sc_defaults_map;
+	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_ADMINS:
+	y->state = IN_ADMINS_MAP;
+	break;
+
+    case IN_ADMINS_INST:
+	y->map_info = &sc_admins_map;
+	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_LEDS:
+	y->state = IN_ADMINS_MAP;
+	break;
+
+    case IN_LEDS_INST:
+	y->map_info = &sc_leds_map;
+	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_CONNECTIONS:
+	y->state = IN_CONNECTIONS_MAP;
+	break;
+
+    case IN_CONNECTIONS_INST:
+	y->map_info = &sc_connections_map;
+	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_ROTATORS:
+	y->state = IN_ROTATORS_MAP;
+	break;
+
+    case IN_ROTATORS_INST:
+	y->map_info = &sc_rotators_map;
+	y->state = IN_ROTATORS_MAP;
+	break;
+
     case IN_MAIN_NAME:
 	if (y->map_info->needs_anchor || y->map_info->wants_anchor) {
 	    char *anchor = (char *) y->d->f->e.data.mapping_start.anchor;
@@ -1181,11 +1381,118 @@ yhandle_mapping_end(struct yconf *y)
 	y->state = END_DOC;
 	break;
 
+    case IN_DEFINES_MAP:
+    case IN_DEFAULTS_MAP:
+    case IN_LEDS_MAP:
+    case IN_ADMINS_MAP:
+    case IN_CONNECTIONS_MAP:
+    case IN_ROTATORS_MAP:
+	y->state = MAIN_LEVEL;
+	break;
+
     case IN_MAIN_MAP:
 	switch (y->map_info->map_type) {
+	case MAIN_MAP_DEFAULTS:
+	    if (!y->value) {
+		yaml_errout(y, "No value given in default");
+		return -1;
+	    }
+	    err = gensio_set_default(so, y->class, y->name, y->value, 0);
+	    if (err) {
+		yaml_errout(y, "Unable to set default name %s:%s:%s: %s",
+			    y->class ? y->class : "",
+			    y->name, y->value, gensio_err_to_str(err));
+		return -1;
+	    }
+	    y->state = IN_DEFAULTS_MAP;
+	    yconf_cleanup_main(y);
+	    break;
+
+	case MAIN_MAP_ADMINS:
+	    if (!y->accepter) {
+		yaml_errout(y, "No accepter given in admin");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "admin"))
+		return -1;
+	    controller_init(y->accepter, y->name, (const char **) y->options,
+			    &y->sub_errout);
+	    y->state = IN_ADMINS_MAP;
+	    yconf_cleanup_main(y);
+	    break;
+
+	case MAIN_MAP_LEDS:
+	    if (!y->driver) {
+		yaml_errout(y, "No driver given in led");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "led"))
+		return -1;
+	    err = add_led(y->name, y->driver,
+			  (const char **) y->options,
+			  y->d->f->e.start_mark.line, &y->sub_errout);
+	    y->state = IN_LEDS_MAP;
+	    yconf_cleanup_main(y);
+	    break;
+
+	case MAIN_MAP_CONNECTIONS:
+	    if (!y->accepter) {
+		yaml_errout(y, "No accepter given in connection");
+		return -1;
+	    }
+	    if (!y->connector) {
+		yaml_errout(y, "No connector given in connection");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "connection"))
+		return -1;
+	    portconfig(&y->sub_errout, y->name, y->accepter,
+		       y->enable ? "raw" : "off", y->timeout,
+		       y->connector, (const char **) y->options);
+	    y->state = IN_CONNECTIONS_MAP;
+	    yconf_cleanup_main(y);
+	    break;
+	
+	case MAIN_MAP_ROTATORS:
+	    if (!y->accepter) {
+		yaml_errout(y, "No accepter given in rotator");
+		return -1;
+	    }
+	    if (y->curr_connection == 0) {
+		yaml_errout(y, "No connections given in rotator");
+		return -1;
+	    }
+	    /* NULL terminate the connections. */
+	    if (add_connection(y, NULL, "rotator"))
+		return -1;
+	    err = gensio_argv_copy(so, (const char **) y->connections,
+				   &argc, &argv);
+	    if (err) {
+		yaml_errout(y, "Unable to allocate rotator connections");
+		return -1;
+	    }
+	    /* NULL terminate the options. */
+	    if (add_option(y, NULL, NULL, "rotator"))
+		return -1;
+	    err = add_rotator(&y->sub_errout, y->name, y->accepter, argc, argv,
+			      (const char **) y->options,
+			      y->d->f->e.start_mark.line);
+	    if (err)
+		gensio_argv_free(so, argv);
+	    y->state = IN_ROTATORS_MAP;
+	    yconf_cleanup_main(y);
+	    break;
+
 	case MAIN_MAP_DEFAULT:
 	    if (!y->name) {
 		yaml_errout(y, "No name given in default");
+		return -1;
+	    }
+	    if (!y->value) {
+		yaml_errout(y, "No value given in default");
 		return -1;
 	    }
 	    err = gensio_set_default(so, y->class, y->name, y->value, 0);
@@ -1521,7 +1828,7 @@ yaml_readconfig(ftype *file, char *filename,
 	    struct alias *a;
 #if DEBUG
 	    printf("YAML_ALIAS_EVENT\n");
-	    printf(" anc: '%s'\n", y.e.data.alias.anchor);
+	    printf(" anc: '%s'\n", y.d->f->e.data.alias.anchor);
 #endif
 	    a = lookup_alias(&y, (char *) y.d->f->e.data.alias.anchor);
 	    if (!a) {
@@ -1529,6 +1836,9 @@ yaml_readconfig(ftype *file, char *filename,
 			    y.d->f->e.data.alias.anchor);
 		err = GE_INVAL;
 	    } else {
+#if DEBUG
+		printf(" val: '%s'\n", a->value);
+#endif
 		if (yhandle_scalar(&y, NULL, a->value))
 		    err = GE_INVAL;
 	    }
@@ -1538,9 +1848,9 @@ yaml_readconfig(ftype *file, char *filename,
 	case YAML_SCALAR_EVENT:
 #if DEBUG
 	    printf("YAML_SCALAR_EVENT\n");
-	    printf(" anc: '%s'\n", y.e.data.scalar.anchor);
-	    printf(" tag: '%s'\n", y.e.data.scalar.tag);
-	    printf(" val: '%s'\n", y.e.data.scalar.value);
+	    printf(" anc: '%s'\n", y.d->f->e.data.scalar.anchor);
+	    printf(" tag: '%s'\n", y.d->f->e.data.scalar.tag);
+	    printf(" val: '%s'\n", y.d->f->e.data.scalar.value);
 #endif
 	    if (yhandle_scalar(&y, (char *) y.d->f->e.data.scalar.anchor,
 			       (char *) y.d->f->e.data.scalar.value))
@@ -1550,8 +1860,8 @@ yaml_readconfig(ftype *file, char *filename,
 	case YAML_SEQUENCE_START_EVENT:
 #if DEBUG
 	    printf("YAML_SEQUENCE_START_EVENT\n");
-	    printf(" anc: '%s'\n", y.e.data.sequence_start.anchor);
-	    printf(" tag: '%s'\n", y.e.data.sequence_start.tag);
+	    printf(" anc: '%s'\n", y.d->f->e.data.sequence_start.anchor);
+	    printf(" tag: '%s'\n", y.d->f->e.data.sequence_start.tag);
 #endif
 	    if (yhandle_seq_start(&y))
 		err = GE_INVAL;
@@ -1568,8 +1878,8 @@ yaml_readconfig(ftype *file, char *filename,
 	case YAML_MAPPING_START_EVENT:
 #if DEBUG
 	    printf("YAML_MAPPING_START_EVENT\n");
-	    printf(" anc: '%s'\n", y.e.data.mapping_start.anchor);
-	    printf(" tag: '%s'\n", y.e.data.mapping_start.tag);
+	    printf(" anc: '%s'\n", y.d->f->e.data.mapping_start.anchor);
+	    printf(" tag: '%s'\n", y.d->f->e.data.mapping_start.tag);
 #endif
 	    if (yhandle_mapping_start(&y))
 		err = GE_INVAL;
