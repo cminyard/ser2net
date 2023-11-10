@@ -885,8 +885,7 @@ static struct scalar_next_state sc_main[] = {
     { "connections", IN_CONNECTIONS, .version = 2 },
     { "rotators", IN_ROTATORS, .version = 2 },
 
-    { "include", IN_INCLUDE },
-
+    { "include", IN_INCLUDE, .version = 1 },
     { "define", IN_DEFINE, .version = 1 },
     { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map,
       .version = 1 },
