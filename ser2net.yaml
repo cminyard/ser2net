@@ -314,10 +314,10 @@ define: &confver 1.0
 # VERSION 2
 #
 
-# In a version 2 file, there are five different main maps: defines,
-# defaults, admins, leds, and connections.  Per YAML, you can only
-# have one of these maps per file.  In each of this is a mapping
-# for each object of that type.
+# In a version 2 file, there are six different main maps: defines,
+# defaults, delete_defaults, admins, leds, and connections.  Per YAML,
+# you can only have one of these maps per document.  In each of this
+# is a mapping for each object of that type.
 
 # For defines, that is simply:
 #  <name>:<value>
@@ -332,12 +332,19 @@ define: &confver 1.0
 # that, everything is pretty much the same as the version 1 connection,
 # led, default, and rotator configuration.
 
-# As with defines, you no longer reference leds or connections (in
-# rotators) with a "*".  Instead, just use the name directly without
-# the "*".  That works in version 1, too.
+# As with defines, you no longer reference leds (in connections) or
+# connections (in rotators) with a "*".  Instead, just use the name
+# directly without the "*".  That works in version 1, too.
 
-# include is not supported on version 2 files, as there is no standard
-# yaml way to do this.
+# You may have more than one document in a file.  In YAML a "---"
+# separates two documents in a file.  With this, you can have another
+# set of defines, defaults, connections, etc.  You might, for
+# instance, have different documents in the file for different sets of
+# defaults. The example below starts a new document after ttyS1, for
+# instance.  You can only have one admin interface in a file, though.
+
+# include is supported on version 2 files, but you can only have one
+# per document for legal YAML.
 
 # An example of a version 2 file:
 
@@ -396,7 +403,11 @@ define: &confver 1.0
 #     connector: serialdev,/dev/ttyS1,9600N81
 #     options:
 #         banner: =(banner1)
+# ---
+# delete_defaults:
+#   local: [serialdev]
 #
+# connections:
 #   ttyS2:
 #     accepter: telnet(rfc2217),mux,certauth(),ssl,tcp,3003
 #     connector: serialdev,/dev/ttyS2,9600N81

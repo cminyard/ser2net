@@ -17,6 +17,14 @@ than version 2 files, but they are non-standard YAML, a standard YAML
 parser cannot read them.  ser2net will autodetect the version based
 upon what it finds.
 
+In version 2, you can have multiple documents in a file and ser2net
+will read all of them.  YAML separates documents in a file with a
+single "---" by itself at the beginning of a line.  Though you can
+only have one set of defaults, defines, connections, etc. in a
+document, you can have multiple documents in a file to allow more than
+one.  You might, for instance, group all the connections with a
+certain set of defaults into its own document.
+
 .SH DEFINE SPECIFICATION
 YAML has the ability to create aliases that can be used elsewhere in
 the configuration file.  These can be used for tying things together
@@ -82,7 +90,9 @@ at this point, with all the defines, connection names, etc.  This can
 let you have individual connections in individual files to ease
 management.
 
-Including is only available in version 1.
+In version 2, You can only have one include in each document for legal
+YAML, so if you need multiple includes you will have to have multiple
+documents.
 
 .SH USING EXTERNAL FILES
 You may want to store passwords and such in external files for better
@@ -653,7 +663,8 @@ class: <default class>
 .RE
 .RE
 
-In version 2, like other things, the defaults are all in one place, like:
+In version 2, like other things, the defaults are all in one place in
+a document, like:
 .RS
 defaults:
 .RS
@@ -706,7 +717,8 @@ The order in the file is important, you must set a default before it
 is used, and you can change the value of the default.  It will affect
 all uses following the setting.
 
-To delete a default value for class (so it will use the base default), do:
+To delete a default value for class (so it will use the base default),
+for version 1 do:
 .RS
 delete_default:
 .RS
@@ -715,6 +727,17 @@ name: <default name>,
 class: <default class>
 .RE
 .RE
+
+For version 2, do:
+.RS
+delete_defaults:
+.RS
+<default name>: [ <class1>, <class2>, ... ]
+.br
+<default name2>: [ <class1>, <class2>, ... ]
+.RE
+.RE
+and it will delete the defaults for the classes in the list after it.
 
 You must supply the class, you cannot delete base defaults.
 

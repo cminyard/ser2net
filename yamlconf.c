@@ -42,7 +42,7 @@
 #include "led.h"
 #include "fileio.h"
 
-/*#define DEBUG 1*/
+#define DEBUG 1
 
 #ifdef WIN32
 char *strndup(const char *s, size_t n)
@@ -78,6 +78,11 @@ enum ystate {
     IN_DEFINES,
     IN_DEFINES_MAP,
     IN_DEFINES_VAL,
+
+    IN_DELDEFAULTS,
+    IN_DELDEFAULTS_MAP,
+    IN_DELDEFAULTS_SEQ,
+    IN_DELDEFAULTS_VAL,
 
     IN_DEFAULTS,
     IN_DEFAULTS_MAP,
@@ -253,9 +258,9 @@ struct yconf {
     unsigned int timeout;
     bool enable;
 
-    char **connections;
-    unsigned int curr_connection;
-    unsigned int connections_len;
+    char **seq;
+    unsigned int curr_seq;
+    unsigned int seq_len;
 
     struct option_info *option_info;
     char **options;
@@ -367,15 +372,15 @@ yconf_cleanup_main(struct yconf *y)
 	}
     }
     y->curr_option = 0;
-    if (y->connections) {
+    if (y->seq) {
 	unsigned int i;
 
-	for (i = 0; i < y->curr_connection && y->connections[i]; i++) {
-	    free(y->connections[i]);
-	    y->connections[i] = NULL;
+	for (i = 0; i < y->curr_seq && y->seq[i]; i++) {
+	    free(y->seq[i]);
+	    y->seq[i] = NULL;
 	}
     }
-    y->curr_connection = 0;
+    y->curr_seq = 0;
 }
 
 static struct alias *
@@ -686,35 +691,35 @@ add_option(struct yconf *y, const char *name, const char *option,
 }
 
 static int
-add_connection(struct yconf *y, const char *connection, const char *place)
+add_seq(struct yconf *y, const char *item, const char *place)
 {
-    if (y->curr_connection >= y->connections_len) {
-	unsigned int new_len = y->connections_len + 10;
-	char **new_connections = malloc(sizeof(char *) * new_len);
+    if (y->curr_seq >= y->seq_len) {
+	unsigned int new_len = y->seq_len + 10;
+	char **new_seq = malloc(sizeof(char *) * new_len);
 
-	if (!new_connections) {
+	if (!new_seq) {
 	    yaml_errout(y, "Out of memory allocating connection array for %s",
 			place);
 	    return -1;
 	}
-	memcpy(new_connections, y->connections,
-	       sizeof(char *) * y->connections_len);
-	free(y->connections);
-	y->connections = new_connections;
-	y->connections_len = new_len;
+	memcpy(new_seq, y->seq,
+	       sizeof(char *) * y->seq_len);
+	free(y->seq);
+	y->seq = new_seq;
+	y->seq_len = new_len;
     }
 
-    if (connection) {
-	y->connections[y->curr_connection] = strdup(connection);
-	if (!y->connections[y->curr_connection]) {
+    if (item) {
+	y->seq[y->curr_seq] = strdup(item);
+	if (!y->seq[y->curr_seq]) {
 	    yaml_errout(y, "Out of memory allocating connection %s for %s",
-			connection, place);
+			item, place);
 	    return -1;
 	}
     } else {
-	y->connections[y->curr_connection] = NULL;
+	y->seq[y->curr_seq] = NULL;
     }
-    y->curr_connection++;
+    y->curr_seq++;
     return 0;
 }
 
@@ -880,12 +885,14 @@ static struct map_info sc_admin_map = {
 static struct scalar_next_state sc_main[] = {
     { "defines", IN_DEFINES, .version = 2 },
     { "defaults", IN_DEFAULTS, .version = 2 },
+    { "delete_defaults", IN_DELDEFAULTS, .version = 2 },
     { "admins", IN_ADMINS, .version = 2 },
     { "leds", IN_LEDS, .version = 2 },
     { "connections", IN_CONNECTIONS, .version = 2 },
     { "rotators", IN_ROTATORS, .version = 2 },
 
-    { "include", IN_INCLUDE, .version = 1 },
+    { "include", IN_INCLUDE },
+
     { "define", IN_DEFINE, .version = 1 },
     { "default", IN_MAIN_NAME, WHICH_INFO_MAP, .map_info = &sc_default_map,
       .version = 1 },
@@ -1122,6 +1129,20 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->state = IN_DEFAULTS_INST;
 	break;
 
+    case IN_DELDEFAULTS_MAP:
+	y->name = strdup(scalar);
+	if (!y->name) {
+	    yaml_errout(y, "Out of memory allocating name");
+	    return -1;
+	}
+	y->state = IN_DELDEFAULTS_SEQ;
+	break;
+
+    case IN_DELDEFAULTS_VAL:
+	if (add_seq(y, scalar, "delete_defaults"))
+	    goto out_err;
+	break;
+
     case IN_ADMINS_MAP:
 	y->name = strdup(scalar);
 	if (!y->name) {
@@ -1227,7 +1248,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	break;
 
     case IN_ROTATOR_CONNECTIONS_SEQ:
-	if (add_connection(y, scalar, "rotator"))
+	if (add_seq(y, scalar, "rotator"))
 	    goto out_err;
 	break;
 
@@ -1255,6 +1276,10 @@ yhandle_seq_start(struct yconf *y)
 	y->state = IN_ROTATOR_CONNECTIONS_SEQ;
 	break;
 
+    case IN_DELDEFAULTS_SEQ:
+	y->state = IN_DELDEFAULTS_VAL;
+	break;
+
     default:
 	yaml_errout(y, "Unexpected sequence start: %d", y->state);
 	return -1;
@@ -1266,9 +1291,28 @@ yhandle_seq_start(struct yconf *y)
 static int
 yhandle_seq_end(struct yconf *y)
 {
+    unsigned int i;
+    int err, reterr = 0;
+
     switch (y->state) {
     case IN_ROTATOR_CONNECTIONS_SEQ:
 	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_DELDEFAULTS_VAL:
+	if (y->curr_seq == 0) {
+	    yaml_errout(y, "No class(es) given in delete_defaults");
+	    return -1;
+	}
+	for (i = 0; i < y->curr_seq; i++) {
+	    err = gensio_del_default(so, y->seq[i], y->name, false);
+	    if (err) {
+		reterr = -1;
+		yaml_errout(y, "Unable to delete default name %s:%s: %s",
+			    y->seq[i], y->name, gensio_err_to_str(err));
+	    }
+	}
+	y->state = IN_DELDEFAULTS_MAP;
 	break;
 
     default:
@@ -1276,7 +1320,7 @@ yhandle_seq_end(struct yconf *y)
 	return -1;
     }
 
-    return 0;
+    return reterr;
 }
 
 static int
@@ -1284,6 +1328,7 @@ yhandle_mapping_start(struct yconf *y)
 {
     switch (y->state) {
     case BEGIN_DOC:
+    case END_DOC: /* Allow multiple documents, just go on. */
 	y->state = MAIN_LEVEL;
 	break;
 
@@ -1298,6 +1343,10 @@ yhandle_mapping_start(struct yconf *y)
     case IN_DEFAULTS_INST:
 	y->map_info = &sc_defaults_map;
 	y->state = IN_MAIN_MAP;
+	break;
+
+    case IN_DELDEFAULTS:
+	y->state = IN_DELDEFAULTS_MAP;
 	break;
 
     case IN_ADMINS:
@@ -1382,6 +1431,7 @@ yhandle_mapping_end(struct yconf *y)
 
     case IN_DEFINES_MAP:
     case IN_DEFAULTS_MAP:
+    case IN_DELDEFAULTS_MAP:
     case IN_LEDS_MAP:
     case IN_ADMINS_MAP:
     case IN_CONNECTIONS_MAP:
@@ -1460,14 +1510,14 @@ yhandle_mapping_end(struct yconf *y)
 		yaml_errout(y, "No accepter given in rotator");
 		return -1;
 	    }
-	    if (y->curr_connection == 0) {
+	    if (y->curr_seq == 0) {
 		yaml_errout(y, "No connections given in rotator");
 		return -1;
 	    }
 	    /* NULL terminate the connections. */
-	    if (add_connection(y, NULL, "rotator"))
+	    if (add_seq(y, NULL, "rotator"))
 		return -1;
-	    err = gensio_argv_copy(so, (const char **) y->connections,
+	    err = gensio_argv_copy(so, (const char **) y->seq,
 				   &argc, &argv);
 	    if (err) {
 		yaml_errout(y, "Unable to allocate rotator connections");
@@ -1516,9 +1566,8 @@ yhandle_mapping_end(struct yconf *y)
 	    }
 	    err = gensio_del_default(so, y->class, y->name, false);
 	    if (err) {
-		yaml_errout(y, "Unable to set default name %s:%s:%s: %s",
-			    y->class ? y->class : "",
-			    y->name, y->value, gensio_err_to_str(err));
+		yaml_errout(y, "Unable to delete default name %s:%s: %s",
+			    y->class, y->name, gensio_err_to_str(err));
 		return -1;
 	    }
 	    y->state = MAIN_LEVEL;
@@ -1557,14 +1606,14 @@ yhandle_mapping_end(struct yconf *y)
 		yaml_errout(y, "No accepter given in rotator");
 		return -1;
 	    }
-	    if (y->curr_connection == 0) {
+	    if (y->curr_seq == 0) {
 		yaml_errout(y, "No connections given in rotator");
 		return -1;
 	    }
 	    /* NULL terminate the connections. */
-	    if (add_connection(y, NULL, "rotator"))
+	    if (add_seq(y, NULL, "rotator"))
 		return -1;
-	    err = gensio_argv_copy(so, (const char **) y->connections,
+	    err = gensio_argv_copy(so, (const char **) y->seq,
 				   &argc, &argv);
 	    if (err) {
 		yaml_errout(y, "Unable to allocate rotator connections");
@@ -1774,13 +1823,13 @@ yaml_readconfig(ftype *file, char *filename,
 	return GE_NOMEM;
     }
     y.options_len = 10;
-    y.connections = malloc(sizeof(char *) * 10);
-    if (!y.connections) {
+    y.seq = malloc(sizeof(char *) * 10);
+    if (!y.seq) {
 	free(y.options);
 	errout->out(errout, "Out of memory allocating connection array");
 	return GE_NOMEM;
     }
-    y.connections_len = 10;
+    y.seq_len = 10;
     y.state = BEGIN_DOC;
     y.sub_errout.out = sub_errout;
     y.sub_errout.vout = sub_verrout;
@@ -1809,12 +1858,33 @@ yaml_readconfig(ftype *file, char *filename,
 
 	switch (y.d->f->e.type) {
 	case YAML_NO_EVENT:
+#if DEBUG
+	    printf("YAML_NO_EVENT\n");
+#endif
+	    break;
+
 	case YAML_STREAM_START_EVENT:
+#if DEBUG
+	    printf("YAML_STREAM_START_EVENT\n");
+#endif
+	    break;
+
 	case YAML_DOCUMENT_START_EVENT:
+#if DEBUG
+	    printf("YAML_DOCUMENT_START_EVENT\n");
+#endif
+	    break;
+
 	case YAML_DOCUMENT_END_EVENT:
+#if DEBUG
+	    printf("YAML_DOCUMENT_END_EVENT\n");
+#endif
 	    break;
 
 	case YAML_STREAM_END_EVENT:
+#if DEBUG
+	    printf("YAML_STREAM_END_EVENT\n");
+#endif
 	    if (y.state != END_DOC) {
 		yaml_errout(&y, "yaml file ended in invalid state: %d",
 			    y.state);
@@ -1915,7 +1985,8 @@ yaml_readconfig(ftype *file, char *filename,
 
     yconf_cleanup_main(&y);
     free(y.options);
-    free(y.connections);
+    free(y.seq);
+    y.seq_len = 0;
     while (y.aliases) {
 	struct alias *a = y.aliases;
 	y.aliases = a->next;
