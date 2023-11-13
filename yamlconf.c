@@ -1103,7 +1103,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_DEFINES_VAL;
 	break;
@@ -1124,7 +1124,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_DEFAULTS_INST;
 	break;
@@ -1133,7 +1133,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_DELDEFAULTS_SEQ;
 	break;
@@ -1147,7 +1147,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_ADMINS_INST;
 	break;
@@ -1156,7 +1156,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_LEDS_INST;
 	break;
@@ -1165,7 +1165,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_CONNECTIONS_INST;
 	break;
@@ -1174,7 +1174,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	y->name = strdup(scalar);
 	if (!y->name) {
 	    yaml_errout(y, "Out of memory allocating name");
-	    return -1;
+	    goto out_err;
 	}
 	y->state = IN_ROTATORS_INST;
 	break;
