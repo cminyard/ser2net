@@ -252,15 +252,9 @@ mdns_addstack(struct mdns_info *m, const char *name, struct absout *eout)
 	if (!type)
 	    break;
 
-	if (strcmp(type, "telnet") == 0) {
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type);
-	} else {
-	    tmps = gensio_alloc_sprintf(so, "%s%s%s",
-					stack ? stack : "", stack ? "," : "",
-					type);
-	}
+	tmps = gensio_alloc_sprintf(so, "%s%s%s",
+				    stack ? stack : "", stack ? "," : "",
+				    type);
 	if (!tmps)
 	    goto out_nomem;
 	if (stack)
