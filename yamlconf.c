@@ -529,24 +529,24 @@ do_include(struct yconf *y, const char *ivalue)
 
     case WRDE_BADCHAR:
 	yaml_errout(y, "Bad character in include directive");
-	return -1;
+	goto out_err;
 
     case WRDE_CMDSUB:
 	yaml_errout(y, "Command substitution not allowed in include directive");
-	return -1;
+	goto out_err;
 
     case WRDE_NOSPACE:
 	yaml_errout(y, "Out of memory processing include directive");
-	return -1;
+	goto out_err;
 
     case WRDE_SYNTAX:
 	yaml_errout(y, "Syntax error in include directive");
-	return -1;
+	goto out_err;
 
     case WRDE_BADVAL:
     default:
 	yaml_errout(y, "Unknown error in include directive");
-	return -1;
+	goto out_err;
     }
 
     f->closeme = true;
@@ -557,6 +557,9 @@ do_include(struct yconf *y, const char *ivalue)
     if (next_yaml_read_file(y->d))
 	cleanup_yaml_read_file(y->d);
     return 0;
+ out_err:
+    free(f);
+    return -1;
 #else
     yaml_errout(y, "Include is not supported on this system");
     return -1;
