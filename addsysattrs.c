@@ -54,10 +54,11 @@ get_base_str(const char *devname, unsigned int *len)
     if (s) {
 	s++;
 	s = strchr(s, ',');
-	if (s)
+	if (s) {
 	    s++;
-	while (isspace(*s))
-	    s++;
+	    while (isspace(*s))
+		s++;
+	}
     } else {
 	s = strstr(devname, "/dev/");
     }
