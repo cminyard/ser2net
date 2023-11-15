@@ -42,7 +42,7 @@
 #include "led.h"
 #include "fileio.h"
 
-#define DEBUG 1
+//#define DEBUG 1//
 
 #ifdef WIN32
 char *strndup(const char *s, size_t n)
