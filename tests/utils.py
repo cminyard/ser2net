@@ -217,7 +217,10 @@ class HandleData:
             return 0
 
         if (err):
-            raise HandlerException(self.name + ": read: " + err)
+            # A remote close is fairly normal, don't error on it.
+            if err != "Remote end closed connection":
+                raise HandlerException(self.name + ": read: " + err)
+            return 0
         if (self.ignore_input):
             return len(buf)
         if (self.to_waitfor):

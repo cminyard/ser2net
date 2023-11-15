@@ -78,10 +78,15 @@ def test_ser2net_termios(name, handler, config, io1str, io2str):
         io2.read_cb_enable(True)
 
         expected_termios = handler.op(io1, io2)
+        print("Expected " + str(expected_termios))
 
         io2_rem_termios = get_remote_termios(utils.remote_id_int(io2))
 
         c = compare_termios(expected_termios, io2_rem_termios)
+        if (c != -1):
+            # HUPCL may or may not be set, check both.
+            expected_termios[2] = expected_termios[2] | termios.HUPCL
+            c = compare_termios(expected_termios, io2_rem_termios)
         if (c != -1):
             raise Exception("Termios mismatch at %d\nExpected: %s\nBut got  %s" %
                             (c, str(expected_termios), str(io2_rem_termios)))
