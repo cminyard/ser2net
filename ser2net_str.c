@@ -140,6 +140,7 @@ process_str(port_info_t *port, net_info_t *netcon, brkout_time *tb,
 		    t = strchr(str, ',');
 		    if (!t)
 			break;
+		    t++;
 		    for (; *t && *t != ' '; t++)
 			op(data, *t);
 		}
