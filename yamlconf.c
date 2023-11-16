@@ -820,11 +820,16 @@ static struct scalar_next_state sc_led[] = {
     {}
 };
 
+static struct option_info admin_option_info = {
+    "admin",
+    IN_MAIN_MAP,
+};
+
 static struct scalar_next_state sc_admin[] = {
     { "accepter", IN_MAIN_MAP_KEYVAL, WHICH_INFO_KEYVAL,
       .keyval_info = &keyval_accepter },
     { "options", IN_OPTIONS, WHICH_INFO_OPTION,
-      .option_info = &led_option_info },
+      .option_info = &admin_option_info },
     {}
 };
 
