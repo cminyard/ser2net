@@ -437,6 +437,25 @@ def test_rts():
 
 test_rts()
 
+class CtrlRspHandler:
+    def __init__(self, o, val):
+        self.val = val
+        self.waiter = gensio.waiter(o)
+        return
+
+    def control_done(self, io, err, value):
+        if (err):
+            raise Exception("Error getting signature: %s" % err)
+        value = value.decode(encoding='utf-8')
+        if (value != str(self.val)):
+            raise Exception("Value was '%s', expected '%s'" %
+                            (value, self.val))
+        self.waiter.wake();
+        return
+
+    def wait_timeout(self, timeout):
+        return self.waiter.wait_timeout(1, timeout)
+
 def test_flush():
     config = ("connection: &con",
               "  accepter: telnet(rfc2217),tcp,3023",
@@ -451,14 +470,21 @@ def test_flush():
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
 
     try:
+        gensio.GENSIO_ACONTROL_SER_FLUSH
+    except:
+        print("  Unsupported!")
+        return
+
+    try:
         io1.read_cb_enable(True);
         io1.handler.set_expected_flush(1)
         sio1 = io1.cast_to_sergensio()
-        sio1.sg_flush(1)
-        if (io1.handler.wait_timeout(2000) == 0):
-            raise Exception("%s: %s: Timed out waiting for flush" %
-                            ("test flush", io1.handler.name))
-
+        h = CtrlRspHandler(o, "recv")
+        io1.acontrol(0, gensio.GENSIO_CONTROL_SET,
+                     gensio.GENSIO_ACONTROL_SER_FLUSH,
+                     "recv", h, -1)
+        if h.wait_timeout(1000) == 0:
+            raise Exception("Timeout waiting for client flush response")
     except:
         utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
         raise
