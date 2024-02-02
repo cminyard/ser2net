@@ -884,13 +884,37 @@ s2n_flowcontrol_state(net_info_t *netcon, bool val)
 		   GENSIO_CONTROL_SER_FLOWCONTROL_STATE, s, &len);
 }
 
+#ifndef GENSIO_SER_FLUSH_BOTH
+/* This was missed in versions of gensio before 2.8.2. */
+const char *
+gensio_flush_to_str(unsigned int ival)
+{
+    switch(ival) {
+    case 0:
+	return "0";
+
+    case 1:
+	return "recv";
+
+    case 2:
+	return "xmit";
+
+    case 3:
+	return "both";
+
+    default:
+	return "?";
+    }
+}
+#endif
+
 static void
 s2n_flush(net_info_t *netcon, int val)
 {
     char s[20];
     gensiods len;
 
-    strncpy(s, gensio_onoff_to_str(val), sizeof(s) - 1);
+    strncpy(s, gensio_flush_to_str(val), sizeof(s) - 1);
     len = strlen(s);
 
     if (netcon->port->io)
