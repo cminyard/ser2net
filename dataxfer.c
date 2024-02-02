@@ -850,11 +850,24 @@ s2n_modemstate(net_info_t *netcon, struct gensio *io, unsigned int modemstate)
     gensiods len;
 
     netcon->modemstate_mask = modemstate;
+#ifdef GENSIO_ACONTROL_SER_SET_MODEMSTATE_MASK
+    len = snprintf(s, sizeof(s), "%d", modemstate);
+    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_SET_MODEMSTATE_MASK, s, len,
+		    NULL, NULL, NULL);
+    len = snprintf(s, sizeof(s), "%d",
+		   port->last_modemstate & netcon->modemstate_mask);
+    gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_SEND_MODEMSTATE, s, &len);
+#else
     len = snprintf(s, sizeof(s), "%d",
 		   port->last_modemstate & netcon->modemstate_mask);
     gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
 		   GENSIO_CONTROL_SET,
 		   GENSIO_CONTROL_SER_MODEMSTATE, s, &len);
+#endif
 }
 
 static void
@@ -865,11 +878,24 @@ s2n_linestate(net_info_t *netcon, struct gensio *io, unsigned int linestate)
     gensiods len;
 
     netcon->linestate_mask = linestate;
+#ifdef GENSIO_ACONTROL_SER_SET_LINESTATE_MASK
+    len = snprintf(s, sizeof(s), "%d", linestate);
+    gensio_acontrol(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		    GENSIO_CONTROL_SET,
+		    GENSIO_ACONTROL_SER_SET_LINESTATE_MASK, s, len,
+		    NULL, NULL, NULL);
+    len = snprintf(s, sizeof(s), "%d",
+		   port->last_linestate & netcon->linestate_mask);
+    gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_SEND_LINESTATE, s, &len);
+#else
     len = snprintf(s, sizeof(s), "%d",
 		   port->last_linestate & netcon->linestate_mask);
     gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
 		   GENSIO_CONTROL_SET,
 		   GENSIO_CONTROL_SER_LINESTATE, s, &len);
+#endif
 }
 
 static void
