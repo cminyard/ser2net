@@ -428,6 +428,34 @@ def test_rts():
 
 test_rts()
 
+def test_flush():
+    config = ("connection: &con",
+              "  accepter: telnet(rfc2217),tcp,3023",
+              "  connector: serialdev,/dev/ttyPipeA0,9600n81,local")
+    io1str = "telnet(rfc2217),tcp,localhost,3023"
+    io2str = "serialdev,/dev/ttyPipeB0,9600N81"
+
+    print("serialdev flush rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
+          (config, io1str, io2str))
+
+    o = utils.o
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
+
+    io1.read_cb_enable(True);
+    io1.handler.set_expected_flush(1)
+    sio1 = io1.cast_to_sergensio()
+    sio1.sg_flush(1)
+    if (io1.handler.wait_timeout(2000) == 0):
+        raise Exception("%s: %s: Timed out waiting for flush" %
+                        ("test flush", io1.handler.name))
+
+
+    utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
+    print("  Success!")
+    return
+
+test_flush()
+
 def test_modemstate():
     config = ("connection: &con",
               "  accepter: telnet(rfc2217),tcp,3023",

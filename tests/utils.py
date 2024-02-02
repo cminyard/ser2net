@@ -102,6 +102,7 @@ class HandleData:
         self.expecting_modemstate = False
         self.expecting_modemstate_mask = False
         self.expecting_linestate = False
+        self.expecting_flush = False
         self.expected_server_cb = None
         self.expected_server_value = 0
         self.expected_server_return = 0
@@ -349,6 +350,24 @@ class HandleData:
     def set_expected_linestate(self, linestate):
         self.expecting_linestate = True
         self.expected_linestate = linestate
+        return
+
+    def flush(self, io, val):
+        if (not self.expecting_flush):
+            if (debug or self.debug):
+                print("Got unexpected flush %x" % val)
+            return
+        if (val != self.expected_flush):
+            raise HandlerException("%s: Expecting flush %d, got %d" %
+                                   (self.name, self.expected_flush,
+                                    val))
+        self.expecting_flush = False
+        self.waiter.wake()
+        return
+
+    def set_expected_flush(self, flush):
+        self.expecting_flush = True
+        self.expected_flush = flush
         return
 
     def set_expected_server_cb(self, name, value, retval):
