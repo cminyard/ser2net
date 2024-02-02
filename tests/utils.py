@@ -732,8 +732,8 @@ def test_write_drain(io1, io2, data, timeout = 1000):
     If the transfer does not complete by "timeout" milliseconds, raise
     an exception.
     """
-    io1.handler.set_write_data(data, close_on_done = True)
     io2.handler.set_compare(data)
+    io1.handler.set_write_data(data, close_on_done = True)
     if (io1.handler.wait_timeout(timeout) == 0):
         raise Exception(("%s: %s: " % ("test_dataxfer", io1.handler.name)) +
                         ("Timed out waiting for write completion at byte %d" %

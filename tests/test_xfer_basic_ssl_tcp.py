@@ -15,9 +15,9 @@ test_write_drain("basic ssl tcp", "This is a write drain test!",
                  ("connection: &con",
                   "  accepter: ssl(key=%s/key.pem,cert=%s/cert.pem),tcp,3023"
                   % (utils.keydir, utils.keydir),
-                  "  connector: serialdev,/dev/ttyPipeA0,9600N81,local"),
+                  "  connector: serialdev,/dev/ttyPipeA0,300N81,local"),
                  "ssl(CA=%s/CA.pem),tcp,localhost,3023" % utils.keydir,
-                 "serialdev,/dev/ttyPipeB0,9600N81")
+                 "serialdev,/dev/ttyPipeB0,300N81,local")
 
 # Note that in the connect back we set cert=.  By default the
 # certificate and private key are set by defaults in ser2net; if they
