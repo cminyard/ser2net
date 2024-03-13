@@ -59,7 +59,7 @@ cntrl_abserrout(struct absout *e, const char *str, ...)
 #define REMOTEADDR_COLUMN_WIDTH						\
     (INET6_ADDRSTRLEN - 1 /* terminating NUL */ + 1 /* comma */ + 5 /* strlen("65535") */)
 
-char *state_str[] = { "closed", "unconnected", "waiting input",
+char *state_str[] = { "not started", "closed", "unconnected", "waiting input",
 		      "waiting output", "closing" };
 
 char *enabled_str[] = { "off", "on" };
