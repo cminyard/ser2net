@@ -920,7 +920,7 @@ main(int argc, char *argv[])
 
 	case 'v':
 	    printf("%s version %s\n", argv[0], VERSION);
-	    return 1;
+	    return 0;
 
 	case 's':
             i++;
