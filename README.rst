@@ -121,8 +121,8 @@ encrypted.  Here an example, after installing gensio and ser2net.
 
 Note that this is for use with gensio's gtlssh, *not* with normal ssh.
 Normal ssh does not currently work with ser2net.  I looked at doing
-ssh, and it turne out to be hard to do, as ssh isn't a neatly layered
-protocol with easily separable authenticiation, and the current ssh
+ssh, and it turned out to be hard to do, as ssh isn't a neatly layered
+protocol with easily separable authentication, and the current ssh
 libraries available are not suitable at all for gensio.
 
 Anyway, to do this, edit the ser2net configuration file::
