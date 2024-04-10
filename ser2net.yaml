@@ -162,7 +162,7 @@ define: &confver 1.0
 # #   gensiot telnet,ssl(CA=ser2net.crt),sctp,2004
 # #
 # # Note that the commonname of the key is important because it
-# # make the subject name of the certificate more unique.  You can really
+# # makes the subject name of the certificate more unique.  You can really
 # # put anything you want for what you provide to keygen.  That will be the
 # # subject name of the certificate.
 # connection: &con3
@@ -195,7 +195,7 @@ define: &confver 1.0
 # # to use gtlssh for login, you set allow-authfail
 # # on certauth, which will run the protocol but ignore any failures, and
 # # then you can just log in.  It's easy enough to just handle the
-# # certificate,though, so that's really preferred.
+# # certificate, though, so that's really preferred.
 # connection: &con5
 #   accepter: telnet,mux,certauth(allow-authfail),ssl,sctp,2006
 #   connector: echo
@@ -323,7 +323,7 @@ define: &confver 1.0
 #  <name>:<value>
 # To refer to a define, you use =(<name>), you don't use YAML anchors
 # and references as they don't really work for parsing and recreating.
-# For including files, similaryly, you use ={<filename>}.  Don't use "*".
+# For including files, similarly, you use ={<filename>}.  Don't use "*".
 
 # For everything else, you have the form:
 #  <name>:
