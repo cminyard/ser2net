@@ -1027,14 +1027,11 @@ s2n_flowcontrol(net_info_t *netcon, int flowcontrol)
 
     if (!io)
 	return;
-    printf("A: %d\n", flowcontrol);
     len = snprintf(s, sizeof(s), "%s", gensio_flowcontrol_to_str(flowcontrol));
-    printf("B: %ld %s\n", len, s);
-    int rv = gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
+    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
 		    GENSIO_CONTROL_SET,
 		    GENSIO_ACONTROL_SER_FLOWCONTROL, s, len, ser_control_set,
 		    (void *) (long) S2N_FLOWCONTROL, NULL);
-    printf("C: %d\n", rv);
 }
 
 static void
