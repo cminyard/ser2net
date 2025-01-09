@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Ser2Net"
-#define MyAppVersion "4.6.2"
+#define MyAppVersion "4.6.3"
 #define MyAppPublisher "Ser2Net"
 #define MyAppURL "https://github.com/cminyard/ser2net"
 #define InstallDir "c:/msys64/home/cminyard/install/Ser2Net"
