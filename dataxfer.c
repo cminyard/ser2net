@@ -173,7 +173,7 @@ port_check_connect_backs(port_info_t *port)
 	/*
 	 * Some data came in while we were shutting down the port.
 	 * Just ignore it for now, when the port is opened back up we
-	 * wills tart the connections.
+	 * will start the connections.
 	 */
 	return 1;
     }
@@ -621,6 +621,12 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     /* Can't use buffer send operation here, multiple writers can send
        from the buffers. */
     reterr = gensio_write(netcon->net, &count, buf->buf + *pos, to_send, NULL);
+    if (reterr)
+	/*
+	 * Mark that we have written all the data so the check for more data
+	 * to send will not count this one.
+	 */
+	*pos = port->dev_to_net.cursize;
     if (reterr == GE_REMCLOSE) {
 	shutdown_one_netcon(netcon, "Remote closed");
 	return -1;

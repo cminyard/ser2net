@@ -572,7 +572,6 @@ shutdown_one_netcon(net_info_t *netcon, const char *reason)
     if (netcon->closing)
 	return;
 
-    netcon->write_pos = 0;
     footer_trace(netcon->port, "netcon", reason);
 
     netcon->close_on_output_done = false;
@@ -835,8 +834,10 @@ port_timeout(struct gensio_timer *timer, void *data)
 
     if (port->nocon_read_enable_time_left) {
 	port->nocon_read_enable_time_left--;
-	if (port->nocon_read_enable_time_left == 0)
+	if (port->nocon_read_enable_time_left == 0) {
 	    gensio_set_read_callback_enable(port->io, true);
+	    port->dev_to_net_state = PORT_WAITING_INPUT;
+	}
 	goto out;
     }
 
