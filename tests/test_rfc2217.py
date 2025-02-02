@@ -508,6 +508,12 @@ def test_modemstate():
     ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str,
                                               do_io1_open = False)
     try:
+        io2.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_DTR,
+                       "off", -1);
+        io2.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_RTS,
+                       "off", -1);
         set_remote_null_modem(utils.remote_id_int(io2), False);
         set_remote_modem_ctl(utils.remote_id_int(io2),
                              (SERIALSIM_TIOCM_CAR |
@@ -520,7 +526,7 @@ def test_modemstate():
         io1.read_cb_enable(True);
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 1" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io2.read_cb_enable(True);
 
@@ -532,7 +538,7 @@ def test_modemstate():
                               SERIALSIM_TIOCM_CAR))
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 2" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io1.handler.set_expected_modemstate(
             gensio.SERGENSIO_MODEMSTATE_DSR_CHANGED |
@@ -543,7 +549,7 @@ def test_modemstate():
                               SERIALSIM_TIOCM_DSR))
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 3" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io1.handler.set_expected_modemstate(
             gensio.SERGENSIO_MODEMSTATE_CTS_CHANGED |
@@ -555,7 +561,7 @@ def test_modemstate():
                               SERIALSIM_TIOCM_CTS))
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 4" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io1.handler.set_expected_modemstate(
             gensio.SERGENSIO_MODEMSTATE_RI_CHANGED |
@@ -568,7 +574,7 @@ def test_modemstate():
                               SERIALSIM_TIOCM_RNG))
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 5" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io1.handler.set_expected_modemstate(
             gensio.SERGENSIO_MODEMSTATE_RI_CHANGED |
@@ -582,7 +588,7 @@ def test_modemstate():
                               SERIALSIM_TIOCM_RNG) << 16)
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 6" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
 
         io1.handler.set_expected_modemstate(
             gensio.SERGENSIO_MODEMSTATE_CD_CHANGED |
@@ -591,10 +597,16 @@ def test_modemstate():
             gensio.SERGENSIO_MODEMSTATE_CD |
             gensio.SERGENSIO_MODEMSTATE_DSR |
             gensio.SERGENSIO_MODEMSTATE_CTS)
+        io2.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_DTR,
+                       "on", -1);
+        io2.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_RTS,
+                       "on", -1);
         set_remote_null_modem(utils.remote_id_int(io2), True);
         if (io1.handler.wait_timeout(2000) == 0):
             raise Exception("%s: %s: Timed out waiting for modemstate 7" %
-                            ("test dtr", io1.handler.name))
+                            ("test modemstate", io1.handler.name))
     except:
         utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
         raise
@@ -603,3 +615,57 @@ def test_modemstate():
     return
 
 test_modemstate()
+
+def test_linestate():
+    config = ("connection: &con",
+              "  accepter: telnet(rfc2217),tcp,3023",
+              "  connector: serialdev,/dev/ttyPipeA0,9600n81,local")
+    io1str = "telnet(rfc2217),tcp,localhost,3023"
+    io2str = "serialdev,/dev/ttyPipeB0,9600N81,local"
+
+    print("serialdev linestate rfc2217:\n  config=%s  io1=%s\n  io2=%s" %
+          (config, io1str, io2str))
+
+    o = utils.o
+    ser2net, io1, io2 = utils.setup_2_ser2net(o, config, io1str, io2str)
+    try:
+        utils.test_dataxfer(io1, io2, "a\xffx\xff\xffy")
+
+        io2.read_cb_enable(True);
+        io2.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_SET_LINESTATE_MASK,
+                       str(gensio.GENSIO_SER_LINESTATE_BREAK |
+                           gensio.GENSIO_SER_LINESTATE_PARITY_ERR), -1)
+
+        io2.handler.set_expected_linestate(gensio.GENSIO_SER_LINESTATE_BREAK)
+        io2.read_cb_enable(True);
+        io1.control(0, gensio.GENSIO_CONTROL_SET,
+                    gensio.GENSIO_CONTROL_SER_SEND_BREAK, "")
+
+        if (io2.handler.wait_timeout(2000) == 0):
+            raise Exception("%s: %s: Timed out waiting for linestate 1" %
+                            ("test linestate", io1.handler.name))
+
+        io1.read_cb_enable(True);
+        io1.acontrol_s(0, gensio.GENSIO_CONTROL_SET,
+                       gensio.GENSIO_ACONTROL_SER_SET_LINESTATE_MASK,
+                       str(gensio.GENSIO_SER_LINESTATE_BREAK |
+                           gensio.GENSIO_SER_LINESTATE_PARITY_ERR), -1)
+        # If youdon't do a synchronous call above, the sent break below
+        # may happen before the linestate mask is set.
+
+        io1.handler.set_expected_linestate(gensio.GENSIO_SER_LINESTATE_BREAK)
+        io1.read_cb_enable(True);
+        io2.control(0, gensio.GENSIO_CONTROL_SET,
+                    gensio.GENSIO_CONTROL_SER_SEND_BREAK, "")
+        if (io1.handler.wait_timeout(2000) == 0):
+            raise Exception("%s: %s: Timed out waiting for linestate 2" %
+                            ("test linestate", io1.handler.name))
+    except:
+        utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
+        raise
+    utils.finish_2_ser2net(ser2net, io1, io2, handle_except = False)
+    print("  Success!")
+    return
+
+test_linestate()

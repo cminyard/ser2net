@@ -339,6 +339,8 @@ class HandleData:
             if (debug or self.debug):
                 print("Got unexpected linestate %x" % linestate)
             return
+        if (debug or self.debug):
+            print("Got linestate %x" % linestate)
         if (linestate != self.expected_linestate):
             raise HandlerException("%s: Expecting linestate 0x%x, got 0x%x" %
                                    (self.name, self.expected_linestate,
