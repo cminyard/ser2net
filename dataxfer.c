@@ -1125,10 +1125,9 @@ s2n_sync(net_info_t *netcon)
     if (!io)
 	return;
     if (port->telnet_brk_on_sync)
-	gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
-			GENSIO_CONTROL_SET,
-			GENSIO_CONTROL_SER_SEND_BREAK, "", 0,
-			NULL, NULL, NULL);
+	gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST,
+		       GENSIO_CONTROL_SET,
+		       GENSIO_CONTROL_SER_SEND_BREAK, "", 0);
 }
 
 static void
@@ -1138,10 +1137,9 @@ s2n_break(net_info_t *netcon)
 
     if (!io)
 	return;
-    gensio_acontrol(io, GENSIO_CONTROL_DEPTH_FIRST,
-		    GENSIO_CONTROL_SET,
-		    GENSIO_CONTROL_SER_SEND_BREAK, "", 0,
-		    NULL, NULL, NULL);
+    gensio_control(io, GENSIO_CONTROL_DEPTH_FIRST,
+		   GENSIO_CONTROL_SET,
+		   GENSIO_CONTROL_SER_SEND_BREAK, "", 0);
 }
 
 #else
