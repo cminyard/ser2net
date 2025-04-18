@@ -105,6 +105,7 @@ define: &confver 1.0
 #     banner: *banner1
 #     led-tx: *led1
 #     led-rx: *led1
+#     led-conn: *led2
 
 # # A connection on
 # #  /dev/serial/by-path/pci-0000:00:1d.0-usb-0:1.8.2.4:1.0-port1

@@ -126,12 +126,16 @@ report_newcon(port_info_t *port, net_info_t *netcon)
     if (!net_raddr_str(netcon->net, netcon->remaddr, sizeof(netcon->remaddr)))
 	strcpy(netcon->remaddr, "*unknown*");
     cntlr_report_conchange("new connection", port->name, netcon->remaddr);
+	if (port->led_conn)
+	    led_enable(port->led_conn, 1);
 }
 
 void
 report_disconnect(port_info_t *port, net_info_t *netcon)
 {
     cntlr_report_conchange("disconnect", port->name, netcon->remaddr);
+	if (port->led_conn)
+	    led_enable(port->led_conn, 0);
 }
 
 static void

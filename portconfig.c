@@ -333,6 +333,8 @@ finish_free_port(port_info_t *port)
 	free_led(port->led_rx);
     if (port->led_tx)
 	free_led(port->led_tx);
+    if (port->led_conn)
+	free_led(port->led_conn);
 #ifdef DO_MDNS
     mdns_shutdown(&port->mdns_info);
 #endif /* DO_MDNS */
@@ -480,6 +482,13 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 	port->led_tx = find_led(val);
 	if (!port->led_tx) {
 	    eout->out(eout, "Could not find led-tx LED: %s", val);
+	    return -1;
+	}
+    } else if (gensio_check_keyvalue(pos, "led-conn", &val) > 0) {
+	/* LED for UART Connection */
+	port->led_conn = find_led(val);
+	if (!port->led_conn) {
+	    eout->out(eout, "Could not find led-conn LED: %s", val);
 	    return -1;
 	}
     } else if (gensio_check_keybool(pos, "telnet-brk-on-sync",
@@ -686,6 +695,7 @@ init_port_data(port_info_t *port, struct absout *eout)
 
     port->led_tx = NULL;
     port->led_rx = NULL;
+    port->led_conn = NULL;
 
 #ifdef DO_MDNS
     mdns_info_getdefaults(&port->mdns_info, port->name, eout);
