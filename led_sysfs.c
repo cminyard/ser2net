@@ -45,13 +45,22 @@
 
 #define BUFSIZE 4096
 
+enum led_type {
+    LED_TRANSIENT,
+    LED_SOLID
+};
+
 struct led_sysfs_s
 {
     char *device;
     int state;
     int duration;
     int max_brightness;
+    enum led_type type;
 };
+
+static int
+led_sysfs_enable(void *led_driver_data, int enable);
 
 static int
 led_is_trigger_missing(const char *led, struct absout *eout)
@@ -233,6 +242,16 @@ led_sysfs_init(struct led_s *led, const char * const *options, int lineno,
 
 	if (strncasecmp(key, "state", len) == 0)
 	    drv_data->state = atoi(value);
+
+	if (strncasecmp(key, "mode", len) == 0) {
+	   if (strncasecmp(value, "transient", 5) == 0) {
+	       drv_data->type = LED_TRANSIENT;
+	   } else if (strncasecmp(value, "solid", 6) == 0) {
+	       drv_data->type = LED_SOLID;
+	   } else {
+	       eout->out(eout, "Unknown led type");
+	   }
+	}
     }
 
     if (!drv_data->device) {
@@ -306,22 +325,47 @@ led_sysfs_configure(void *led_driver_data, int lineno, struct absout *eout)
     if (rv != 0)
 	return rv;
 
-    /*
-     * switch to transient trigger, this will kick creation of additional
-     * property file in sysfs
-     */
-    rv = led_write(ctx->device, "trigger", "transient", lineno, eout);
-    if (rv)
-	return rv;
+    if (ctx->type == LED_TRANSIENT) {
+        /*
+         * switch to transient trigger, this will kick creation of additional
+         * property file in sysfs
+         */
+        rv = led_write(ctx->device, "trigger", "transient", lineno, eout);
+        if (rv)
+        return rv;
 
-    /* pre-configure the trigger for our needs */
-    snprintf(buffer, sizeof(buffer), "%d", ctx->duration);
-    rv |= led_write(ctx->device, "duration", buffer, lineno, eout);
+        /* pre-configure the trigger for our needs */
+        snprintf(buffer, sizeof(buffer), "%d", ctx->duration);
+        rv |= led_write(ctx->device, "duration", buffer, lineno, eout);
 
-    snprintf(buffer, sizeof(buffer), "%d", ctx->state);
-    rv |= led_write(ctx->device, "state", buffer, lineno, eout);
+        snprintf(buffer, sizeof(buffer), "%d", ctx->state);
+        rv |= led_write(ctx->device, "state", buffer, lineno, eout);
+    } else {
+        /*
+         * switch to transient trigger, this will kick creation of additional
+         * property file in sysfs
+         */
+        rv = led_write(ctx->device, "trigger", "none", lineno, eout);
+        if (rv)
+        return rv;
+    }
+    led_sysfs_enable(ctx, 0);
 
     return rv;
+}
+
+static int
+led_sysfs_enable(void *led_driver_data, int enable)
+{
+    char buffer[15];
+    struct led_sysfs_s *ctx = (struct led_sysfs_s *)led_driver_data;
+
+    if (enable) {
+        snprintf(buffer, sizeof(buffer), "%d", ctx->max_brightness);
+        return led_write(ctx->device, "brightness", buffer, 0, &seout);
+    } else {
+        return led_write(ctx->device, "brightness", "0", 0, &seout);
+    }
 }
 
 static int
@@ -353,6 +397,7 @@ static struct led_driver_s led_sysfs_driver = {
 
     .configure   = led_sysfs_configure,
     .flash       = led_sysfs_flash,
+    .enable      = led_sysfs_enable,
     .deconfigure = led_sysfs_deconfigure,
 };
 

@@ -58,6 +58,9 @@ struct led_driver_s {
     /* required: called when data transfer should be signaled */
     int (*flash)(void *drv_data);
 
+    /* required: turn led on or off */
+    int (*enable)(void *drv_data, int value);
+
     /* optional: called during deinitialization, could switch the LED off */
     int (*deconfigure)(void *drv_data);
 };
@@ -80,6 +83,9 @@ void free_led(struct led_s *led);
 
 /* Free all registered LEDs in the system */
 void free_leds(void);
+
+/* Turn LED on / off */
+int led_enable(struct led_s *led, int value);
 
 /* Flash the given LED */
 int led_flash(struct led_s *led);

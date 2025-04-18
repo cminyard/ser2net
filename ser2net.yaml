@@ -77,6 +77,13 @@ define: &confver 1.0
 #   options:
 #     device: "tpacpi::standby"
 
+# # Create a steady state LED to indicate when a user is connected to the port
+# led: &led2
+#   driver: sysfs
+#   options:
+#     mode: "solid"
+#     device: "connled"
+
 # # This creates an arbitrary string we will use inside other strings.
 # # The quotes are necessary to keep YAML from interpreting the colons.
 # define: &serbase "/dev/serial/by-path/pci-0000:00:1d.0"

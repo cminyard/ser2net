@@ -234,6 +234,12 @@ free_leds(void)
 }
 
 int
+led_enable(struct led_s *led, int value)
+{
+    return led->driver->enable(led->drv_data, value);
+}
+
+int
 led_flash(struct led_s *led)
 {
     return led->driver->flash(led->drv_data);
