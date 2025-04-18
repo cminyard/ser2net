@@ -471,6 +471,11 @@ use the previously defined led to indicate serial rx traffic on this
 port.  For version 2 this should be a YAML alias, like *led2.  For
 version 2 just use the name, like led2.
 
+.I led-conn: <led-alias>
+use the previously defined led to indicate as user is connected to the
+port.  For version 2 this should be a YAML alias, like *led2.  For
+version 2 just use the name, like led2.
+
 .I max-connections: <number>
 set the maximum number of connections that can be made on this particular
 TCP port.  If you make more than one connection to the same port, each
@@ -920,6 +925,9 @@ The time in milliseconds to flash the LED.  Defaults to 10.
 .I state: <number>
 The value to set the LED to to enable it.  Defaults to 1, but may need
 to be a different value.
+
+.I mode: <transient or solid>
+Sets the led mode as transient to flash or solid for a simple on-off mode.
 
 You reference the LED by alias in the connection options section, see
 that for details.  Make sure you have "modprobe ledtrig-transient"
