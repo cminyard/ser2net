@@ -337,6 +337,10 @@ struct port_info
      */
     struct led_s *led_tx;
     struct led_s *led_rx;
+    /*
+     * LED to light on connect
+     */
+    struct led_s *led_conn;
 
     /*
      * Directory that has authentication info.
