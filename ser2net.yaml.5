@@ -332,29 +332,36 @@ down one line, it will not return to the beginning of the line.
 
 .SS "CONNECTION SPECIFICATION OPTIONS"
 
+.TP
 .I kickolduser: true|false
+.br
 sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
-
+.TP
 .I banner: <banner string>
+.br
 displays the given banner when a client connects.  It uses string
 handling as described in "SPECIAL STRING HANDLING" above.
-
+.TP
 .I signature: <signature string>
+.br
 sends RFC2217 signature on clients request.  This may be an empty
 string.
-
+.TP
 .I openstr: <openstr name string>
+.br
 Send the given string to the device on first open.  This may be an
 empty string.  It uses string handling as described in "SPECIAL STRING
 HANDLING" above.
-
+.TP
 .I closestr: <closestr name>
+.br
 Send the given string to the device on final close.  This may be an
 empty string.  It uses string handling as described in "SPECIAL STRING
 HANDLING" above.
-
+.TP
 .I closeon: <closeon string>
+.br
 If the given string is seen coming from the connector side of the
 connection, close the connection.  The comparison here is, for
 simplicity, simplistic.  Complex expressions with repetitive things
@@ -364,54 +371,65 @@ because the comparison algorithm will see "ababa" and will fail on the
 final "a" and start over at "abc", which won't match.  This shouldn't
 cause a problem most cases, but if it does, contact the authors and it
 can be improved.
-
+.TP
 .I accepter-retry-time: <time in seconds>
+.br
 If the accepter does not come up at startup, wait this many seconds
 and retry it.
-
+.TP
 .I connector-retry-time: <time in seconds>
+.br
 On a connect-back port, if the connector does not come up or goes
 down.  wait this many seconds and retry it.
-
+.TP
 .I trace-read: <filename>
+.br
 When the acceptor is opened, open the given file and store all data
 read from the physical device (and thus written to the client's
 network/acceptor port) in the file.  If the file already exists, it is
 appended.  The file is closed when the port is closed.  The filename
 uses string handling as described in "SPECIAL STRING HANDLING" above.
-
+.TP
 .I trace-write: <filename>
+.br
 Like tr, but traces data written to the connecting gensio.
-
+.TP
 .I trace-both: <filename>
+.br
 trace both read and written data to the same file.  Note that this is
 independent of tr and tw, so you may be tracing read, write, and both
 to different files.
-
+.TP
 .I trace-hexdump: true|false
+.br
 turns on/off hexdump output to all trace files.  Each line in the
 trace file will be 8 (or less) bytes in canonical hex+ASCII format.  This is
 useful for debugging a binary protocol.
-
+.TP
 .I trace-timestamp: true|false
+.br
 adds/removes a timestamp to all of the trace files. A timestamp
 is prepended to each line if hexdump is active for the trace file.  A
 timestamped line is also recorded in the trace file when a remote client
 connects or disconnects from the port.
-
+.TP
 .I [trace-read-|trace-write-|trace-both-]hexdump: true|false
+.br
 turns on/off hexdump output for only one trace file.
 May be combined with hexdump.  Order is important.
-
+.TP
 .I [trace-read-|trace-write-|trace-both-]timestamp: true|false
+.br
 adds/removes a timestamp to only one the trace files
 May be combined with [-]timestamp.  Order is important.
-
+.TP
 .I telnet-brk-on-sync: true|false
+.br
 causes a telnet sync operation to send a break.  By default data is
 flushed until the data mark, but no break is sent.
-
+.TP
 .I chardelay: true|false
+.br
 enables the small wait after each character received on the
 connecting gensio before sending data on the accepted gensio.
 Normally ser2net will wait the time it takes to receive 2 serial port
@@ -423,8 +441,9 @@ Note that this feature is designed to balance network efficiency and
 interactivity.  It is not designed to give guarantees of minimum chunk
 of data size, as task scheduling and network stacks can modify these
 things, too.
-
+.TP
 .I chardelay-scale: <number>
+.br
 sets the time, measured in tenths of serial port characters, to wait
 after receiving from nothing from the connection before sending to the
 accepted gensio.  So setting this to 25 will cause ser2net to wait the
@@ -432,19 +451,22 @@ amount of time it takes to receive 2.5 serial port characters after
 receiving the last character before sending the data on to the TCP
 port.  The default value is 20, max is 1000.  This is ignored for
 non-serial gensios.
-
+.TP
 .I chardelay-min: <number>
+.br
 is the same as chardelay-scale, but in microseconds.  The larger of
 chardelay-scale and chardelay-min is used.  The default value is 1000,
 max is 100000.
-
+.TP
 .I chardelay-max: <number>
+.br
 sets the maximum delay that ser2net will wait, in microseconds, after
 receiving a character, before sending the data.  The default value is
 20000, max is 1000000.  This keeps the connection working smoothly at
 slow speeds.
-
+.TP
 .I sendon: <sendon string>
+.br
 If the given string is seen coming from the connector side of the
 connection, sends buffered data up to and including the
 string. Disabled by default. As an example, this can be set to \er\en
@@ -452,55 +474,65 @@ with appropriate chardelay settings to send one line at a time.  It
 uses string handling as described in "SPECIAL STRING HANDLING" above.
 See the notes on the closeon string for important information on how
 the comparison is done.
-
+.TP
 .I dev-to-net-bufsize: <number>
+.br
 sets the size of the buffer reading from the connecting gensio and writing
 to the accepted gensio.
-
+.TP
 .I net-to-dev-bufsize: <number>
+.br
 sets the size of the buffer reading from the accepted gensio and
 writing to the connecting gensio.
-
+.TP
 .I led-tx: <led-alias>
+.br
 use the previously defined led to indicate serial tx traffic on this
 port.  For version 2 this should be a YAML alias, like *led2.  For
 version 2 just use the name, like led2.
-
+.TP
 .I led-rx: <led-alias>
+.br
 use the previously defined led to indicate serial rx traffic on this
 port.  For version 2 this should be a YAML alias, like *led2.  For
 version 2 just use the name, like led2.
-
+.TP
 .I led-conn: <led-alias>
+.br
 use the previously defined led to indicate as user is connected to the
 port.  For version 2 this should be a YAML alias, like *led2.  For
 version 2 just use the name, like led2.
-
+.TP
 .I max-connections: <number>
+.br
 set the maximum number of connections that can be made on this particular
 TCP port.  If you make more than one connection to the same port, each
 ports output goes to the device, and the device output goes to all ports
 simultaneously.  See "MULTIPLE CONNECTIONS" below for details.  The default
 is 1.
-
+.TP
 .I remaddr: <addr>[;<addr>[;...]]
+.br
 specifies the allowed remote connections, where the addr is a standard
 address, generally in the form <ip address>,<port>.  Multiple
 addresses can be separated by semicolons, and you can specify remaddr
 more than once.
-
+.TP
 If you set the port for an address to zero, ser2net will accept a
 connection from any port from the given network host.
-
+.TP
 .I no-con-to-acc: true|false
+.br
 If true, do not transfer any data from the connector to the accepter.
 Throw any data received from the connecter away.
-
+.TP
 .I no-acc-to-con: true|false
+.br
 If true, do not transfer any data from the accepter to the connecter.
 Throw any data received from the accepter away.
-
+.TP
 .I connback: <connector>[;<connector>[;...]]
+.br
 specifies reverse connections that will be made when data comes in on
 the device.  When data comes in on the device side (the connection's
 main connector) ser2net will connect to each connback specified.  No
@@ -522,61 +554,74 @@ A connect back port can also have connections made to it if you set
 the number of connections larger than the number of connect backs
 specified.  However, those connections will receive no data from the
 port uness all connect backs have been established.
-
+.TP
 .I connback-timeout: <time in seconds>
+.br
 specifies a separate timeout for connect back ports.  Normally it uses
 the main timeout, this lets you have a different one.  Setting it to
 zero, like the main timeout, disables the timeout.
-
+.TP
 .I authdir: <directory string>
+.br
 specified the authentication directory to use for this connection.
-
+.TP
 .I pamauth: <service name>
+.br
 Enables PAM authentication and sets the PAM service name.
-
+.TP
 .I allowed-users: <space separated list of names>
+.br
 The users that are allowed to use this connections.  This has no
 meaning if authentication is not enabled on the connections.  If this
 is not set or defaulted, all users are allowed.  If this is set to an
 empty set of users, then no users are allowed.  This may be specified
 more than once, each one adds more users.
-
+.TP
 .I mdns: true|false
+.br
 Enables/disables mdns support for the connection.  If you set this and
 mdns is available, ser2net will create a service on mdns for the port.
-
+.TP
 .I mdns-interface: <num>
+.br
 Sets the specific network interface to advertise the device.  Defaults
 to -1, which means all network interfaces.
-
+.TP
 .I mdns-nettype: unspec|ipv4|ipv6
+.br
 Sets which network type to provide for the device advertisement.
 Defaults to unspec, which means do ipv4 and ipv6.
-
+.TP
 .I mdns-name: <string>
+.br
 Sets the name in the mDNS advertisement.  Defaults to the connection name.
-
+.TP
 .I mdns-type: <string>
+.br
 Sets the type in the mDNS advertisement.  Defaults to "_iostream._xxx"
 where xxx is either tcp, udp # # or sctp base on the gensio type.
-
+.TP
 .I mdns-domain: <string>
+.br
 Sets the name in the mDNS advertisement.  Defaults to the system
 setting.  Don't set this unless you really know what you are doing.
-
+.TP
 .I mdns-host: <string>
+.br
 Sets the host in the mDNS advertisement.  Defaults to the system
 setting.  Don't set this unless you really know what you are doing.
-
+.TP
 .I mdns-txt: <string>
+.br
 Adds a text string to the mDNS advertisement.  The string should be in
 the form "name=value".  You can put anything you want in the strings.
 Two default strings are added by ser2net: "provider=ser2net" and
 "gensiostack=..." where the stack of gensios is added, like
 "telnet(rfc2217),tcp)".  The idea of gensiostack is you can just tack
 on the address to the end an make a connection using str_to_gensio().
-
+.TP
 .I mdns-sysattrs: true|false
+.br
 On Linux adds system attributes from sysfs for USB serial ports to the
 mDNS txt fields.  If the serial port is USB, it adds
 "devicetype=serialusb" and the following attributes from sysfs:
@@ -755,10 +800,12 @@ applicable).  By default data is flushed until the data mark, but no
 break is sent.
 .TP
 .B kickolduser: false
+.br
 If a new user comes in on a connection that already has a user, kick
 off the previous user.
 .TP
 .B chardelay: true
+.br
 Enable asmall wait after each character received on the serial
 port before sending data on the TCP port.  Normally ser2net will wait
 the time it takes to receive 2 serial port characters, or at least
@@ -767,6 +814,7 @@ use of network resources when receiving large amounts of data, but
 gives reasonable interactivity.
 .TP
 .B chardelay-scale: 20
+.br
 sets the number of serial port characters, in tenths of a character,
 to wait after receiving from the serial port and sending to the TCP
 port.  So setting this to 25 will cause ser2net to wait the amount
@@ -774,20 +822,24 @@ of time it takes to receive 2.5 serial port characters before sending
 the data on to the TCP port.  This can range from 1-1000.
 .TP
 .B chardelay-min: 1000
+.br
 sets the minimum delay that ser2net will wait, in microseconds.  If
 the calculation for chardelay-scale results in a value smaller than
 this number, this number will be used instead.  The default value
 is 1000.  This can range from 1-100000.
 .TP
 .B net-to-dev-bufsize: 64
+.br
 sets the size of the buffer reading from the network port and writing to the
 serial device.
 .TP
 .B dev-to-net-bufsize: 64
+.br
 sets the size of the buffer reading from the serial device and writing
 to the network port.
 .TP
 .B max-connections: 1
+.br
 set the maximum number of connections that can be made on this
 particular TCP port.  If you make more than one connection to the same
 port, each ports output goes to the device, and the device output goes
@@ -795,6 +847,7 @@ to all ports simultaneously.  See "MULTIPLE CONNECTIONS" below.
 for details.
 .TP
 .B remaddr: [!]<addr>[;[!]<addr>[;...]]
+.br
 specifies the allowed remote connections, where the addr is a standard
 address in the form (see "network port" above).  Multiple addresses
 can be separated by semicolons, and you can specify remaddr more than
@@ -807,30 +860,38 @@ data comes in on the device, ser2net will attempt to connect to the
 address.  This works on TCP and UDP.
 .TP
 .B authdir: /usr/share/ser2net/auth
+.br
 The authentication directory for ser2net.  The AUTHENTICATION for more
 details.
 .TP
 .B authdir-admin: /etc/ser2net/auth
+.br
 The authentication directory for ser2net for admin connections.  The
 "ADMIN_CONNECTIONS" for more details.
 .TP
 .B pamauth: <NULL>
+.br
 The PAM service name for ser2net PAM authentication (<NULL> for disabled).
 .TP
 .B pamauth-admin: <NULL>
+.br
 The PAM service name for ser2net admin connection PAM authentication (<NULL>
 for disabled). See "ADMIN_CONNECTIONS" for more details.
 .TP
 .B mdns-interface: -1
+.br
 The default mDNS interface.
 .TP
 .B mdns-type: <NULL>
+.br
 The default mDNS type.
 .TP
 .B mdns-domain: <NULL>
+.br
 The default mDNS domain.
 .TP
 .B mdns-host: <NULL>
+.br
 The default mDNS host.
 .SH ADMIN CONNECTIONS
 There is an admin accepter that you can define for ser2net, it lets you
@@ -916,18 +977,29 @@ options:
 The only supported driver is sysfs.  Supported options are:
 
 .I device: <sysfs device name>
+.br
 gives the name of the LED in /sys/class/led.  These generally have ":"
 in them, so you will need to put the name in quotes.  This is required.
 
 .I duration: <time in ms>
+.br
 The time in milliseconds to flash the LED.  Defaults to 10.
 
 .I state: <number>
+.br
 The value to set the LED to to enable it.  Defaults to 1, but may need
 to be a different value.
 
-.I mode: <transient or solid>
-Sets the led mode as transient to flash or solid for a simple on-off mode.
+.I mode: transient | solid
+.br
+Sets the led mode as transient to flash on a bit when triggered or
+solid for a simple on-off mode.  Generally you would use a transient
+one for I/O activity,
+.B led-rx
+and
+.B led-tx,
+and a solid one for monitoring if a connection is active or not,
+.B led-conn.
 
 You reference the LED by alias in the connection options section, see
 that for details.  Make sure you have "modprobe ledtrig-transient"
