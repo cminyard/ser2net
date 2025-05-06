@@ -33,8 +33,9 @@
 #ifdef DO_MDNS
 #include <gensio/gensio_mdns.h>
 
-struct gensio_mdns *mdns;
-struct gensio_enum_val mdns_nettypes[] = {
+static struct gensio_mdns *mdns;
+static bool mdns_initialized;
+static struct gensio_enum_val mdns_nettypes[] = {
     { "unspec", GENSIO_NETTYPE_UNSPEC },
     { "ipv4", GENSIO_NETTYPE_IPV4 },
     { "ipv6", GENSIO_NETTYPE_IPV6 },
@@ -282,6 +283,25 @@ mdns_addstack(struct mdns_info *m, const char *name, struct absout *eout)
 	so->free(so, stack);
 }
 
+static void
+init_mdns(void)
+{
+    int err;
+
+    if (mdns_initialized)
+	return;
+    mdns_initialized = true;
+
+    /*
+     * If gensio doesn't support MDNS, that's not reportable unless
+     * the user tries to use it.
+     */
+    err = gensio_alloc_mdns(so, &mdns);
+    if (err && err != GE_NOTSUP)
+	/* Not fatal */
+	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(err));
+}
+
 void
 mdns_setup(struct mdns_info *m, const char *name, struct gensio_accepter *acc,
 	   struct absout *eout)
@@ -297,6 +317,12 @@ mdns_setup(struct mdns_info *m, const char *name, struct gensio_accepter *acc,
 	eout->out(eout, "%s mdns enabled, but no name given", name);
 	return;
     }
+
+    /*
+     * Delay MDNS initialization to here so that MDNS doesn't get
+     * initialized if it's not used.
+     */
+    init_mdns();
 
     if (!mdns) {
 	eout->out(eout, "mdns requested for %s port, but mdns failed"
@@ -377,25 +403,4 @@ mdns_shutdown(struct mdns_info *m)
     m->mdns_service = NULL;
     cleanup_mdns_data(m);
 }
-
-void
-init_mdns(void)
-{
-    int err = gensio_alloc_mdns(so, &mdns);
-    /*
-     * If gensio doesn't support MDNS, that's not reportable unless
-     * the user tries to use it.
-     */
-    if (err && err != GE_NOTSUP)
-	/* Not fatal */
-	fprintf(stderr, "Unable to start mdns: %s\n", gensio_err_to_str(err));
-}
-
-#else
-
-void
-init_mdns(void)
-{
-}
-
 #endif

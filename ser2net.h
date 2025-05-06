@@ -47,8 +47,6 @@ extern int ser2net_wake_sig;
 #define DO_MDNS
 #endif
 
-void init_mdns(void);
-
 void start_maint_op(void);
 void end_maint_op(void);
 int reread_config_file(const char *reqtype, struct absout *eout);

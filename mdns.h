@@ -34,9 +34,6 @@
 #include <gensio/gensio_mdns.h>
 #include <gensio/argvutils.h>
 
-extern struct gensio_mdns *mdns;
-extern struct gensio_enum_val mdns_nettypes[];
-
 struct mdns_info {
     struct gensio_accepter *acc;
     bool mdns;

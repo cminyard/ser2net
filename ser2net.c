@@ -1004,8 +1004,6 @@ main(int argc, char *argv[])
 	return 1;
     }
 
-    init_mdns();
-
     err = init_dataxfer();
     if (err) {
 	fprintf(stderr,
