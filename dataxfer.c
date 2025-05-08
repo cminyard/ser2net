@@ -650,7 +650,7 @@ net_fd_write(port_info_t *port, net_info_t *netcon,
     return 1;
 }
 
-static void
+void
 finish_dev_to_net_write(port_info_t *port)
 {
     if (any_net_data_to_write(port))

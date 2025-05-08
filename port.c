@@ -29,6 +29,7 @@
 #include <assert.h>
 #include "ser2net.h"
 #include "port.h"
+#include "dataxfer.h"
 #include "gbuf.h"
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
@@ -550,6 +551,12 @@ netcon_finish_shutdown(net_info_t *netcon)
 	}
     } else {
 	check_port_new_net(port, netcon);
+	if (netcon->port->dev_to_net_state == PORT_WAITING_OUTPUT_CLEAR)
+	    /*
+	     * If we are blocked on this writer, make sure that is
+	     * cleaned up.
+	     */
+	    finish_dev_to_net_write(netcon->port);
     }
 }
 

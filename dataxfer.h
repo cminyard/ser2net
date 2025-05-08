@@ -102,6 +102,11 @@ void data_monitor_stop(struct controller_info *cntlr,
 void disconnect_port(struct controller_info *cntlr,
 		     const char *portspec);
 
+struct port_info;
+
+/* When shutting a port down, call this if it's waiting for write output. */
+void finish_dev_to_net_write(struct port_info *port);
+
 struct devio;
 
 /* Initialization function for device I/O */
