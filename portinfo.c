@@ -156,7 +156,7 @@ showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 			       (unsigned long) netcon->bytes_received);
 	    controller_outputf(cntlr, "bytes written to TCP", "%lu",
 			       (unsigned long) netcon->bytes_sent);
-	    count = strlen(countstr);
+	    count = sizeof(countstr);
 	    rv = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
 				GENSIO_CONTROL_GET, GENSIO_CONTROL_DRAIN_COUNT,
 				countstr, &count);
