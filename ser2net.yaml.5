@@ -338,6 +338,21 @@ down one line, it will not return to the beginning of the line.
 sets the port so that the previous user will be kicked off if a new user
 comes in.  Useful if you forget to log off from someplace else a lot.
 .TP
+.I timeout-on-os-queue: true|false
+.br
+Normally ser2net only uses it's internal counts to know when to time
+out a connection.  If a remote end OS crashes or the network fails,
+writes will go into the OS queue until that fills up, then writes will
+stop in ser2net.  That can take a long time.
+
+This option modifies the behavior to take the OS queue into account.
+If it doesn't see the OS queue sending data out for the timeout, it will
+shut down.
+
+Though this is probably a good idea in general, it is false by default
+to preserve old behavior since this was added later.  It may switch to
+true by default on a major release.
+.TP
 .I banner: <banner string>
 .br
 displays the given banner when a client connects.  It uses string

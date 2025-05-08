@@ -795,6 +795,39 @@ port_startup(port_info_t *new_port, struct absout *eout, bool retry)
     return err;
 }
 
+static bool
+port_transmit_queue_read_by_remote(net_info_t *netcon)
+{
+    int rv;
+    char countstr[20];
+    gensiods count, nc;
+
+    if (!netcon->port->timeout_on_os_queue)
+	return netcon->bytes_sent != netcon->last_bytes_sent;
+
+    /*
+     * This fetches the total number of bytes outstanding in the OS
+     * queues.
+     */
+    count = sizeof(countstr);
+    rv = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+			GENSIO_CONTROL_GET, GENSIO_CONTROL_DRAIN_COUNT,
+			countstr, &count);
+    if (rv)
+	return netcon->bytes_sent != netcon->last_bytes_sent;
+
+    /*
+     * The number of bytes we sent in the last period plus the last
+     * queue length is the number of bytes that would be pending if
+     * nothing was sent out of the OS queue.
+     */
+    count = strtoul(countstr, NULL, 0);
+    nc = netcon->bytes_sent - netcon->last_bytes_sent
+	+ netcon->last_send_queue_len;
+    netcon->last_send_queue_len = count;
+    return nc != count;
+}
+
 static void
 port_timeout(struct gensio_timer *timer, void *data)
 {
@@ -857,9 +890,18 @@ port_timeout(struct gensio_timer *timer, void *data)
 	for_each_connection(port, netcon) {
 	    if (!netcon->net || !netcon->timeout_running)
 		continue;
-	    netcon->timeout_left--;
-	    if (netcon->timeout_left < 0)
-		shutdown_one_netcon(netcon, "timeout");
+	    if (netcon->bytes_received != netcon->last_bytes_received) {
+		reset_timer(netcon);
+	    } else if (port_transmit_queue_read_by_remote(netcon)) {
+		reset_timer(netcon);
+	    } else {
+		netcon->timeout_left--;
+		if (netcon->timeout_left < 0)
+		    shutdown_one_netcon(netcon, "timeout");
+		goto out;
+	    }
+	    netcon->last_bytes_received = netcon->bytes_received;
+	    netcon->last_bytes_sent = netcon->bytes_sent;
 	}
     }
 

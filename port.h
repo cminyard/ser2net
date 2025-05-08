@@ -83,6 +83,13 @@ struct net_info {
     gensiods bytes_sent;		/* Number of bytes written to the
 					   network port. */
 
+    /*
+     * These are used for timing out the port if there is no activity.
+     */
+    gensiods last_bytes_received;
+    gensiods last_bytes_sent;
+    gensiods last_send_queue_len;
+
     struct gbuf *banner;		/* Outgoing banner */
 
     gensiods write_pos;			/* Our current position in the
@@ -143,6 +150,11 @@ struct port_info
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before
 					   we shut the port down. */
+
+    /*
+     * Take the OS queue into account when timing out a connection.
+     */
+    bool timeout_on_os_queue;
 
     struct gensio_timer *timer;		/* Used to timeout when the no
 					   I/O has been seen for a

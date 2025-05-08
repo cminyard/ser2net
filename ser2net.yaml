@@ -275,6 +275,7 @@ define: &confver 1.0
 #   connector: echo
 #   options:
 #     kickolduser: false
+#     timeout-on-os-queue: false
 #     trace-hexdump: false
 #     trace-timestamp: false
 #     trace-read-hexdump: false

@@ -437,6 +437,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 
     if (gensio_check_keybool(pos, "kickolduser",
 			     &port->kickolduser_mode) > 0) {
+    } else if (gensio_check_keybool(pos, "timeout-on-os-queue",
+				    &port->timeout_on_os_queue) > 0) {
     } else if (gensio_check_keybool(pos, "trace-hexdump",
 				    &port->trace_read.hexdump) > 0) {
 	port->trace_write.hexdump = port->trace_read.hexdump;
@@ -665,6 +667,7 @@ init_port_data(port_info_t *port, struct absout *eout)
 
     port->telnet_brk_on_sync = find_default_bool("telnet-brk-on-sync");
     port->kickolduser_mode = find_default_bool("kickolduser");
+    port->timeout_on_os_queue = find_default_bool("timeout-on-os-queue");
     port->enable_chardelay = find_default_int("chardelay");
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");

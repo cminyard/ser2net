@@ -592,8 +592,6 @@ handle_net_fd_read(net_info_t *netcon, int readerr,
 	port->net_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
     }
 
-    reset_timer(netcon);
-
     rv = buflen;
 
  out_unlock:
@@ -703,8 +701,6 @@ handle_net_fd_write_ready(net_info_t *netcon)
     if (rv != 0)
 	gensio_set_write_callback_enable(netcon->net, false);
 
-    if (rv >= 0)
-	reset_timer(netcon);
     so->unlock(port->lock);
 }
 

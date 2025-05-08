@@ -48,6 +48,7 @@ static struct default_data defaults[] = {
     /* All port types */
     { "telnet-brk-on-sync",GENSIO_DEFAULT_BOOL,.def.intval = 0 },
     { "kickolduser",	GENSIO_DEFAULT_BOOL,	.def.intval = 0 },
+    { "timeout-on-os-queue", GENSIO_DEFAULT_BOOL, .def.intval = 0 },
     { "chardelay",	GENSIO_DEFAULT_BOOL,	.def.intval = 1 },
     { "chardelay-scale",GENSIO_DEFAULT_INT,	.min = 1, .max = 1000,
 					.def.intval = 20 },
