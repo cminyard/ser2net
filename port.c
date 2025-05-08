@@ -110,7 +110,8 @@ net_raddr(struct gensio *io, struct sockaddr_storage *addr, gensiods *socklen)
 void
 reset_timer(net_info_t *netcon)
 {
-    if (netcon->connect_back && netcon->port->connback_timeout_set)
+    if (netcon->connect_back && netcon->port->connback_timeout_set
+		&& !netcon->net)
 	netcon->timeout_left = netcon->port->connback_timeout;
     else
 	netcon->timeout_left = netcon->port->timeout;
