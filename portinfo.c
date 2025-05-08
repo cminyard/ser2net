@@ -25,6 +25,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <gensio/gensio.h>
 #ifndef GENSIO_ACONTROL_SER_RTS
 #include <gensio/sergensio.h>
@@ -137,6 +138,10 @@ showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 
     for_each_connection(port, netcon) {
 	if (netcon->net) {
+	    int rv;
+	    char countstr[20];
+	    unsigned long count;
+
 	    buffer[0] = '\0';
 	    net_raddr_str(netcon->net, buffer, sizeof(buffer));
 	    if (yaml) {
@@ -151,6 +156,15 @@ showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 			       (unsigned long) netcon->bytes_received);
 	    controller_outputf(cntlr, "bytes written to TCP", "%lu",
 			       (unsigned long) netcon->bytes_sent);
+	    count = strlen(countstr);
+	    rv = gensio_control(netcon->net, GENSIO_CONTROL_DEPTH_FIRST,
+				GENSIO_CONTROL_GET, GENSIO_CONTROL_DRAIN_COUNT,
+				countstr, &count);
+	    if (!rv) {
+		count = strtoul(countstr, NULL, 0);
+		controller_outputf(cntlr, "bytes in queue to TCP", "%lu",
+				   count);
+	    }
 	    controller_indent(cntlr, -1);
 	}
     }
