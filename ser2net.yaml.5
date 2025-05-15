@@ -159,7 +159,7 @@ will close the connection.  Setting <timeout> to zero disables the
 timeout.  The timeout field is optional and defaults to zero.
 
 The timeout has some subtle workings about it.  Any data from the
-accepter port will reset the timeout.  Data sent is a little more
+accepter port will reset the timer.  Data sent is a little more
 subtle, as it doesn't mean the remote end is actually there.  ser2net
 attempts to look into the local queues to see if data is pending to be
 sent.  If it detects that the other end is not accepting bytes, it
