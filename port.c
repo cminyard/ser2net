@@ -795,15 +795,21 @@ port_startup(port_info_t *new_port, struct absout *eout, bool retry)
     return err;
 }
 
+/*
+ * Return if any data has been sent on the port.  It also returns (in
+ * port_stuck) if data is pending on the port and the other end is not
+ * receiving them.
+ */
 static bool
-port_transmit_queue_read_by_remote(net_info_t *netcon)
+port_data_sent(net_info_t *netcon, bool *port_stuck)
 {
     int rv;
     char countstr[20];
     gensiods count, nc;
 
+    *port_stuck = false;
     if (!netcon->port->timeout_on_os_queue)
-	return netcon->bytes_sent != netcon->last_bytes_sent;
+	goto out;
 
     /*
      * This fetches the total number of bytes outstanding in the OS
@@ -814,7 +820,7 @@ port_transmit_queue_read_by_remote(net_info_t *netcon)
 			GENSIO_CONTROL_GET, GENSIO_CONTROL_DRAIN_COUNT,
 			countstr, &count);
     if (rv)
-	return netcon->bytes_sent != netcon->last_bytes_sent;
+	goto out;
 
     /*
      * The number of bytes we sent in the last period plus the last
@@ -825,7 +831,9 @@ port_transmit_queue_read_by_remote(net_info_t *netcon)
     nc = netcon->bytes_sent - netcon->last_bytes_sent
 	+ netcon->last_send_queue_len;
     netcon->last_send_queue_len = count;
-    return nc != count;
+    *port_stuck = count > 0 && nc == count;
+ out:
+    return netcon->bytes_sent != netcon->last_bytes_sent;
 }
 
 static void
@@ -887,18 +895,30 @@ port_timeout(struct gensio_timer *timer, void *data)
      * timeout for connect backs, we need to check that separately.
      */
     if (port_in_use(port)) {
+	bool port_stuck, any_port_stuck = false, data_sent;
+
+	for_each_connection(port, netcon) {
+	    port_data_sent(netcon, &port_stuck);
+	    if (port_stuck)
+		any_port_stuck = true;
+	}
 	for_each_connection(port, netcon) {
 	    if (!netcon->net || !netcon->timeout_running)
 		continue;
 	    if (netcon->bytes_received != netcon->last_bytes_received) {
 		reset_timer(netcon);
-	    } else if (port_transmit_queue_read_by_remote(netcon)) {
-		reset_timer(netcon);
 	    } else {
-		netcon->timeout_left--;
-		if (netcon->timeout_left < 0)
-		    shutdown_one_netcon(netcon, "timeout");
-		continue;
+		data_sent = port_data_sent(netcon, &port_stuck);
+		/* If any port is stuck, we only consider stuck ports. */
+		if (any_port_stuck)
+		    data_sent = !port_stuck;
+		if (data_sent) {
+		    reset_timer(netcon);
+		} else {
+		    netcon->timeout_left--;
+		    if (netcon->timeout_left < 0)
+			shutdown_one_netcon(netcon, "timeout");
+		}
 	    }
 	    netcon->last_bytes_received = netcon->bytes_received;
 	    netcon->last_bytes_sent = netcon->bytes_sent;

@@ -158,6 +158,15 @@ If the connection receive no activity in <timeout> seconds, ser2net
 will close the connection.  Setting <timeout> to zero disables the
 timeout.  The timeout field is optional and defaults to zero.
 
+The timeout has some subtle workings about it.  Any data from the
+accepter port will reset the timeout.  Data sent is a little more
+subtle, as it doesn't mean the remote end is actually there.  ser2net
+attempts to look into the local queues to see if data is pending to be
+sent.  If it detects that the other end is not accepting bytes, it
+considers that port "stuck" and will only consider ports that are
+stuck; a stuck port will not case other ports to time out.  If no port
+is stuck, any data transmitted will reset the timer.
+
 The connection may be enabled or disabled with the enable.  The enable
 field is optional and defaults to on.  This is useful for temporarily
 disabling port by setting enable to off and sending a SIGHUP.  If
