@@ -152,6 +152,8 @@ showport(struct controller_info *cntlr, port_info_t *port, bool yaml)
 		controller_outputf(cntlr, "connected to", "%s", buffer);
 		controller_indent(cntlr, 1);
 	    }
+	    controller_outputf(cntlr, "timeout left", "%d",
+			       netcon->timeout_left);
 	    controller_outputf(cntlr, "bytes read from TCP", "%lu",
 			       (unsigned long) netcon->bytes_received);
 	    controller_outputf(cntlr, "bytes written to TCP", "%lu",

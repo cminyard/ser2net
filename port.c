@@ -898,7 +898,7 @@ port_timeout(struct gensio_timer *timer, void *data)
 		netcon->timeout_left--;
 		if (netcon->timeout_left < 0)
 		    shutdown_one_netcon(netcon, "timeout");
-		goto out;
+		continue;
 	    }
 	    netcon->last_bytes_received = netcon->bytes_received;
 	    netcon->last_bytes_sent = netcon->bytes_sent;
