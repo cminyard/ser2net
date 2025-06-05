@@ -766,6 +766,18 @@ ser_control_set(struct gensio *io, int err,
     enum s2n_ser_ops op = (intptr_t) cb_data;
     net_info_t *netcon;
 
+    if (err) {
+	seout.out(&seout,
+		  "ser_control_set: Error setting ser2net control %d: %s",
+		  op, gensio_err_to_str(err));
+	return;
+    }
+
+    if (!val) {
+	seout.out(&seout, "ser_control_set: NULL value for op %d?", op);
+	val = "";
+    }
+
     so->lock(port->lock);
     for_each_connection(port, netcon) {
 	struct gensio *io = netcon->net;
