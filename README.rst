@@ -94,6 +94,92 @@ serial port device that is really remote) then Cyclades has provided
 a tool for this at https://sourceforge.net/projects/cyclades-serial/.
 It is capable of connecting to ser2net using RFC2217.
 
+===========================================
+Connecting to ser2net from the command line
+===========================================
+
+This is a very broad subject and depends on the exact configuration,
+but to aid in ser2net's usage, a few basic examples are available.
+
+If you have a basic ser2net configuration like::
+
+  connection: &my-port
+        accepter: tcp,3001
+        connector: serialdev,/dev/ttyUSB0,115200N81
+
+then ser2net just opens a TCP port for you to connect to.  You should
+*not* use the "telnet" command to connect to this.  ser2net will not
+do the telnet protocol in this case, and it may confuse the telnet
+command.
+
+Instead, you can use the gensiot tool from the gensio library (that
+ser2net is based upon) to connect.  In the above case, you can do::
+
+  gensiot tcp,host,3001
+
+and it will connect to the port and you can type and such.  You may
+notice some consistency in the naming, ser2net is just a veneer over
+gensio (with a bunch of added features) and the accepter and connector
+lines are directly the strings that the gensio library uses for
+accepting and making connections.  You can use gensiot as a pipe and
+it will attempt to "do the right thing" based on how it's started.
+
+If you want telnet, you must add telnet to the accepter::
+
+  connection: &my-port
+        accepter: telnet,tcp,3001
+        connector: serialdev,/dev/ttyUSB0,115200N81
+
+but that really doesn't add any value, except that you can use the
+telnet command to connect.  The big value you get with telnet is that
+you can enabled rfc2217, as::
+
+  connection: &my-port
+        accepter: telnet(rfc2217),tcp,3001
+        connector: serialdev,/dev/ttyUSB0,115200N81
+
+Then you can use gensiot:
+
+  gensiot telnet(rfc2217),tcp,host,3001
+
+and with that, you can actually control the serial port parameters,
+like baud, stop bits, etc.  See the gensio man page for details.
+Unfortunately, the standard telnet command won't do rfc2217.
+
+If you want encryption, see "A Complete Encrypted Example Setup"
+below.  You can use the gtlssh command from the gensio library to make
+encrypted connections.  You can also use gensiot to make a secure
+connection, but you must hand-specify the entire protocol stack and
+all the keys and certificates.
+
+====================================
+Connecting to ser2net with a program
+====================================
+
+You can, of course, connect to ser2net with a program.  If you just
+set up tcp, then you can make a normal TCP connection and it will just
+work.
+
+If you have telnet specified, then your program must handle the telnet
+protocol on top of TCP.
+
+You can also make authenticated and encrypted connections from a
+program, but things get more complicated.  You can use the ssl gensio
+layer and do mutual authentication with the clientauth option for the
+ssl gensio in ser2net.  Then normal SSL will do two-way authentication.
+
+If you want fancier authentication, like password based, then you
+would need to use the certauth gensio.  You will need to use the
+gensio library, as it's probably the only implementation of certauth
+around.  You could write your own, but I wouldn't recommend it.  I'm
+not sure I would do it myself if I had to do it again.
+
+Really, if you do anything more than raw TCP, and even if you just do
+TCP, I'd strongly suggest using the gensio library.  It make a lot of
+things easy, and once you have something that uses it, adding new
+features from the library is *very* easy.  It has C, C++, Rust, Go,
+and Python bindings.
+
 =============
 Running Tests
 =============
@@ -117,7 +203,8 @@ A Complete Encrypted Example Setup
 
 Lets suppose you have a server with serial port /dev/ttyUSB0 that you
 want to make available on the network, and you want the connection
-encrypted.  Here an example, after installing gensio and ser2net.
+authenticated and encrypted.  Here is an example, after installing
+gensio and ser2net.
 
 Note that this is for use with gensio's gtlssh, *not* with normal ssh.
 Normal ssh does not currently work with ser2net.  I looked at doing
@@ -223,9 +310,10 @@ though, if you are bridged it won't work.
 Windows Support
 ===============
 
-You can build ser2net for windows.  You need a gensio built for Windows, of
-course, and that's supported.  It should just build under MINGW64.  Beyond
-gensio, you will also need mingw-w64-x86_64-libyaml installed.
+You can build ser2net for windows.  You need a gensio built for
+Windows, of course, and that's supported.  It should just build under
+UCRT64 and/or MINGW64.  Beyond gensio, you will also need
+mingw-w64-x86_64-libyaml installed.
 
 The sysconfdir and datarootdir do not work on Windows, instead it uses
 a file relative to the executable's dectory, ../etc/ser2net and
