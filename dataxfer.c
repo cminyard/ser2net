@@ -716,6 +716,32 @@ enum s2n_ser_ops {
     S2N_RTS
 };
 
+static const char *s2n_ser_op_to_str(enum s2n_ser_ops op)
+{
+    switch(op) {
+    case S2N_BAUD:
+	return "baud";
+    case S2N_DATASIZE:
+	return "datasize";
+    case S2N_PARITY:
+	return "parity";
+    case S2N_STOPBITS:
+	return "stopbits";
+    case S2N_FLOWCONTROL:
+	return "flowcontrol";
+    case S2N_IFLOWCONTROL:
+	return "iflowcontrol";
+    case S2N_BREAK:
+	return "break";
+    case S2N_DTR:
+	return "dtr";
+    case S2N_RTS:
+	return "rts";
+    default:
+	return "unknown";
+    }
+}
+
 #ifdef GENSIO_ACONTROL_SER_BAUD
 static void
 handle_ser_modemstate(port_info_t *port, net_info_t *netcon)
@@ -768,13 +794,14 @@ ser_control_set(struct gensio *io, int err,
 
     if (err) {
 	seout.out(&seout,
-		  "ser_control_set: Error setting ser2net control %d: %s",
-		  op, gensio_err_to_str(err));
+		  "ser_control_set: %s: Error setting %s: %s",
+		  port->name, s2n_ser_op_to_str(op), gensio_err_to_str(err));
 	return;
     }
 
     if (!val) {
-	seout.out(&seout, "ser_control_set: NULL value for op %d?", op);
+	seout.out(&seout, "ser_control_set: %s: NULL value for %s?",
+		  port->name, s2n_ser_op_to_str(op));
 	val = "";
     }
 
@@ -1222,6 +1249,19 @@ sergensio_val_set(struct sergensio *sio, int err,
     port_info_t *port = sergensio_get_user_data(sio);
     enum s2n_ser_ops op = (intptr_t) cb_data;
     net_info_t *netcon;
+
+    if (err) {
+	seout.out(&seout,
+		  "servensio_val_set: %s: Error setting %s: %s",
+		  port->name, s2n_ser_op_to_str(op), gensio_err_to_str(err));
+	return;
+    }
+
+    if (!val) {
+	seout.out(&seout, "sergensio_val_set: %s: NULL value for %s?",
+		  port->name, s2n_ser_op_to_str(op));
+	val = "";
+    }
 
     so->lock(port->lock);
     for_each_connection(port, netcon) {
