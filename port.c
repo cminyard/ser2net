@@ -33,6 +33,7 @@
 #include "gbuf.h"
 #include <gensio/argvutils.h>
 #include <gensio/gensio_err.h>
+#include <gensio/gensio_time.h>
 
 struct gensio_lock *ports_lock;
 port_info_t *ports = NULL; /* Linked list of ports. */
@@ -609,13 +610,11 @@ shutdown_all_netcons(port_info_t *port, bool close_on_output_only)
 }
 
 static void
-accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
+accept_read_disabled_nolock(port_info_t *port)
 {
-    port_info_t *port = cb_data;
     net_info_t *netcon;
     bool some_to_close = false;
 
-    so->lock(port->lock);
     port->shutdown_started = false;
 
     /*
@@ -634,7 +633,7 @@ accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
 		gensio_set_read_callback_enable(netcon->net, true);
 	}
 	gensio_set_read_callback_enable(port->io, true);
-	goto out_unlock;
+	goto out;
     }
 
     /* After this point we will shut down the port completely. */
@@ -671,7 +670,17 @@ accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
     if (!some_to_close)
 	start_shutdown_port_io(port);
 
- out_unlock:
+ out:
+    return;
+}
+
+static void
+accept_read_disabled(struct gensio_accepter *acc, void *cb_data)
+{
+    port_info_t *port = cb_data;
+
+    so->lock(port->lock);
+    accept_read_disabled_nolock(port);
     so->unlock(port->lock);
 }
 
@@ -709,16 +718,22 @@ shutdown_port(port_info_t *port, const char *errreason)
 
     port->shutdown_started = true;
 
-    err = gensio_acc_set_accept_callback_enable_cb(port->accepter, false,
-						   accept_read_disabled, port);
-    /* This is bad, it's an out of memory condition. Abort. */
-    assert(err == 0);
-
     for_each_connection(port, netcon) {
 	if (netcon->net)
 	    gensio_set_read_callback_enable(netcon->net, false);
     }
     gensio_set_read_callback_enable(port->io, false);
+
+    if (port->deleted) {
+	/* Port is already disabled, just continue. */
+	accept_read_disabled_nolock(port);
+    } else {
+	err = gensio_acc_set_accept_callback_enable_cb(port->accepter, false,
+						       accept_read_disabled,
+						       port);
+	assert(err == 0);
+    }
+
     return 0;
 }
 
@@ -931,6 +946,17 @@ port_timeout(struct gensio_timer *timer, void *data)
     so->unlock(port->lock);
 }
 
+volatile unsigned int reload_port_count;
+
+static void
+reload_disable_port(struct gensio_accepter *acc, void *cb_data)
+{
+    so->lock(ports_lock);
+    assert(reload_port_count > 0);
+    reload_port_count--;
+    so->unlock(ports_lock);
+}
+
 void
 apply_new_ports(struct absout *eout)
 {
@@ -938,29 +964,28 @@ apply_new_ports(struct absout *eout)
 
     so->lock(ports_lock);
     /* First turn off all the accepters. */
+    reload_port_count = 0;
     for (curr = ports; curr; curr = curr->next) {
-	int err;
-
 	if (curr->deleted)
 	    continue;
 
 	if (curr->enabled && curr->accepter) {
-	    /*
-	     * This unlock is a little strange, but we don't want to
-	     * do any waiting while holding the ports lock, otherwise
-	     * we might deadlock on a deletion in finish_shutdown_port().
-	     * This is save as long as curr is not deleted, because curr
-	     * will not go away, though curr->next may change, that
-	     * shouldn't matter.
-	     */
-	    so->unlock(ports_lock);
-	    err = gensio_acc_set_accept_callback_enable_s(curr->accepter,
-							  false);
-	    /* Errors only happen on out of memory. */
+	    int err;
+
+	    reload_port_count++;
+	    err = gensio_acc_set_accept_callback_enable_cb(curr->accepter,
+							   false,
+							   reload_disable_port,
+							   NULL);
 	    assert(err == 0);
-	    so->lock(ports_lock);
 	    curr->accepter_stopped = true;
 	}
+    }
+
+    while (reload_port_count > 0) {
+	so->unlock(ports_lock);
+	gensio_os_funcs_service(so, NULL);
+	so->lock(ports_lock);
     }
 
     /* At this point we can't get any new accepts. */
