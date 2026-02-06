@@ -145,7 +145,7 @@ struct port_info
     bool deleted;
 
     /* Used to count operations (timer stops) during free. */
-    unsigned int free_count;
+    unsigned int refcount;
 
     int            timeout;		/* The number of seconds to
 					   wait without any I/O before

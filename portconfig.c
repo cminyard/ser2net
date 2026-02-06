@@ -270,9 +270,9 @@ port_add_connback(struct absout *eout, port_info_t *port, const char *istr)
 static void
 finish_free_port(port_info_t *port)
 {
-    assert(port->free_count > 0);
-    port->free_count--;
-    if (port->free_count != 0) {
+    assert(port->refcount > 0);
+    port->refcount--;
+    if (port->refcount != 0) {
 	so->unlock(port->lock);
 	return;
     }
@@ -367,21 +367,20 @@ free_port(port_info_t *port)
     }
 
     so->lock(port->lock);
-    port->free_count = 1;
 
     /* Make sure all the timers are stopped. */
     if (port->send_timer) {
 	err = so->stop_timer_with_done(port->send_timer,
 				       gen_timer_shutdown_done, port);
 	if (err != GE_TIMEDOUT)
-	    port->free_count++;
+	    port->refcount++;
     }
 
     if (port->timer) {
 	err = so->stop_timer_with_done(port->timer,
 				       gen_timer_shutdown_done, port);
 	if (err != GE_TIMEDOUT)
-	    port->free_count++;
+	    port->refcount++;
     }
     finish_free_port(port); /* Releases lock */
 }
@@ -745,6 +744,7 @@ portconfig(struct absout *eout,
 	return -1;
     }
     memset(new_port, 0, sizeof(*new_port));
+    new_port->refcount = 1;
 
     new_port->lock = so->alloc_lock(so);
     if (!new_port->lock) {
