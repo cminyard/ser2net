@@ -1049,8 +1049,14 @@ apply_new_ports(struct absout *eout)
 		if (new_ports_end == new)
 		    new_ports_end = curr;
 
-		gensio_acc_disable(curr->accepter);
-		curr->deleted = true;
+		if (!curr->deleted) {
+		    /*
+		     * There is a bug in older versions of gensio where
+		     * you can't call gensio_acc_disable() more than once.
+		     */
+		    gensio_acc_disable(curr->accepter);
+		    curr->deleted = true;
+		}
 		so->unlock(new->lock);
 		new = curr;
 		break;
