@@ -18,11 +18,16 @@ Ubuntu you can install libyaml with:
   apt install libyaml-dev
 
 The gensio library may be available on your distro, or it may not, or
-it may be old and missing things you need.  It is available as a
-tarball in the ser2net sourceforge files, or you can get it from
-github at https://github.com/cminyard/gensio.  A lot of the
-capabilities of ser2net (crypto, mdns, IPMI) come from gensio, so it
-must be compiled correctly for those.
+it may be old and missing things you need.  To use the one from your
+distro on Ubuntu, you can probably do:
+
+  apt install libgensio-dev
+
+Otherwise, the gensio library is available as a tarball in the ser2net
+sourceforge files, or you can get it from github at
+https://github.com/cminyard/gensio.  A lot of the capabilities of
+ser2net (crypto, mdns, IPMI) come from gensio, so it must be compiled
+correctly for those.
 
 This is a normal autoconf system, nothing special.  Note that if you
 get this directly from git, you won't have the build infrastructure
