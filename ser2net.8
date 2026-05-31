@@ -158,36 +158,6 @@ Disconnect the tcp connection on the port.
 Set the amount of time in seconds before the port connection will be
 shut down if no activity has been seen on the port.
 .TP
-.B setportconfig <network port> <config>
-Set the port configuration as in the device configuration in the
-.BR /etc/ser2net/ser2net.yaml
-file.  If conflicting options are specified, the last option will
-be the one used.  Note that these will not change until the port
-is disconnected and connected again.  Options
-.I 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200
-set the various baud rates.  The following speed may be available
-if your system has the values defined and your hardware supports
-it: 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000,
-2000000, 2500000, 3000000, 3500000, 4000000.
-Parity, databits, and stopbits may be specified
-in the classical manner after the speed, as in 9600N81.
-This has the following format:
-.B <speed>[N|E|O|M|S[5|6|7|8[1|2]]].
-Setting serial options this way does not work on SOL, SOL has fixed
-N81 serial options.
-.I EVEN, ODD, NONE (MARK and SPACE if supported)
-set the parity.
-.I 1STOPBIT, 2STOPBITS
-set the number of stop bits.
-.I 7DATABITS, 8DATABITS
-set the number of data bits.
-.I [-]XONXOFF
-turns on (- off) XON/XOFF support.
-.I [-]RTSCTS
-turns on (- off) hardware flow control.
-.I [-]LOCAL
-ignores (- checks) the modem control lines (DCD, DTR, etc.)
-.TP
 .B setportcontrol <network port> <controls>
 Modify dynamic port controls.  These do not stay between connections.
 Controls are:
