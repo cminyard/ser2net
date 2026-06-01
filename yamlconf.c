@@ -658,7 +658,7 @@ add_option(struct yconf *y, const char *name, const char *option,
 {
     if (y->curr_option >= y->options_len) {
 	unsigned int new_len = y->options_len + 10;
-	char **new_options = malloc(sizeof(char *) * new_len);
+	char **new_options = calloc(new_len, sizeof(char *));
 
 	if (!new_options) {
 	    yaml_errout(y, "Out of memory allocating option array for %s",
@@ -674,9 +674,10 @@ add_option(struct yconf *y, const char *name, const char *option,
     if (name) {
 	char *s;
 	if (option && strlen(option) > 0) {
-	    s = malloc(strlen(name) + strlen(option) + 2);
+	    size_t slen = strlen(name) + strlen(option) + 2;
+	    s = malloc(slen);
 	    if (s)
-		sprintf(s, "%s=%s", name, option);
+		snprintf(s, slen, "%s=%s", name, option);
 	} else {
 	    s = strdup(name);
 	}
@@ -698,7 +699,7 @@ add_seq(struct yconf *y, const char *item, const char *place)
 {
     if (y->curr_seq >= y->seq_len) {
 	unsigned int new_len = y->seq_len + 10;
-	char **new_seq = malloc(sizeof(char *) * new_len);
+	char **new_seq = calloc(new_len, sizeof(char *));
 
 	if (!new_seq) {
 	    yaml_errout(y, "Out of memory allocating connection array for %s",
@@ -1271,6 +1272,7 @@ yhandle_scalar(struct yconf *y, const char *anchor, const char *iscalar)
 	yaml_errout(y, "Anchor on non-scalar ignored");
 
     free(scalar);
+    scalar = NULL;
     return 0;
 
  out_err:
@@ -1827,13 +1829,13 @@ yaml_readconfig(ftype *file, char *filename,
 
     memset(&y, 0, sizeof(y));
     y.enable = true;
-    y.options = malloc(sizeof(char *) * 10);
+    y.options = calloc(10, sizeof(char *));
     if (!y.options) {
 	errout->out(errout, "Out of memory allocating options array");
 	return GE_NOMEM;
     }
     y.options_len = 10;
-    y.seq = malloc(sizeof(char *) * 10);
+    y.seq = calloc(10, sizeof(char *));
     if (!y.seq) {
 	free(y.options);
 	errout->out(errout, "Out of memory allocating connection array");
