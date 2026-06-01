@@ -286,8 +286,8 @@ yaml_verrout_d_f(struct yaml_read_handler_data *d,
     vsnprintf(buf, sizeof(buf), str, ap);
     d->errout->out(d->errout, "%s:%lu(column %lu): %s",
 		   f->filename,
-		   (unsigned long) f->e.start_mark.line,
-		   (unsigned long) f->e.start_mark.column,
+		   (unsigned long) f->parser.problem_mark.line,
+		   (unsigned long) f->parser.problem_mark.column,
 		   buf);
     return 0;
 }
