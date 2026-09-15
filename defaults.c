@@ -60,6 +60,8 @@ static struct default_data defaults[] = {
 					.def.intval = PORT_BUFSIZE },
     { "net-to-dev-bufsize", GENSIO_DEFAULT_INT,.min = 1, .max = 65536,
 					.def.intval = PORT_BUFSIZE },
+    { "dev-chardelay-ms", GENSIO_DEFAULT_INT,.min = 0, .max = 60000,
+					.def.intval = 0 },
     { "max-connections", GENSIO_DEFAULT_INT,	.min=1, .max=65536,
 					.def.intval = 1 },
     { "connector-retry-time", GENSIO_DEFAULT_INT, .min=1, .max=10000000,

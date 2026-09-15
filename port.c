@@ -1132,6 +1132,13 @@ dataxfer_setup_port(port_info_t *new_port, struct absout *eout)
 	return -1;
     }
 
+    new_port->dev_chardelay_timer =
+	so->alloc_timer(so, port_dev_chardelay_timeout, new_port);
+    if (!new_port->dev_chardelay_timer) {
+	eout->out(eout, "Could not allocate timer data");
+	return -1;
+    }
+
     new_port->runshutdown = so->alloc_runner(so, finish_shutdown_port,
 					     new_port);
     if (!new_port->runshutdown) {
