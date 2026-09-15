@@ -290,6 +290,8 @@ finish_free_port(port_info_t *port)
 	so->free_timer(port->timer);
     if (port->send_timer)
 	so->free_timer(port->send_timer);
+    if (port->dev_chardelay_timer)
+	so->free_timer(port->dev_chardelay_timer);
     if (port->runshutdown)
 	so->free_runner(port->runshutdown);
     if (port->io)
@@ -371,6 +373,13 @@ free_port(port_info_t *port)
     /* Make sure all the timers are stopped. */
     if (port->send_timer) {
 	err = so->stop_timer_with_done(port->send_timer,
+				       gen_timer_shutdown_done, port);
+	if (err != GE_TIMEDOUT)
+	    port->refcount++;
+    }
+
+    if (port->dev_chardelay_timer) {
+	err = so->stop_timer_with_done(port->dev_chardelay_timer,
 				       gen_timer_shutdown_done, port);
 	if (err != GE_TIMEDOUT)
 	    port->refcount++;
@@ -506,6 +515,8 @@ myconfig(port_info_t *port, struct absout *eout, const char *pos)
 				   &port->chardelay_min) > 0) {
     } else if (gensio_check_keyuint(pos, "chardelay-max",
 				   &port->chardelay_max) > 0) {
+    } else if (gensio_check_keyuint(pos, "dev-chardelay-ms",
+				   &port->dev_chardelay_ms) > 0) {
     } else if (gensio_check_keyds(pos, "dev-to-net-bufsize",
 				  &port->dev_to_net.maxsize) > 0) {
 	if (port->dev_to_net.maxsize < 2)
@@ -671,6 +682,7 @@ init_port_data(port_info_t *port, struct absout *eout)
     port->chardelay_scale = find_default_int("chardelay-scale");
     port->chardelay_min = find_default_int("chardelay-min");
     port->chardelay_max = find_default_int("chardelay-max");
+    port->dev_chardelay_ms = find_default_int("dev-chardelay-ms");
     port->dev_to_net.maxsize = find_default_int("dev-to-net-bufsize");
     port->net_to_dev.maxsize = find_default_int("net-to-dev-bufsize");
     port->max_connections = find_default_int("max-connections");

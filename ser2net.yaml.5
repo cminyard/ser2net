@@ -509,6 +509,18 @@ to the accepted gensio.
 sets the size of the buffer reading from the accepted gensio and
 writing to the connecting gensio.
 .TP
+.I dev-chardelay-ms: <number>
+.br
+sets a fixed delay, in milliseconds, to wait between each character
+written to the connecting gensio (normally the serial port) for data
+that came in on the accepted (network) side.  Instead of writing the
+received data to the device in one block, it is paced out one
+character at a time with this delay between each one.  This is
+useful for devices (such as bootloaders or other equipment with no
+input buffering or flow control) that cannot accept characters
+back-to-back.  A value of 0 disables the delay and writes data to the
+device normally.  The default value is 0, max is 60000.
+.TP
 .I led-tx: <led-alias>
 .br
 use the previously defined led to indicate serial tx traffic on this
@@ -863,6 +875,13 @@ is 1000.  This can range from 1-100000.
 .br
 sets the size of the buffer reading from the network port and writing to the
 serial device.
+.TP
+.B dev-chardelay-ms: 0
+.br
+sets a fixed delay, in milliseconds, to wait between each character
+written to the serial device for data received from the network
+side.  0 disables this and writes data to the device normally.  This
+can range from 0-60000.
 .TP
 .B dev-to-net-bufsize: 64
 .br

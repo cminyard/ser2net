@@ -218,6 +218,14 @@ struct port_info
 					   data, no matter what, set
 					   by chardelay_max. */
 
+    unsigned int dev_chardelay_ms;	/* If non-zero, wait this many
+					   milliseconds between each
+					   character written to the device.
+					   0 (the default) writes data to
+					   the device as fast as it can be
+					   accepted. */
+    struct gensio_timer *dev_chardelay_timer;
+
     /* Information about the network port. */
     char               *name;           /* The name given for the port. */
     char               *accstr;         /* The accepter string. */
@@ -392,6 +400,7 @@ int port_dev_enable(port_info_t *port);
 int gbuf_write(port_info_t *port, struct gbuf *buf);
 void report_disconnect(port_info_t *port, net_info_t *netcon);
 void port_send_timeout(struct gensio_timer *timer, void *data);
+void port_dev_chardelay_timeout(struct gensio_timer *timer, void *data);
 
 /* In port.c */
 extern struct gensio_lock *ports_lock;

@@ -444,14 +444,18 @@ port_send_timeout(struct gensio_timer *timer, void *data)
     so->unlock(port->lock);
 }
 
-int
-gbuf_write(port_info_t *port, struct gbuf *buf)
+static int
+gbuf_write_max(port_info_t *port, struct gbuf *buf, gensiods maxlen)
 {
     int err;
     gensiods written;
+    gensiods to_write = buf->cursize - buf->pos;
+
+    if (to_write > maxlen)
+	to_write = maxlen;
 
     err = gensio_write(port->io, &written, buf->buf + buf->pos,
-		       buf->cursize - buf->pos, NULL);
+		       to_write, NULL);
     if (err)
 	return err;
 
@@ -463,6 +467,52 @@ gbuf_write(port_info_t *port, struct gbuf *buf)
     return 0;
 }
 
+int
+gbuf_write(port_info_t *port, struct gbuf *buf)
+{
+    return gbuf_write_max(port, buf, buf->cursize - buf->pos);
+}
+
+/*
+ * Write the next chunk of net_to_dev data to the device.  If
+ * dev_chardelay_ms is set, this writes at most one character at a
+ * time so the caller can pace the writes; otherwise it attempts to write
+ * everything that is left.  *progressed is set to true if at least one
+ * byte actually made it out (as opposed to the device just not being
+ * ready to accept anything right now).
+ */
+static int
+dev_write_step(port_info_t *port, bool *progressed)
+{
+    struct gbuf *buf = &port->net_to_dev;
+    gensiods old_pos = buf->pos;
+    gensiods maxlen = buf->cursize - buf->pos;
+    int err;
+
+    if (port->dev_chardelay_ms && maxlen > 1)
+	maxlen = 1;
+
+    err = gbuf_write_max(port, buf, maxlen);
+    if (!err)
+	*progressed = (buf->pos != old_pos);
+
+    return err;
+}
+
+/* Start (or restart) the timer that paces dev_chardelay_ms-delayed
+   writes to the device.  The device write callback is disabled while the
+   timer is pending. */
+static void
+start_dev_chardelay(port_info_t *port)
+{
+    gensio_time when;
+
+    gensio_set_write_callback_enable(port->io, false);
+    so->get_monotonic_time(so, &when);
+    add_usec_to_time(&when, port->dev_chardelay_ms * 1000);
+    so->start_timer_abs(port->dev_chardelay_timer, &when);
+}
+
 /* The serial port has room to write some data.  This is only activated
    if a write fails to complete, it is deactivated as soon as writing
    is available again. */
@@ -470,8 +520,12 @@ static void
 dev_fd_write(port_info_t *port, struct gbuf *buf)
 {
     int err;
+    bool progressed = false;
 
-    err = gbuf_write(port, buf);
+    if (buf == &port->net_to_dev)
+	err = dev_write_step(port, &progressed);
+    else
+	err = gbuf_write(port, buf);
     if (err) {
 	seout.out(&seout, "The dev write for port %s had error: %s",
 		  port->name, gensio_err_to_str(err));
@@ -484,7 +538,31 @@ dev_fd_write(port_info_t *port, struct gbuf *buf)
 	enable_all_net_read(port);
 	gensio_set_write_callback_enable(port->io, false);
 	port->net_to_dev_state = PORT_WAITING_INPUT;
+	return;
     }
+
+    if (buf == &port->net_to_dev && port->dev_chardelay_ms) {
+	if (progressed)
+	    start_dev_chardelay(port);
+	else
+	    /* Device wasn't ready for even one byte, wait for write-ready. */
+	    gensio_set_write_callback_enable(port->io, true);
+    }
+}
+
+/* Fires after a dev_chardelay_ms pause, writes the next character
+   (if any) to the device. */
+void
+port_dev_chardelay_timeout(struct gensio_timer *timer, void *data)
+{
+    port_info_t *port = (port_info_t *) data;
+
+    so->lock(port->lock);
+    if (port->net_to_dev_state != PORT_CLOSING &&
+		port->net_to_dev_state != PORT_CLOSED &&
+		gbuf_cursize(&port->net_to_dev))
+	dev_fd_write(port, &port->net_to_dev);
+    so->unlock(port->lock);
 }
 
 static void
@@ -517,6 +595,7 @@ handle_net_fd_read(net_info_t *netcon, int readerr,
     gensiods rv = 0;
     char *reason;
     int err;
+    bool progressed = false;
 
     so->lock(port->lock);
     if (port->net_to_dev_state == PORT_WAITING_OUTPUT_CLEAR)
@@ -571,7 +650,7 @@ handle_net_fd_read(net_info_t *netcon, int readerr,
     if (port->devstr)
 	goto stop_read_start_write;
 
-    err = gbuf_write(port, &port->net_to_dev);
+    err = dev_write_step(port, &progressed);
     if (err) {
 	seout.out(&seout, "The dev write(2) for port %s had error: %s",
 		  port->name, gensio_err_to_str(err));
@@ -588,8 +667,11 @@ handle_net_fd_read(net_info_t *netcon, int readerr,
 	   start the write monitor. */
     stop_read_start_write:
 	disable_all_net_read(port);
-	gensio_set_write_callback_enable(port->io, true);
 	port->net_to_dev_state = PORT_WAITING_OUTPUT_CLEAR;
+	if (port->dev_chardelay_ms && progressed)
+	    start_dev_chardelay(port);
+	else
+	    gensio_set_write_callback_enable(port->io, true);
     }
 
     rv = buflen;
