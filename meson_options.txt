@@ -1,0 +1,13 @@
+option(
+    'pam',
+    type: 'feature',
+    value: 'auto',
+    description: 'Support PAM authentication',
+)
+
+option(
+    'sysfs-led-support',
+    type: 'feature',
+    value: 'auto',
+    description: 'Enable LED support (Linux only)',
+)
